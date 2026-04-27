@@ -1,152 +1,244 @@
-# The Clean Freaks — Management System
+# 🧹 The Clean Freaks — Business Management System
 
-A comprehensive web application for managing commercial cleaning business operations including client scheduling, invoicing, and subcontractor payments.
+A modern, all-in-one web application designed to streamline commercial cleaning business operations. From scheduling jobs to invoicing clients and managing your cleaning team — everything you need is in one place.
 
-> **Last Updated:** April 17, 2026
+**Status**: Production Ready | **Last Updated**: April 27, 2026 | **Version**: 1.0
 
-## Features
+## 📋 What Can You Do?
 
-- **Client Management**: Track clients, multiple locations, billing preferences, and contacts
-- **Recurring Scheduling**: Automatic job generation for weekly, bi-weekly, monthly, and custom schedules
-- **Calendar View**: Visual week-view job scheduling with drag-and-drop, cleaner color coding, team + client filters
-- **Professional Invoicing**: Batch invoicing with PDF generation, custom date ranges, and email delivery
-- **Subcontractor Tracking**: Manage payments, job assignments, and team members
-- **Dashboard**: Real-time overview of business metrics, today's checklist, overdue invoices
-- **Global Search**: ⌘K/Ctrl+K command palette searching clients, cleaners, locations, and invoices
+### 👥 Client Management
+- Add and manage all your clients in one place
+- Track multiple locations per client
+- Store contact information and billing preferences
+- View client history and outstanding invoices
 
-## Tech Stack
+### 📅 Smart Scheduling
+- Create recurring schedules (weekly, bi-weekly, monthly, custom)
+- Automatic job generation from schedules
+- Visual calendar view with drag-and-drop job assignment
+- Color-coded cleaner assignments for quick visual identification
 
-- **Frontend**: Next.js 14 (App Router), React 18, TypeScript
-- **Styling**: Tailwind CSS, shadcn/ui components, custom design tokens
-- **Database**: PostgreSQL (Supabase) with Prisma ORM
-- **PDF Generation**: @react-pdf/renderer
-- **Date Handling**: date-fns
-- **Data Fetching**: SWR for client-side caching and revalidation
+### 💰 Professional Invoicing
+- Batch invoice generation from completed jobs
+- Automatic PDF creation and email delivery
+- Custom date ranges and flexible billing
+- Track payment status (Draft → Sent → Paid)
+- Support for flat-rate and per-service billing
 
-## Prerequisites
+### 🧑‍💼 Team Management
+- Manage subcontractors and cleaning teams
+- Track job assignments and completion
+- Automated payment tracking and reports
+- View earnings statements by team member
 
-- Node.js 18+
-- npm package manager
-- Access to the Supabase PostgreSQL database (connection string in `.env.local`)
+### 📊 Real-Time Dashboard
+- Business metrics at a glance
+- Today's job checklist
+- Overdue invoices alert
+- Quick access to key data
 
-## Installation
+### 🔍 Global Search
+- Search across all data: Clients, cleaners, locations, invoices
+- Quick command palette (⌘K / Ctrl+K)
+- Find anything in seconds
 
-```bash
-# 1. Install dependencies
-npm install
+## 🛠️ Technology Stack
 
-# 2. Configure environment
-# Ensure .env.local exists with DATABASE_URL and SESSION_SECRET (see Environment section)
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | Next.js 14, React 18, TypeScript | Modern React framework with server components |
+| **Styling** | Tailwind CSS, shadcn/ui | Beautiful, responsive UI components |
+| **Database** | PostgreSQL (Supabase), Prisma ORM | Reliable data persistence with type-safe queries |
+| **PDF Generation** | @react-pdf/renderer | Professional invoice PDFs |
+| **Date & Time** | date-fns | Lightweight date manipulation |
+| **Data Fetching** | SWR | Client-side caching and real-time updates |
+| **Authentication** | NextAuth.js | Secure session management |
 
-# 3. Generate Prisma client
-npx prisma generate
-
-# 4. Start development server
-npm run dev
-```
-
-The app will be available at `http://localhost:3000`.
-
-## Environment Variables
-
-Create or update `.env.local`:
-
-```env
-# Database (Supabase PostgreSQL)
-DATABASE_URL="postgresql://postgres.xxx:password@aws-1-us-west-1.pooler.supabase.com:5432/postgres"
-
-# Session Secret
-SESSION_SECRET="cleanfreaks-production-secret-2026"
-
-# Base URL
-NEXT_PUBLIC_BASE_URL=http://localhost:3000
-
-# Business Info (for invoices)
-NEXT_PUBLIC_APP_NAME="The Clean Freaks Management System"
-NEXT_PUBLIC_BUSINESS_NAME="The Clean Freaks Janitorial Services"
-
-# Email (set to true when ready to send real emails)
-ENABLE_EMAIL_SENDING=false
-```
-
-## Admin Access
-
-- **Email**: `admin@cleanfreaks.com`
-- **Password**: `admin123`
-
-## Architecture
-
-### Design Pattern: Custom Hook + Thin Orchestrator
-
-Major components follow a modular pattern where:
-- **Custom Hooks** (`use-client-detail.ts`, `use-job-detail.ts`, `use-quick-invoice.ts`) encapsulate all state management, API interactions, and business logic
-- **Component Files** act as thin orchestrators, focused purely on rendering
-- **Sub-components** handle isolated UI sections
-
-### Project Structure
+## 📁 Project Structure
 
 ```
 clean-freaks-app/
-├── app/
-│   ├── api/                     # API routes
-│   │   ├── clients/             # Client CRUD + contacts
-│   │   ├── locations/           # Location management
-│   │   ├── schedules/           # Schedule + job regeneration
-│   │   ├── jobs/                # Job management + status updates
-│   │   ├── invoices/            # Invoice CRUD + PDF + email
-│   │   ├── subcontractors/      # Subcontractor management + payments
-│   │   └── search/              # Global cross-entity search
-│   ├── clients/                 # Client pages (list, detail, new)
-│   ├── calendar/                # Calendar page
-│   ├── invoices/                # Invoice pages (list, detail)
-│   ├── subcontractors/          # Subcontractor pages (list, detail, new)
-│   ├── layout.tsx               # Root layout (fonts, providers)
-│   └── page.tsx                 # Dashboard
-├── components/
-│   ├── ui/                      # shadcn/ui + global-search
-│   ├── clients/                 # Client detail, wizard, hooks
-│   ├── calendar/                # Calendar view, job detail, filters
-│   ├── invoices/                # Invoice modal, PDF template, hooks
-│   ├── subcontractors/          # Cleaner detail, payments
-│   ├── layout-wrapper.tsx       # Authenticated layout (sidebar, bottom tabs, global search)
-│   ├── nav-sidebar.tsx          # Desktop navigation sidebar
-│   └── mobile-bottom-tabs.tsx   # Mobile tab navigation
-├── lib/
-│   ├── db.ts                    # Prisma client singleton
-│   ├── auth.ts                  # Session authentication
-│   ├── invoice-calculations.ts  # Billing logic (flat-rate + per-clean)
-│   ├── regenerate-schedule-jobs.ts  # Scheduling engine
-│   ├── calendar-design-tokens.ts    # Cleaner color assignments
-│   ├── calendar-filter-context.tsx  # Persistent filter state
-│   ├── email-templates.ts       # Invoice email templates
-│   └── utils.ts                 # Shared utilities
-├── prisma/
-│   └── schema.prisma            # PostgreSQL schema (12 models)
-├── types/
-│   └── index.ts                 # TypeScript interfaces
-└── public/
-    ├── images/                  # Logo and branding
-    └── invoices/                # Generated invoice PDFs
+├── app/                        # Next.js App Router
+│   ├── api/                    # Backend API routes
+│   │   ├── clients/            # Client operations
+│   │   ├── jobs/               # Job management
+│   │   ├── invoices/           # Invoicing system
+│   │   ├── schedules/          # Scheduling engine
+│   │   ├── subcontractors/     # Team management
+│   │   └── search/             # Global search
+│   ├── clients/                # Client pages
+│   ├── calendar/               # Calendar UI
+│   ├── invoices/               # Invoice pages
+│   ├── dashboard/              # Main dashboard
+│   └── layout.tsx              # Root layout
+│
+├── components/                 # React components
+│   ├── ui/                     # Reusable UI elements
+│   ├── clients/                # Client-related components
+│   ├── calendar/               # Calendar-specific components
+│   ├── invoices/               # Invoice components
+│   └── subcontractors/         # Team components
+│
+├── lib/                        # Business logic & utilities
+│   ├── db.ts                   # Database connection
+│   ├── auth.ts                 # Authentication
+│   ├── invoice-calculations.ts # Billing logic
+│   ├── regenerate-schedule-jobs.ts # Auto-scheduling
+│   └── utils.ts                # Helper functions
+│
+├── prisma/                     # Database schema
+│   ├── schema.prisma           # Data models
+│   └── migrations/             # Database migrations
+│
+└── public/                     # Static files
+    └── images/                 # Logos and assets
 ```
 
-## Data Models
+## 💾 Database Models
 
-| Model | Purpose |
-|-------|---------|
-| **Client** | Business name, billing type (FLAT_RATE/PER_CLEAN), contacts, active status |
-| **Location** | Address, access info, belongs to a client. Multiple locations per client. |
-| **Schedule** | Recurring template — frequency, rates, assigned subcontractor. Independent `clientPayType` and `subcontractorPayType`. |
-| **Job** | Individual scheduled cleaning. Status: SCHEDULED/COMPLETED/CANCELLED. Tracks invoiced and subcontractorPaid flags. |
-| **Invoice** | Invoice number, line items, PDF, payment tracking. Status: DRAFT/SENT/PAID. |
-| **InvoiceLineItem** | Per-job or per-schedule line on an invoice |
-| **Subcontractor** | Cleaner business name, contact info, team members |
-| **SubcontractorPayment** | Payment record with itemized job line items |
-| **AddOnService** | Extra services attached to jobs or schedules (own client + subcontractor rates) |
-| **ClientContact** | Multiple contacts per client (communication, invoicing, general) |
-| **AdminUser** | Authentication for the management dashboard |
-| **BillingSettings** | System-wide billing configuration |
+Your data is organized into these main entities:
 
-## Key Business Logic
+| Entity | What It Does |
+|--------|-------------|
+| **Client** | Companies you clean for |
+| **Location** | Addresses within each client |
+| **Schedule** | Recurring cleaning jobs (weekly, bi-weekly, etc.) |
+| **Job** | Individual cleaning tasks |
+| **Invoice** | Bills sent to clients |
+| **Subcontractor** | Your cleaning team members |
+| **Payment** | Payments to cleaners |
+| **AddOnService** | Extra services with custom pricing |
+
+
+
+## 🔧 Development Guide
+
+### Running the App
+
+```bash
+# Development server with hot reload
+npm run dev
+
+# Build for production
+npm build
+
+# Start production server
+npm start
+
+# Run tests
+npm test
+
+# Type checking
+npm run type-check
+```
+
+### Code Structure Philosophy
+
+We follow the **Custom Hook + Thin Component** pattern:
+
+- **Hooks** (in `components/`): Contain all state, API calls, and business logic
+- **Components**: Act as presentational layers, just rendering what the hooks provide
+- **Sub-components**: Handle smaller UI sections, keeping complexity low
+
+This keeps components focused, testable, and reusable.
+
+## 📊 Common Tasks
+
+### Adding a New Client
+1. Go to **Clients** → **New Client**
+2. Fill in business info and billing type
+3. Add locations (addresses where you'll clean)
+4. Add contact information
+5. Create schedules for recurring jobs
+
+### Creating a Recurring Schedule
+1. Go to **Clients** → Select a client
+2. **Schedules** tab → **New Schedule**
+3. Choose frequency (weekly, bi-weekly, monthly)
+4. Set rates and assign a cleaner
+5. Jobs auto-generate based on the schedule
+
+### Invoicing
+1. Go to **Invoices** → **New Invoice**
+2. Select client and date range
+3. Review jobs to include
+4. Generate PDF preview
+5. Send via email or mark as sent
+
+### Managing Your Team
+1. Go to **Subcontractors**
+2. Add team members with hourly/flat rates
+3. Assign jobs from the calendar
+4. Track payments and generate payment reports
+
+## 🚀 Deployment
+
+### Deploy to Vercel (Recommended)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel
+```
+
+Then configure these environment variables in Vercel:
+- `DATABASE_URL`
+- `SESSION_SECRET`
+- `NEXT_PUBLIC_BASE_URL` (your production URL)
+
+**[Detailed Vercel Setup →](https://vercel.com/docs)**
+
+### Deploy to Other Platforms
+
+This is a Next.js app, so it works on any platform that supports Node.js:
+- **Railway**
+- **Heroku**
+- **AWS**
+- **DigitalOcean**
+- **Self-hosted servers**
+
+## ❓ Troubleshooting
+
+### "Database connection failed"
+- Check that `DATABASE_URL` in `.env.local` is correct
+- Ensure your Supabase project is active
+- Test connection: `npx prisma db execute --stdin < test.sql`
+
+### "Port 3000 already in use"
+- Kill the process: `lsof -ti:3000 | xargs kill -9` (Mac/Linux)
+- Or use a different port: `npm run dev -- -p 3001`
+
+### "Prisma client out of sync"
+```bash
+npx prisma generate
+npx prisma db push
+```
+
+### "Email not sending"
+- Set `ENABLE_EMAIL_SENDING=true` in `.env.local`
+- Check email service configuration
+- Verify SMTP credentials are correct
+
+## 📚 Additional Resources
+
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Prisma ORM Guide](https://www.prisma.io/docs/)
+- [Tailwind CSS](https://tailwindcss.com)
+- [shadcn/ui Components](https://ui.shadcn.com)
+
+## 🤝 Contributing
+
+Found a bug or want to suggest a feature? Please reach out to the development team.
+
+## 📄 License
+
+This project is proprietary software for The Clean Freaks Janitorial Services.
+
+---
+
+**Questions?** Contact: `admin@cleanfreaks.com`
 
 ### Scheduling Engine (`lib/regenerate-schedule-jobs.ts`)
 
@@ -223,10 +315,16 @@ npx prisma studio
 Built with ❤️ for reducing admin overhead and streamlining operations
 
 **The Clean Freaks Janitorial Services** — Private Use
-#   c l e a n - f r e a k s - a p p  
- #   c l e a n - f r e a k s - a p p  
- #   c l e a n - f r e a k s - a p p  
- #   c l e a n - f r e a k s - a p p  
- #   c l e a n - f r e a k s - a p p  
- #   c l e a n - f r e a k s - a p p  
+#   c l e a n - f r e a k s - a p p 
+ 
+ #   c l e a n - f r e a k s - a p p 
+ 
+ #   c l e a n - f r e a k s - a p p 
+ 
+ #   c l e a n - f r e a k s - a p p 
+ 
+ #   c l e a n - f r e a k s - a p p 
+ 
+ #   c l e a n - f r e a k s - a p p 
+ 
  
