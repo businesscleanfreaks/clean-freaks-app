@@ -1,0 +1,14 @@
+LOGO FILE PLACEMENT
+===================
+
+Please place your company logo file as:
+  /public/images/logo.png
+
+The logo should be in PNG format and will appear on all invoice PDFs.
+
+Recommended specifications:
+- Format: PNG with transparent background
+- Size: 120px width (height will scale proportionally)
+- Resolution: 72-150 DPI for PDF quality
+
+Once you place the logo.png file in this directory, it will automatically appear on all generated invoices.

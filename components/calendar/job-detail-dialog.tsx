@@ -1,0 +1,1978 @@
+"use client"
+
+import { type ReactNode } from "react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { formatCurrency, formatTime } from "@/lib/utils"
+import { format } from "date-fns"
+import { ScheduleForm, type ScheduleRecord } from "@/components/clients/schedule-form"
+import {
+  MapPin, Clock, User, DollarSign, Calendar as CalendarIcon,
+  Trash2, XCircle, Edit2, Check, X, CheckCircle, Plus, FileText, ChevronLeft, Coins,
+  Loader2, StickyNote, Sparkles, ChevronDown,
+} from "lucide-react"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { refreshCalendarData } from "./calendar-client"
+import { useJobDetail, type CalendarJob, type OutcomeType, type OutcomeAmountMode } from "./use-job-detail"
+import type { Subcontractor, AddOnService } from "@/types"
+
+interface JobDetailDialogProps {
+  job: CalendarJob | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  subcontractors: Subcontractor[]
+}
+
+export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: JobDetailDialogProps) {
+  // All state and handlers are in the custom hook — see use-job-detail.ts
+  const state = job ? useJobDetail({ job, open, onOpenChange, subcontractors }) : null
+
+  if (!job || !state) return null
+
+  const {
+    ConfirmDialog,
+    // State
+    isDeleting, isCancelling, isCompleting,
+    isEditingSubcontractor, setIsEditingSubcontractor,
+    selectedSubcontractorId, setSelectedSubcontractorId,
+    isSavingSubcontractor,
+    isMarkingInvoiced,
+    addOns, setAddOns,
+    isAddingAddOn, setIsAddingAddOn,
+    deletingAddOnId,
+    editingAddOnId, setEditingAddOnId,
+    newAddOn, setNewAddOn,
+    editingAddOn, setEditingAddOn,
+    mobileConfirmAction, setMobileConfirmAction,
+    isSelectingCleaner, setIsSelectingCleaner,
+    activeInlinePicker, setActiveInlinePicker,
+    localDate, localTime,
+    draftDate, setDraftDate,
+    draftTime, setDraftTime,
+    isSavingInlineDate, isSavingInlineTime,
+    quickRescheduleLabel, setQuickRescheduleLabel,
+    isEditingRates, setIsEditingRates,
+    draftClientRate, setDraftClientRate,
+    draftSubcontractorRate, setDraftSubcontractorRate,
+    isSavingRates,
+    showCancellationSheet, setShowCancellationSheet,
+    cancelReason, setCancelReason,
+    cancelNote, setCancelNote,
+    chargeFee, setChargeFee,
+    feeAmount, setFeeAmount,
+    showOutcomeSheet, setShowOutcomeSheet,
+    outcomeType, setOutcomeType,
+    clientChargeMode, setClientChargeMode,
+    cleanerPayMode, setCleanerPayMode,
+    partialClientAmount, setPartialClientAmount,
+    partialCleanerAmount, setPartialCleanerAmount,
+    outcomeNote, setOutcomeNote,
+    isSavingOutcome,
+    activeQuickFixPanel, setActiveQuickFixPanel,
+    scopeDialogAction, setScopeDialogAction,
+    scopeChoice, setScopeChoice,
+    showDetails, setShowDetails,
+    showMoreActions, setShowMoreActions,
+    desktopSection, setDesktopSection,
+    // Computed
+    hasPaidInvoice,
+    canEditDateTime, canUseQuickFixes, canShowFutureScope,
+    canEditRates, canApplyOutcome,
+    displayDate, displayTime,
+    // Helpers
+    getStatusColor, getMobileStatusStyle, getMobileStatusLabel,
+    // Handlers
+    handleEditSubcontractor, handleSaveSubcontractor, handleCancelEdit,
+    handleDeleteAddOn, handleDelete, handleComplete, handleCancel,
+    handleMarkAsInvoiced,
+    handleSaveSubcontractorMobile, handleConfirmCancelMobile, handleConfirmDeleteMobile,
+    handleQuickReschedule, openCleanerPicker, openAddOnEditor,
+    handleOpenDatePicker, handleOpenTimePicker,
+    handleSaveInlineDate, handleSaveInlineTime,
+    handleSaveQuickMoveSingle, handleSaveQuickMoveFuture,
+    handleOpenRateEditor,
+    handleQuickFixMove, handleQuickFixCleaner, handleQuickFixClientRate,
+    handleQuickFixCleanerPay, handleQuickFixAddOn, handleQuickFixSchedule,
+    handleSaveRates, handleSaveRatesSingle, handleSaveRatesFuture,
+    handleSaveClientRateSingle, handleSaveClientRateFuture,
+    handleSaveCleanerPaySingle, handleSaveCleanerPayFuture,
+    handleSaveAddOnSingle, handleSaveAddOnFuture,
+    handleSaveCleanerSingle, handleSaveCleanerFuture,
+    handleQuickFixSave, handleConfirmScopeChoice,
+    handleOpenCancellationSheet, handleOutcomeTypeChange,
+    handleOpenOutcomeSheet, openOutcomeQuickFix,
+    handleSaveOutcome, handleCancelWithReason,
+    buildFutureSchedulePayload,
+  } = state
+
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
+  const mobileStatus = getMobileStatusStyle(job.status)
+  const jobTimeDisplay = displayTime
+    ? formatTime(displayTime)
+    : job.startWindowBegin
+    ? `${formatTime(job.startWindowBegin!)} – ${formatTime(job.startWindowEnd || '')}`
+    : 'TBD'
+  const recurringScheduleRecord = job.schedule as ScheduleRecord | null
+  const clientBillingType = job.location.client.billingType
+  const clientCleanerPayType = job.location.client.cleanerPayType
+
+  const quickActionButtons = [
+    {
+      key: 'move',
+      label: 'Move Clean',
+      icon: CalendarIcon,
+      disabled: !canEditDateTime,
+      onClick: handleQuickFixMove,
+    },
+    {
+      key: 'skip',
+      label: 'Skip This Clean',
+      icon: XCircle,
+      disabled: !canApplyOutcome,
+      onClick: () => openOutcomeQuickFix('skipped'),
+    },
+    {
+      key: 'cleaner',
+      label: 'Change Cleaner',
+      icon: User,
+      disabled: job.subcontractorPaid || isSavingSubcontractor,
+      onClick: handleQuickFixCleaner,
+    },
+    {
+      key: 'client-rate',
+      label: 'Change Client Price',
+      icon: DollarSign,
+      disabled: !canEditRates,
+      onClick: handleQuickFixClientRate,
+    },
+    {
+      key: 'cleaner-pay',
+      label: 'Change Cleaner Pay',
+      icon: Coins,
+      disabled: !canEditRates,
+      onClick: handleQuickFixCleanerPay,
+    },
+    {
+      key: 'addon',
+      label: 'Add Add-on',
+      icon: Plus,
+      disabled: hasPaidInvoice,
+      onClick: handleQuickFixAddOn,
+    },
+  ]
+
+  const recurringPlanButton = {
+    key: 'schedule',
+    label: 'Change Schedule Going Forward',
+    icon: Edit2,
+    disabled: !job.scheduleId || !job.schedule,
+    onClick: handleQuickFixSchedule,
+  }
+
+  const specialSituationButtons = [
+    {
+      key: 'no-access',
+      label: 'No Access / No Show',
+      icon: XCircle,
+      disabled: !canApplyOutcome,
+      onClick: () => openOutcomeQuickFix('no-access'),
+    },
+    {
+      key: 're-clean',
+      label: 'Re-clean / Make Good',
+      icon: CheckCircle,
+      disabled: !canApplyOutcome,
+      onClick: () => openOutcomeQuickFix('re-clean'),
+    },
+  ]
+
+  const renderQuickFixSection = (isMobile: boolean, compact = false) => {
+    if (!canUseQuickFixes) return null
+
+    const content = (
+      <>
+        <div className="grid grid-cols-2 gap-2">
+          {quickActionButtons.map((action) => {
+            const Icon = action.icon
+            return (
+              <button
+                key={action.key}
+                onClick={action.onClick}
+                disabled={action.disabled}
+                className="rounded-[12px] bg-white text-left transition-all hover:bg-[#FBFBFB] disabled:cursor-default disabled:opacity-45"
+                style={{
+                  border: '1px solid #E7E7E1',
+                  minHeight: isMobile ? '54px' : '50px',
+                  padding: isMobile ? '12px 12px' : '11px 12px',
+                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0"
+                    style={{
+                      backgroundColor: action.disabled ? 'rgba(203,213,225,0.20)' : 'rgba(15,118,110,0.08)',
+                      border: action.disabled ? '1px solid rgba(203,213,225,0.28)' : '1px solid rgba(15,118,110,0.12)',
+                    }}
+                  >
+                    <Icon className="h-4 w-4" style={{ color: action.disabled ? '#94A3B8' : '#0F766E' }} />
+                  </div>
+                  <span style={{ fontSize: isMobile ? '13px' : '13px', fontWeight: 600, color: '#111111' }}>
+                    {action.label}
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mt-4">
+          <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+            Recurring Plan
+          </p>
+          <button
+            onClick={recurringPlanButton.onClick}
+            disabled={recurringPlanButton.disabled}
+            className="w-full rounded-[12px] bg-white text-left transition-all hover:bg-[#FBFBFB] disabled:cursor-default disabled:opacity-45"
+            style={{
+              border: '1px solid #E7E7E1',
+              minHeight: isMobile ? '54px' : '50px',
+              padding: isMobile ? '12px 12px' : '11px 12px',
+              boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0"
+                style={{
+                  backgroundColor: recurringPlanButton.disabled ? 'rgba(203,213,225,0.20)' : 'rgba(15,118,110,0.08)',
+                  border: recurringPlanButton.disabled ? '1px solid rgba(203,213,225,0.28)' : '1px solid rgba(15,118,110,0.12)',
+                }}
+              >
+                <Edit2 className="h-4 w-4" style={{ color: recurringPlanButton.disabled ? '#94A3B8' : '#0F766E' }} />
+              </div>
+              <div>
+                <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#111111' }}>
+                  Change Schedule
+                </span>
+                <span style={{ display: 'block', fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>
+                  Change frequency or recurring days from here
+                </span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+            Special Situations
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            {specialSituationButtons.map((action) => {
+              const Icon = action.icon
+              return (
+                <button
+                  key={action.key}
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  className="rounded-[12px] bg-white text-left transition-all hover:bg-[#FBFBFB] disabled:cursor-default disabled:opacity-45"
+                  style={{
+                    border: '1px solid #E7E7E1',
+                    minHeight: isMobile ? '54px' : '50px',
+                    padding: isMobile ? '12px 12px' : '11px 12px',
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0"
+                      style={{
+                        backgroundColor: action.disabled ? 'rgba(203,213,225,0.20)' : 'rgba(15,118,110,0.08)',
+                        border: action.disabled ? '1px solid rgba(203,213,225,0.28)' : '1px solid rgba(15,118,110,0.12)',
+                      }}
+                    >
+                      <Icon className="h-4 w-4" style={{ color: action.disabled ? '#94A3B8' : '#0F766E' }} />
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#111111' }}>
+                      {action.label}
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </>
+    )
+
+    if (compact) return <div className="space-y-4">{content}</div>
+
+    return (
+      <div
+        className="rounded-[16px] p-4"
+        style={{
+          background: isMobile
+            ? 'linear-gradient(180deg, #FAFCFD 0%, #FFFFFF 100%)'
+            : 'linear-gradient(180deg, #FCFCFB 0%, #FFFFFF 100%)',
+          border: '1px solid #E7E7E1',
+          boxShadow: '0 10px 24px rgba(15, 23, 42, 0.04)',
+        }}
+      >
+        {!compact && (
+          <div className="mb-3.5 flex items-center gap-2">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full"
+              style={{
+                backgroundColor: 'rgba(15,118,110,0.10)',
+                border: '1px solid rgba(15,118,110,0.12)',
+              }}
+            >
+              <Sparkles className="h-4 w-4" style={{ color: '#0F766E' }} />
+            </div>
+            <div>
+              <p style={{ fontSize: '13px', fontWeight: 700, color: '#111827', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                Quick Actions
+              </p>
+              <p style={{ fontSize: '13px', color: '#5F6B76', marginTop: '2px' }}>
+                Fastest ways to change this clean
+              </p>
+            </div>
+          </div>
+        )}
+
+        {content}
+      </div>
+    )
+  }
+
+  const renderQuickFixPanel = (isMobile: boolean) => {
+    if (!activeQuickFixPanel) return null
+
+    const panelMeta = {
+      move: {
+        title: 'Move Clean',
+        description: 'Pick a new date or time.',
+      },
+      cleaner: {
+        title: 'Change Cleaner',
+        description: 'Choose who should handle this clean.',
+      },
+      'client-rate': {
+        title: 'Change Client Price',
+        description: 'Update what the client should pay for this clean.',
+      },
+      'cleaner-pay': {
+        title: 'Change Cleaner Pay',
+        description: 'Update what the cleaner should be paid for this clean.',
+      },
+      addon: {
+        title: 'Add Add-on',
+        description: 'Add an add-on to this clean.',
+      },
+      outcome: {
+        title: 'Fix Problem With This Clean',
+        description: 'Choose what happened and how to handle billing and pay.',
+      },
+      schedule: {
+        title: 'Change Schedule Going Forward',
+        description: 'Change the recurring plan starting with this clean.',
+      },
+    }[activeQuickFixPanel]
+
+    const renderQuickFixFooter = (
+      primaryLabel: string,
+      onPrimaryClick: () => void,
+      primaryDisabled: boolean,
+      busyLabel?: string,
+      backDisabled = false,
+    ) => (
+      <div
+        className="flex-shrink-0 pt-3"
+        style={{
+          borderTop: '1px solid rgba(15,118,110,0.08)',
+        }}
+      >
+        <button
+          onClick={onPrimaryClick}
+          disabled={primaryDisabled}
+          className="w-full rounded-full px-4 py-2.5 font-semibold text-white disabled:opacity-45"
+          style={{ backgroundColor: '#0F766E', fontSize: '15px' }}
+        >
+          {backDisabled && busyLabel ? busyLabel : primaryLabel}
+        </button>
+      </div>
+    )
+
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col rounded-[18px] p-4"
+        style={{
+          background: 'linear-gradient(180deg, #FEFFFE 0%, #F7FBFA 100%)',
+          border: '1px solid rgba(15,118,110,0.16)',
+          boxShadow: '0 18px 36px rgba(15, 23, 42, 0.07)',
+        }}
+      >
+        <div className="mb-3 flex-shrink-0">
+          <div>
+            <button
+              onClick={() => setActiveQuickFixPanel(null)}
+              className="mb-3 inline-flex items-center gap-1 rounded-full transition-colors hover:text-[#0B5F59]"
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#0F766E',
+              }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </button>
+            <p style={{ fontSize: isMobile ? '22px' : '20px', fontWeight: 800, color: '#111827', lineHeight: 1.1 }}>
+              {panelMeta.title}
+            </p>
+            <p style={{ fontSize: isMobile ? '14px' : '13px', color: '#5F6B76', marginTop: '6px' }}>{panelMeta.description}</p>
+          </div>
+        </div>
+
+        {activeQuickFixPanel === 'move' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={draftDate}
+                  onChange={(e) => {
+                    setQuickRescheduleLabel(null)
+                    setDraftDate(e.target.value)
+                  }}
+                  disabled={isSavingInlineDate}
+                  className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
+                  style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
+                  Time
+                </label>
+                <input
+                  type="time"
+                  value={draftTime}
+                  onChange={(e) => {
+                    setQuickRescheduleLabel(null)
+                    setDraftTime(e.target.value)
+                  }}
+                  disabled={isSavingInlineDate}
+                  className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
+                  style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+                Fast Reschedule
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleQuickReschedule(1, 'tomorrow')}
+                  disabled={isSavingInlineDate}
+                  className="rounded-full bg-white px-4 py-2 font-semibold disabled:opacity-45"
+                  style={{
+                    border: quickRescheduleLabel === 'tomorrow' ? '1px solid #0F766E' : '1px solid #D9E3E1',
+                    fontSize: '14px',
+                    color: quickRescheduleLabel === 'tomorrow' ? '#0F766E' : '#111827',
+                  }}
+                >
+                  Tomorrow
+                </button>
+                <button
+                  onClick={() => handleQuickReschedule(7, 'next-week')}
+                  disabled={isSavingInlineDate}
+                  className="rounded-full bg-white px-4 py-2 font-semibold disabled:opacity-45"
+                  style={{
+                    border: quickRescheduleLabel === 'next-week' ? '1px solid #0F766E' : '1px solid #D9E3E1',
+                    fontSize: '14px',
+                    color: quickRescheduleLabel === 'next-week' ? '#0F766E' : '#111827',
+                  }}
+                >
+                  Next Week
+                </button>
+              </div>
+            </div>
+            </div>
+            {renderQuickFixFooter(
+              canShowFutureScope ? 'Continue' : 'Save Move',
+              handleQuickFixSave,
+              !draftDate || isSavingInlineDate,
+              isSavingInlineDate ? 'Saving…' : undefined,
+              isSavingInlineDate
+            )}
+          </div>
+        )}
+
+        {activeQuickFixPanel === 'cleaner' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <div className="rounded-[12px] overflow-hidden bg-white" style={{ border: '1px solid #D9E3E1' }}>
+              <button onClick={() => setSelectedSubcontractorId('unassigned')} className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-[#F7FAFA] transition-colors" style={{ borderBottom: '1px solid #EEF2F1' }}>
+                <span className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === 'unassigned' ? '#0F766E' : '#111111' }}>Unassigned</span>
+                {selectedSubcontractorId === 'unassigned' && <Check className="h-4 w-4" style={{ color: '#0F766E' }} />}
+              </button>
+              {subcontractors.map((sub) => (
+                <button key={sub.id} onClick={() => setSelectedSubcontractorId(sub.id)} className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-[#F7FAFA] transition-colors" style={{ borderBottom: '1px solid #EEF2F1' }}>
+                  <div>
+                    <p className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === sub.id ? '#0F766E' : '#111111' }}>{sub.name}</p>
+                    {sub.phone && <p style={{ fontSize: '13px', color: '#6B7280' }}>{sub.phone}</p>}
+                  </div>
+                  {selectedSubcontractorId === sub.id && <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#0F766E' }} />}
+                </button>
+              ))}
+            </div>
+            </div>
+            {renderQuickFixFooter(
+              canShowFutureScope ? 'Continue' : 'Save Cleaner',
+              handleQuickFixSave,
+              !selectedSubcontractorId || isSavingSubcontractor,
+              isSavingSubcontractor ? 'Saving…' : undefined,
+              isSavingSubcontractor
+            )}
+          </div>
+        )}
+
+        {activeQuickFixPanel === 'client-rate' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-1">
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
+                  Client Price
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={draftClientRate}
+                  onChange={(e) => setDraftClientRate(e.target.value)}
+                  disabled={isSavingRates}
+                  className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
+                  style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1' }}
+                />
+              </div>
+              <div className="rounded-[12px] bg-white px-3 py-3" style={{ border: '1px solid #D9E3E1' }}>
+                <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+                  Cleaner Pay Stays
+                </p>
+                <p style={{ fontSize: '15px', fontWeight: 600, color: '#111827' }}>
+                  {formatCurrency(job.subcontractorRate ?? 0)}
+                </p>
+              </div>
+            </div>
+            {renderQuickFixFooter(
+              canShowFutureScope ? 'Continue' : 'Save Client Price',
+              handleQuickFixSave,
+              isSavingRates || !draftClientRate,
+              isSavingRates ? 'Saving…' : undefined,
+              isSavingRates
+            )}
+          </div>
+        )}
+
+        {activeQuickFixPanel === 'cleaner-pay' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-1">
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
+                  Cleaner Pay
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={draftSubcontractorRate}
+                  onChange={(e) => setDraftSubcontractorRate(e.target.value)}
+                  disabled={isSavingRates}
+                  className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
+                  style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1' }}
+                />
+              </div>
+              <div className="rounded-[12px] bg-white px-3 py-3" style={{ border: '1px solid #D9E3E1' }}>
+                <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+                  Client Price Stays
+                </p>
+                <p style={{ fontSize: '15px', fontWeight: 600, color: '#111827' }}>
+                  {formatCurrency(job.clientRate ?? 0)}
+                </p>
+              </div>
+            </div>
+            {renderQuickFixFooter(
+              canShowFutureScope ? 'Continue' : 'Save Cleaner Pay',
+              handleQuickFixSave,
+              isSavingRates || !draftSubcontractorRate,
+              isSavingRates ? 'Saving…' : undefined,
+              isSavingRates
+            )}
+          </div>
+        )}
+
+        {activeQuickFixPanel === 'addon' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-1">
+            <Input
+              value={newAddOn.description}
+              onChange={(e) => setNewAddOn({ ...newAddOn, description: e.target.value })}
+              placeholder="Add-on name"
+              className="text-sm"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number"
+                value={newAddOn.clientRate}
+                onChange={(e) => setNewAddOn({ ...newAddOn, clientRate: e.target.value })}
+                placeholder="Client price"
+                className="text-sm"
+              />
+              <Input
+                type="number"
+                value={newAddOn.subcontractorRate}
+                onChange={(e) => setNewAddOn({ ...newAddOn, subcontractorRate: e.target.value })}
+                placeholder="Cleaner pay"
+                className="text-sm"
+              />
+            </div>
+            </div>
+            {renderQuickFixFooter(
+              canShowFutureScope ? 'Continue' : 'Save Service',
+              handleQuickFixSave,
+              !newAddOn.description || !newAddOn.clientRate,
+            )}
+          </div>
+        )}
+
+        {activeQuickFixPanel === 'outcome' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto space-y-4 pr-1">
+            <div className="space-y-2">
+              {[
+                { id: 'skipped', label: 'Skipped' },
+                { id: 'no-access', label: 'No Access / No Show' },
+                { id: 're-clean', label: 'Re-clean / Make Good' },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => handleOutcomeTypeChange(option.id as OutcomeType)}
+                  className="w-full rounded-[14px] bg-white px-4 py-3 text-left transition-colors hover:bg-[#F9FBFB]"
+                  style={{
+                    border: outcomeType === option.id ? '2px solid #0F766E' : '1px solid #D9E3E1',
+                    boxShadow: outcomeType === option.id ? '0 0 0 3px rgba(15,118,110,0.08)' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: '15px', fontWeight: 600, color: outcomeType === option.id ? '#0F766E' : '#111827' }}>
+                    {option.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-4">
+              {renderOutcomeModeButtons('Client Charge', clientChargeMode, setClientChargeMode)}
+              {clientChargeMode === 'partial' && (
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={partialClientAmount}
+                  onChange={(e) => setPartialClientAmount(e.target.value)}
+                  placeholder={`Enter client amount (normal ${formatCurrency(job.clientRate ?? 0)})`}
+                />
+              )}
+
+              {renderOutcomeModeButtons('Cleaner Pay', cleanerPayMode, setCleanerPayMode)}
+              {cleanerPayMode === 'partial' && (
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={partialCleanerAmount}
+                  onChange={(e) => setPartialCleanerAmount(e.target.value)}
+                  placeholder={`Enter cleaner pay (normal ${formatCurrency(job.subcontractorRate ?? 0)})`}
+                />
+              )}
+
+              <div>
+                <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+                  Note
+                </p>
+                <textarea
+                  value={outcomeNote}
+                  onChange={(e) => setOutcomeNote(e.target.value)}
+                  placeholder="Optional note for why this happened"
+                  rows={2}
+                  className="w-full rounded-[12px] px-3 py-2 outline-none resize-none"
+                  style={{ border: '1px solid #D9E3E1', fontSize: '14px', color: '#111111' }}
+                />
+              </div>
+            </div>
+            </div>
+            {renderQuickFixFooter(
+              'Save Problem',
+              () => handleSaveOutcome(generalNotes),
+              !outcomeType || isSavingOutcome,
+              isSavingOutcome ? 'Saving…' : undefined,
+              isSavingOutcome
+            )}
+          </div>
+        )}
+
+        {activeQuickFixPanel === 'schedule' && recurringScheduleRecord && (
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <ScheduleForm
+              locationId={job.location.id}
+              clientBillingType={clientBillingType}
+              clientCleanerPayType={clientCleanerPayType}
+              schedule={recurringScheduleRecord}
+              mode="future"
+              futureStartDate={displayDate}
+              embedded={true}
+              onSuccess={() => {
+                setActiveQuickFixPanel(null)
+                onOpenChange(false)
+                refreshCalendarData()
+              }}
+              onCancel={() => setActiveQuickFixPanel(null)}
+            />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderSummaryCard = (label: string, value: string, isMobile: boolean, muted = false) => (
+    <div
+      className="rounded-[14px] bg-white"
+      style={{
+        border: '1px solid #E7E7E1',
+        padding: isMobile ? '12px 14px' : '14px 16px',
+        boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+      }}
+    >
+      <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+        {label}
+      </p>
+      <p style={{ fontSize: isMobile ? '15px' : '14px', fontWeight: 600, color: muted ? '#6B7280' : '#111827', lineHeight: 1.3 }}>
+        {value}
+      </p>
+    </div>
+  )
+
+  const renderSummarySection = (isMobile: boolean) => (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        {renderSummaryCard('Date', format(displayDate, isMobile ? 'EEE, MMM d' : 'EEE, MMM d, yyyy'), isMobile)}
+        {renderSummaryCard('Time', jobTimeDisplay, isMobile)}
+        {renderSummaryCard('Cleaner', job.subcontractor?.name || 'Unassigned', isMobile, !job.subcontractor)}
+        {renderSummaryCard('Client Price', formatCurrency(job.clientRate ?? 0), isMobile)}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {renderSummaryCard('Cleaner Pay', formatCurrency(job.subcontractorRate ?? 0), isMobile)}
+        {renderSummaryCard('Margin', formatCurrency((job.clientRate ?? 0) - (job.subcontractorRate ?? 0)), isMobile)}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {renderSummaryCard('Client Billing', clientBillingType === 'FLAT_RATE' ? 'Flat Rate' : 'Per Clean', isMobile)}
+        {renderSummaryCard('Cleaner Pay Type', clientCleanerPayType === 'FLAT_RATE' ? 'Flat Rate' : 'Per Clean', isMobile)}
+      </div>
+    </div>
+  )
+
+  const renderDesktopOverviewSection = () => (
+    <div
+      className="rounded-[18px] bg-white p-4"
+      style={{
+        border: '1px solid #E7E7E1',
+        boxShadow: '0 10px 28px rgba(15, 23, 42, 0.04)',
+      }}
+    >
+      <div className="space-y-3">
+        <div
+          className="grid grid-cols-2 gap-2 rounded-[14px] bg-[#FAFCFB] p-3"
+          style={{ border: '1px solid #E7E7E1' }}
+        >
+          <div>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+              Date
+            </p>
+            <p style={{ fontSize: '16px', fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>
+              {format(displayDate, 'EEE, MMM d, yyyy')}
+            </p>
+          </div>
+          <div>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+              Time
+            </p>
+            <p style={{ fontSize: '16px', fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>
+              {jobTimeDisplay}
+            </p>
+          </div>
+        </div>
+
+        <div
+          className="rounded-[14px] bg-white px-4 py-3"
+          style={{ border: '1px solid #E7E7E1' }}
+        >
+          <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+            Cleaner
+          </p>
+          <p style={{ fontSize: '16px', fontWeight: 700, color: job.subcontractor ? '#111827' : '#6B7280', lineHeight: 1.25 }}>
+            {job.subcontractor?.name || 'Unassigned'}
+          </p>
+        </div>
+
+        <div
+          className="grid grid-cols-3 gap-2 rounded-[14px] bg-[#FAFCFB] p-2"
+          style={{ border: '1px solid #E7E7E1' }}
+        >
+          {renderSummaryCard('Client', formatCurrency(job.clientRate ?? 0), false)}
+          {renderSummaryCard('Cleaner', formatCurrency(job.subcontractorRate ?? 0), false)}
+          {renderSummaryCard('Margin', formatCurrency((job.clientRate ?? 0) - (job.subcontractorRate ?? 0)), false)}
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderDesktopSectionTabs = () => (
+    <div
+      className="inline-flex items-center rounded-full p-1"
+      style={{ backgroundColor: '#F3F6F5', border: '1px solid #E2E8E6' }}
+    >
+      {[
+        { key: 'actions' as const, label: 'Actions' },
+        { key: 'details' as const, label: 'Details' },
+        { key: 'more' as const, label: 'More' },
+      ].map((tab) => {
+        const active = desktopSection === tab.key
+        return (
+          <button
+            key={tab.key}
+            onClick={() => setDesktopSection(tab.key)}
+            className="rounded-full px-4 py-2 transition-all"
+            style={{
+              background: active ? 'linear-gradient(180deg, #0F766E 0%, #0D9488 100%)' : 'transparent',
+              color: active ? '#FFFFFF' : '#5F6B76',
+              boxShadow: active ? '0 8px 20px rgba(15, 118, 110, 0.18)' : 'none',
+              fontSize: '13px',
+              fontWeight: 700,
+            }}
+          >
+            {tab.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  const renderDetailsSection = (isMobile: boolean, compact = false) => {
+    const content = (
+      <div className="space-y-3">
+        <div
+          className="rounded-[12px] bg-[#FAFCFC] px-3 py-3"
+          style={{ border: '1px solid #E7E7E1' }}
+        >
+          <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+            Location
+          </p>
+          <p style={{ fontSize: '14px', fontWeight: 600, color: '#111827', lineHeight: 1.35 }}>
+            {job.location.name}
+          </p>
+        </div>
+
+        {renderStructuredNoteCard()}
+
+        {generalNotes && (
+          <div className="rounded-[12px] p-3" style={{ backgroundColor: '#FFFBEF', border: '1px solid #FDE68A' }}>
+            <div className="mb-1.5 flex items-center gap-2">
+              <StickyNote className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#D97706' }} />
+              <p className="font-medium uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px', color: '#D97706' }}>Notes</p>
+            </div>
+            <p className="whitespace-pre-wrap" style={{ fontSize: '13px', color: '#111111' }}>{generalNotes}</p>
+          </div>
+        )}
+
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+            Add-ons
+          </p>
+          {addOns.length === 0 ? (
+            <p style={{ fontSize: '13px', color: '#6B7280' }}>No add-ons on this clean.</p>
+          ) : (
+            <div className="space-y-2">
+              {addOns.map((addOn) => (
+                <div
+                  key={addOn.id}
+                  className="flex items-center justify-between rounded-[12px] bg-[#FAFCFC] px-3 py-2.5"
+                  style={{ border: '1px solid #E7E7E1' }}
+                >
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{addOn.description}</span>
+                  <span style={{ fontSize: '13px', color: '#111827' }}>{formatCurrency(addOn.clientRate)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+
+    if (compact) return content
+
+    return (
+      <div
+        className="rounded-[16px] bg-white"
+        style={{
+          border: '1px solid #E7E7E1',
+          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+          padding: isMobile ? '14px' : '16px',
+        }}
+      >
+        {content}
+      </div>
+    )
+  }
+
+  const renderMoreActionsSection = (isMobile: boolean, compact = false) => {
+    const content = (
+      <div className="space-y-3">
+        {/* Mark as Completed removed — assumed completion model */}
+
+        {!job.invoiced && (
+          <button
+            onClick={handleMarkAsInvoiced}
+            disabled={isMarkingInvoiced}
+            className="w-full rounded-[12px] px-4 py-3 text-left disabled:opacity-60"
+            style={{ backgroundColor: '#F8FAFC', border: '1px solid #D9E3E1', fontSize: '15px', fontWeight: 600, color: '#111827' }}
+          >
+            {isMarkingInvoiced ? 'Saving…' : 'Mark as Already Invoiced'}
+          </button>
+        )}
+
+        {/* Skip This Clean — uses the outcome flow */}
+        {job.status === 'SCHEDULED' && (
+          <button
+            onClick={() => openOutcomeQuickFix('skipped')}
+            className="w-full rounded-[12px] px-4 py-3 text-left"
+            style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '15px', fontWeight: 600, color: '#92400E' }}
+          >
+            Skip This Clean
+          </button>
+        )}
+
+        {/* Cancel This Clean — marks as cancelled with a reason */}
+        {job.status === 'SCHEDULED' && (
+          <button
+            onClick={handleOpenCancellationSheet}
+            disabled={isCancelling}
+            className="w-full rounded-[12px] px-4 py-3 text-left disabled:opacity-60"
+            style={{ backgroundColor: '#FFF7F7', border: '1px solid #F5D2D2', fontSize: '15px', fontWeight: 600, color: '#C2410C' }}
+          >
+            <span>Cancel This Clean</span>
+            <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#9CA3AF', marginTop: '2px' }}>
+              Mark this clean as cancelled with a reason
+            </span>
+          </button>
+        )}
+
+        {/* Pause / Cancel Service — sets schedule end date */}
+        {job.scheduleId && job.schedule && (
+          <button
+            onClick={handleQuickFixSchedule}
+            className="w-full rounded-[12px] px-4 py-3 text-left"
+            style={{ backgroundColor: '#F8FAFC', border: '1px solid #D9E3E1', fontSize: '15px', fontWeight: 600, color: '#374151' }}
+          >
+            <span>Pause / Cancel Service</span>
+            <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#9CA3AF', marginTop: '2px' }}>
+              Stop all future cleans on this recurring schedule
+            </span>
+          </button>
+        )}
+
+        {/* Delete — only for one-off (non-recurring) jobs */}
+        {!job.scheduleId && (
+          <button
+            onClick={isMobile ? () => setMobileConfirmAction('delete') : handleDelete}
+            disabled={isDeleting || job.invoiced}
+            className="w-full rounded-[12px] px-4 py-3 text-left disabled:opacity-50"
+            style={{ backgroundColor: '#FFFFFF', border: '1px solid #E7E7E1', fontSize: '13px', fontWeight: 500, color: job.invoiced ? '#9CA3AF' : '#9CA3AF' }}
+          >
+            {isDeleting ? 'Deleting…' : 'Delete Job'}
+            <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#BBBBBB', marginTop: '2px' }}>
+              Permanently remove this one-off job
+            </span>
+          </button>
+        )}
+      </div>
+    )
+
+    if (compact) return content
+
+    return (
+      <div
+        className="rounded-[16px] bg-white"
+        style={{
+          border: '1px solid #F0E2E2',
+          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+          padding: isMobile ? '14px' : '16px',
+        }}
+      >
+        {content}
+      </div>
+    )
+  }
+
+  const structuredNotePrefixes = ['Cancelled:', 'Skipped:', 'No Access / No Show:', 'Re-clean / Make Good:']
+  const structuredNotePrefix = structuredNotePrefixes.find((prefix) => job.notes?.startsWith(prefix)) || null
+  const structuredNoteLines = structuredNotePrefix ? (job.notes?.split('\n') || []) : []
+  const generalNotes = job.notes && !structuredNotePrefix ? job.notes : null
+  const isQuickFixMode = activeQuickFixPanel !== null
+
+  const renderStructuredNoteCard = () => {
+    if (!structuredNotePrefix) return null
+
+    if (structuredNotePrefix === 'Cancelled:') {
+      return (
+        <div className="rounded-[12px] p-3" style={{ backgroundColor: 'rgba(229,57,53,0.05)', border: '1px solid rgba(229,57,53,0.2)' }}>
+          <div className="flex items-center gap-2 mb-1">
+            <XCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#E53935' }} />
+            <p className="font-medium uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px', color: '#E53935' }}>Cancelled</p>
+          </div>
+          <p style={{ fontSize: '13px', color: '#111111' }}>{structuredNoteLines[0]?.replace('Cancelled: ', '')}</p>
+        </div>
+      )
+    }
+
+    const label = structuredNotePrefix.replace(':', '')
+
+    return (
+      <div className="rounded-[12px] p-3" style={{ backgroundColor: 'rgba(0,168,150,0.06)', border: '1px solid rgba(0,168,150,0.2)' }}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#00A896' }} />
+          <p className="font-medium uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px', color: '#00A896' }}>{label}</p>
+        </div>
+        <div className="space-y-1">
+          {structuredNoteLines.slice(1).map((line, index) => (
+            <p key={`${line}-${index}`} className="whitespace-pre-wrap" style={{ fontSize: '13px', color: '#111111' }}>
+              {line}
+            </p>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const renderOutcomeModeButtons = (
+    label: string,
+    mode: OutcomeAmountMode,
+    onChange: (nextMode: OutcomeAmountMode) => void
+  ) => (
+    <div>
+      <p style={{ fontSize: '11px', fontWeight: 600, color: '#666666', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+        {label}
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
+        {[
+          { id: 'normal', label: 'Normal' },
+          { id: 'partial', label: 'Partial' },
+          { id: 'none', label: 'None' },
+        ].map((option) => (
+          <button
+            key={option.id}
+            onClick={() => onChange(option.id as OutcomeAmountMode)}
+            style={{
+              height: '42px',
+              borderRadius: '10px',
+              border: mode === option.id ? '1.5px solid #00A896' : '1px solid #E5E7EB',
+              backgroundColor: 'white',
+              fontSize: '13px',
+              fontWeight: mode === option.id ? 600 : 500,
+              color: mode === option.id ? '#00A896' : '#333333',
+              transition: 'border-color 120ms, color 120ms',
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  const renderOutcomeSheetBody = () => (
+    <div style={{ padding: '24px', maxHeight: '88%', overflowY: 'auto' }}>
+      <div style={{ marginBottom: '20px' }}>
+        <p style={{ fontSize: '18px', fontWeight: 700, color: '#111111', marginBottom: '6px' }}>Fix Problem With This Clean</p>
+        <p style={{ fontSize: '14px', color: '#666666' }}>
+          Capture what happened and decide what the client should be charged and what the cleaner should be paid.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginBottom: '18px' }}>
+        {[
+          { id: 'skipped', label: 'Skipped' },
+          { id: 'no-access', label: 'No Access / No Show' },
+          { id: 're-clean', label: 'Re-clean / Make Good' },
+        ].map((option) => (
+          <button
+            key={option.id}
+            onClick={() => handleOutcomeTypeChange(option.id as OutcomeType)}
+            style={{
+              minHeight: '46px',
+              borderRadius: '12px',
+              border: outcomeType === option.id ? '1.5px solid #00A896' : '1px solid #E5E7EB',
+              backgroundColor: 'white',
+              fontSize: '14px',
+              fontWeight: outcomeType === option.id ? 600 : 500,
+              color: outcomeType === option.id ? '#00A896' : '#222222',
+              padding: '0 14px',
+              textAlign: 'left',
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gap: '16px' }}>
+        {renderOutcomeModeButtons('Client Charge', clientChargeMode, setClientChargeMode)}
+        {clientChargeMode === 'partial' && (
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={partialClientAmount}
+            onChange={(e) => setPartialClientAmount(e.target.value)}
+            placeholder={`Enter client amount (normal ${formatCurrency(job.clientRate ?? 0)})`}
+          />
+        )}
+
+        {renderOutcomeModeButtons('Cleaner Pay', cleanerPayMode, setCleanerPayMode)}
+        {cleanerPayMode === 'partial' && (
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={partialCleanerAmount}
+            onChange={(e) => setPartialCleanerAmount(e.target.value)}
+            placeholder={`Enter cleaner pay (normal ${formatCurrency(job.subcontractorRate ?? 0)})`}
+          />
+        )}
+
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: 600, color: '#666666', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+            Note
+          </p>
+          <textarea
+            value={outcomeNote}
+            onChange={(e) => setOutcomeNote(e.target.value)}
+            placeholder="Optional note for why this happened"
+            rows={3}
+            className="w-full rounded-[12px] px-3 py-2 outline-none resize-none"
+            style={{ border: '1px solid #E5E7EB', fontSize: '14px', color: '#111111' }}
+          />
+        </div>
+      </div>
+
+      <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <button
+          onClick={() => handleSaveOutcome(generalNotes)}
+          disabled={!outcomeType || isSavingOutcome}
+          className="flex items-center justify-center gap-2"
+          style={{
+            width: '100%',
+            height: '48px',
+            borderRadius: '12px',
+            backgroundColor: outcomeType ? '#00A896' : '#E5E7EB',
+            color: 'white',
+            fontSize: '15px',
+            fontWeight: 600,
+            border: 'none',
+          }}
+        >
+          {isSavingOutcome ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save Outcome'}
+        </button>
+        <button
+          onClick={() => setShowOutcomeSheet(false)}
+          disabled={isSavingOutcome}
+          style={{ background: 'none', border: 'none', fontSize: '14px', color: '#888888', padding: '4px' }}
+        >
+          Never mind
+        </button>
+      </div>
+    </div>
+  )
+
+  const renderScopeDialog = () => {
+    if (!scopeDialogAction) return null
+
+    const actionLabel = {
+      move: 'move',
+      cleaner: 'cleaner change',
+      'client-rate': 'client price change',
+      'cleaner-pay': 'cleaner pay change',
+      addon: 'add-on',
+    }[scopeDialogAction]
+
+    const isBusy = isSavingInlineDate || isSavingSubcontractor || isSavingRates
+
+    return (
+      <Dialog open={!!scopeDialogAction} onOpenChange={(nextOpen) => { if (!nextOpen) setScopeDialogAction(null) }}>
+        <DialogContent
+          hideClose={true}
+          overlayClassName="!z-[110] bg-[rgba(15,23,42,0.24)]"
+          className={[
+            "!inset-auto !left-1/2 !top-1/2 !w-[min(92vw,360px)] !max-w-[360px] !h-auto !-translate-x-1/2 !-translate-y-1/2",
+            "!rounded-[24px] !border !border-[#E5E7EB] !bg-white !p-6 !shadow-2xl !z-[120]",
+            "!overflow-visible",
+          ].join(" ")}
+        >
+          <div className="space-y-2">
+            <p style={{ fontSize: '28px', fontWeight: 600, color: '#111827', lineHeight: 1.1 }}>
+              Apply recurring change
+            </p>
+            <p style={{ fontSize: '14px', color: '#5F6B76', lineHeight: 1.5 }}>
+              Choose the scope for this {actionLabel}.
+            </p>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {[
+              {
+                value: 'single' as const,
+                label: 'Just this clean',
+                description: 'Only this visit changes.',
+              },
+              {
+                value: 'future' as const,
+                label: 'This clean and future cleans',
+                description: 'Update the recurring plan starting here.',
+              },
+              {
+                value: 'all' as const,
+                label: 'ALL cleans',
+                description: 'Update past and future. Invoiced/paid jobs are protected.',
+              },
+            ].map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setScopeChoice(option.value)}
+                className="w-full rounded-[18px] bg-white px-4 py-3 text-left transition-colors hover:bg-[#F9FBFB]"
+                style={{
+                  border: scopeChoice === option.value ? '2px solid #2563EB' : '1px solid #D9E3E1',
+                  boxShadow: scopeChoice === option.value ? '0 0 0 3px rgba(37,99,235,0.08)' : 'none',
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full"
+                    style={{
+                      border: scopeChoice === option.value ? '2px solid #2563EB' : '2px solid #9CA3AF',
+                    }}
+                  >
+                    {scopeChoice === option.value && (
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#2563EB' }} />
+                    )}
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>{option.label}</p>
+                    <p style={{ fontSize: '13px', color: '#5F6B76', marginTop: '2px' }}>{option.description}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              onClick={() => setScopeDialogAction(null)}
+              disabled={isBusy}
+              className="rounded-full px-4 py-2 font-medium disabled:opacity-45"
+              style={{ fontSize: '15px', color: '#2563EB' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmScopeChoice}
+              disabled={isBusy}
+              className="rounded-full px-5 py-2 font-semibold text-white disabled:opacity-45"
+              style={{ backgroundColor: '#2563EB', fontSize: '15px' }}
+            >
+              {isBusy ? 'Saving…' : 'Continue'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  return (
+    <>
+      <ConfirmDialog />
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          hideClose={true}
+          className={[
+            // Shared resets
+            "p-0 gap-0 border-0 shadow-2xl overflow-hidden flex",
+            // Mobile: full-width bottom sheet
+            "!left-0 !right-0 !top-auto !bottom-0 !w-full !max-w-none",
+            "!translate-x-0 !translate-y-0",
+            "!rounded-t-[20px] !rounded-b-none",
+            // Desktop (md+): restore centered dialog
+            "md:!left-1/2 md:!top-1/2 md:!bottom-auto md:!right-auto",
+            "md:!w-[min(92vw,920px)] md:!max-w-[920px] md:!max-h-[90vh]",
+            "md:!-translate-x-1/2 md:!-translate-y-1/2",
+            "md:!rounded-[12px]",
+          ].join(" ")}
+        >
+          {/* ═══════════════════════════════════════════════════════════
+              MOBILE LAYOUT  (hidden on md+)
+          ═══════════════════════════════════════════════════════════ */}
+          <div
+            className="md:hidden flex flex-col w-full relative bg-white rounded-t-[20px]"
+            style={{ maxHeight: '90svh' }}
+          >
+            {/* Close button — inside relative container so absolute positioning is reliable */}
+            <button
+              onClick={() => onOpenChange(false)}
+              aria-label="Close"
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                zIndex: 60,
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: '#F3F4F6',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={16} strokeWidth={2} style={{ color: '#6B7280' }} />
+            </button>
+
+            {/* ── Confirmation sheet overlay ── */}
+              {mobileConfirmAction && (
+                <div
+                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                >
+                  <div
+                    className="bg-white rounded-t-[20px] px-4 pt-6 space-y-3"
+                    style={{ paddingBottom: '34px' }}
+                  >
+                    <div className="text-center space-y-1 mb-4">
+                      <p className="text-lg font-semibold text-[#111111]">
+                        {mobileConfirmAction === 'cancel' ? 'Cancel this job?' : 'Delete this job?'}
+                      </p>
+                      <p className="text-sm text-[#888888]">This cannot be undone.</p>
+                    </div>
+                    <button
+                      onClick={() => setMobileConfirmAction(null)}
+                      className="w-full font-semibold text-base text-[#333333] bg-white border border-[#E0E0E0] rounded-[14px] transition-all active:scale-[0.97]"
+                      style={{ height: '52px' }}
+                    >
+                      Never mind
+                    </button>
+                    <button
+                      onClick={
+                        mobileConfirmAction === 'cancel'
+                          ? handleConfirmCancelMobile
+                          : handleConfirmDeleteMobile
+                      }
+                      disabled={isCancelling || isDeleting}
+                      className="w-full font-semibold text-base text-white rounded-[14px] transition-all active:scale-[0.97] flex items-center justify-center gap-2"
+                      style={{ height: '52px', backgroundColor: '#E53935' }}
+                    >
+                      {(isCancelling || isDeleting) && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {mobileConfirmAction === 'cancel' ? 'Yes, Cancel Job' : 'Yes, Delete Job'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            {/* ── Cleaner selection sheet overlay ── */}
+              {isSelectingCleaner && (
+                <div
+                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                >
+                  <div
+                    className="bg-white rounded-t-[20px] overflow-hidden"
+                    style={{ paddingBottom: '34px' }}
+                  >
+                    <div
+                      className="px-5 py-4 flex items-center justify-between"
+                      style={{ borderBottom: '1px solid #F5F5F5' }}
+                    >
+                      <p className="font-semibold text-[#111111]">Assign Cleaner</p>
+                      <button
+                        onClick={() => setIsSelectingCleaner(false)}
+                        className="w-[44px] h-[44px] flex items-center justify-center rounded-full transition-colors hover:bg-[#F3F3F3]"
+                      >
+                        <X className="h-5 w-5 text-gray-400" />
+                      </button>
+                    </div>
+                    <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+                      <button
+                        onClick={() => handleSaveSubcontractorMobile('unassigned')}
+                        className="w-full px-5 py-4 text-left flex items-center justify-between transition-colors active:bg-[#F8F8F8]"
+                        style={{ borderBottom: '1px solid #F5F5F5' }}
+                      >
+                        <span
+                          className="text-[15px] font-medium"
+                          style={{ color: !job.subcontractor ? '#00A896' : '#111111' }}
+                        >
+                          Unassigned
+                        </span>
+                        {!job.subcontractor && <Check className="h-4 w-4" style={{ color: '#00A896' }} />}
+                      </button>
+                      {subcontractors.map(sub => (
+                        <button
+                          key={sub.id}
+                          onClick={() => handleSaveSubcontractorMobile(sub.id)}
+                          className="w-full px-5 py-4 text-left flex items-center justify-between transition-colors active:bg-[#F8F8F8]"
+                          style={{ borderBottom: '1px solid #F5F5F5' }}
+                        >
+                          <div>
+                            <p
+                              className="text-[15px] font-medium"
+                              style={{ color: job.subcontractor?.id === sub.id ? '#00A896' : '#111111' }}
+                            >
+                              {sub.name}
+                            </p>
+                            {sub.phone && (
+                              <p className="text-[13px] text-[#888888] mt-0.5">{sub.phone}</p>
+                            )}
+                          </div>
+                          {job.subcontractor?.id === sub.id && (
+                            <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#00A896' }} />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            {/* ── Cancellation sheet overlay ── */}
+              {showCancellationSheet && (
+                <div
+                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                >
+                  <div
+                    className="bg-white rounded-t-[20px]"
+                    style={{ paddingBottom: '40px', maxHeight: '88%', overflowY: 'auto' }}
+                  >
+                    {/* Handle */}
+                    <div style={{ width: '36px', height: '4px', backgroundColor: '#E0E0E0', borderRadius: '2px', margin: '12px auto 28px' }} />
+
+                    <div style={{ paddingLeft: '24px', paddingRight: '24px' }}>
+
+                      {/* Reason pills — 2×2 grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
+                        {[
+                          { id: 'no-access',           label: "Couldn't access" },
+                          { id: 'cleaner-unavailable', label: "Cleaner unavailable" },
+                          { id: 'client-cancelled',    label: "Client cancelled" },
+                          { id: 'other',               label: "Other" },
+                        ].map(reason => (
+                          <button
+                            key={reason.id}
+                            onClick={() => setCancelReason(reason.id)}
+                            style={{
+                              height: '46px',
+                              borderRadius: '23px',
+                              border: cancelReason === reason.id
+                                ? '1.5px solid #00A896'
+                                : '1.5px solid #E5E5E5',
+                              backgroundColor: 'white',
+                              fontSize: '14px',
+                              fontWeight: cancelReason === reason.id ? 500 : 400,
+                              color: cancelReason === reason.id ? '#00A896' : '#333333',
+                              cursor: 'pointer',
+                              transition: 'border-color 100ms, color 100ms',
+                            }}
+                          >
+                            {reason.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Fee row */}
+                      <div className="flex items-center justify-between" style={{ marginBottom: chargeFee ? '16px' : '0' }}>
+                        <span style={{ fontSize: '15px', color: '#111111' }}>Charge a fee?</span>
+                        <button
+                          onClick={() => setChargeFee(v => !v)}
+                          style={{
+                            width: '44px', height: '26px', borderRadius: '13px',
+                            backgroundColor: chargeFee ? '#00A896' : '#E0E0E0',
+                            position: 'relative', transition: 'background-color 150ms', flexShrink: 0,
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute', top: '3px',
+                            left: chargeFee ? '21px' : '3px',
+                            width: '20px', height: '20px', borderRadius: '50%',
+                            backgroundColor: 'white', transition: 'left 150ms',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          }} />
+                        </button>
+                      </div>
+
+                      {/* Fee amount input */}
+                        {chargeFee && (
+                          <div
+                            style={{ overflow: 'hidden', marginBottom: '4px' }}
+                          >
+                            <div className="flex items-center justify-center" style={{ padding: '12px 0' }}>
+                              <span style={{ fontSize: '28px', fontWeight: 300, color: '#BBBBBB', lineHeight: 1, marginRight: '2px' }}>$</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={feeAmount}
+                                onChange={(e) => setFeeAmount(e.target.value)}
+                                placeholder="0.00"
+                                autoFocus
+                                className="outline-none bg-transparent"
+                                style={{
+                                  fontSize: '28px', fontWeight: 400, color: '#111111',
+                                  width: '110px', border: 'none',
+                                  borderBottom: '2px solid #EEEEEE',
+                                  textAlign: 'center',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      {/* Buttons */}
+                      <div style={{ marginTop: '28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <button
+                          onClick={handleCancelWithReason}
+                          disabled={!cancelReason || isCancelling}
+                          className="flex items-center justify-center gap-2"
+                          style={{
+                            width: '100%', height: '52px', borderRadius: '14px',
+                            backgroundColor: cancelReason ? '#00A896' : '#E5E5E5',
+                            color: 'white', fontSize: '16px', fontWeight: 600,
+                            border: 'none', cursor: cancelReason ? 'pointer' : 'default',
+                            transition: 'background-color 150ms',
+                          }}
+                        >
+                          {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+                        </button>
+                        <button
+                          onClick={() => setShowCancellationSheet(false)}
+                          style={{ background: 'none', border: 'none', fontSize: '15px', color: '#999999', cursor: 'pointer', padding: '4px' }}
+                        >
+                          Never mind
+                        </button>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+              {showOutcomeSheet && (
+                <div
+                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                >
+                  <div
+                    className="bg-white rounded-t-[20px]"
+                    style={{ paddingBottom: '40px' }}
+                  >
+                    {renderOutcomeSheetBody()}
+                  </div>
+                </div>
+              )}
+            {/* ── Modal header ── */}
+            <div
+              className="relative text-center flex-shrink-0"
+              style={{
+                paddingTop: isQuickFixMode ? '16px' : '20px',
+                paddingBottom: isQuickFixMode ? '12px' : '16px',
+                paddingLeft: '16px',
+                paddingRight: '16px',
+              }}
+            >
+              {/* Status badge */}
+              {!isQuickFixMode && (
+                <div className="flex justify-center" style={{ marginBottom: '12px' }}>
+                  <span
+                    className="text-xs font-semibold tracking-wider uppercase px-4 py-1.5 rounded-full border"
+                    style={{
+                      backgroundColor: mobileStatus.bg,
+                      color: mobileStatus.text,
+                      borderColor: mobileStatus.border,
+                    }}
+                  >
+                    {getMobileStatusLabel(job.status)}
+                  </span>
+                </div>
+              )}
+
+              {/* Client name — IS the title */}
+              <p
+                className="font-bold text-[#111111] leading-tight"
+                style={{ fontSize: isQuickFixMode ? '22px' : '26px' }}
+              >
+                {job.location.client.name}
+              </p>
+
+              {/* Location subtitle */}
+              <p className="text-[#888888] mt-1" style={{ fontSize: isQuickFixMode ? '14px' : '15px' }}>
+                {job.location.name}
+              </p>
+            </div>
+
+            {/* ── Scrollable body ── */}
+            <div
+              className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-4 pb-6" : "flex-1 overflow-y-auto px-4 pb-6"}
+              style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+            >
+
+              {!isQuickFixMode ? renderQuickFixSection(true) : null}
+              {isQuickFixMode ? renderQuickFixPanel(true) : null}
+
+              {!isQuickFixMode && (
+                <>
+                  {job.invoiced && (
+                    <div className="rounded-[12px] p-3 flex items-start gap-2" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                      <FileText className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-blue-900">This clean is already invoiced. Big changes here should be rare.</p>
+                    </div>
+                  )}
+                  {job.subcontractorPaid && !job.invoiced && (
+                    <div className="rounded-[12px] p-3 flex items-start gap-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                      <DollarSign className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-green-900">The cleaner is already paid, so money changes should be handled carefully.</p>
+                    </div>
+                  )}
+
+                  {renderSummarySection(true)}
+
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setShowDetails((current) => !current)}
+                      className="w-full rounded-[14px] bg-white px-4 py-3 text-left"
+                      style={{ border: '1px solid #E7E7E1', boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)' }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p style={{ fontSize: '15px', fontWeight: 700, color: '#111827' }}>
+                            {showDetails ? 'Hide details' : 'View details'}
+                          </p>
+                          <p style={{ fontSize: '13px', color: '#6B7280', marginTop: '2px' }}>
+                            Notes, add-ons, and extra job information
+                          </p>
+                        </div>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${showDetails ? 'rotate-180' : ''}`} style={{ color: '#6B7280' }} />
+                      </div>
+                    </button>
+                    {showDetails && renderDetailsSection(true)}
+
+                    <button
+                      onClick={() => setShowMoreActions((current) => !current)}
+                      className="w-full rounded-[14px] bg-white px-4 py-3 text-left"
+                      style={{ border: '1px solid #E7E7E1', boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)' }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p style={{ fontSize: '15px', fontWeight: 700, color: '#111827' }}>
+                            {showMoreActions ? 'Hide more actions' : 'More actions'}
+                          </p>
+                          <p style={{ fontSize: '13px', color: '#6B7280', marginTop: '2px' }}>
+                            Completed, invoiced, cancel, and delete actions
+                          </p>
+                        </div>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${showMoreActions ? 'rotate-180' : ''}`} style={{ color: '#6B7280' }} />
+                      </div>
+                    </button>
+                    {showMoreActions && renderMoreActionsSection(true)}
+                  </div>
+                </>
+              )}
+
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════
+              DESKTOP LAYOUT  (hidden below md)
+          ═══════════════════════════════════════════════════════════ */}
+          <div
+            className="hidden md:flex md:flex-col md:w-full bg-white overflow-y-auto relative"
+            style={{ maxHeight: '90vh' }}
+          >
+            {/* Close button — inside relative container so absolute positioning is reliable */}
+            <button
+              onClick={() => onOpenChange(false)}
+              aria-label="Close"
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                zIndex: 60,
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: '#F3F4F6',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={16} strokeWidth={2} style={{ color: '#6B7280' }} />
+            </button>
+            {/* ── Desktop: Cancellation sheet overlay ── */}
+              {showCancellationSheet && (
+                <div
+                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-[12px]"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                >
+                  <div
+                    className="bg-white rounded-[12px]"
+                    style={{ maxHeight: '95%', overflowY: 'auto', paddingBottom: '28px' }}
+                  >
+                    <div style={{ padding: '28px 24px 0' }}>
+
+                      {/* Reason pills — 2×2 grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
+                        {[
+                          { id: 'no-access',           label: "Couldn't access" },
+                          { id: 'cleaner-unavailable', label: "Cleaner unavailable" },
+                          { id: 'client-cancelled',    label: "Client cancelled" },
+                          { id: 'other',               label: "Other" },
+                        ].map(reason => (
+                          <button
+                            key={reason.id}
+                            onClick={() => setCancelReason(reason.id)}
+                            style={{
+                              height: '46px',
+                              borderRadius: '23px',
+                              border: cancelReason === reason.id
+                                ? '1.5px solid #00A896'
+                                : '1.5px solid #E5E5E5',
+                              backgroundColor: 'white',
+                              fontSize: '14px',
+                              fontWeight: cancelReason === reason.id ? 500 : 400,
+                              color: cancelReason === reason.id ? '#00A896' : '#333333',
+                              cursor: 'pointer',
+                              transition: 'border-color 100ms, color 100ms',
+                            }}
+                          >
+                            {reason.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Fee row */}
+                      <div className="flex items-center justify-between" style={{ marginBottom: chargeFee ? '8px' : '0' }}>
+                        <span style={{ fontSize: '15px', color: '#111111' }}>Charge a fee?</span>
+                        <button
+                          onClick={() => setChargeFee(v => !v)}
+                          style={{
+                            width: '44px', height: '26px', borderRadius: '13px',
+                            backgroundColor: chargeFee ? '#00A896' : '#E0E0E0',
+                            position: 'relative', transition: 'background-color 150ms', flexShrink: 0,
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute', top: '3px',
+                            left: chargeFee ? '21px' : '3px',
+                            width: '20px', height: '20px', borderRadius: '50%',
+                            backgroundColor: 'white', transition: 'left 150ms',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          }} />
+                        </button>
+                      </div>
+                        {chargeFee && (
+                          <div
+                            style={{ overflow: 'hidden' }}
+                          >
+                            <div className="flex items-center justify-center" style={{ padding: '12px 0' }}>
+                              <span style={{ fontSize: '28px', fontWeight: 300, color: '#BBBBBB', lineHeight: 1, marginRight: '2px' }}>$</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)}
+                                placeholder="0.00" autoFocus
+                                className="outline-none bg-transparent"
+                                style={{
+                                  fontSize: '28px', fontWeight: 400, color: '#111111',
+                                  width: '110px', border: 'none',
+                                  borderBottom: '2px solid #EEEEEE', textAlign: 'center',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      {/* Buttons */}
+                      <div style={{ marginTop: '28px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <button
+                          onClick={handleCancelWithReason}
+                          disabled={!cancelReason || isCancelling}
+                          className="flex items-center justify-center gap-2"
+                          style={{
+                            width: '100%', height: '48px', borderRadius: '10px',
+                            backgroundColor: cancelReason ? '#00A896' : '#E5E5E5',
+                            color: 'white', fontSize: '15px', fontWeight: 600,
+                            border: 'none', cursor: cancelReason ? 'pointer' : 'default',
+                            transition: 'background-color 150ms',
+                          }}
+                        >
+                          {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+                        </button>
+                        <button
+                          onClick={() => setShowCancellationSheet(false)}
+                          style={{ background: 'none', border: 'none', fontSize: '14px', color: '#999999', cursor: 'pointer', padding: '4px' }}
+                        >
+                          Never mind
+                        </button>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+              {showOutcomeSheet && (
+                <div
+                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-[12px]"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                >
+                  <div
+                    className="bg-white rounded-[12px]"
+                    style={{ maxHeight: '95%', overflowY: 'auto', paddingBottom: '20px' }}
+                  >
+                    {renderOutcomeSheetBody()}
+                  </div>
+                </div>
+              )}
+            {/* ── Header ── */}
+            <div
+              className="text-center flex-shrink-0"
+              style={{
+                borderBottom: '1px solid #F5F5F5',
+                paddingTop: isQuickFixMode ? '20px' : '32px',
+                paddingBottom: isQuickFixMode ? '16px' : '24px',
+                paddingLeft: '24px',
+                paddingRight: '24px',
+              }}
+            >
+              {!isQuickFixMode && (
+                <div className="flex justify-center" style={{ marginBottom: '12px' }}>
+                  <span
+                    className="text-xs font-semibold tracking-wider uppercase px-3 py-1 rounded-full border"
+                    style={{
+                      backgroundColor: mobileStatus.bg,
+                      color: mobileStatus.text,
+                      borderColor: mobileStatus.border,
+                    }}
+                  >
+                    {getMobileStatusLabel(job.status)}
+                  </span>
+                </div>
+              )}
+              <p className="font-bold text-[#111111] leading-tight" style={{ fontSize: isQuickFixMode ? '20px' : '24px' }}>
+                {job.location.client.name}
+              </p>
+              <p className="text-[#888888] mt-1" style={{ fontSize: isQuickFixMode ? '13px' : '14px' }}>
+                {job.location.name}
+              </p>
+            </div>
+
+            {/* ── Scrollable body ── */}
+            <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-6 py-5 space-y-4" : "flex-1 overflow-y-auto px-6 py-5"}>
+
+              {/* Invoiced / Paid warnings */}
+              {job.invoiced && (
+                <div className="rounded-[10px] p-3 flex items-start gap-2" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                  <FileText className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-900">This job has been invoiced and cannot be rescheduled.</p>
+                </div>
+              )}
+              {job.subcontractorPaid && !job.invoiced && (
+                <div className="rounded-[10px] p-3 flex items-start gap-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                  <DollarSign className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-green-900">Subcontractor has been paid — rates and schedule are locked.</p>
+                </div>
+              )}
+
+              {isQuickFixMode ? renderQuickFixPanel(false) : null}
+
+              {!isQuickFixMode && (
+                <div className="space-y-4">
+                  <div className={`grid items-start gap-4 ${canUseQuickFixes ? 'xl:grid-cols-[320px_minmax(0,1fr)]' : 'grid-cols-1'}`}>
+                    <div>
+                      {renderDesktopOverviewSection()}
+                    </div>
+
+                    {canUseQuickFixes ? (
+                      <div
+                        className="flex h-[540px] flex-col rounded-[18px] bg-[#FCFCFB] p-4"
+                        style={{
+                          border: '1px solid #E7E7E1',
+                          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+                        }}
+                      >
+                        <div className="flex items-center justify-start">
+                          {renderDesktopSectionTabs()}
+                        </div>
+
+                        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+                          {desktopSection === 'actions' && renderQuickFixSection(false, true)}
+                          {desktopSection === 'details' && renderDetailsSection(false, true)}
+                          {desktopSection === 'more' && renderMoreActionsSection(false, true)}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex h-[540px] flex-col rounded-[18px] bg-[#FCFCFB] p-4"
+                        style={{
+                          border: '1px solid #E7E7E1',
+                          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+                        }}
+                      >
+                        <div className="flex items-center justify-start">
+                          {renderDesktopSectionTabs()}
+                        </div>
+                        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+                          {desktopSection === 'details' ? renderDetailsSection(false, true) : renderMoreActionsSection(false, true)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+          </div>
+        </DialogContent>
+      </Dialog>
+      {open ? renderScopeDialog() : null}
+    </>
+  )
+}

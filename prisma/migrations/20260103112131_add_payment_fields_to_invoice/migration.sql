@@ -1,0 +1,2 @@
+-- This migration was empty (already applied)
+-- AlterTable - payment fields to invoice (placeholder)

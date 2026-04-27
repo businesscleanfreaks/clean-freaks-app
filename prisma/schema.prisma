@@ -1,0 +1,639 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id                       String     @id @default(uuid())
+  name                     String
+  phone                    String?
+  communicationEmail       String?
+  communicationContactName String?    // Optional name of the person for communication emails
+  communicationPhone       String?    // Phone number for the communication contact
+  invoicingEmail           String?
+  invoicingContactName     String?    // Optional name of the person for invoicing emails
+  invoicingPhone           String?    // Phone number for the invoicing contact
+  notes                    String?
+  billingType         String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN
+  cleanerPayType      String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid)
+  invoiceFrequency    String     @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
+  preferredPaymentMethod String?  // ZELLE, DIRECT_DEPOSIT, CHECK, OTHER — client's preferred way to pay
+  startDate           DateTime?  // When the client relationship started
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  // Table view contract fields (Grace's spreadsheet data)
+  clientPrice         Float?
+  revenue             Float?
+  cleanerPayout       Float?
+  frequency           String?
+  recurring           Float?
+  rowColor            String?
+  cleanerAssignedId   String?
+  addon1Name          String?
+  addon1ClientPrice   Float?
+  addon1Frequency     String?
+  addon1CleanerPayout Float?
+  addon2Name          String?
+  addon2ClientPrice   Float?
+  addon2Frequency     String?
+  addon2CleanerPayout Float?
+
+  cleanerAssigned     Subcontractor? @relation(fields: [cleanerAssignedId], references: [id], onDelete: SetNull)
+  locations           Location[]
+  invoices            Invoice[]
+  messages            Message[]
+  inboxContacts       InboxContact[]
+  contacts            ClientContact[]
+  emailMessages       EmailMessage[]
+  convertedProspects  Prospect[]
+
+  @@index([isActive])
+  @@index([billingType])
+  @@map("clients")
+}
+
+model Location {
+  id         String     @id @default(uuid())
+  clientId   String
+  address    String
+  name       String
+  accessInfo String?    // Gate codes, key locations, entry instructions, etc.
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime   @default(now())
+
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  schedules Schedule[]
+  jobs      Job[]
+
+  @@index([clientId])
+  @@map("locations")
+}
+
+model Subcontractor {
+  id           String                      @id @default(uuid())
+  name         String
+  phone        String?
+  email        String?
+  notes        String?
+  teamMembers  String?                     // Comma-separated team member names (e.g. "Amy, Jessica, Maria")
+  createdAt    DateTime                    @default(now())
+
+  // Payment cadence rules
+  paymentCadence      String   @default("IMMEDIATE")
+  // IMMEDIATE — payable as soon as job is past (default / current behavior)
+  // AFTER_CLIENT_PAYS — payable only after the job's linked invoice is PAID
+  // END_OF_MONTH — payable after the calendar month of the job ends
+  // SEMI_MONTHLY — 1st-15th payable after 20th, 16th-end payable after 5th of next month
+  // ON_CLEANER_INVOICE — only payable when manually released
+  paymentCadenceNotes String?  // Free-text notes about this cleaner's payment rules
+  excludeClientIds    String?  // JSON array of client IDs whose jobs are excluded from payouts
+
+  schedules        Schedule[]
+  jobs             Job[]
+  payments         SubcontractorPayment[]
+  assignedClients  Client[]
+
+  @@map("subcontractors")
+}
+
+model Job {
+  id                   String      @id @default(uuid())
+  locationId           String
+  subcontractorId      String?
+  scheduleId           String?
+  date                 DateTime
+  startTime            String?
+  startWindowBegin     String?
+  startWindowEnd       String?
+  clientRate           Float
+  subcontractorRate    Float
+  status               String      @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  invoiced             Boolean     @default(false)
+  subcontractorPaid    Boolean     @default(false)
+  notes                String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  location             Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  subcontractor        Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
+  schedule             Schedule?   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  invoiceLineItems     InvoiceLineItem[]
+  paymentLineItems     SubcontractorPaymentLineItem[]
+  addOnServices        AddOnService[]
+
+  @@unique([scheduleId, date], name: "unique_schedule_date")
+  @@index([date])
+  @@index([status])
+  @@index([subcontractorId])
+  @@index([locationId])
+  @@index([status, subcontractorId])
+  @@index([status, invoiced])
+  @@index([date, status])
+  @@map("jobs")
+}
+
+model Schedule {
+  id                      String       @id @default(uuid())
+  locationId              String
+  subcontractorId         String?
+  frequency               String       // WEEKLY, BI_WEEKLY, MONTHLY, 2X_MONTHLY, CUSTOM
+  daysOfWeek              String?      // JSON array of integers [0-6]
+  customDates             String?      // JSON array of dates
+  monthlyPattern          String?      // JSON: {"type": "FIXED_DATES"|"NTH_WEEKDAY", "dates": [1,15]} or {"weekday": 6, "weeks": [2,4]}
+  timeType                String       // SPECIFIC or WINDOW
+  startTime               String?
+  startWindowBegin        String?
+  startWindowEnd          String?
+  defaultClientRate       Float
+  defaultSubcontractorRate Float
+  clientPayType           String       @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how client is billed for this schedule)
+  subcontractorPayType     String       @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid for this schedule)
+  startDate               DateTime
+  endDate                 DateTime?
+  excludedDates           String?      // JSON array of date strings to skip during regeneration
+  isActive                Boolean      @default(true)
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+
+  location                Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  subcontractor           Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
+  jobs                    Job[]
+  recurringAddOnServices  AddOnService[]
+
+  paymentCadenceOverride  String?      // Per-schedule override of subcontractor's default cadence (same enum values)
+
+  @@index([locationId])
+  @@index([isActive])
+  @@index([locationId, isActive])
+  @@map("schedules")
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  clientId      String
+  dateCreated   DateTime      @default(now())
+  dateDue       DateTime?
+  datePaid      DateTime?     // When invoice was paid
+  totalAmount   Float
+  status        String        @default("DRAFT") // DRAFT, SENT, PAID
+  pdfPath       String?
+  pdfUrl        String?       // Public URL to PDF
+  notes         String?
+  dateSent      DateTime?     // When email was sent
+  sentTo        String?       // Email address sent to
+  emailSubject  String?       // Subject line used
+  emailBody     String?       // Message body used
+  paymentMethod String?       // "SQUARE", "ZELLE", "CHECK", "BANK_TRANSFER"
+  paymentTransactionId String? // Square transaction ID or Zelle reference
+  paymentReceivedAt DateTime? // When payment was actually received
+  paymentNotes  String?       // Additional payment notes
+  showPaymentOptions Boolean  @default(true) // Whether to show payment options on public invoice
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime?
+
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  lineItems     InvoiceLineItem[]
+
+  @@index([dateCreated])
+  @@index([status])
+  @@index([clientId])
+  @@index([dateCreated, status])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id            String        @id @default(uuid())
+  invoiceId     String
+  jobId         String?
+  addOnServiceId String?
+  description   String
+  amount        Float
+  serviceDate   DateTime?
+
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  job           Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  addOnService  AddOnService? @relation(fields: [addOnServiceId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([jobId])
+  @@map("invoice_line_items")
+}
+
+model SubcontractorPayment {
+  id              String    @id @default(uuid())
+  subcontractorId String
+  datePaid        DateTime
+  totalAmount     Float
+  paymentMethod   String    @default("OTHER") // "ZELLE" | "CASH" | "CHECK" | "BANK_TRANSFER" | "OTHER"
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+
+  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  lineItems       SubcontractorPaymentLineItem[]
+
+  @@index([datePaid])
+  @@index([subcontractorId])
+  @@index([datePaid, subcontractorId])
+  @@map("subcontractor_payments")
+}
+
+model SubcontractorPaymentLineItem {
+  id        String               @id @default(uuid())
+  paymentId String
+  jobId     String
+  amount    Float
+
+  payment   SubcontractorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  job       Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentId, jobId])
+  @@index([jobId])
+  @@map("subcontractor_payment_line_items")
+}
+
+model AddOnService {
+  id                String    @id @default(uuid())
+  jobId             String?   // Optional - if linked to a specific job
+  scheduleId        String?   // Optional - if recurring, link to schedule
+  description       String
+  clientRate        Float
+  subcontractorRate Float
+  frequency         String?   // For recurring: WEEKLY, BI_WEEKLY, MONTHLY, EVERY_6_WEEKS, etc.
+  isRecurring       Boolean   @default(false)
+  outsourcedVendor  String?   // DEPRECATED — kept temporarily for backfill migration
+  vendorId          String?   // FK to Vendor model (replaces outsourcedVendor)
+  vendorPaid        Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  job               Job?      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  schedule          Schedule? @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  vendor            Vendor?   @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  invoiceLineItems  InvoiceLineItem[]
+  vendorPaymentLineItems VendorPaymentLineItem[]
+
+  @@index([jobId])
+  @@index([scheduleId])
+  @@index([vendorId])
+  @@map("add_on_services")
+}
+
+model Vendor {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  phone     String?
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  addOnServices  AddOnService[]
+  payments       VendorPayment[]
+
+  @@map("vendors")
+}
+
+model VendorPayment {
+  id          String   @id @default(uuid())
+  vendorId    String
+  datePaid    DateTime
+  totalAmount Float
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  lineItems VendorPaymentLineItem[]
+
+  @@index([vendorId])
+  @@index([datePaid])
+  @@map("vendor_payments")
+}
+
+model VendorPaymentLineItem {
+  id             String   @id @default(uuid())
+  paymentId      String
+  addOnServiceId String
+  amount         Float
+
+  payment      VendorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  addOnService AddOnService  @relation(fields: [addOnServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentId, addOnServiceId])
+  @@index([addOnServiceId])
+  @@map("vendor_payment_line_items")
+}
+
+model Expense {
+  id            String        @id @default(uuid())
+  date          DateTime
+  amount        Float
+  description   String
+  category      String?       // ExpenseCategory enum values (nullable for uncategorized)
+  type          String?       // FIXED, VARIABLE, or null (for uncategorized expenses)
+  vendor        String?
+  receiptUrl    String?       // Optional receipt image
+  notes         String?
+  isRecurring   Boolean       @default(false)
+
+  // QuickBooks sync
+  qbSynced      Boolean       @default(false)
+  qbExpenseId   String?       // QuickBooks expense ID
+  qbSyncedAt    DateTime?
+  qbCategory    String?       // QuickBooks category/account name
+  qbAccountType String?       // QuickBooks account type
+  isCleanerPay  Boolean       @default(false) // Flag for cleaner pay expenses
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("expenses")
+}
+
+model QuickBooksConfig {
+  id              String    @id @default(uuid())
+  realmId         String?   // QuickBooks company ID
+  accessToken     String?   // Encrypted
+  refreshToken    String?   // Encrypted
+  tokenExpiresAt  DateTime?
+  isConnected     Boolean   @default(false)
+  lastSyncedAt    DateTime?
+  autoSync        Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("quickbooks_config")
+}
+
+model InvoiceLogoSettings {
+  id            String   @id @default(uuid())
+  logoPath      String?  // Path to logo file (e.g., "/images/invoice-logo.png")
+  width         Float    @default(100) // Width in points (PDF units)
+  height        Float?   // Height in points (null = maintain aspect ratio)
+  positionX     String   @default("left") // "left" | "center" | "right" | "custom"
+  positionY     String   @default("top") // "top" | "middle" | "bottom" | "custom"
+  customX       Float?   // Custom X position in points
+  customY       Float?   // Custom Y position in points
+  maxWidth      Float    @default(200) // Maximum width constraint
+  maxHeight     Float    @default(100) // Maximum height constraint
+  opacity       Float    @default(1.0) // 0.0 to 1.0
+  enabled       Boolean  @default(true) // Whether logo is enabled
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("invoice_logo_settings")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Message {
+  id                String    @id @default(uuid())
+  externalId        String    @unique
+  direction         String    // "incoming" | "outgoing"
+  body              String
+  fromNumber        String
+  toNumber          String
+  status            String    @default("delivered")
+  quoPhoneId        String?
+  clientId          String?
+  isRead            Boolean   @default(false)
+  externalCreatedAt DateTime
+  createdAt         DateTime  @default(now())
+
+  scheduledAt       DateTime? // non-null when status = "scheduled"
+
+  client            Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([fromNumber])
+  @@index([toNumber])
+  @@index([externalCreatedAt])
+  @@index([isRead])
+  @@index([status, scheduledAt])
+  @@map("messages")
+}
+
+model QuoConfig {
+  id              String    @id @default("singleton")
+  apiKey          String?
+  phoneNumbers    String?
+  lastSyncAt      DateTime?
+  webhookId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("quo_config")
+}
+
+// Lightweight contact record for the inbox — NOT necessarily a full client
+model InboxContact {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  name      String
+  clientId  String?  // set when "linked to client" or "add as new client"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@map("inbox_contacts")
+}
+
+model MessageTemplate {
+  id        String   @id @default(uuid())
+  body      String
+  category  String?  // "Scheduling" | "Invoicing" | "Day Of" | "Payment" | "General"
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("message_templates")
+}
+
+// Multi-contact support per client
+model ClientContact {
+  id        String   @id @default(uuid())
+  clientId  String
+  name      String
+  email     String?
+  phone     String?
+  role      String   @default("GENERAL") // COMMUNICATION | INVOICING | GENERAL
+  isPrimary Boolean  @default(false)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([email])
+  @@map("client_contacts")
+}
+
+// Connected Gmail accounts
+model EmailAccount {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  displayLabel String?
+  avatarColor  String   @default("#00C9A7")
+  accessToken  String
+  refreshToken String?
+  historyId    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  messages     EmailMessage[]
+
+  @@map("email_accounts")
+}
+
+// Emails synced from connected Gmail accounts
+model EmailMessage {
+  id             String   @id @default(uuid())
+  externalId     String   @unique
+  threadId       String?
+  emailAccountId String
+  clientId       String?
+  fromAddress    String
+  toAddress      String
+  subject        String?
+  bodyHtml       String?
+  bodyText       String?
+  snippet        String?
+  direction      String   // "incoming" | "outgoing"
+  isRead         Boolean  @default(false)
+  isDraft        Boolean  @default(false)
+  draftId        String?  @unique
+  receivedAt     DateTime
+  createdAt      DateTime @default(now())
+
+  emailAccount   EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  client         Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([threadId])
+  @@index([receivedAt])
+  @@index([emailAccountId])
+  @@map("email_messages")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@map("push_subscriptions")
+}
+
+// Tracks conversations the user has hidden/deleted from the inbox.
+// The conversation reappears if a new message arrives after hiddenAt.
+model HiddenConversation {
+  id        String   @id @default(uuid())
+  key       String   @unique // clientId, contactPhone, or "email:address"
+  hiddenAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@map("hidden_conversations")
+}
+
+// Business settings (singleton — one row, upserted on first access)
+model BusinessSettings {
+  id                   String   @id @default("singleton")
+  businessName         String   @default("The Clean Freaks")
+  email                String?
+  phone                String?
+  address              String?
+  defaultPaymentTerms  String   @default("NET_30")
+  autoGenerateInvoices Boolean   @default(true)
+  billingStartDate     DateTime?
+  updatedAt            DateTime  @updatedAt
+
+  @@map("business_settings")
+}
+
+// Singleton config for the AI messaging assistant
+model AIConfig {
+  id             String   @id @default("singleton")
+  tone           String?  // freeform tone description
+  rules          String?  // JSON array of rule strings
+  examples       String?  // JSON array of example SMS strings (max 20)
+  apiKey         String?  // Anthropic API key (stored in DB as fallback when env var not set)
+  emailSignature String?  // HTML content of email signature
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("ai_config")
+}
+
+// Prospect pipeline — potential clients Grace is actively pursuing
+model Prospect {
+  id              String    @id @default(uuid())
+  businessName    String
+  contactName     String?
+  phone           String?
+  email           String?
+  notes           String?
+  status          String    @default("ACTIVE") // ACTIVE, WON, LOST
+  stage           String    @default("NEW") // NEW, WALKTHROUGH_SCHEDULED, WALKTHROUGH_DONE, PROPOSAL_SENT, FOLLOW_UP, NEGOTIATION, WON, LOST
+  nextActionType  String?
+  nextActionDueAt DateTime? @map("followUpDate")
+  nextActionNote  String?
+  lastTouchedAt   DateTime?
+  proposalSentAt  DateTime?
+  walkthroughAt   DateTime?
+  convertedClientId String?
+  source          String?
+  priority        String?
+  lostReason      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  convertedClient Client?   @relation(fields: [convertedClientId], references: [id], onDelete: SetNull)
+  activities      ProspectActivity[]
+
+  @@index([status])
+  @@index([stage])
+  @@index([nextActionDueAt])
+  @@index([convertedClientId])
+  @@map("prospects")
+}
+
+// Activity log for prospect touches (calls, emails, texts, quotes, walkthroughs)
+model ProspectActivity {
+  id         String   @id @default(uuid())
+  prospectId String
+  eventType  String   @default("FOLLOW_UP_ATTEMPT") @map("type")
+  channels   String?
+  result     String?
+  note       String?
+  happenedAt DateTime @default(now()) @map("createdAt")
+
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([prospectId])
+  @@map("prospect_activities")
+}

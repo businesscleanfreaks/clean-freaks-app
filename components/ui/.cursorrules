@@ -1,0 +1,186 @@
+# Clean Freaks Management Suite — Cursor Rules
+# These rules apply to every prompt. Never violate them.
+
+## TECH STACK
+- Next.js 14 App Router, React 18, TypeScript
+- Tailwind CSS + shadcn/ui (Radix UI primitives)
+- Prisma ORM, SQLite dev / PostgreSQL prod
+- SWR for all data fetching — use mutate() for cache invalidation
+- Framer Motion for animations
+- No Zustand, no TanStack Query — they are installed but not used
+
+## COLOR SYSTEM — never deviate
+Primary teal: #00A896
+Primary teal hover: #008F7E
+Primary teal light (backgrounds): rgba(0,168,150,0.08)
+Destructive red: #E53935
+Destructive red light: rgba(229,57,53,0.08)
+Success green: #22C55E (completed status only)
+Text primary: #111111
+Text secondary: #5F6368
+Text muted: #888888
+Text placeholder: #BBBBBB
+Border default: #EEEEEE
+Border input: #E0E0E0
+Background page: #F9F9F9
+Background card: #FFFFFF
+Background subtle: #F5F5F5
+
+FORBIDDEN COLORS — never use these as UI colors:
+- Blue (any shade) — reserved for external links only
+- Purple (any shade)
+- Orange (any shade)
+- Amber/yellow (any shade)
+- Any color not in the approved list above
+- Exception: cleaner color coding uses assigned colors per cleaner
+
+## TYPOGRAPHY
+Page titles: 28px, weight 700, #111111
+Section headings: 18px, weight 600, #111111
+Card titles: 16px, weight 600, #111111
+Body text: 15px, weight 400, #111111
+Secondary text: 13px, weight 400, #888888
+Labels (uppercase): 11px, weight 500, uppercase, letter-spacing 0.5px, #888888
+Muted/hint text: 12px, #BBBBBB
+
+## COMPONENT RULES
+
+### Buttons
+Primary: teal fill #00A896, white text, 8px border-radius, 44px height, 16px horizontal padding
+Secondary: white background, 1px solid #E0E0E0, #111111 text, same radius/height
+Destructive: no background, #E53935 red text only — never a red filled button except "Pay" on alerts
+Disabled: #BBBBBB background, not-allowed cursor
+Icon buttons: 36×36px minimum tap target
+
+### Cards
+White background
+1px solid #EEEEEE border
+12px border-radius
+16px padding
+No box-shadow — border only
+Hover state (if clickable): #F9F9F9 background, 100ms transition
+
+### Inputs
+44px height
+1px solid #E0E0E0 border
+8px border-radius
+Focus: 1px solid #00A896, box-shadow 0 0 0 3px rgba(0,168,150,0.12)
+Placeholder: #BBBBBB
+Error state: 1px solid #E53935, error message below in #E53935 12px
+Never use blue focus rings
+
+### Modals
+White background header — never teal header backgrounds
+1px solid #EEEEEE bottom border on header
+X close button: top-right, 36×36px, #5F6368
+Footer: white background, 1px solid #EEEEEE top border, 16px padding
+Cancel: plain text, #5F6368, left-aligned
+Primary action: teal fill button, right-aligned
+Destructive actions always require a confirmation dialog before executing
+Modal max-width: 560px desktop, full-screen mobile
+
+### Progress indicators (stepped wizards)
+Active step: teal filled circle, white number, teal label below
+Completed step: teal filled circle, white checkmark
+Inactive step: #F5F5F5 circle, #BBBBBB number and label
+Connecting line: 2px, teal for completed, #EEEEEE for incomplete
+
+### Status badges
+Active: rgba(0,168,150,0.1) background, #00A896 text
+Inactive: #F5F5F5 background, #888888 text
+Overdue: rgba(229,57,53,0.1) background, #E53935 text
+Never Paid: #F5F5F5 background, #888888 text
+Completed: rgba(34,197,94,0.1) background, #22C55E text
+Cancelled: #F5F5F5 background, #888888 text
+
+### Tables
+Header row: #F9F9F9 background, 11px uppercase labels, #888888, weight 500
+Row hover: #F9F9F9 background
+Row border: 1px solid #EEEEEE bottom only
+Cell text: 14px, #111111
+Numeric columns: right-aligned
+Profit/positive numbers: #00A896 teal
+Cost/negative numbers: #E53935 red
+Alternating rows: optional, use #F9F9F9 / white
+
+### Left border accents
+ONLY use teal left border (4px solid #00A896) for urgent alerts and attention items
+NEVER use colored left borders for neutral information, confirmations, or stats
+"No Overdue Invoices" and similar positive states: no colored border
+
+### Alerts and banners
+Urgent/attention: white card, 4px solid #E53935 left border, red icon
+Positive/success: white card, green checkmark icon, no colored border
+Info: white card, no colored border
+
+## PAGE LAYOUT RULES
+
+### Desktop sidebar
+Width: 220px, dark navy background
+No "MANAGEMENT SUITE" subtitle
+No "SIGNED IN AS" label
+Sign Out: muted, rgba(255,255,255,0.45), pushed to bottom
+Logo: directly on dark background, no white circle container
+Nav order: Dashboard, Calendar, Clients, Invoices, Cleaners, Expenses, Settings
+
+### Desktop content area
+Full width to the right of sidebar — no max-width containers creating gray margins
+Consistent 24px left and right padding
+Page title + subtitle at top of every page
+No centered containers with gray side margins
+
+### Calendar — desktop
+Two views only: Timeline (default) and Week
+No Day view, no Month view
+Current time indicator: teal #00A896, today's column only, not full width
+View switcher: active teal fill, inactive white outlined
+
+### Calendar — mobile
+Two views only: 3 Day (default) and Week
+No Day view, no Month view
+Single header bar — no duplicate headers
+No non-functional buttons
+
+## MOBILE RULES
+Minimum tap target: 44×44px
+FAB position: fixed, bottom 90px, right 20px, 56px diameter, teal
+Table views: desktop only — never show data tables on mobile
+Card views: always use on mobile
+Entire cards tappable — no "View Details" buttons inside cards
+No "TBD" text anywhere — show nothing if value is empty
+Bottom nav bar always visible, never overlapped by content
+
+## DATA DISPLAY RULES
+Empty states: show a clean message, never show "0/0" or "TBD"
+Currency: always formatted with $ and two decimal places
+Dates: human readable — "Mon, Feb 18" not "02/18/2026"
+Percentages: one decimal place maximum
+Long text: ellipsis truncation, never clip mid-character
+Cleaner names: always show full name, never truncate
+
+## INTERACTION PATTERNS
+Destructive actions (delete, cancel, remove): always require confirmation sheet
+Inline editing: tappable rows with chevron indicator
+New content creation: bottom sheet on mobile, modal on desktop
+Loading states: skeleton screens, never blank white
+Error states: inline error message, never silent failure
+Success states: toast notification, auto-dismiss after 3 seconds
+
+## SECURITY RULES (DO NOT VIOLATE)
+All /api/debug/* routes: require authentication + NODE_ENV check
+All /api/fix-* routes: require authentication + NODE_ENV check
+Square webhook: verify HMAC signature before processing
+Never expose database IDs in UI
+Never log sensitive data (passwords, tokens, payment info)
+
+## WHAT NOT TO DO
+Never add Zustand or TanStack Query — use SWR
+Never add new color variables outside the approved palette
+Never use heavy teal backgrounds on modal headers
+Never show "TBD" — show empty or nothing
+Never use blue, purple, orange, or amber as UI colors
+Never create max-width containers that leave gray side margins
+Never put table views on mobile
+Never show dead/non-functional buttons
+Never skip confirmation dialogs for destructive actions
+Never add new npm packages without checking if existing tools can solve the problem first
