@@ -702,12 +702,12 @@ export function AddClientWizard({
     <div
       style={{
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
-        zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+        zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '5vh', paddingBottom: '24px', paddingLeft: '24px', paddingRight: '24px',
       }}
     >
       <div
         style={{
-          width: '560px', height: '640px', borderRadius: '12px',
+          width: '560px', height: 'min(640px, calc(100vh - 48px))', borderRadius: '12px',
           backgroundColor: 'white', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}

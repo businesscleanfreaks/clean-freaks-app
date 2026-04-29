@@ -64,7 +64,7 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
       <ConfirmDialog />
       <ClientDetailModals state={state} />
 
-      <div style={{ minHeight: '100vh', background: '#F9FAFB' }}>
+      <div style={{ minHeight: '100vh', background: '#F9FAFB', overscrollBehavior: 'none' }}>
         <ClientDetailHeader state={state} />
 
         {/* Main Body */}

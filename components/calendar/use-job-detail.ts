@@ -637,6 +637,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setLocalTime(nextTime)
       setActiveQuickFixPanel(null)
       showSuccess('Job moved')
+      onOpenChange(false)
       refreshCalendarData({
         jobId: job.id,
         updates: { date: savedDate.toISOString(), startTime: nextTime },
@@ -1068,6 +1069,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setActiveQuickFixPanel(null)
       setScopeDialogAction(null)
       showSuccess('Cleaner updated')
+      onOpenChange(false)
       refreshCalendarData({
         jobId: job.id,
         updates: { subcontractorId: selectedSubcontractorId === 'unassigned' ? null : selectedSubcontractorId },

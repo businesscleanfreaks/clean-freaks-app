@@ -90,7 +90,7 @@ export async function POST(
     })
 
     // Send email (test or real) - use isActuallyTest for safety
-    let result: { success: boolean; messageId?: string; error?: string }
+    let result: { success: boolean; messageId?: string; error?: string; warning?: string }
 
     if (isActuallyTest) {
       try {
@@ -103,7 +103,7 @@ export async function POST(
         // If test email fails (e.g., no TEST_EMAIL configured), simulate success
         // so the invoice workflow (DRAFT → SENT → PAID) can still be tested
         logger.warn('[EMAIL] Test email config missing — simulating successful send')
-        result = { success: true, messageId: 'simulated-' + Date.now() }
+        result = { success: true, messageId: 'simulated-' + Date.now(), warning: 'SENDING_DISABLED' }
       }
     } else {
       result = await sendEmail({
@@ -138,6 +138,8 @@ export async function POST(
       messageId: result.messageId,
       isTest: isActuallyTest,
       safetyMode: !allowRealEmails || !enableSending ? 'FORCED_TEST' : 'NORMAL',
+      warning: result.warning || undefined,
+      testEmail: isActuallyTest ? process.env.TEST_EMAIL : undefined,
     })
   } catch (error) {
     logger.error('Error sending invoice email:', error)

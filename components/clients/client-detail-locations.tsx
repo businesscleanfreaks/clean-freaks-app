@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -68,6 +69,24 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     handleCreateOneTimeJob,
     onDataChange,
   } = state
+
+  // Click-outside dismiss for schedule menu and reassign dropdown
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!scheduleMenuOpen && !reassigningSchedule) return
+    const handler = (e: MouseEvent) => {
+      // Don't close if clicking inside a dropdown
+      const target = e.target as Node
+      const dropdowns = document.querySelectorAll('[data-dropdown-menu]')
+      for (const dd of dropdowns) {
+        if (dd.contains(target)) return
+      }
+      if (scheduleMenuOpen) setScheduleMenuOpen(null)
+      if (reassigningSchedule) setReassigningSchedule(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [scheduleMenuOpen, reassigningSchedule, setScheduleMenuOpen, setReassigningSchedule])
 
   return (
     <div>
@@ -170,7 +189,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                           <ChevronDown className={`w-3 h-3 transition-transform ${reassigningSchedule === sch.id ? 'rotate-180' : ''}`} />
                         </button>
                         {reassigningSchedule === sch.id && (
-                          <div className="absolute top-full left-0 mt-1 w-52 bg-white rounded-xl border border-gray-200 shadow-xl z-50 py-1">
+                          <div data-dropdown-menu className="absolute top-full left-0 mt-1 w-52 bg-white rounded-xl border border-gray-200 shadow-xl z-50 py-1">
                             <div className="px-3 py-2 border-b border-gray-100">
                               <p className="text-xs font-semibold text-slate-500 uppercase tracking-[0.14em]">Assign Cleaner</p>
                             </div>
@@ -209,7 +228,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                             <MoreVertical className="w-4 h-4 text-slate-400" />
                           </button>
                           {scheduleMenuOpen === sch.id && (
-                            <div className="absolute top-full right-0 mt-1 w-44 bg-white rounded-xl border border-gray-200 shadow-xl z-50 py-1">
+                            <div data-dropdown-menu className="absolute top-full right-0 mt-1 w-44 bg-white rounded-xl border border-gray-200 shadow-xl z-50 py-1">
                               <button
                                 onClick={() => {
                                   setScheduleMenuOpen(null)

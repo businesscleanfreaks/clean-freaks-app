@@ -303,12 +303,12 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
       {/* Edit Client Modal */}
       {editing && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-gray-200">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col border border-gray-200">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
               <h2 className="text-xl font-bold text-gray-900 tracking-tight">Edit Client</h2>
               <button onClick={() => setEditing(false)} className="p-1.5 rounded-full hover:bg-gray-100 transition-colors duration-150" aria-label="Close"><X className="w-5 h-5 text-gray-400" /></button>
             </div>
-            <div className="p-6 space-y-5">
+            <div className="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
               <div>
                 <Label className="text-xs text-stone-500 uppercase tracking-wider">Client Name</Label>
                 <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="mt-1.5" />
@@ -432,7 +432,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                 <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={3} className="mt-1.5" />
               </div>
             </div>
-            <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex gap-3 border-t border-gray-100">
+            <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex gap-3 border-t border-gray-100 flex-shrink-0">
               <Button variant="outline" onClick={() => setEditing(false)} className="flex-1">Cancel</Button>
               <Button onClick={handleUpdate} className="flex-1 bg-teal-600 hover:bg-teal-700 text-white shadow-sm">Save Changes</Button>
             </div>

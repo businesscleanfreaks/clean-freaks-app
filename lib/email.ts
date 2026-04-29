@@ -22,6 +22,7 @@ export interface EmailResult {
   success: boolean
   messageId?: string
   error?: string
+  warning?: string
 }
 
 /**
@@ -167,6 +168,7 @@ export async function sendTestEmail(options: Omit<EmailOptions, 'to'>): Promise<
     return {
       success: true,
       messageId: 'test-mode-disabled-' + Date.now(),
+      warning: 'SENDING_DISABLED',
     }
   }
 

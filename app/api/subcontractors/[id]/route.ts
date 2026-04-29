@@ -26,44 +26,46 @@ export async function GET(
     const today = new Date()
     today.setHours(23, 59, 59, 999)
 
-    const unpaidJobs = await prisma.job.findMany({
-      where: {
-        subcontractorId: id,
-        subcontractorPaid: false,
-        ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
-        OR: [
-          { status: "COMPLETED" },
-          { status: "SCHEDULED", date: { lte: today } },
-        ],
-      },
-      include: {
-        location: { include: { client: true } },
-        addOnServices: true,
-        schedule: true,
-        invoiceLineItems: {
-          include: {
-            invoice: { select: { status: true } },
+    // Parallelize DB queries for speed
+    const [unpaidJobs, payments] = await Promise.all([
+      prisma.job.findMany({
+        where: {
+          subcontractorId: id,
+          subcontractorPaid: false,
+          ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
+          OR: [
+            { status: "COMPLETED" },
+            { status: "SCHEDULED", date: { lte: today } },
+          ],
+        },
+        include: {
+          location: { include: { client: true } },
+          addOnServices: true,
+          schedule: true,
+          invoiceLineItems: {
+            include: {
+              invoice: { select: { status: true } },
+            },
           },
         },
-      },
-      orderBy: { date: "asc" },
-    })
-
-    const payments = await prisma.subcontractorPayment.findMany({
-      where: { subcontractorId: id },
-      include: {
-        lineItems: {
-          include: {
-            job: {
-              include: {
-                location: { include: { client: true } },
+        orderBy: { date: "asc" },
+      }),
+      prisma.subcontractorPayment.findMany({
+        where: { subcontractorId: id },
+        include: {
+          lineItems: {
+            include: {
+              job: {
+                include: {
+                  location: { include: { client: true } },
+                },
               },
             },
           },
         },
-      },
-      orderBy: { datePaid: "desc" },
-    })
+        orderBy: { datePaid: "desc" },
+      }),
+    ])
 
     // Filter out jobs with missing location/client data (data integrity safety)
     const validJobs = unpaidJobs.filter(job => job.location && job.location.client)

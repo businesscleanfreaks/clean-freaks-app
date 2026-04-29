@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -120,6 +120,9 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
   const [expandedSubData, setExpandedSubData] = useState<CleanerData | null>(null)
   const [expandedSubLoading, setExpandedSubLoading] = useState(false)
 
+  // Cache previously loaded subcontractor data for instant re-expansion
+  const subDetailCache = useRef<Map<string, CleanerData>>(new Map())
+
   const handleToggleExpand = useCallback(async (subId: string) => {
     if (expandedSubId === subId) {
       // Collapse
@@ -128,14 +131,31 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
       return
     }
 
-    // Expand: lazy-load full detail data
+    // Expand: use cache for instant display, then refresh in background
     setExpandedSubId(subId)
+    const cached = subDetailCache.current.get(subId)
+    if (cached) {
+      setExpandedSubData(cached)
+      setExpandedSubLoading(false)
+      // Background refresh
+      fetch(`/api/subcontractors/${subId}`)
+        .then(res => res.ok ? res.json() : Promise.reject())
+        .then(data => {
+          subDetailCache.current.set(subId, data)
+          setExpandedSubData(data)
+        })
+        .catch(() => {})
+      return
+    }
+
+    // First load: show spinner
     setExpandedSubData(null)
     setExpandedSubLoading(true)
     try {
       const res = await fetch(`/api/subcontractors/${subId}`)
       if (!res.ok) throw new Error('Failed to load')
       const data = await res.json()
+      subDetailCache.current.set(subId, data)
       setExpandedSubData(data)
     } catch {
       showError('Failed to load cleaner details')
@@ -151,7 +171,10 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     if (expandedSubId) {
       fetch(`/api/subcontractors/${expandedSubId}`)
         .then(res => res.json())
-        .then(data => setExpandedSubData(data))
+        .then(data => {
+          subDetailCache.current.set(expandedSubId, data)
+          setExpandedSubData(data)
+        })
         .catch(() => {})
     }
   }, [expandedSubId, onDataChange])
@@ -295,7 +318,7 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
               <DollarSign className="w-5 h-5 text-teal-600 flex-shrink-0" />
               <div>
                 <p className="text-xs text-gray-500 font-medium">Total Owed</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalOwed)}</p>
+                <p className="text-2xl font-bold text-gray-900" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatCurrency(totalOwed)}</p>
               </div>
             </div>
             <p className="text-sm text-gray-400">{subcontractorsWithBalance.length} waiting</p>

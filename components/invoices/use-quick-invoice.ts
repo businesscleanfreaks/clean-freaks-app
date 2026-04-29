@@ -501,6 +501,21 @@ export function useQuickInvoice({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJobIds])
 
+  // Invalidate preview when line items change (after initial load)
+  const lineItemsInitialized = useRef(false)
+  useEffect(() => {
+    if (!lineItemsInitialized.current) {
+      lineItemsInitialized.current = true
+      return
+    }
+    // Line items changed — old preview is stale
+    if (previewInvoiceId) {
+      setPreviewInvoiceId(null)
+      setPreviewPdfUrl(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineItems])
+
   // Calculate total
   const totalAmount = useMemo(() => {
     return lineItems.reduce((sum, item) => sum + item.amount, 0)
@@ -640,8 +655,15 @@ export function useQuickInvoice({
         })
         if (emailResponse.ok) {
           setProgress(100)
-          const { showSuccess } = await import('@/lib/toast')
-          showSuccess('Invoice created and test email sent!')
+          const emailResult = await emailResponse.json().catch(() => ({}))
+          const { showSuccess, showWarning, showInfo } = await import('@/lib/toast')
+          if (emailResult.safetyMode === 'FORCED_TEST' || emailResult.warning === 'SENDING_DISABLED') {
+            showWarning('⚠️ Email was NOT sent. Set ENABLE_EMAIL_SENDING=true and configure GMAIL credentials in .env.local to enable email delivery.')
+          } else if (emailResult.isTest) {
+            showInfo(`Test email sent to ${emailResult.testEmail || 'your test address'}`)
+          } else {
+            showSuccess('Invoice created and test email sent!')
+          }
         } else {
           const { showApiError } = await import('@/lib/toast')
           await showApiError(emailResponse, 'Invoice created but test email failed. Check your email settings.')

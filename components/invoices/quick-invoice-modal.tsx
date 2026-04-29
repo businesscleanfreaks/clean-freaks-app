@@ -1029,7 +1029,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                   disabled={isCreating || isSendingTest || lineItems.length === 0}
                   className="bg-teal-600 hover:bg-teal-700 text-white"
                 >
-                  {isSendingTest ? <ActionSpinner size={16} color="white" className="mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                  {isCreating ? <ActionSpinner size={16} color="white" className="mr-2" /> : <Send className="h-4 w-4 mr-2" />}
                   Send to Client
                 </Button>
               </div>

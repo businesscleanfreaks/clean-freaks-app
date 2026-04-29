@@ -769,16 +769,51 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         border: '1px solid #E7E7E1',
         padding: isMobile ? '12px 14px' : '14px 16px',
         boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+        minWidth: 0,
       }}
     >
       <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
         {label}
       </p>
-      <p style={{ fontSize: isMobile ? '15px' : '14px', fontWeight: 600, color: muted ? '#6B7280' : '#111827', lineHeight: 1.3 }}>
+      <p style={{ fontSize: isMobile ? '14px' : '13px', fontWeight: 600, color: muted ? '#6B7280' : '#111827', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {value}
       </p>
     </div>
   )
+
+  const renderBillingBadgeCard = (label: string, payType: string, colorScheme: 'blue' | 'purple', isMobile: boolean) => {
+    const isFR = payType === 'FLAT_RATE'
+    const badgeLabel = isFR ? 'Flat Rate' : 'Per Clean'
+    const badgeCode = isFR ? 'FR' : 'PC'
+    const colors = colorScheme === 'blue'
+      ? { bg: isFR ? 'rgba(59,130,246,0.10)' : 'rgba(107,114,128,0.08)', color: isFR ? '#3B82F6' : '#6B7280', border: isFR ? 'rgba(59,130,246,0.20)' : 'rgba(107,114,128,0.15)' }
+      : { bg: isFR ? 'rgba(168,85,247,0.10)' : 'rgba(107,114,128,0.08)', color: isFR ? '#A855F7' : '#6B7280', border: isFR ? 'rgba(168,85,247,0.20)' : 'rgba(107,114,128,0.15)' }
+    return (
+      <div
+        className="rounded-[14px] bg-white"
+        style={{
+          border: '1px solid #E7E7E1',
+          padding: isMobile ? '12px 14px' : '14px 16px',
+          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
+        }}
+      >
+        <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+          {label}
+        </p>
+        <div className="flex items-center gap-2">
+          <span
+            style={{
+              fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em',
+              padding: '2px 8px', borderRadius: '5px',
+              backgroundColor: colors.bg, color: colors.color,
+              border: `1px solid ${colors.border}`,
+            }}
+          >{badgeCode}</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{badgeLabel}</span>
+        </div>
+      </div>
+    )
+  }
 
   const renderSummarySection = (isMobile: boolean) => (
     <div className="space-y-3">
@@ -793,8 +828,8 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         {renderSummaryCard('Margin', formatCurrency((job.clientRate ?? 0) - (job.subcontractorRate ?? 0)), isMobile)}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {renderSummaryCard('Client Billing', clientBillingType === 'FLAT_RATE' ? 'Flat Rate' : 'Per Clean', isMobile)}
-        {renderSummaryCard('Cleaner Pay Type', clientCleanerPayType === 'FLAT_RATE' ? 'Flat Rate' : 'Per Clean', isMobile)}
+        {renderBillingBadgeCard('Client Billing', clientBillingType, 'blue', isMobile)}
+        {renderBillingBadgeCard('Cleaner Pay Type', clientCleanerPayType, 'purple', isMobile)}
       </div>
     </div>
   )
@@ -849,6 +884,14 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
           {renderSummaryCard('Client', formatCurrency(job.clientRate ?? 0), false)}
           {renderSummaryCard('Cleaner', formatCurrency(job.subcontractorRate ?? 0), false)}
           {renderSummaryCard('Margin', formatCurrency((job.clientRate ?? 0) - (job.subcontractorRate ?? 0)), false)}
+        </div>
+
+        <div
+          className="grid grid-cols-2 gap-2 rounded-[14px] bg-[#FAFCFB] p-2"
+          style={{ border: '1px solid #E7E7E1' }}
+        >
+          {renderBillingBadgeCard('Client Billing', clientBillingType, 'blue', false)}
+          {renderBillingBadgeCard('Cleaner Pay Type', clientCleanerPayType, 'purple', false)}
         </div>
       </div>
     </div>

@@ -42,6 +42,17 @@ export function showInfo(message: string, title?: string) {
 }
 
 /**
+ * Show a warning toast message with amber icon
+ */
+export function showWarning(message: string, title?: string) {
+  toast({
+    title: title || "⚠ Warning",
+    description: message,
+    duration: 7000,
+  })
+}
+
+/**
  * Show a success toast with an Undo action button
  */
 export function showUndoToast(message: string, onUndo: () => void) {

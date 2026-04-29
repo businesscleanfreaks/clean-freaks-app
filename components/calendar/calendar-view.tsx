@@ -78,6 +78,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const overflowMenuRef = useRef<HTMLDivElement>(null)
 
+  // Day popover state for "+N more" click in month view
+  const [dayPopoverDate, setDayPopoverDate] = useState<Date | null>(null)
+  const [dayPopoverJobs, setDayPopoverJobs] = useState<JobWithFullRelations[]>([])
+  const dayPopoverRef = useRef<HTMLDivElement>(null)
+
   // Undo stack for calendar job moves (Cmd+Z / Ctrl+Z)
   const [undoStack, setUndoStack] = useState<Array<{
     jobId: string
@@ -1207,6 +1212,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 placeholder="Find a client fast"
                 value={clientSearchQuery}
                 onChange={(e) => setClientSearchQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setClientSearchQuery('') }}
                 className="text-[14px] text-gray-900 placeholder-gray-400 focus:outline-none transition-all"
                 style={{
                   width: '220px',
@@ -1217,12 +1223,36 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   boxShadow: 'none',
                 }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = '#0F766E'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(15,118,110,0.12)' }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = '#E3E5DF'; e.currentTarget.style.boxShadow = 'none' }}
+                onBlur={(e) => { setTimeout(() => { e.target.style.borderColor = '#E3E5DF'; e.target.style.boxShadow = 'none' }, 150) }}
               />
               {clientSearchQuery && (
                 <button onClick={() => setClientSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
                   <X style={{ width: '13px', height: '13px' }} />
                 </button>
+              )}
+              {/* Search suggestions dropdown */}
+              {clientSearchQuery.trim().length >= 1 && matchingClientIds && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-200 z-50 max-h-[240px] overflow-y-auto py-1">
+                  {clients
+                    .filter(c => matchingClientIds.has(c.id))
+                    .slice(0, 8)
+                    .map(c => (
+                      <button
+                        key={c.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          setFilterBarClientIds(new Set([c.id]))
+                          setClientSearchQuery('')
+                        }}
+                        className="w-full text-left px-3 py-2 text-[13px] text-gray-700 hover:bg-teal-50 hover:text-teal-700 transition-colors truncate"
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  {matchingClientIds.size === 0 && (
+                    <p className="px-3 py-2 text-[13px] text-gray-400 italic">No clients found</p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -1252,9 +1282,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       if (isSelectionMode) clearSelection()
                       setShowOverflowMenu(false)
                     }}
-                    className="w-full text-left px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors"
                   >
-                    {isSelectionMode ? 'Done Selecting' : 'Select Multiple Jobs'}
+                    <span className="text-[13px] text-gray-700 font-medium">{isSelectionMode ? 'Done Editing' : 'Bulk Edit Jobs'}</span>
+                    {!isSelectionMode && <p className="text-[11px] text-gray-400 mt-0.5">Tap jobs to mark complete, reassign, or cancel</p>}
                   </button>
                   {hasActiveFilters && (
                     <button
@@ -1586,7 +1617,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 </div>
 
                 {/* Job cards */}
-                <div className="p-2.5 space-y-2">
+                <div className="p-2 space-y-1.5">
                   {dayJobs
                     .sort((a, b) => {
                       const timeA = a.startTime || a.startWindowBegin || '00:00'
@@ -1617,7 +1648,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           style={{
                             backgroundColor: 'white',
                             borderLeft: `3px solid ${borderColor}`,
-                            padding: '7px 10px',
+                            padding: '5px 8px',
                             boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
                             opacity: isDimmed ? 0.15 : 1,
                             transition: 'opacity 0.2s ease, box-shadow 0.15s ease, transform 0.15s ease',
@@ -1714,6 +1745,32 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         onDragEnd={handleDragEnd}
         collisionDetection={closestCenter}
       >
+        {/* Selection mode instructional banner */}
+        {isSelectionMode && (
+          <div
+            className="flex items-center gap-3 px-4 py-2.5"
+            style={{
+              backgroundColor: 'rgba(15,118,110,0.06)',
+              borderBottom: '1px solid rgba(15,118,110,0.12)',
+            }}
+          >
+            <div
+              style={{
+                width: '6px', height: '6px', borderRadius: '50%',
+                backgroundColor: '#0F766E', animation: 'pulse 2s infinite',
+              }}
+            />
+            <p style={{ fontSize: '13px', color: '#0F766E', fontWeight: 500 }}>
+              Tap jobs to select them for bulk actions. Use the bar at the bottom to mark complete, reassign, or cancel.
+            </p>
+            <button
+              onClick={() => { setIsSelectionMode(false); clearSelection() }}
+              style={{ fontSize: '12px', fontWeight: 600, color: '#0F766E', marginLeft: 'auto', whiteSpace: 'nowrap' }}
+            >
+              Done
+            </button>
+          </div>
+        )}
         <div>
           {viewMode === 'week' && (
             <div
@@ -1766,7 +1823,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               key={di}
                               onClick={() => handleDateClick(d)}
                               style={{
-                                minHeight: '100px',
+                                minHeight: '88px',
                                 padding: '4px',
                                 borderRight: di < 6 ? '1px solid #F0F0EC' : 'none',
                                 backgroundColor: today ? 'rgba(15,118,110,0.03)' : inMonth ? 'white' : '#FAFAF8',
@@ -1787,7 +1844,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                 {format(d, 'd')}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                                {dayJobs.slice(0, 4).map(j => {
+                                {dayJobs.slice(0, 5).map(j => {
                                   const status = getJobStatus(j)
                                   const { colorKey } = getCleanerColorInfo(j.subcontractor?.name || null)
                                   const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default
@@ -1796,9 +1853,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                       key={j.id}
                                       onClick={(e) => { e.stopPropagation(); handleJobClick(j) }}
                                       style={{
-                                        padding: '2px 4px',
+                                        padding: '1px 3px',
                                         borderRadius: '4px',
-                                        fontSize: '10px',
+                                        fontSize: '9px',
                                         fontWeight: 600,
                                         color: 'white',
                                         background: status === 'cancelled' ? '#9CA3AF' : gradient,
@@ -1806,16 +1863,22 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                         textOverflow: 'ellipsis',
                                         whiteSpace: 'nowrap',
                                         cursor: 'pointer',
-                                        opacity: status === 'cancelled' ? 0.5 : 1,
+                                        opacity: (dimmedClientIds && !dimmedClientIds.has(j.location.client.id)) ? 0.15 : (status === 'cancelled' ? 0.5 : 1),
+                                        transition: 'opacity 0.2s ease',
                                       }}
                                     >
                                       {j.location.client.name}
                                     </div>
                                   )
                                 })}
-                                {dayJobs.length > 4 && (
-                                  <div style={{ fontSize: '9px', color: '#6B7280', fontWeight: 600, paddingLeft: '4px' }}>
-                                    +{dayJobs.length - 4} more
+                                {dayJobs.length > 5 && (
+                                  <div
+                                    onClick={(e) => { e.stopPropagation(); setDayPopoverDate(d); setDayPopoverJobs(dayJobs) }}
+                                    style={{ fontSize: '9px', color: '#0F766E', fontWeight: 700, paddingLeft: '4px', cursor: 'pointer' }}
+                                    onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.textDecoration = 'underline' }}
+                                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.textDecoration = 'none' }}
+                                  >
+                                    +{dayJobs.length - 5} more
                                   </div>
                                 )}
                               </div>
@@ -1831,6 +1894,87 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           )}
 
         </div>
+
+        {/* Day popover for "+N more" in month view */}
+        {dayPopoverDate && (
+          <div
+            className="fixed inset-0 z-50"
+            style={{ backgroundColor: 'rgba(0,0,0,0.3)' }}
+            onClick={() => { setDayPopoverDate(null); setDayPopoverJobs([]) }}
+          >
+            <div
+              ref={dayPopoverRef}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl w-full max-w-md"
+              style={{ border: '1px solid #E7E7DF', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+                <div>
+                  <p style={{ fontSize: '16px', fontWeight: 700, color: '#111827' }}>
+                    {format(dayPopoverDate, 'EEEE, MMMM d')}
+                  </p>
+                  <p style={{ fontSize: '13px', color: '#6B7280' }}>
+                    {dayPopoverJobs.length} job{dayPopoverJobs.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setDayPopoverDate(null); setDayPopoverJobs([]) }}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors"
+                >
+                  <X style={{ width: '16px', height: '16px', color: '#6B7280' }} />
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 min-h-0 py-2">
+                {dayPopoverJobs
+                  .sort((a, b) => {
+                    const timeA = a.startTime || a.startWindowBegin || '00:00'
+                    const timeB = b.startTime || b.startWindowBegin || '00:00'
+                    return timeA.localeCompare(timeB)
+                  })
+                  .map(job => {
+                    const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+                    const status = getJobStatus(job)
+                    const timeDisplay = job.startTime
+                      ? formatTime(job.startTime)
+                      : job.startWindowBegin
+                        ? formatTime(job.startWindowBegin)
+                        : null
+                    return (
+                      <button
+                        key={job.id}
+                        onClick={() => { setDayPopoverDate(null); setDayPopoverJobs([]); handleJobClick(job) }}
+                        className="w-full text-left px-5 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3"
+                      >
+                        <div
+                          className="flex-shrink-0 rounded-full"
+                          style={{ width: '8px', height: '8px', backgroundColor: job.subcontractor ? hex : '#D1D5DB' }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }} className="truncate">
+                            {job.location.client.name}
+                          </p>
+                          <p style={{ fontSize: '12px', color: '#6B7280' }} className="truncate">
+                            {job.location.name}
+                            {timeDisplay ? ` · ${timeDisplay}` : ''}
+                            {job.subcontractor ? ` · ${job.subcontractor.name}` : ' · Unassigned'}
+                          </p>
+                        </div>
+                        <span
+                          className="flex-shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
+                          style={{
+                            backgroundColor: status === 'completed' ? 'rgba(16,185,129,0.1)' : status === 'cancelled' ? 'rgba(156,163,175,0.1)' : 'rgba(59,130,246,0.1)',
+                            color: status === 'completed' ? '#059669' : status === 'cancelled' ? '#6B7280' : '#3B82F6',
+                          }}
+                        >
+                          {status}
+                        </span>
+                      </button>
+                    )
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
 
         <DragOverlay dropAnimation={null}>
           {draggedJob && (() => {

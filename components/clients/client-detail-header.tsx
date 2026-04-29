@@ -65,12 +65,12 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
             <div className="flex items-center gap-3 sm:gap-5 flex-shrink-0">
               <div className="text-right">
                 <p style={{ fontSize: 11, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{stats.isEstimate ? 'Est. Revenue' : `${stats.monthLabel} Revenue`}</p>
-                <p className="font-bold text-gray-900 text-sm sm:text-[17px]">{formatCurrency(stats.monthlyRevenue)}</p>
+                <p className="font-bold text-gray-900 text-sm sm:text-[17px]" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatCurrency(stats.monthlyRevenue)}</p>
               </div>
               <div className="w-px h-8 bg-gray-200" />
               <div className="text-right">
                 <p style={{ fontSize: 11, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{stats.isEstimate ? 'Est. Profit' : `${stats.monthLabel} Profit`}</p>
-                <p className="font-bold text-sm sm:text-[17px]" style={{ color: '#00A896' }}>{formatCurrency(stats.monthlyProfit)}</p>
+                <p className="font-bold text-sm sm:text-[17px]" style={{ color: '#00A896', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatCurrency(stats.monthlyProfit)}</p>
               </div>
               <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
                 isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
