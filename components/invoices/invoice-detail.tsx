@@ -518,16 +518,16 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
         </CardContent>
       </Card>
 
-      {/* Testing Reset Panel - Only visible in test mode */}
-      {isTestMode && (
+      {/* Invoice Management - Reset/Undo actions */}
+      {(status === 'SENT' || status === 'PAID') && (
         <Card className="border-2 border-dashed border-orange-300 bg-orange-50/50">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-orange-500" />
-              <CardTitle className="text-lg text-orange-700">Testing Controls</CardTitle>
+              <CardTitle className="text-lg text-orange-700">Undo / Reset Invoice</CardTitle>
             </div>
             <p className="text-sm text-orange-600">
-              These options are only visible in test mode for repeated testing.
+              Use these if you need to fix something or start over with this invoice.
             </p>
           </CardHeader>
           <CardContent>
@@ -544,7 +544,7 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
                   ) : (
                     <RefreshCw className="h-4 w-4 mr-2" />
                   )}
-                  Reset to SENT (Test Payment Again)
+                  Reset to SENT (Undo Payment)
                 </Button>
               )}
               <Button
@@ -558,11 +558,11 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
                 ) : (
                   <Trash2 className="h-4 w-4 mr-2" />
                 )}
-                Full Reset (Delete & Start Fresh)
+                Delete &amp; Return Jobs to Ready
               </Button>
             </div>
             <p className="text-xs text-orange-500 mt-3">
-              💡 Quick Reset: Resets status to test payment again. Full Reset: Deletes invoice and returns jobs to ready-to-bill.
+              💡 Reset to SENT: Undo payment so you can re-record it. Delete &amp; Return: Removes the invoice entirely and puts jobs back in the &quot;Need to Invoice&quot; list.
             </p>
           </CardContent>
         </Card>
