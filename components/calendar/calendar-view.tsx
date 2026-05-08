@@ -268,10 +268,30 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
   // Sync allJobs with initialJobs when they change (e.g., after SWR revalidation)
   useEffect(() => {
+    // Calculate which months the initial data covers (the API's default window)
+    const initialMonths = new Set<string>()
+    const now = new Date()
+    for (let i = -1; i <= 2; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      initialMonths.add(`${d.getFullYear()}-${d.getMonth()}`)
+    }
+
     setAllJobs(prev => {
-      // Merge: update existing jobs with fresh data, keep fetched jobs for other months
+      // Keep only lazily-loaded jobs that are OUTSIDE the initial API window.
+      // For months covered by initialJobs, use the fresh data exclusively —
+      // this ensures deleted jobs are properly removed.
       const initialJobIds = new Set(initialJobs.map(j => j.id))
-      const keptJobs = prev.filter(j => !initialJobIds.has(j.id))
+      const keptJobs = prev.filter(j => {
+        // If this job exists in the fresh data, it'll be included from initialJobs
+        if (initialJobIds.has(j.id)) return false
+        // If this job is in a month covered by the initial window, it was
+        // deleted from the DB — drop it
+        const jobDate = new Date(j.date)
+        const jobMonthKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}`
+        if (initialMonths.has(jobMonthKey)) return false
+        // Job is from a lazily-loaded month outside the API window — keep it
+        return true
+      })
       // Deduplicate by job ID to prevent duplicates from race conditions
       const merged = [...initialJobs, ...keptJobs]
       const seen = new Set<string>()
@@ -281,6 +301,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         return true
       })
     })
+
+    // Reset loadedRanges to only the initial months — this forces
+    // lazily-loaded months to re-fetch on next navigation, clearing any
+    // stale deleted jobs from those months too
+    setLoadedRanges(initialMonths)
   }, [initialJobs])
 
   // Handle jobId from URL query parameter
@@ -1634,6 +1659,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           : null
 
                           const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
+                          const isSelected = selectedJobIds.has(job.id)
 
                           return (
                         <div
@@ -1642,11 +1668,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             if (isSelectionMode) toggleJobSelection(job.id)
                             else handleJobClick(job)
                           }}
-                          className={`cursor-pointer rounded-lg ${
-                            selectedJobIds.has(job.id) ? 'ring-2 ring-teal-500 ring-offset-1' : ''
+                          className={`cursor-pointer rounded-lg relative ${
+                            isSelected ? 'ring-[3px] ring-teal-500 ring-offset-1' : ''
                           }`}
                           style={{
-                            backgroundColor: 'white',
+                            backgroundColor: isSelected ? '#F0FDFA' : 'white',
                             borderLeft: `3px solid ${borderColor}`,
                             padding: '5px 8px',
                             boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
@@ -1656,6 +1682,14 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           onMouseEnter={(e) => { if (!isDimmed) { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)'; (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.02)' } }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'; (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)' }}
                         >
+                          {isSelected && (
+                            <div
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center shadow-sm"
+                              style={{ zIndex: 2 }}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5L4.5 7.5L8 3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </div>
+                          )}
                           <div className="truncate" style={{ fontSize: '13px', fontWeight: 600, color: '#202124', lineHeight: '1.3' }}>
                             {job.location.client.name}
                           </div>

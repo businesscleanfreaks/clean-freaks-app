@@ -1,6 +1,6 @@
 "use client"
 
-import useSWR from "swr"
+import useSWR, { mutate as globalMutate } from "swr"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -238,6 +238,8 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
         onPaymentComplete={() => {
           setPayModalOpen(false)
           mutate()
+          globalMutate('/api/subcontractors/data')
+          globalMutate('/api/dashboard-stats')
         }}
       />
 

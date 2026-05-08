@@ -1,6 +1,6 @@
 "use client"
 
-import useSWR from "swr"
+import useSWR, { mutate as globalMutate } from "swr"
 import { WorkersPageWrapper } from "./workers-page-wrapper"
 import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
 
@@ -85,5 +85,5 @@ export function SubcontractorsClient() {
     )
   }
 
-  return <WorkersPageWrapper subcontractors={subcontractors || []} onDataChange={mutate} />
+  return <WorkersPageWrapper subcontractors={subcontractors || []} onDataChange={() => { mutate(); globalMutate('/api/dashboard-stats') }} />
 }

@@ -166,6 +166,48 @@ export async function PUT(
     }
 
     if (isResuming) {
+      // First, clean up stale future jobs from the pause
+      // so regeneration doesn't hit unique constraint violations
+      const now = startOfDay(new Date())
+      const locationIds = client.locations.map(l => l.id)
+
+      try {
+        // Find all CANCELLED+SCHEDULED future uninvoiced jobs for cleanup
+        const jobsToClean = await prisma.job.findMany({
+          where: {
+            location: { id: { in: locationIds } },
+            status: { in: ['CANCELLED', 'SCHEDULED'] },
+            date: { gte: now },
+            invoiced: false,
+            subcontractorPaid: false,
+          },
+          select: { id: true },
+        })
+
+        if (jobsToClean.length > 0) {
+          const jobIds = jobsToClean.map(j => j.id)
+
+          // Delete related payment line items first (FK constraint)
+          await prisma.subcontractorPaymentLineItem.deleteMany({
+            where: { jobId: { in: jobIds } },
+          })
+
+          // Delete related add-on services linked to these jobs
+          await prisma.addOnService.deleteMany({
+            where: { jobId: { in: jobIds } },
+          })
+
+          // Now delete the jobs themselves
+          const cleanedUp = await prisma.job.deleteMany({
+            where: { id: { in: jobIds } },
+          })
+          logger.info(`[resumeClient] Cleaned up ${cleanedUp.count} future jobs for client ${params.id}`)
+        }
+      } catch (cleanupError) {
+        logger.error(`[resumeClient] Non-fatal cleanup error for ${params.id}:`, cleanupError)
+        // Continue anyway — regeneration may still work if the constraint issue was elsewhere
+      }
+
       // Reactivate all schedules and regenerate jobs
       const allScheduleIds: string[] = []
       for (const location of client.locations) {
@@ -181,11 +223,26 @@ export async function PUT(
           allScheduleIds.push(...schedules.map(s => s.id))
         }
       }
+
+      let regenerationErrors = 0
       for (const scheduleId of allScheduleIds) {
-        await regenerateJobsForSchedule(scheduleId)
+        try {
+          await regenerateJobsForSchedule(scheduleId)
+        } catch (regenError) {
+          regenerationErrors++
+          logger.error(`[resumeClient] Failed to regenerate schedule ${scheduleId}:`, regenError)
+        }
       }
 
-      logger.info(`[resumeClient] Resumed client ${params.id}: reactivated ${allScheduleIds.length} schedules`)
+      if (regenerationErrors > 0 && regenerationErrors === allScheduleIds.length) {
+        // Only fail if ALL schedules failed
+        return NextResponse.json(
+          { error: 'Failed to resume client. Schedule regeneration failed. Please try again.' },
+          { status: 500 }
+        )
+      }
+
+      logger.info(`[resumeClient] Resumed client ${params.id}: reactivated ${allScheduleIds.length} schedules (${regenerationErrors} errors)`)
     }
 
     revalidateClientPages(client.id)

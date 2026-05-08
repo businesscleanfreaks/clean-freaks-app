@@ -20,17 +20,17 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
   const {
     client,
     subcontractors,
-    
+
     // Additional service choice
     showAdditionalServiceChoice,
     setShowAdditionalServiceChoice,
     handleAddJob,
-    
+
     // One-time service dialog
     showOneTimeServiceDialog,
     setShowOneTimeServiceDialog,
     onDataChange,
-    
+
     // Add job modal
     showAddJobModal,
     setShowAddJobModal,
@@ -45,18 +45,18 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
     addingJob,
     handleAddJobSubmit,
     allSchedulesForModal,
-    
+
     // Edit client
     editing,
     setEditing,
     formData,
     setFormData,
     handleUpdate,
-    
+
     // Edit contact
     editingContact,
     setEditingContact,
-    
+
     // Invoice modal
     showInvoiceModal,
     setShowInvoiceModal,
@@ -155,11 +155,11 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
         subcontractors={subcontractors}
         preSelectedClientId={client.id}
       />
-      
+
       {/* Add Job Modal */}
       {showAddJobModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div 
+          <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => {
               setShowAddJobModal(false)
@@ -196,7 +196,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                 <X className="w-5 h-5 text-white/80" />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-5">
               {/* Schedule Selection */}
               <div>
@@ -208,18 +208,17 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                     <button
                       key={sch.id}
                       onClick={() => setAddJobSelectedSchedule(sch.id)}
-                      className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
-                        addJobSelectedSchedule === sch.id
+                      className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${addJobSelectedSchedule === sch.id
                           ? 'border-teal-500 bg-teal-50'
                           : 'border-gray-200 hover:border-gray-300 bg-white'
-                      }`}
+                        }`}
                     >
                       <div className="font-medium text-gray-900">{sch.locationName}</div>
                       <div className="text-sm text-gray-500">
-                        {sch.frequency === 'WEEKLY' ? 'Weekly' : 
-                         sch.frequency === 'BI_WEEKLY' ? 'Bi-Weekly' :
-                         sch.frequency === 'MONTHLY' ? 'Monthly' :
-                         sch.frequency === '2X_MONTHLY' ? '2x Monthly' : sch.frequency}
+                        {sch.frequency === 'WEEKLY' ? 'Weekly' :
+                          sch.frequency === 'BI_WEEKLY' ? 'Bi-Weekly' :
+                            sch.frequency === 'MONTHLY' ? 'Monthly' :
+                              sch.frequency === '2X_MONTHLY' ? '2x Monthly' : sch.frequency}
                         {sch.startTime && ` • ${sch.startTime}`}
                         {sch.subcontractor?.name && ` • ${sch.subcontractor.name}`}
                       </div>
@@ -227,7 +226,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                   ))}
                 </div>
               </div>
-              
+
               {/* Date Selection */}
               {addJobSelectedSchedule && (
                 <div className="animate-in slide-in-from-bottom-2 duration-200">
@@ -242,7 +241,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                   />
                 </div>
               )}
-              
+
               {/* Custom Time Option */}
               {addJobSelectedSchedule && addJobDate && (
                 <div className="animate-in slide-in-from-bottom-2 duration-200">
@@ -258,7 +257,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                     />
                     <span className="text-sm text-gray-700">Different time than usual?</span>
                   </label>
-                  
+
                   {addJobCustomTime && (
                     <div className="mt-3 ml-8">
                       <Input
@@ -272,7 +271,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                 </div>
               )}
             </div>
-            
+
             {/* Footer */}
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-3">
               <Button
@@ -389,11 +388,11 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
               </div>
               <div>
                 <Label className="text-xs text-stone-500 uppercase tracking-wider">Start Date</Label>
-                <Input 
-                  type="date" 
-                  value={formData.startDate} 
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} 
-                  className="mt-1.5" 
+                <Input
+                  type="date"
+                  value={formData.startDate}
+                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  className="mt-1.5"
                 />
                 <p className="text-xs text-stone-400 mt-1.5">When the client relationship started</p>
               </div>

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef } from "react"
 import Link from "next/link"
+import { mutate as globalMutate } from "swr"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -168,7 +169,11 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
   const handleExpandedDataChange = useCallback(() => {
     // Refresh both the list and the expanded detail
     onDataChange()
+    // Invalidate dashboard stats so payout totals update
+    globalMutate('/api/dashboard-stats')
     if (expandedSubId) {
+      // Clear cached detail so stale owed amounts don't persist
+      subDetailCache.current.delete(expandedSubId)
       fetch(`/api/subcontractors/${expandedSubId}`)
         .then(res => res.json())
         .then(data => {
@@ -279,6 +284,8 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
       showSuccess(`Recorded ${batchSelectedSubs.size} payment${batchSelectedSubs.size !== 1 ? 's' : ''} totaling ${formatCurrency(batchTotal)}!`)
       closeBatchPay()
       onDataChange()
+      // Invalidate dashboard stats so payout totals update
+      globalMutate('/api/dashboard-stats')
     } catch (error) {
       logger.error('Error recording batch payments:', error)
       showError(error instanceof Error ? error.message : 'Failed to record payments')
@@ -455,7 +462,7 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
 
       {/* BATCH PAY MODAL */}
       <Dialog open={batchPayMode} onOpenChange={(open) => !open && closeBatchPay()}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-teal-600 flex items-center justify-center">
@@ -575,7 +582,7 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
         jobs={payingSubcontractor?.jobs || []}
         open={!!payingSubcontractor}
         onOpenChange={(open) => !open && setPayingSubcontractor(null)}
-        onPaymentComplete={() => { setPayingSubcontractor(null); onDataChange() }}
+        onPaymentComplete={() => { setPayingSubcontractor(null); onDataChange(); globalMutate('/api/dashboard-stats') }}
       />
     </div>
   )

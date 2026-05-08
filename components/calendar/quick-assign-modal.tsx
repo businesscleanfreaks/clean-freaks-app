@@ -53,7 +53,7 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
 
   const handleAssign = async (jobId: string, subcontractorId: string) => {
     if (!subcontractorId) return
-    
+
     setAssignments(prev => ({ ...prev, [jobId]: subcontractorId }))
     setSaving(prev => ({ ...prev, [jobId]: true }))
 
@@ -97,7 +97,7 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
 
   const handleBulkAssign = async () => {
     if (!bulkWorker) return
-    
+
     for (const job of remainingJobs) {
       if (!saved[job.id]) {
         await handleAssign(job.id, bulkWorker)
@@ -116,7 +116,7 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[150vh] flex flex-col overflow-hidden animate-in zoom-in-95 fade-in duration-200">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
           <div className="flex items-center gap-3">
@@ -130,7 +130,7 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
               </p>
             </div>
           </div>
-          <button 
+          <button
             onClick={handleClose}
             className="p-1.5 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors duration-150"
             aria-label="Close"
@@ -190,15 +190,14 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
                   const isSaving = saving[job.id]
                   const isSaved = saved[job.id]
                   const jobDate = new Date(job.date)
-                  
+
                   return (
-                    <div 
+                    <div
                       key={job.id}
-                      className={`p-4 rounded-xl border-2 transition-all duration-300 ${
-                        isSaved 
-                          ? 'bg-emerald-50 border-emerald-300' 
-                          : 'bg-white border-gray-200 hover:border-stone-300'
-                      }`}
+                      className={`p-4 rounded-xl border-2 transition-all duration-300 ${isSaved
+                        ? 'bg-emerald-50 border-emerald-300'
+                        : 'bg-white border-gray-200 hover:border-stone-300'
+                        }`}
                     >
                       <div className="flex items-start gap-4">
                         {/* Date Badge */}
@@ -219,7 +218,7 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
                             <span>•</span>
                             <span>
                               {job.startTime ? formatTime(job.startTime) :
-                               job.startWindowBegin ? `${formatTime(job.startWindowBegin)}-${formatTime(job.startWindowEnd || '')}` : 'TBD'}
+                                job.startWindowBegin ? `${formatTime(job.startWindowBegin)}-${formatTime(job.startWindowEnd || '')}` : 'TBD'}
                             </span>
                           </div>
                           <h4 className="font-bold text-gray-900 truncate">{job.location.client.name}</h4>
@@ -243,11 +242,10 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
                               value={assignments[job.id] || ''}
                               onChange={(e) => handleAssign(job.id, e.target.value)}
                               disabled={isSaving}
-                              className={`text-sm border-2 rounded-lg px-3 py-2 min-w-[160px] transition-all ${
-                                isSaving 
-                                  ? 'border-teal-300 bg-teal-50 animate-pulse' 
-                                  : 'border-amber-300 bg-amber-50 hover:border-amber-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20'
-                              }`}
+                              className={`text-sm border-2 rounded-lg px-3 py-2 min-w-[160px] transition-all ${isSaving
+                                ? 'border-teal-300 bg-teal-50 animate-pulse'
+                                : 'border-amber-300 bg-amber-50 hover:border-amber-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20'
+                                }`}
                             >
                               <option value="">Choose cleaner...</option>
                               {subcontractors.map(s => (
@@ -269,11 +267,11 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
         <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
           <div className="flex items-center justify-between">
             <p className="text-sm text-stone-500">
-              {allDone 
+              {allDone
                 ? 'Your calendar is ready to go'
                 : 'Select a cleaner from the dropdown to assign them'}
             </p>
-            <Button 
+            <Button
               onClick={handleClose}
               variant={allDone ? 'default' : 'outline'}
               className={allDone ? 'bg-teal-600 hover:bg-teal-700 text-white' : ''}

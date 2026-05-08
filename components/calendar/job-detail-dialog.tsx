@@ -126,8 +126,8 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
   const jobTimeDisplay = displayTime
     ? formatTime(displayTime)
     : job.startWindowBegin
-    ? `${formatTime(job.startWindowBegin!)} – ${formatTime(job.startWindowEnd || '')}`
-    : 'TBD'
+      ? `${formatTime(job.startWindowBegin!)} – ${formatTime(job.startWindowEnd || '')}`
+      : 'TBD'
   const recurringScheduleRecord = job.schedule as ScheduleRecord | null
   const clientBillingType = job.location.client.billingType
   const clientCleanerPayType = job.location.client.cleanerPayType
@@ -452,72 +452,72 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         {activeQuickFixPanel === 'move' && (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-1">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={draftDate}
-                  onChange={(e) => {
-                    setQuickRescheduleLabel(null)
-                    setDraftDate(e.target.value)
-                  }}
-                  disabled={isSavingInlineDate}
-                  className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
-                  style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light' }}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={draftDate}
+                    onChange={(e) => {
+                      setQuickRescheduleLabel(null)
+                      setDraftDate(e.target.value)
+                    }}
+                    disabled={isSavingInlineDate}
+                    className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
+                    style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={draftTime}
+                    onChange={(e) => {
+                      setQuickRescheduleLabel(null)
+                      setDraftTime(e.target.value)
+                    }}
+                    disabled={isSavingInlineDate}
+                    className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
+                    style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light' }}
+                  />
+                </div>
               </div>
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
-                  Time
-                </label>
-                <input
-                  type="time"
-                  value={draftTime}
-                  onChange={(e) => {
-                    setQuickRescheduleLabel(null)
-                    setDraftTime(e.target.value)
-                  }}
-                  disabled={isSavingInlineDate}
-                  className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
-                  style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light' }}
-                />
-              </div>
-            </div>
 
-            <div>
-              <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-                Fast Reschedule
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => handleQuickReschedule(1, 'tomorrow')}
-                  disabled={isSavingInlineDate}
-                  className="rounded-full bg-white px-4 py-2 font-semibold disabled:opacity-45"
-                  style={{
-                    border: quickRescheduleLabel === 'tomorrow' ? '1px solid #0F766E' : '1px solid #D9E3E1',
-                    fontSize: '14px',
-                    color: quickRescheduleLabel === 'tomorrow' ? '#0F766E' : '#111827',
-                  }}
-                >
-                  Tomorrow
-                </button>
-                <button
-                  onClick={() => handleQuickReschedule(7, 'next-week')}
-                  disabled={isSavingInlineDate}
-                  className="rounded-full bg-white px-4 py-2 font-semibold disabled:opacity-45"
-                  style={{
-                    border: quickRescheduleLabel === 'next-week' ? '1px solid #0F766E' : '1px solid #D9E3E1',
-                    fontSize: '14px',
-                    color: quickRescheduleLabel === 'next-week' ? '#0F766E' : '#111827',
-                  }}
-                >
-                  Next Week
-                </button>
+              <div>
+                <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+                  Fast Reschedule
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleQuickReschedule(1, 'tomorrow')}
+                    disabled={isSavingInlineDate}
+                    className="rounded-full bg-white px-4 py-2 font-semibold disabled:opacity-45"
+                    style={{
+                      border: quickRescheduleLabel === 'tomorrow' ? '1px solid #0F766E' : '1px solid #D9E3E1',
+                      fontSize: '14px',
+                      color: quickRescheduleLabel === 'tomorrow' ? '#0F766E' : '#111827',
+                    }}
+                  >
+                    Tomorrow
+                  </button>
+                  <button
+                    onClick={() => handleQuickReschedule(7, 'next-week')}
+                    disabled={isSavingInlineDate}
+                    className="rounded-full bg-white px-4 py-2 font-semibold disabled:opacity-45"
+                    style={{
+                      border: quickRescheduleLabel === 'next-week' ? '1px solid #0F766E' : '1px solid #D9E3E1',
+                      fontSize: '14px',
+                      color: quickRescheduleLabel === 'next-week' ? '#0F766E' : '#111827',
+                    }}
+                  >
+                    Next Week
+                  </button>
+                </div>
               </div>
-            </div>
             </div>
             {renderQuickFixFooter(
               canShowFutureScope ? 'Continue' : 'Save Move',
@@ -532,21 +532,21 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         {activeQuickFixPanel === 'cleaner' && (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            <div className="rounded-[12px] overflow-hidden bg-white" style={{ border: '1px solid #D9E3E1' }}>
-              <button onClick={() => setSelectedSubcontractorId('unassigned')} className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-[#F7FAFA] transition-colors" style={{ borderBottom: '1px solid #EEF2F1' }}>
-                <span className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === 'unassigned' ? '#0F766E' : '#111111' }}>Unassigned</span>
-                {selectedSubcontractorId === 'unassigned' && <Check className="h-4 w-4" style={{ color: '#0F766E' }} />}
-              </button>
-              {subcontractors.map((sub) => (
-                <button key={sub.id} onClick={() => setSelectedSubcontractorId(sub.id)} className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-[#F7FAFA] transition-colors" style={{ borderBottom: '1px solid #EEF2F1' }}>
-                  <div>
-                    <p className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === sub.id ? '#0F766E' : '#111111' }}>{sub.name}</p>
-                    {sub.phone && <p style={{ fontSize: '13px', color: '#6B7280' }}>{sub.phone}</p>}
-                  </div>
-                  {selectedSubcontractorId === sub.id && <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#0F766E' }} />}
+              <div className="rounded-[12px] overflow-hidden bg-white" style={{ border: '1px solid #D9E3E1' }}>
+                <button onClick={() => setSelectedSubcontractorId('unassigned')} className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-[#F7FAFA] transition-colors" style={{ borderBottom: '1px solid #EEF2F1' }}>
+                  <span className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === 'unassigned' ? '#0F766E' : '#111111' }}>Unassigned</span>
+                  {selectedSubcontractorId === 'unassigned' && <Check className="h-4 w-4" style={{ color: '#0F766E' }} />}
                 </button>
-              ))}
-            </div>
+                {subcontractors.map((sub) => (
+                  <button key={sub.id} onClick={() => setSelectedSubcontractorId(sub.id)} className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-[#F7FAFA] transition-colors" style={{ borderBottom: '1px solid #EEF2F1' }}>
+                    <div>
+                      <p className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === sub.id ? '#0F766E' : '#111111' }}>{sub.name}</p>
+                      {sub.phone && <p style={{ fontSize: '13px', color: '#6B7280' }}>{sub.phone}</p>}
+                    </div>
+                    {selectedSubcontractorId === sub.id && <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#0F766E' }} />}
+                  </button>
+                ))}
+              </div>
             </div>
             {renderQuickFixFooter(
               canShowFutureScope ? 'Continue' : 'Save Cleaner',
@@ -633,28 +633,28 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         {activeQuickFixPanel === 'addon' && (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-1">
-            <Input
-              value={newAddOn.description}
-              onChange={(e) => setNewAddOn({ ...newAddOn, description: e.target.value })}
-              placeholder="Add-on name"
-              className="text-sm"
-            />
-            <div className="grid grid-cols-2 gap-2">
               <Input
-                type="number"
-                value={newAddOn.clientRate}
-                onChange={(e) => setNewAddOn({ ...newAddOn, clientRate: e.target.value })}
-                placeholder="Client price"
+                value={newAddOn.description}
+                onChange={(e) => setNewAddOn({ ...newAddOn, description: e.target.value })}
+                placeholder="Add-on name"
                 className="text-sm"
               />
-              <Input
-                type="number"
-                value={newAddOn.subcontractorRate}
-                onChange={(e) => setNewAddOn({ ...newAddOn, subcontractorRate: e.target.value })}
-                placeholder="Cleaner pay"
-                className="text-sm"
-              />
-            </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  type="number"
+                  value={newAddOn.clientRate}
+                  onChange={(e) => setNewAddOn({ ...newAddOn, clientRate: e.target.value })}
+                  placeholder="Client price"
+                  className="text-sm"
+                />
+                <Input
+                  type="number"
+                  value={newAddOn.subcontractorRate}
+                  onChange={(e) => setNewAddOn({ ...newAddOn, subcontractorRate: e.target.value })}
+                  placeholder="Cleaner pay"
+                  className="text-sm"
+                />
+              </div>
             </div>
             {renderQuickFixFooter(
               canShowFutureScope ? 'Continue' : 'Save Service',
@@ -667,67 +667,67 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         {activeQuickFixPanel === 'outcome' && (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto space-y-4 pr-1">
-            <div className="space-y-2">
-              {[
-                { id: 'skipped', label: 'Skipped' },
-                { id: 'no-access', label: 'No Access / No Show' },
-                { id: 're-clean', label: 'Re-clean / Make Good' },
-              ].map((option) => (
-                <button
-                  key={option.id}
-                  onClick={() => handleOutcomeTypeChange(option.id as OutcomeType)}
-                  className="w-full rounded-[14px] bg-white px-4 py-3 text-left transition-colors hover:bg-[#F9FBFB]"
-                  style={{
-                    border: outcomeType === option.id ? '2px solid #0F766E' : '1px solid #D9E3E1',
-                    boxShadow: outcomeType === option.id ? '0 0 0 3px rgba(15,118,110,0.08)' : 'none',
-                  }}
-                >
-                  <span style={{ fontSize: '15px', fontWeight: 600, color: outcomeType === option.id ? '#0F766E' : '#111827' }}>
-                    {option.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div className="grid gap-4">
-              {renderOutcomeModeButtons('Client Charge', clientChargeMode, setClientChargeMode)}
-              {clientChargeMode === 'partial' && (
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={partialClientAmount}
-                  onChange={(e) => setPartialClientAmount(e.target.value)}
-                  placeholder={`Enter client amount (normal ${formatCurrency(job.clientRate ?? 0)})`}
-                />
-              )}
-
-              {renderOutcomeModeButtons('Cleaner Pay', cleanerPayMode, setCleanerPayMode)}
-              {cleanerPayMode === 'partial' && (
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={partialCleanerAmount}
-                  onChange={(e) => setPartialCleanerAmount(e.target.value)}
-                  placeholder={`Enter cleaner pay (normal ${formatCurrency(job.subcontractorRate ?? 0)})`}
-                />
-              )}
-
-              <div>
-                <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-                  Note
-                </p>
-                <textarea
-                  value={outcomeNote}
-                  onChange={(e) => setOutcomeNote(e.target.value)}
-                  placeholder="Optional note for why this happened"
-                  rows={2}
-                  className="w-full rounded-[12px] px-3 py-2 outline-none resize-none"
-                  style={{ border: '1px solid #D9E3E1', fontSize: '14px', color: '#111111' }}
-                />
+              <div className="space-y-2">
+                {[
+                  { id: 'skipped', label: 'Skipped' },
+                  { id: 'no-access', label: 'No Access / No Show' },
+                  { id: 're-clean', label: 'Re-clean / Make Good' },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => handleOutcomeTypeChange(option.id as OutcomeType)}
+                    className="w-full rounded-[14px] bg-white px-4 py-3 text-left transition-colors hover:bg-[#F9FBFB]"
+                    style={{
+                      border: outcomeType === option.id ? '2px solid #0F766E' : '1px solid #D9E3E1',
+                      boxShadow: outcomeType === option.id ? '0 0 0 3px rgba(15,118,110,0.08)' : 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: outcomeType === option.id ? '#0F766E' : '#111827' }}>
+                      {option.label}
+                    </span>
+                  </button>
+                ))}
               </div>
-            </div>
+
+              <div className="grid gap-4">
+                {renderOutcomeModeButtons('Client Charge', clientChargeMode, setClientChargeMode)}
+                {clientChargeMode === 'partial' && (
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={partialClientAmount}
+                    onChange={(e) => setPartialClientAmount(e.target.value)}
+                    placeholder={`Enter client amount (normal ${formatCurrency(job.clientRate ?? 0)})`}
+                  />
+                )}
+
+                {renderOutcomeModeButtons('Cleaner Pay', cleanerPayMode, setCleanerPayMode)}
+                {cleanerPayMode === 'partial' && (
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={partialCleanerAmount}
+                    onChange={(e) => setPartialCleanerAmount(e.target.value)}
+                    placeholder={`Enter cleaner pay (normal ${formatCurrency(job.subcontractorRate ?? 0)})`}
+                  />
+                )}
+
+                <div>
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+                    Note
+                  </p>
+                  <textarea
+                    value={outcomeNote}
+                    onChange={(e) => setOutcomeNote(e.target.value)}
+                    placeholder="Optional note for why this happened"
+                    rows={2}
+                    className="w-full rounded-[12px] px-3 py-2 outline-none resize-none"
+                    style={{ border: '1px solid #D9E3E1', fontSize: '14px', color: '#111111' }}
+                  />
+                </div>
+              </div>
             </div>
             {renderQuickFixFooter(
               'Save Problem',
@@ -1418,238 +1418,238 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             </button>
 
             {/* ── Confirmation sheet overlay ── */}
-              {mobileConfirmAction && (
+            {mobileConfirmAction && (
+              <div
+                className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+              >
                 <div
-                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
-                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                  className="bg-white rounded-t-[20px] px-4 pt-6 space-y-3"
+                  style={{ paddingBottom: '34px' }}
+                >
+                  <div className="text-center space-y-1 mb-4">
+                    <p className="text-lg font-semibold text-[#111111]">
+                      {mobileConfirmAction === 'cancel' ? 'Cancel this job?' : 'Delete this job?'}
+                    </p>
+                    <p className="text-sm text-[#888888]">This cannot be undone.</p>
+                  </div>
+                  <button
+                    onClick={() => setMobileConfirmAction(null)}
+                    className="w-full font-semibold text-base text-[#333333] bg-white border border-[#E0E0E0] rounded-[14px] transition-all active:scale-[0.97]"
+                    style={{ height: '52px' }}
+                  >
+                    Never mind
+                  </button>
+                  <button
+                    onClick={
+                      mobileConfirmAction === 'cancel'
+                        ? handleConfirmCancelMobile
+                        : handleConfirmDeleteMobile
+                    }
+                    disabled={isCancelling || isDeleting}
+                    className="w-full font-semibold text-base text-white rounded-[14px] transition-all active:scale-[0.97] flex items-center justify-center gap-2"
+                    style={{ height: '52px', backgroundColor: '#E53935' }}
+                  >
+                    {(isCancelling || isDeleting) && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {mobileConfirmAction === 'cancel' ? 'Yes, Cancel Job' : 'Yes, Delete Job'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* ── Cleaner selection sheet overlay ── */}
+            {isSelectingCleaner && (
+              <div
+                className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+              >
+                <div
+                  className="bg-white rounded-t-[20px] overflow-hidden"
+                  style={{ paddingBottom: '34px' }}
                 >
                   <div
-                    className="bg-white rounded-t-[20px] px-4 pt-6 space-y-3"
-                    style={{ paddingBottom: '34px' }}
+                    className="px-5 py-4 flex items-center justify-between"
+                    style={{ borderBottom: '1px solid #F5F5F5' }}
                   >
-                    <div className="text-center space-y-1 mb-4">
-                      <p className="text-lg font-semibold text-[#111111]">
-                        {mobileConfirmAction === 'cancel' ? 'Cancel this job?' : 'Delete this job?'}
-                      </p>
-                      <p className="text-sm text-[#888888]">This cannot be undone.</p>
-                    </div>
+                    <p className="font-semibold text-[#111111]">Assign Cleaner</p>
                     <button
-                      onClick={() => setMobileConfirmAction(null)}
-                      className="w-full font-semibold text-base text-[#333333] bg-white border border-[#E0E0E0] rounded-[14px] transition-all active:scale-[0.97]"
-                      style={{ height: '52px' }}
+                      onClick={() => setIsSelectingCleaner(false)}
+                      className="w-[44px] h-[44px] flex items-center justify-center rounded-full transition-colors hover:bg-[#F3F3F3]"
                     >
-                      Never mind
-                    </button>
-                    <button
-                      onClick={
-                        mobileConfirmAction === 'cancel'
-                          ? handleConfirmCancelMobile
-                          : handleConfirmDeleteMobile
-                      }
-                      disabled={isCancelling || isDeleting}
-                      className="w-full font-semibold text-base text-white rounded-[14px] transition-all active:scale-[0.97] flex items-center justify-center gap-2"
-                      style={{ height: '52px', backgroundColor: '#E53935' }}
-                    >
-                      {(isCancelling || isDeleting) && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {mobileConfirmAction === 'cancel' ? 'Yes, Cancel Job' : 'Yes, Delete Job'}
+                      <X className="h-5 w-5 text-gray-400" />
                     </button>
                   </div>
-                </div>
-              )}
-            {/* ── Cleaner selection sheet overlay ── */}
-              {isSelectingCleaner && (
-                <div
-                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
-                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
-                >
-                  <div
-                    className="bg-white rounded-t-[20px] overflow-hidden"
-                    style={{ paddingBottom: '34px' }}
-                  >
-                    <div
-                      className="px-5 py-4 flex items-center justify-between"
+                  <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+                    <button
+                      onClick={() => handleSaveSubcontractorMobile('unassigned')}
+                      className="w-full px-5 py-4 text-left flex items-center justify-between transition-colors active:bg-[#F8F8F8]"
                       style={{ borderBottom: '1px solid #F5F5F5' }}
                     >
-                      <p className="font-semibold text-[#111111]">Assign Cleaner</p>
-                      <button
-                        onClick={() => setIsSelectingCleaner(false)}
-                        className="w-[44px] h-[44px] flex items-center justify-center rounded-full transition-colors hover:bg-[#F3F3F3]"
+                      <span
+                        className="text-[15px] font-medium"
+                        style={{ color: !job.subcontractor ? '#00A896' : '#111111' }}
                       >
-                        <X className="h-5 w-5 text-gray-400" />
-                      </button>
-                    </div>
-                    <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+                        Unassigned
+                      </span>
+                      {!job.subcontractor && <Check className="h-4 w-4" style={{ color: '#00A896' }} />}
+                    </button>
+                    {subcontractors.map(sub => (
                       <button
-                        onClick={() => handleSaveSubcontractorMobile('unassigned')}
+                        key={sub.id}
+                        onClick={() => handleSaveSubcontractorMobile(sub.id)}
                         className="w-full px-5 py-4 text-left flex items-center justify-between transition-colors active:bg-[#F8F8F8]"
                         style={{ borderBottom: '1px solid #F5F5F5' }}
                       >
-                        <span
-                          className="text-[15px] font-medium"
-                          style={{ color: !job.subcontractor ? '#00A896' : '#111111' }}
-                        >
-                          Unassigned
-                        </span>
-                        {!job.subcontractor && <Check className="h-4 w-4" style={{ color: '#00A896' }} />}
-                      </button>
-                      {subcontractors.map(sub => (
-                        <button
-                          key={sub.id}
-                          onClick={() => handleSaveSubcontractorMobile(sub.id)}
-                          className="w-full px-5 py-4 text-left flex items-center justify-between transition-colors active:bg-[#F8F8F8]"
-                          style={{ borderBottom: '1px solid #F5F5F5' }}
-                        >
-                          <div>
-                            <p
-                              className="text-[15px] font-medium"
-                              style={{ color: job.subcontractor?.id === sub.id ? '#00A896' : '#111111' }}
-                            >
-                              {sub.name}
-                            </p>
-                            {sub.phone && (
-                              <p className="text-[13px] text-[#888888] mt-0.5">{sub.phone}</p>
-                            )}
-                          </div>
-                          {job.subcontractor?.id === sub.id && (
-                            <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#00A896' }} />
+                        <div>
+                          <p
+                            className="text-[15px] font-medium"
+                            style={{ color: job.subcontractor?.id === sub.id ? '#00A896' : '#111111' }}
+                          >
+                            {sub.name}
+                          </p>
+                          {sub.phone && (
+                            <p className="text-[13px] text-[#888888] mt-0.5">{sub.phone}</p>
                           )}
+                        </div>
+                        {job.subcontractor?.id === sub.id && (
+                          <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#00A896' }} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* ── Cancellation sheet overlay ── */}
+            {showCancellationSheet && (
+              <div
+                className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+              >
+                <div
+                  className="bg-white rounded-t-[20px]"
+                  style={{ paddingBottom: '40px', maxHeight: '88%', overflowY: 'auto' }}
+                >
+                  {/* Handle */}
+                  <div style={{ width: '36px', height: '4px', backgroundColor: '#E0E0E0', borderRadius: '2px', margin: '12px auto 28px' }} />
+
+                  <div style={{ paddingLeft: '24px', paddingRight: '24px' }}>
+
+                    {/* Reason pills — 2×2 grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
+                      {[
+                        { id: 'no-access', label: "Couldn't access" },
+                        { id: 'cleaner-unavailable', label: "Cleaner unavailable" },
+                        { id: 'client-cancelled', label: "Client cancelled" },
+                        { id: 'other', label: "Other" },
+                      ].map(reason => (
+                        <button
+                          key={reason.id}
+                          onClick={() => setCancelReason(reason.id)}
+                          style={{
+                            height: '46px',
+                            borderRadius: '23px',
+                            border: cancelReason === reason.id
+                              ? '1.5px solid #00A896'
+                              : '1.5px solid #E5E5E5',
+                            backgroundColor: 'white',
+                            fontSize: '14px',
+                            fontWeight: cancelReason === reason.id ? 500 : 400,
+                            color: cancelReason === reason.id ? '#00A896' : '#333333',
+                            cursor: 'pointer',
+                            transition: 'border-color 100ms, color 100ms',
+                          }}
+                        >
+                          {reason.label}
                         </button>
                       ))}
                     </div>
-                  </div>
-                </div>
-              )}
-            {/* ── Cancellation sheet overlay ── */}
-              {showCancellationSheet && (
-                <div
-                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
-                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
-                >
-                  <div
-                    className="bg-white rounded-t-[20px]"
-                    style={{ paddingBottom: '40px', maxHeight: '88%', overflowY: 'auto' }}
-                  >
-                    {/* Handle */}
-                    <div style={{ width: '36px', height: '4px', backgroundColor: '#E0E0E0', borderRadius: '2px', margin: '12px auto 28px' }} />
 
-                    <div style={{ paddingLeft: '24px', paddingRight: '24px' }}>
-
-                      {/* Reason pills — 2×2 grid */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
-                        {[
-                          { id: 'no-access',           label: "Couldn't access" },
-                          { id: 'cleaner-unavailable', label: "Cleaner unavailable" },
-                          { id: 'client-cancelled',    label: "Client cancelled" },
-                          { id: 'other',               label: "Other" },
-                        ].map(reason => (
-                          <button
-                            key={reason.id}
-                            onClick={() => setCancelReason(reason.id)}
-                            style={{
-                              height: '46px',
-                              borderRadius: '23px',
-                              border: cancelReason === reason.id
-                                ? '1.5px solid #00A896'
-                                : '1.5px solid #E5E5E5',
-                              backgroundColor: 'white',
-                              fontSize: '14px',
-                              fontWeight: cancelReason === reason.id ? 500 : 400,
-                              color: cancelReason === reason.id ? '#00A896' : '#333333',
-                              cursor: 'pointer',
-                              transition: 'border-color 100ms, color 100ms',
-                            }}
-                          >
-                            {reason.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Fee row */}
-                      <div className="flex items-center justify-between" style={{ marginBottom: chargeFee ? '16px' : '0' }}>
-                        <span style={{ fontSize: '15px', color: '#111111' }}>Charge a fee?</span>
-                        <button
-                          onClick={() => setChargeFee(v => !v)}
-                          style={{
-                            width: '44px', height: '26px', borderRadius: '13px',
-                            backgroundColor: chargeFee ? '#00A896' : '#E0E0E0',
-                            position: 'relative', transition: 'background-color 150ms', flexShrink: 0,
-                          }}
-                        >
-                          <div style={{
-                            position: 'absolute', top: '3px',
-                            left: chargeFee ? '21px' : '3px',
-                            width: '20px', height: '20px', borderRadius: '50%',
-                            backgroundColor: 'white', transition: 'left 150ms',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                          }} />
-                        </button>
-                      </div>
-
-                      {/* Fee amount input */}
-                        {chargeFee && (
-                          <div
-                            style={{ overflow: 'hidden', marginBottom: '4px' }}
-                          >
-                            <div className="flex items-center justify-center" style={{ padding: '12px 0' }}>
-                              <span style={{ fontSize: '28px', fontWeight: 300, color: '#BBBBBB', lineHeight: 1, marginRight: '2px' }}>$</span>
-                              <input
-                                type="number" min="0" step="0.01"
-                                value={feeAmount}
-                                onChange={(e) => setFeeAmount(e.target.value)}
-                                placeholder="0.00"
-                                autoFocus
-                                className="outline-none bg-transparent"
-                                style={{
-                                  fontSize: '28px', fontWeight: 400, color: '#111111',
-                                  width: '110px', border: 'none',
-                                  borderBottom: '2px solid #EEEEEE',
-                                  textAlign: 'center',
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      {/* Buttons */}
-                      <div style={{ marginTop: '28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <button
-                          onClick={handleCancelWithReason}
-                          disabled={!cancelReason || isCancelling}
-                          className="flex items-center justify-center gap-2"
-                          style={{
-                            width: '100%', height: '52px', borderRadius: '14px',
-                            backgroundColor: cancelReason ? '#00A896' : '#E5E5E5',
-                            color: 'white', fontSize: '16px', fontWeight: 600,
-                            border: 'none', cursor: cancelReason ? 'pointer' : 'default',
-                            transition: 'background-color 150ms',
-                          }}
-                        >
-                          {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
-                        </button>
-                        <button
-                          onClick={() => setShowCancellationSheet(false)}
-                          style={{ background: 'none', border: 'none', fontSize: '15px', color: '#999999', cursor: 'pointer', padding: '4px' }}
-                        >
-                          Never mind
-                        </button>
-                      </div>
-
+                    {/* Fee row */}
+                    <div className="flex items-center justify-between" style={{ marginBottom: chargeFee ? '16px' : '0' }}>
+                      <span style={{ fontSize: '15px', color: '#111111' }}>Charge a fee?</span>
+                      <button
+                        onClick={() => setChargeFee(v => !v)}
+                        style={{
+                          width: '44px', height: '26px', borderRadius: '13px',
+                          backgroundColor: chargeFee ? '#00A896' : '#E0E0E0',
+                          position: 'relative', transition: 'background-color 150ms', flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          position: 'absolute', top: '3px',
+                          left: chargeFee ? '21px' : '3px',
+                          width: '20px', height: '20px', borderRadius: '50%',
+                          backgroundColor: 'white', transition: 'left 150ms',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        }} />
+                      </button>
                     </div>
+
+                    {/* Fee amount input */}
+                    {chargeFee && (
+                      <div
+                        style={{ overflow: 'hidden', marginBottom: '4px' }}
+                      >
+                        <div className="flex items-center justify-center" style={{ padding: '12px 0' }}>
+                          <span style={{ fontSize: '28px', fontWeight: 300, color: '#BBBBBB', lineHeight: 1, marginRight: '2px' }}>$</span>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={feeAmount}
+                            onChange={(e) => setFeeAmount(e.target.value)}
+                            placeholder="0.00"
+                            autoFocus
+                            className="outline-none bg-transparent"
+                            style={{
+                              fontSize: '28px', fontWeight: 400, color: '#111111',
+                              width: '110px', border: 'none',
+                              borderBottom: '2px solid #EEEEEE',
+                              textAlign: 'center',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {/* Buttons */}
+                    <div style={{ marginTop: '28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <button
+                        onClick={handleCancelWithReason}
+                        disabled={!cancelReason || isCancelling}
+                        className="flex items-center justify-center gap-2"
+                        style={{
+                          width: '100%', height: '52px', borderRadius: '14px',
+                          backgroundColor: cancelReason ? '#00A896' : '#E5E5E5',
+                          color: 'white', fontSize: '16px', fontWeight: 600,
+                          border: 'none', cursor: cancelReason ? 'pointer' : 'default',
+                          transition: 'background-color 150ms',
+                        }}
+                      >
+                        {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={() => setShowCancellationSheet(false)}
+                        style={{ background: 'none', border: 'none', fontSize: '15px', color: '#999999', cursor: 'pointer', padding: '4px' }}
+                      >
+                        Never mind
+                      </button>
+                    </div>
+
                   </div>
                 </div>
-              )}
-              {showOutcomeSheet && (
+              </div>
+            )}
+            {showOutcomeSheet && (
+              <div
+                className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
+                style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+              >
                 <div
-                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-t-[20px]"
-                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                  className="bg-white rounded-t-[20px]"
+                  style={{ paddingBottom: '40px' }}
                 >
-                  <div
-                    className="bg-white rounded-t-[20px]"
-                    style={{ paddingBottom: '40px' }}
-                  >
-                    {renderOutcomeSheetBody()}
-                  </div>
+                  {renderOutcomeSheetBody()}
                 </div>
-              )}
+              </div>
+            )}
             {/* ── Modal header ── */}
             <div
               className="relative text-center flex-shrink-0"
@@ -1692,7 +1692,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
             {/* ── Scrollable body ── */}
             <div
-              className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-4 pb-6" : "flex-1 overflow-y-auto px-4 pb-6"}
+              className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-4 pb-6" : "flex-1 px-4 pb-6"}
               style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
 
@@ -1791,128 +1791,128 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
               <X size={16} strokeWidth={2} style={{ color: '#6B7280' }} />
             </button>
             {/* ── Desktop: Cancellation sheet overlay ── */}
-              {showCancellationSheet && (
+            {showCancellationSheet && (
+              <div
+                className="absolute inset-0 z-50 flex flex-col justify-end rounded-[12px]"
+                style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+              >
                 <div
-                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-[12px]"
-                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                  className="bg-white rounded-[12px]"
+                  style={{ maxHeight: '95%', overflowY: 'auto', paddingBottom: '28px' }}
                 >
-                  <div
-                    className="bg-white rounded-[12px]"
-                    style={{ maxHeight: '95%', overflowY: 'auto', paddingBottom: '28px' }}
-                  >
-                    <div style={{ padding: '28px 24px 0' }}>
+                  <div style={{ padding: '28px 24px 0' }}>
 
-                      {/* Reason pills — 2×2 grid */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
-                        {[
-                          { id: 'no-access',           label: "Couldn't access" },
-                          { id: 'cleaner-unavailable', label: "Cleaner unavailable" },
-                          { id: 'client-cancelled',    label: "Client cancelled" },
-                          { id: 'other',               label: "Other" },
-                        ].map(reason => (
-                          <button
-                            key={reason.id}
-                            onClick={() => setCancelReason(reason.id)}
-                            style={{
-                              height: '46px',
-                              borderRadius: '23px',
-                              border: cancelReason === reason.id
-                                ? '1.5px solid #00A896'
-                                : '1.5px solid #E5E5E5',
-                              backgroundColor: 'white',
-                              fontSize: '14px',
-                              fontWeight: cancelReason === reason.id ? 500 : 400,
-                              color: cancelReason === reason.id ? '#00A896' : '#333333',
-                              cursor: 'pointer',
-                              transition: 'border-color 100ms, color 100ms',
-                            }}
-                          >
-                            {reason.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Fee row */}
-                      <div className="flex items-center justify-between" style={{ marginBottom: chargeFee ? '8px' : '0' }}>
-                        <span style={{ fontSize: '15px', color: '#111111' }}>Charge a fee?</span>
+                    {/* Reason pills — 2×2 grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
+                      {[
+                        { id: 'no-access', label: "Couldn't access" },
+                        { id: 'cleaner-unavailable', label: "Cleaner unavailable" },
+                        { id: 'client-cancelled', label: "Client cancelled" },
+                        { id: 'other', label: "Other" },
+                      ].map(reason => (
                         <button
-                          onClick={() => setChargeFee(v => !v)}
+                          key={reason.id}
+                          onClick={() => setCancelReason(reason.id)}
                           style={{
-                            width: '44px', height: '26px', borderRadius: '13px',
-                            backgroundColor: chargeFee ? '#00A896' : '#E0E0E0',
-                            position: 'relative', transition: 'background-color 150ms', flexShrink: 0,
+                            height: '46px',
+                            borderRadius: '23px',
+                            border: cancelReason === reason.id
+                              ? '1.5px solid #00A896'
+                              : '1.5px solid #E5E5E5',
+                            backgroundColor: 'white',
+                            fontSize: '14px',
+                            fontWeight: cancelReason === reason.id ? 500 : 400,
+                            color: cancelReason === reason.id ? '#00A896' : '#333333',
+                            cursor: 'pointer',
+                            transition: 'border-color 100ms, color 100ms',
                           }}
                         >
-                          <div style={{
-                            position: 'absolute', top: '3px',
-                            left: chargeFee ? '21px' : '3px',
-                            width: '20px', height: '20px', borderRadius: '50%',
-                            backgroundColor: 'white', transition: 'left 150ms',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                          }} />
+                          {reason.label}
                         </button>
-                      </div>
-                        {chargeFee && (
-                          <div
-                            style={{ overflow: 'hidden' }}
-                          >
-                            <div className="flex items-center justify-center" style={{ padding: '12px 0' }}>
-                              <span style={{ fontSize: '28px', fontWeight: 300, color: '#BBBBBB', lineHeight: 1, marginRight: '2px' }}>$</span>
-                              <input
-                                type="number" min="0" step="0.01"
-                                value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)}
-                                placeholder="0.00" autoFocus
-                                className="outline-none bg-transparent"
-                                style={{
-                                  fontSize: '28px', fontWeight: 400, color: '#111111',
-                                  width: '110px', border: 'none',
-                                  borderBottom: '2px solid #EEEEEE', textAlign: 'center',
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      {/* Buttons */}
-                      <div style={{ marginTop: '28px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <button
-                          onClick={handleCancelWithReason}
-                          disabled={!cancelReason || isCancelling}
-                          className="flex items-center justify-center gap-2"
-                          style={{
-                            width: '100%', height: '48px', borderRadius: '10px',
-                            backgroundColor: cancelReason ? '#00A896' : '#E5E5E5',
-                            color: 'white', fontSize: '15px', fontWeight: 600,
-                            border: 'none', cursor: cancelReason ? 'pointer' : 'default',
-                            transition: 'background-color 150ms',
-                          }}
-                        >
-                          {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
-                        </button>
-                        <button
-                          onClick={() => setShowCancellationSheet(false)}
-                          style={{ background: 'none', border: 'none', fontSize: '14px', color: '#999999', cursor: 'pointer', padding: '4px' }}
-                        >
-                          Never mind
-                        </button>
-                      </div>
-
+                      ))}
                     </div>
+
+                    {/* Fee row */}
+                    <div className="flex items-center justify-between" style={{ marginBottom: chargeFee ? '8px' : '0' }}>
+                      <span style={{ fontSize: '15px', color: '#111111' }}>Charge a fee?</span>
+                      <button
+                        onClick={() => setChargeFee(v => !v)}
+                        style={{
+                          width: '44px', height: '26px', borderRadius: '13px',
+                          backgroundColor: chargeFee ? '#00A896' : '#E0E0E0',
+                          position: 'relative', transition: 'background-color 150ms', flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          position: 'absolute', top: '3px',
+                          left: chargeFee ? '21px' : '3px',
+                          width: '20px', height: '20px', borderRadius: '50%',
+                          backgroundColor: 'white', transition: 'left 150ms',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        }} />
+                      </button>
+                    </div>
+                    {chargeFee && (
+                      <div
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <div className="flex items-center justify-center" style={{ padding: '12px 0' }}>
+                          <span style={{ fontSize: '28px', fontWeight: 300, color: '#BBBBBB', lineHeight: 1, marginRight: '2px' }}>$</span>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)}
+                            placeholder="0.00" autoFocus
+                            className="outline-none bg-transparent"
+                            style={{
+                              fontSize: '28px', fontWeight: 400, color: '#111111',
+                              width: '110px', border: 'none',
+                              borderBottom: '2px solid #EEEEEE', textAlign: 'center',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {/* Buttons */}
+                    <div style={{ marginTop: '28px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <button
+                        onClick={handleCancelWithReason}
+                        disabled={!cancelReason || isCancelling}
+                        className="flex items-center justify-center gap-2"
+                        style={{
+                          width: '100%', height: '48px', borderRadius: '10px',
+                          backgroundColor: cancelReason ? '#00A896' : '#E5E5E5',
+                          color: 'white', fontSize: '15px', fontWeight: 600,
+                          border: 'none', cursor: cancelReason ? 'pointer' : 'default',
+                          transition: 'background-color 150ms',
+                        }}
+                      >
+                        {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={() => setShowCancellationSheet(false)}
+                        style={{ background: 'none', border: 'none', fontSize: '14px', color: '#999999', cursor: 'pointer', padding: '4px' }}
+                      >
+                        Never mind
+                      </button>
+                    </div>
+
                   </div>
                 </div>
-              )}
-              {showOutcomeSheet && (
+              </div>
+            )}
+            {showOutcomeSheet && (
+              <div
+                className="absolute inset-0 z-50 flex flex-col justify-end rounded-[12px]"
+                style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+              >
                 <div
-                  className="absolute inset-0 z-50 flex flex-col justify-end rounded-[12px]"
-                  style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+                  className="bg-white rounded-[12px]"
+                  style={{ maxHeight: '95%', overflowY: 'auto', paddingBottom: '20px' }}
                 >
-                  <div
-                    className="bg-white rounded-[12px]"
-                    style={{ maxHeight: '95%', overflowY: 'auto', paddingBottom: '20px' }}
-                  >
-                    {renderOutcomeSheetBody()}
-                  </div>
+                  {renderOutcomeSheetBody()}
                 </div>
-              )}
+              </div>
+            )}
             {/* ── Header ── */}
             <div
               className="text-center flex-shrink-0"
@@ -1947,7 +1947,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             </div>
 
             {/* ── Scrollable body ── */}
-            <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-6 py-5 space-y-4" : "flex-1 overflow-y-auto px-6 py-5"}>
+            <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-6 py-5 space-y-4" : "flex-1 px-6 py-5"}>
 
               {/* Invoiced / Paid warnings */}
               {job.invoiced && (
@@ -1984,7 +1984,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                           {renderDesktopSectionTabs()}
                         </div>
 
-                        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+                        <div className="mt-4 min-h-0 flex-1 pr-1">
                           {desktopSection === 'actions' && renderQuickFixSection(false, true)}
                           {desktopSection === 'details' && renderDetailsSection(false, true)}
                           {desktopSection === 'more' && renderMoreActionsSection(false, true)}
@@ -2001,7 +2001,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                         <div className="flex items-center justify-start">
                           {renderDesktopSectionTabs()}
                         </div>
-                        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+                        <div className="mt-4 min-h-0 flex-1 pr-1">
                           {desktopSection === 'details' ? renderDetailsSection(false, true) : renderMoreActionsSection(false, true)}
                         </div>
                       </div>

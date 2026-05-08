@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import { ActionSpinner } from "@/components/ui/action-spinner"
 import { logger } from "@/lib/logger"
+import { showError } from "@/lib/toast"
 
 interface Subcontractor {
   id: string
@@ -473,16 +474,18 @@ export function AddClientWizard({
     }
 
     if (step === 4) {
-      if (!clientRate || parseFloat(clientRate) <= 0) {
-        newErrors.clientRate = 'Enter a valid rate'
+      if (!clientRate || !clientRate.trim() || isNaN(parseFloat(clientRate)) || parseFloat(clientRate) <= 0) {
+        newErrors.clientRate = 'Enter a valid rate greater than $0'
       }
-      if (subcontractorId && (!subcontractorRate || parseFloat(subcontractorRate) < 0)) {
+      if (subcontractorId && (!subcontractorRate || !subcontractorRate.trim() || isNaN(parseFloat(subcontractorRate)) || parseFloat(subcontractorRate) < 0)) {
         newErrors.subcontractorRate = 'Enter a valid cleaner rate'
       }
     }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
+      const firstError = Object.values(newErrors)[0]
+      showError(firstError)
       return
     }
     setErrors({})
@@ -496,11 +499,25 @@ export function AddClientWizard({
     setStep(s => (Math.max(1, s - 1)) as 1 | 2 | 3 | 4 | 5)
   }
 
+  // Progress message state for slow creation
+  const [submitProgress, setSubmitProgress] = useState('')
+
   const handleSubmit = async () => {
     if (!clientName.trim()) return
 
     setIsSubmitting(true)
+    setSubmitProgress('Creating client...')
+    const t0 = performance.now()
+    let createdClientId: string | null = null
+    let primaryLocationId: string | null = null
+
+    // Show "Still working..." after 5 seconds
+    const slowTimer = setTimeout(() => {
+      setSubmitProgress('Still working — setting up schedule...')
+    }, 5000)
+
     try {
+      // Step 1: Create client
       const clientRes = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -527,8 +544,12 @@ export function AddClientWizard({
       }
 
       const client = await clientRes.json()
+      createdClientId = client.id
+      logger.debug(`[wizard] Client created in ${Math.round(performance.now() - t0)}ms`)
 
+      // Step 2: Create primary location
       if (address.trim()) {
+        const t1 = performance.now()
         const locRes = await fetch('/api/locations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -540,10 +561,18 @@ export function AddClientWizard({
           }),
         })
 
-        if (locRes.ok) {
+        if (!locRes.ok) {
+          logger.error('[wizard] Primary location creation failed')
+          showError('Client created but location setup failed')
+        } else {
           const loc = await locRes.json()
+          primaryLocationId = loc.id
+          logger.debug(`[wizard] Location created in ${Math.round(performance.now() - t1)}ms`)
 
+          // Step 3: Create schedule + jobs (this is the slow part)
           if (daysOfWeek.length > 0 && clientRate) {
+            const t2 = performance.now()
+            setSubmitProgress('Setting up schedule...')
             const schedRes = await fetch('/api/schedules', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -566,9 +595,14 @@ export function AddClientWizard({
 
             if (schedRes.ok) {
               const sched = await schedRes.json()
-              for (const addOn of addOns) {
-                if (addOn.description) {
-                  await fetch('/api/add-on-services', {
+              logger.debug(`[wizard] Schedule + jobs created in ${Math.round(performance.now() - t2)}ms`)
+
+              // Step 4: Create add-ons in parallel
+              const validAddOns = addOns.filter(a => a.description)
+              if (validAddOns.length > 0) {
+                const t3 = performance.now()
+                const addOnPromises = validAddOns.map(addOn =>
+                  fetch('/api/add-on-services', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -579,115 +613,132 @@ export function AddClientWizard({
                       isRecurring: addOn.frequency !== 'ONE_TIME',
                       frequency: addOn.frequency === 'ONE_TIME' ? null : addOn.frequency,
                     }),
-                  })
-                }
+                  }).catch(err => { logger.error('[wizard] Add-on creation failed:', err) })
+                )
+                await Promise.all(addOnPromises)
+                logger.debug(`[wizard] ${validAddOns.length} add-ons created in ${Math.round(performance.now() - t3)}ms (parallel)`)
               }
             } else {
               const err = await schedRes.json().catch(() => ({}))
               logger.error('Schedule creation failed in wizard:', err)
+              showError('Client created but schedule setup failed')
             }
           }
         }
       }
 
-      for (const extraLoc of extraLocations) {
-        if (!extraLoc.address.trim()) continue
-        const locRes = await fetch('/api/locations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clientId: client.id,
-            name: extraLoc.name || 'Location',
-            address: extraLoc.address.trim(),
-            accessInfo: extraLoc.accessInfo || null,
-          }),
-        })
-        if (!locRes.ok) continue
-        const loc = await locRes.json()
-        if (extraLoc.sameSchedule) {
-          if (daysOfWeek.length > 0 && clientRate) {
-            await fetch('/api/schedules', {
+      // Step 5: Create extra locations in parallel
+      if (extraLocations.length > 0) {
+        const t4 = performance.now()
+        setSubmitProgress('Setting up extra locations...')
+        const extraLocationPromises = extraLocations
+          .filter(el => el.address.trim())
+          .map(async (extraLoc) => {
+            const locRes = await fetch('/api/locations', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                locationId: loc.id,
-                frequency,
-                daysOfWeek: JSON.stringify(daysOfWeek),
-                startDate: new Date().toISOString(),
-                defaultClientRate: parseFloat(clientRate) || 0,
-                defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
-                clientPayType: billingType,
-                subcontractorPayType: cleanerPayType,
-                subcontractorId: subcontractorId || null,
-                timeType,
-                startTime: timeType === 'SPECIFIC' ? startTime : null,
-                startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
-                startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
+                clientId: client.id,
+                name: extraLoc.name || 'Location',
+                address: extraLoc.address.trim(),
+                accessInfo: extraLoc.accessInfo || null,
               }),
             })
-          }
-        } else {
-          if (extraLoc.daysOfWeek.length > 0 && extraLoc.clientRate) {
-            await fetch('/api/schedules', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                locationId: loc.id,
-                frequency: extraLoc.frequency,
-                daysOfWeek: JSON.stringify(extraLoc.daysOfWeek),
-                startDate: new Date().toISOString(),
-                defaultClientRate: parseFloat(extraLoc.clientRate) || 0,
-                defaultSubcontractorRate: parseFloat(extraLoc.subcontractorRate) || 0,
-                clientPayType: extraLoc.billingType,
-                subcontractorPayType: extraLoc.cleanerPayType,
-                subcontractorId: extraLoc.subcontractorId || null,
-                timeType: extraLoc.timeType,
-                startTime: extraLoc.timeType === 'SPECIFIC' ? extraLoc.startTime : null,
-                startWindowBegin: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowBegin : null,
-                startWindowEnd: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowEnd : null,
-              }),
-            })
-          }
-        }
+            if (!locRes.ok) return
+            const loc = await locRes.json()
+            if (extraLoc.sameSchedule) {
+              if (daysOfWeek.length > 0 && clientRate) {
+                await fetch('/api/schedules', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    locationId: loc.id,
+                    frequency,
+                    daysOfWeek: JSON.stringify(daysOfWeek),
+                    startDate: new Date().toISOString(),
+                    defaultClientRate: parseFloat(clientRate) || 0,
+                    defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
+                    clientPayType: billingType,
+                    subcontractorPayType: cleanerPayType,
+                    subcontractorId: subcontractorId || null,
+                    timeType,
+                    startTime: timeType === 'SPECIFIC' ? startTime : null,
+                    startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
+                    startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
+                  }),
+                })
+              }
+            } else {
+              if (extraLoc.daysOfWeek.length > 0 && extraLoc.clientRate) {
+                await fetch('/api/schedules', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    locationId: loc.id,
+                    frequency: extraLoc.frequency,
+                    daysOfWeek: JSON.stringify(extraLoc.daysOfWeek),
+                    startDate: new Date().toISOString(),
+                    defaultClientRate: parseFloat(extraLoc.clientRate) || 0,
+                    defaultSubcontractorRate: parseFloat(extraLoc.subcontractorRate) || 0,
+                    clientPayType: extraLoc.billingType,
+                    subcontractorPayType: extraLoc.cleanerPayType,
+                    subcontractorId: extraLoc.subcontractorId || null,
+                    timeType: extraLoc.timeType,
+                    startTime: extraLoc.timeType === 'SPECIFIC' ? extraLoc.startTime : null,
+                    startWindowBegin: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowBegin : null,
+                    startWindowEnd: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowEnd : null,
+                  }),
+                })
+              }
+            }
+          })
+        await Promise.allSettled(extraLocationPromises)
+        logger.debug(`[wizard] Extra locations created in ${Math.round(performance.now() - t4)}ms (parallel)`)
       }
 
-      // Create first clean one-off job if date is set
-      if (firstCleanDate && address.trim()) {
+      // Step 6: Create first clean one-off job — use primaryLocationId directly
+      // instead of re-fetching from API (saves a round trip)
+      if (firstCleanDate && primaryLocationId) {
         try {
-          const clientDataRes = await fetch(`/api/clients/${client.id}`)
-          if (clientDataRes.ok) {
-            const clientData = await clientDataRes.json()
-            const primaryLoc = clientData.locations?.[0]
-            if (primaryLoc) {
-              await fetch('/api/jobs', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  locationId: primaryLoc.id,
-                  date: firstCleanDate,
-                  startTime: timeType === 'SPECIFIC' ? startTime : null,
-                  startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
-                  startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
-                  clientRate: parseFloat(clientRate) || 0,
-                  subcontractorRate: parseFloat(subcontractorRate) || 0,
-                  subcontractorId: subcontractorId || null,
-                  scheduleId: null,
-                }),
-              })
-            }
-          }
+          await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              locationId: primaryLocationId,
+              date: firstCleanDate,
+              startTime: timeType === 'SPECIFIC' ? startTime : null,
+              startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
+              startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
+              clientRate: parseFloat(clientRate) || 0,
+              subcontractorRate: parseFloat(subcontractorRate) || 0,
+              subcontractorId: subcontractorId || null,
+              scheduleId: null,
+            }),
+          })
         } catch (err) {
           logger.error('Error creating first clean job:', err)
         }
       }
 
+      logger.debug(`[wizard] Total creation time: ${Math.round(performance.now() - t0)}ms`)
+
+      // Success — navigate and close
       onSuccess(client.id)
       onClose()
       resetForm()
     } catch (err) {
       logger.error('Error creating client:', err)
+      showError(err instanceof Error ? err.message : 'Failed to create client')
+      // If client was created but later steps failed, still navigate to it
+      if (createdClientId) {
+        onSuccess(createdClientId)
+        onClose()
+        resetForm()
+      }
     } finally {
+      clearTimeout(slowTimer)
       setIsSubmitting(false)
+      setSubmitProgress('')
     }
   }
 
@@ -1364,7 +1415,7 @@ export function AddClientWizard({
               onMouseLeave={e => { if (canCreate && !isSubmitting) e.currentTarget.style.backgroundColor = '#00A896' }}
             >
               {isSubmitting ? (
-                <>Creating... <ActionSpinner size={16} color="white" /></>
+                <>{submitProgress || 'Creating...'} <ActionSpinner size={16} color="white" /></>
               ) : (
                 'Create Client ✓'
               )}

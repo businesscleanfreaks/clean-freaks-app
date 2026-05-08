@@ -327,7 +327,7 @@ export async function regenerateJobsForSchedule(scheduleId: string): Promise<Reg
       where: {
         scheduleId,
         date: { gte: now },
-        status: 'SCHEDULED',
+        status: { in: ['SCHEDULED', 'CANCELLED'] },
         invoiced: false,
         subcontractorPaid: false,
         id: { notIn: Array.from(protectedJobIds) },
@@ -416,6 +416,17 @@ export async function regenerateJobsForSchedule(scheduleId: string): Promise<Reg
       firstJobDate,
       lastJobDate,
     }
+  })
+
+  logger.info(`[regenerateJobs] Schedule ${scheduleId} regeneration complete:`, {
+    deleted: summary.deletedCount,
+    created: summary.createdCount,
+    updated: summary.updatedCount,
+    protected: summary.protectedCount,
+    skipped: summary.skippedCount,
+    dateRange: summary.firstJobDate && summary.lastJobDate
+      ? `${summary.firstJobDate} → ${summary.lastJobDate}`
+      : 'none',
   })
 
   return summary
