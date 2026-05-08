@@ -82,6 +82,28 @@ export function formatFrequency(frequency: string, daysOfWeek?: string, monthlyP
       // Ignore
     }
   }
+
+  // Helper to format ordinal
+  const formatWeekOrdinal = (w: number | 'last' | string) => {
+    if (w === 'last') return 'Last'
+    if (w === 1) return '1st'
+    if (w === 2) return '2nd'
+    if (w === 3) return '3rd'
+    return `${w}th`
+  }
+  
+  // Format MONTHLY with NTH_WEEKDAY pattern
+  if (frequency === 'MONTHLY' && monthlyPattern) {
+    try {
+      const pattern = JSON.parse(monthlyPattern)
+      if (pattern.type === 'NTH_WEEKDAY') {
+        const weekStr = pattern.weeks.map(formatWeekOrdinal).join(' & ')
+        return `Monthly: ${weekStr} ${fullDayNames[pattern.weekday]}`
+      }
+    } catch {
+      // Fall through to default
+    }
+  }
   
   // Format 2X_MONTHLY with pattern details
   if (frequency === '2X_MONTHLY' && monthlyPattern) {
@@ -91,8 +113,7 @@ export function formatFrequency(frequency: string, daysOfWeek?: string, monthlyP
         const formatDate = (d: number) => d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : `${d}th`
         return `2x Monthly: ${formatDate(pattern.dates[0])} & ${formatDate(pattern.dates[1])}`
       } else if (pattern.type === 'NTH_WEEKDAY') {
-        const formatWeek = (w: number) => w === 1 ? '1st' : w === 2 ? '2nd' : w === 3 ? '3rd' : `${w}th`
-        const weekStr = pattern.weeks.map(formatWeek).join(' & ')
+        const weekStr = pattern.weeks.map(formatWeekOrdinal).join(' & ')
         return `2x Monthly: ${weekStr} ${fullDayNames[pattern.weekday]}`
       }
     } catch {

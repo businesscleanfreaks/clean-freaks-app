@@ -53,6 +53,16 @@ export async function POST(
       )
     }
 
+    // Idempotency guard: if some requested jobs are already paid, return 409
+    if (jobs.length < jobIds.length) {
+      const foundIds = new Set(jobs.map(j => j.id))
+      const alreadyPaid = jobIds.filter(id => !foundIds.has(id))
+      return NextResponse.json(
+        { error: `${alreadyPaid.length} job(s) already paid or not found`, alreadyPaidJobIds: alreadyPaid },
+        { status: 409 }
+      )
+    }
+
     // Calculate total amount based on billing type
     // Group jobs by client and schedule to handle FLAT_RATE vs PER_CLEAN
     const jobsByClientSchedule = new Map<string, typeof jobs>()

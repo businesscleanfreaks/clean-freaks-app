@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import useSWR from "swr"
-import { format } from "date-fns"
+import { format, startOfMonth, endOfMonth } from "date-fns"
 import { fetcher } from "@/lib/fetcher"
 import { InvoicesPageClient } from "./invoices-page-client"
 import { InvoicesSkeleton } from "@/components/skeletons/invoices-skeleton"
@@ -16,6 +16,21 @@ export function InvoicesClient() {
   // Display month for UI filtering (default: current month). API always fetches all unbilled.
   const [displayMonth, setDisplayMonth] = useState(() => format(new Date(), 'yyyy-MM'))
 
+  // Compute candidate API date range from displayMonth
+  const candidateParams = useMemo(() => {
+    if (!displayMonth || displayMonth === 'all') return null
+    const [y, m] = displayMonth.split('-').map(Number)
+    const monthDate = new Date(y, m - 1)
+    return {
+      start: format(startOfMonth(monthDate), 'yyyy-MM-dd'),
+      end: format(endOfMonth(monthDate), 'yyyy-MM-dd'),
+    }
+  }, [displayMonth])
+
+  const candidateUrl = candidateParams
+    ? `/api/invoices/candidates?start=${candidateParams.start}&end=${candidateParams.end}`
+    : null
+
   const { data, error, isLoading, mutate } = useSWR(
     '/api/invoices/data?period=all',
     fetcher,
@@ -28,6 +43,16 @@ export function InvoicesClient() {
         setHasMore(freshData.hasMore || false)
         setNextCursor(freshData.nextCursor || null)
       },
+    }
+  )
+
+  // Fetch candidates for the selected month
+  const { data: candidateData, isLoading: candidatesLoading, mutate: mutateCandidates } = useSWR(
+    candidateUrl,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 15000,
     }
   )
 
@@ -52,7 +77,8 @@ export function InvoicesClient() {
     setAllInvoices([])
     setNextCursor(null)
     mutate()
-  }, [mutate])
+    mutateCandidates()
+  }, [mutate, mutateCandidates])
 
   if (isLoading) {
     return <InvoicesSkeleton />
@@ -90,6 +116,10 @@ export function InvoicesClient() {
       onLoadMore={handleLoadMore}
       displayMonth={displayMonth}
       onDisplayMonthChange={setDisplayMonth}
+      candidates={candidateData?.candidates || []}
+      candidateStats={candidateData?.stats || null}
+      candidatesLoading={candidatesLoading}
+      olderUninvoiced={candidateData?.olderUninvoiced || null}
     />
   )
 }

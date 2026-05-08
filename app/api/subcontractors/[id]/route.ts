@@ -27,7 +27,7 @@ export async function GET(
     today.setHours(23, 59, 59, 999)
 
     // Parallelize DB queries for speed
-    const [unpaidJobs, payments] = await Promise.all([
+    const [unpaidJobs, payments, accounts] = await Promise.all([
       prisma.job.findMany({
         where: {
           subcontractorId: id,
@@ -64,6 +64,33 @@ export async function GET(
           },
         },
         orderBy: { datePaid: "desc" },
+      }),
+      // Accounts: active schedules this cleaner is assigned to
+      prisma.schedule.findMany({
+        where: { subcontractorId: id, isActive: true },
+        select: {
+          id: true,
+          frequency: true,
+          daysOfWeek: true,
+          monthlyPattern: true,
+          startTime: true,
+          startWindowBegin: true,
+          startWindowEnd: true,
+          timeType: true,
+          defaultClientRate: true,
+          defaultSubcontractorRate: true,
+          startDate: true,
+          location: {
+            select: {
+              id: true,
+              name: true,
+              address: true,
+              client: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
       }),
     ])
 
@@ -163,12 +190,18 @@ export async function GET(
       })),
     }))
 
+    const serializedAccounts = accounts.map(acct => ({
+      ...acct,
+      startDate: serializeDate(acct.startDate),
+    }))
+
     return NextResponse.json({
       ...sub,
       createdAt: serializeDate(sub.createdAt),
       owedAmount,
       jobs: serializedJobs,
       payments: serializedPayments,
+      accounts: serializedAccounts,
     })
   } catch (error) {
     logger.error("Subcontractor detail error:", error)

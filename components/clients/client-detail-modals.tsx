@@ -8,6 +8,7 @@ import {
   Plus, X, CalendarPlus, Sparkles,
 } from "lucide-react"
 import { CreateJobDialog } from "@/components/calendar/create-job-dialog"
+import { TimePicker } from "@/components/ui/time-picker"
 import { ClientInvoiceModal } from "./client-invoice-modal"
 import type { ScheduleForModal } from "./client-detail-types"
 import type { ClientDetailState } from "./use-client-detail"
@@ -259,12 +260,10 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                   </label>
 
                   {addJobCustomTime && (
-                    <div className="mt-3 ml-8">
-                      <Input
-                        type="time"
+                    <div className="mt-3 ml-8 w-40">
+                      <TimePicker
                         value={addJobTime}
-                        onChange={(e) => setAddJobTime(e.target.value)}
-                        className="w-40"
+                        onChange={(val) => setAddJobTime(val)}
                       />
                     </div>
                   )}

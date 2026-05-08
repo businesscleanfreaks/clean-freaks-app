@@ -49,6 +49,16 @@ function getNthWeekdayOfMonth(year: number, month: number, weekday: number, nth:
   return null
 }
 
+function getLastWeekdayOfMonth(year: number, month: number, weekday: number): Date | null {
+  const lastOfMonth = endOfMonth(new Date(year, month, 1))
+  let current = new Date(lastOfMonth)
+  for (let i = 0; i < 7; i++) {
+    if (getDay(current) === weekday) return current
+    current = addDays(current, -1)
+  }
+  return null
+}
+
 /**
  * Calculate all candidate job dates for a schedule's parameters.
  * Pure function — no database access.
@@ -82,6 +92,34 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
       if (nextDay.getDay() === 0 && currentDate.getDay() === 6) weekCount++
       currentDate = nextDay
     }
+  } else if (params.frequency === 'MONTHLY' && params.monthlyPattern) {
+    // MONTHLY with NTH_WEEKDAY pattern (e.g., "1st Tuesday" or "1st & 3rd Tuesday")
+    const pattern = JSON.parse(params.monthlyPattern)
+    if (pattern.type === 'NTH_WEEKDAY') {
+      const weekday = pattern.weekday as number
+      const ordinals = pattern.weeks as (number | 'last')[]
+      let currentMonth = startOfMonth(startDate)
+      while (currentMonth <= endDate) {
+        for (const ordinal of ordinals) {
+          const jobDate = ordinal === 'last'
+            ? getLastWeekdayOfMonth(currentMonth.getFullYear(), currentMonth.getMonth(), weekday)
+            : getNthWeekdayOfMonth(currentMonth.getFullYear(), currentMonth.getMonth(), weekday, ordinal as number)
+          if (jobDate && jobDate >= startDate && jobDate <= endDate) dates.push(startOfDay(jobDate))
+        }
+        currentMonth = addMonths(currentMonth, 1)
+      }
+    } else {
+      // MONTHLY without NTH_WEEKDAY — fixed day of month (original behavior)
+      const dayOfMonth = startDate.getDate()
+      let currentMonth = startOfMonth(startDate)
+      while (currentMonth <= endDate) {
+        const daysInMonth = endOfMonth(currentMonth).getDate()
+        const targetDay = Math.min(dayOfMonth, daysInMonth)
+        const jobDate = setDate(currentMonth, targetDay)
+        if (jobDate >= startDate && jobDate <= endDate) dates.push(startOfDay(jobDate))
+        currentMonth = addMonths(currentMonth, 1)
+      }
+    }
   } else if (params.frequency === 'MONTHLY') {
     const dayOfMonth = startDate.getDate()
     let currentMonth = startOfMonth(startDate)
@@ -109,11 +147,13 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
       }
     } else if (pattern.type === 'NTH_WEEKDAY') {
       const weekday = pattern.weekday as number
-      const weeks = pattern.weeks as number[]
+      const ordinals = pattern.weeks as (number | 'last')[]
       let currentMonth = startOfMonth(startDate)
       while (currentMonth <= endDate) {
-        for (const weekNum of weeks) {
-          const jobDate = getNthWeekdayOfMonth(currentMonth.getFullYear(), currentMonth.getMonth(), weekday, weekNum)
+        for (const ordinal of ordinals) {
+          const jobDate = ordinal === 'last'
+            ? getLastWeekdayOfMonth(currentMonth.getFullYear(), currentMonth.getMonth(), weekday)
+            : getNthWeekdayOfMonth(currentMonth.getFullYear(), currentMonth.getMonth(), weekday, ordinal as number)
           if (jobDate && jobDate >= startDate && jobDate <= endDate) dates.push(startOfDay(jobDate))
         }
         currentMonth = addMonths(currentMonth, 1)
@@ -260,7 +300,10 @@ export async function previewScheduleChanges(
   }
 }
 
-export async function regenerateJobsForSchedule(scheduleId: string): Promise<RegenerationSummary> {
+export async function regenerateJobsForSchedule(
+  scheduleId: string,
+  options?: { effectiveDate?: Date }
+): Promise<RegenerationSummary> {
   const schedule = await prisma.schedule.findUnique({
     where: { id: scheduleId },
     include: {
@@ -281,7 +324,7 @@ export async function regenerateJobsForSchedule(scheduleId: string): Promise<Reg
     return emptySummary
   }
 
-  const now = startOfDay(new Date())
+  const now = startOfDay(options?.effectiveDate ?? new Date())
   const startDate = startOfDay(new Date(schedule.startDate))
 
   // Wrap all delete/update/create operations in a transaction so a crash
@@ -336,14 +379,21 @@ export async function regenerateJobsForSchedule(scheduleId: string): Promise<Reg
 
     const deletedCount = pastDeleted.count + futureDeleted.count
 
-    // Only update FUTURE jobs with the new subcontractor/rate.
-    // Past completed jobs keep their original subcontractor assignment
-    // so the owed-money calculation stays accurate.
+    // Only update FUTURE editable jobs with the new subcontractor/rate/clientRate.
+    // Past completed jobs keep their original assignment & rates
+    // so invoices and cleaner-pay calculations stay accurate.
     const updated = await tx.job.updateMany({
-      where: { scheduleId, subcontractorPaid: false, invoiced: false, date: { gte: now } },
+      where: {
+        scheduleId,
+        subcontractorPaid: false,
+        invoiced: false,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+        date: { gte: now },
+      },
       data: {
         subcontractorId: schedule.subcontractorId,
         subcontractorRate: schedule.defaultSubcontractorRate,
+        clientRate: schedule.defaultClientRate,
       },
     })
 

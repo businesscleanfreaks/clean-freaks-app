@@ -200,6 +200,8 @@ model Invoice {
   paymentReceivedAt DateTime? // When payment was actually received
   paymentNotes  String?       // Additional payment notes
   showPaymentOptions Boolean  @default(true) // Whether to show payment options on public invoice
+  billingPeriodStart DateTime? // Start of the billing period this invoice covers
+  billingPeriodEnd   DateTime? // End of the billing period this invoice covers
   createdAt     DateTime      @default(now())
   updatedAt     DateTime?
 

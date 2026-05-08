@@ -58,7 +58,7 @@ export const fixedDatesPatternSchema = z.object({
 export const nthWeekdayPatternSchema = z.object({
   type: z.literal('NTH_WEEKDAY'),
   weekday: z.number().min(0).max(6), // 0 = Sunday, 6 = Saturday
-  weeks: z.array(z.number().min(1).max(5)).min(1, 'Must select at least one week'),
+  weeks: z.array(z.union([z.number().min(1).max(4), z.literal('last')])).min(1, 'Must select at least one week'),
 })
 
 export const monthlyPatternSchema = z.union([fixedDatesPatternSchema, nthWeekdayPatternSchema])

@@ -299,6 +299,25 @@ export interface CleanerData {
   jobs: CleanerJob[]
   payments?: CleanerPayment[]
   paidJobs?: CleanerJob[]
+  accounts?: Array<{
+    id: string
+    frequency: string
+    daysOfWeek: string | null
+    monthlyPattern: string | null
+    startTime: string | null
+    startWindowBegin: string | null
+    startWindowEnd: string | null
+    timeType: string | null
+    defaultClientRate: number | null
+    defaultSubcontractorRate: number | null
+    startDate: string
+    location: {
+      id: string
+      name: string
+      address: string
+      client: { id: string; name: string }
+    }
+  }>
 }
 
 export interface CleanerClientRow {

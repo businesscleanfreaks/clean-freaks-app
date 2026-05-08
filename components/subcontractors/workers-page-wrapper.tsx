@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, DollarSign, CheckCircle2, Users } from "lucide-react"
+import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react"
 import { ActionSpinner } from "@/components/ui/action-spinner"
 import { PaymentBreakdownModal } from "@/components/subcontractors/payment-breakdown-modal"
 import { CleanerListRow, getCorrectOwedAmount } from "@/components/subcontractors/cleaner-list-row"
@@ -115,6 +115,26 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
   const [datePaid, setDatePaid] = useState(() => format(new Date(), 'yyyy-MM-dd'))
   const [paymentNotes, setPaymentNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Period selector state — controls which month's jobs are visible in stats
+  const [period, setPeriod] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+
+  const periodLabel = useMemo(() => {
+    const [y, m] = period.split('-')
+    const date = new Date(parseInt(y), parseInt(m) - 1, 1)
+    return format(date, 'MMMM yyyy')
+  }, [period])
+
+  const shiftPeriod = (delta: number) => {
+    setPeriod(prev => {
+      const [y, m] = prev.split('-').map(Number)
+      const d = new Date(y, m - 1 + delta, 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    })
+  }
 
   // Inline expansion state
   const [expandedSubId, setExpandedSubId] = useState<string | null>(null)
@@ -318,6 +338,28 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
       </div>
 
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
+        {/* Period Selector */}
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <button
+            onClick={() => shiftPeriod(-1)}
+            className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="w-4 h-4 text-gray-500" />
+          </button>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-gray-200 min-w-[160px] justify-center">
+            <CalendarDays className="w-4 h-4 text-teal-600" />
+            <span className="text-sm font-semibold text-gray-700">{periodLabel}</span>
+          </div>
+          <button
+            onClick={() => shiftPeriod(1)}
+            className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
+            aria-label="Next month"
+          >
+            <ChevronRight className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+
         {/* Stat banner */}
         {totalOwed > 0 && (
           <div className="bg-white rounded-xl px-4 py-3 flex items-center justify-between mb-4 border border-gray-200 border-l-4 border-l-teal-600">
@@ -328,7 +370,10 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
                 <p className="text-2xl font-bold text-gray-900" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatCurrency(totalOwed)}</p>
               </div>
             </div>
-            <p className="text-sm text-gray-400">{subcontractorsWithBalance.length} waiting</p>
+            <div className="text-right">
+              <p className="text-sm font-semibold text-amber-600">{subcontractorsWithBalance.length} unpaid</p>
+              <p className="text-xs text-gray-400">{paidUpSubcontractors.length} paid up</p>
+            </div>
           </div>
         )}
 
@@ -462,8 +507,8 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
 
       {/* BATCH PAY MODAL */}
       <Dialog open={batchPayMode} onOpenChange={(open) => !open && closeBatchPay()}>
-        <DialogContent className="max-w-lg max-h-[90vh]">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-teal-600 flex items-center justify-center">
                 <DollarSign className="w-4 h-4 text-white" />
@@ -472,8 +517,9 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
             </DialogTitle>
           </DialogHeader>
 
-          <div className="py-3 space-y-3">
-            <p className="text-gray-500 text-sm">
+          {/* Scrollable cleaner list */}
+          <div className="flex-1 min-h-0 overflow-y-auto py-2">
+            <p className="text-gray-500 text-sm mb-3">
               Select which cleaners you&apos;re paying today.
             </p>
 
@@ -513,9 +559,10 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
                 )
               })}
             </div>
+          </div>
 
-            <div className="border-t border-gray-200" />
-
+          {/* Fixed footer — always visible */}
+          <div className="flex-shrink-0 space-y-3 pt-3 border-t border-gray-200">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="batchDatePaid" className="text-xs text-gray-500 font-medium">
@@ -554,7 +601,7 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 flex-shrink-0">
             <Button
               variant="outline"
               onClick={closeBatchPay}

@@ -14,10 +14,12 @@ import {
   CheckCheck,
   X,
   Download,
+  Info,
 } from "lucide-react"
 import Link from "next/link"
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { QuickInvoiceModal } from "./quick-invoice-modal"
+import { CandidateCard, type InvoiceCandidate } from "./candidate-card"
 import { useConfirm } from "@/hooks/use-confirm"
 import { showApiError } from "@/lib/toast"
 
@@ -141,6 +143,10 @@ interface InvoicesPageClientProps {
   onLoadMore?: () => void
   displayMonth?: string
   onDisplayMonthChange?: (month: string) => void
+  candidates?: InvoiceCandidate[]
+  candidateStats?: { readyCount: number; attentionCount: number; readyTotal: number } | null
+  candidatesLoading?: boolean
+  olderUninvoiced?: { count: number; months: string[] } | null
 }
 
 export function InvoicesPageClient({
@@ -158,6 +164,10 @@ export function InvoicesPageClient({
   onLoadMore,
   displayMonth,
   onDisplayMonthChange,
+  candidates = [],
+  candidateStats,
+  candidatesLoading,
+  olderUninvoiced,
 }: InvoicesPageClientProps) {
   const [activeTab, setActiveTab] = useState<'ready' | 'drafts' | 'waiting' | 'paid'>('ready')
   const [searchQuery, setSearchQuery] = useState('')
@@ -429,8 +439,29 @@ export function InvoicesPageClient({
 
   const selectedJobCount = selectedJobIds.size
 
+  // Use candidate counts when available, fallback to legacy counts
+  const reviewQueueCount = candidateStats
+    ? candidateStats.readyCount + candidateStats.attentionCount
+    : filteredReadyCount
+  const reviewQueueTotal = candidateStats
+    ? candidateStats.readyTotal
+    : filteredTotalReadyToBill
+
+  // Separate candidates by status for rendering
+  const readyCandidates = candidates.filter(c => c.status === 'READY')
+  const attentionCandidates = candidates.filter(c => c.status === 'NEEDS_ATTENTION')
+  const existingCandidates = candidates.filter(c => c.status === 'DRAFT_EXISTS' || c.status === 'SENT' || c.status === 'PAID')
+
+  const handleCandidateReview = (candidate: InvoiceCandidate) => {
+    // Find matching client in the legacy data to open QuickInvoice modal
+    const matchingClient = allReadyClients.find(c => c.client.id === candidate.clientId)
+    if (matchingClient) {
+      handleQuickInvoice(matchingClient)
+    }
+  }
+
   const tabs = [
-    { key: 'ready' as const,   label: 'Need to Invoice',   count: filteredReadyCount },
+    { key: 'ready' as const,   label: 'Review Queue',   count: reviewQueueCount },
     { key: 'drafts' as const,  label: 'Drafts',  count: draftsCount       },
     { key: 'waiting' as const, label: 'Sent', count: waitingCount      },
     { key: 'paid' as const,    label: 'Paid',    count: paidCount         },
@@ -702,20 +733,31 @@ export function InvoicesPageClient({
       )}
 
       {/* Ready Tab: Summary */}
-      {activeTab === 'ready' && filteredTotalReadyToBill > 0 && (
+      {activeTab === 'ready' && reviewQueueTotal > 0 && (
         <div
           className="flex items-center justify-between"
           style={{ padding: '0 4px', marginBottom: '12px' }}
         >
           <div className="flex items-center gap-2">
             <span style={{ fontSize: '22px', fontWeight: 700, color: '#111111' }}>
-              {formatCurrency(filteredTotalReadyToBill)}
+              {formatCurrency(reviewQueueTotal)}
             </span>
             <span style={{ fontSize: '13px', color: '#00A896', fontWeight: 500 }}>to invoice</span>
             <span style={{ color: '#DDDDDD', fontSize: '13px' }}>·</span>
             <span style={{ fontSize: '13px', color: '#888888' }}>
-              {filteredReadyCount} client{filteredReadyCount !== 1 ? 's' : ''} remaining
+              {reviewQueueCount} client{reviewQueueCount !== 1 ? 's' : ''}
             </span>
+            {candidateStats && candidateStats.attentionCount > 0 && (
+              <>
+                <span style={{ color: '#DDDDDD', fontSize: '13px' }}>·</span>
+                <span style={{
+                  fontSize: '12px', fontWeight: 600, color: '#92400E',
+                  backgroundColor: '#FEF3C7', padding: '2px 8px', borderRadius: '10px',
+                }}>
+                  {candidateStats.attentionCount} need attention
+                </span>
+              </>
+            )}
             {displayMonth && displayMonth !== 'all' && (
               <>
                 <span style={{ color: '#DDDDDD', fontSize: '13px' }}>·</span>
@@ -728,119 +770,258 @@ export function InvoicesPageClient({
         </div>
       )}
 
-      {/* ───── READY TAB: Compact Client List ───── */}
+      {/* Older uninvoiced work alert */}
+      {activeTab === 'ready' && olderUninvoiced && olderUninvoiced.count > 0 && onDisplayMonthChange && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '10px 14px', marginBottom: '12px',
+            backgroundColor: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px',
+          }}
+        >
+          <Info style={{ width: '16px', height: '16px', color: '#EA580C', flexShrink: 0 }} />
+          <span style={{ fontSize: '13px', color: '#9A3412', flex: 1 }}>
+            Older uninvoiced work exists:{' '}
+            {olderUninvoiced.months.map((m, i) => {
+              const [y, mo] = m.split('-').map(Number)
+              const label = format(new Date(y, mo - 1), 'MMM yyyy')
+              return (
+                <button
+                  key={m}
+                  onClick={() => onDisplayMonthChange(m)}
+                  style={{
+                    color: '#EA580C', fontWeight: 600, background: 'none',
+                    border: 'none', cursor: 'pointer', textDecoration: 'underline',
+                    padding: 0, fontSize: '13px',
+                  }}
+                >
+                  {label}{i < olderUninvoiced.months.length - 1 ? ', ' : ''}
+                </button>
+              )
+            })}
+          </span>
+        </div>
+      )}
+
+      {/* ───── READY TAB: Review Queue ───── */}
       {activeTab === 'ready' && (
         <>
-          {filteredReadyCount === 0 && !searchQuery ? (
-            <div
-              className="flex flex-col items-center justify-center py-16"
-              style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
-            >
-              <CheckCircle2 style={{ width: '40px', height: '40px', color: '#00A896', marginBottom: '12px' }} />
-              <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>All invoiced!</p>
-              <p style={{ fontSize: '14px', color: '#888888' }}>No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${monthOptions.find(o => o.value === displayMonth)?.label}` : ''}.</p>
-              {draftsCount > 0 && (
-                <p style={{ fontSize: '13px', color: '#00A896', marginTop: '8px', fontWeight: 500 }}>
-                  {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} ready to send →
-                </p>
+          {/* Candidate-based Review Queue (when candidates are loaded) */}
+          {candidates.length > 0 && !candidatesLoading ? (
+            <div className="space-y-4">
+              {/* Needs Attention section */}
+              {attentionCandidates.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
+                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Needs Attention
+                    </h3>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 600, color: '#92400E',
+                      backgroundColor: '#FEF3C7', padding: '1px 6px', borderRadius: '8px',
+                    }}>
+                      {attentionCandidates.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {attentionCandidates.map(c => (
+                      <CandidateCard key={c.clientId} candidate={c} onReview={handleCandidateReview} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ready to Review section */}
+              {readyCandidates.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#00A896' }} />
+                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Ready to Review
+                    </h3>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 600, color: '#047857',
+                      backgroundColor: '#D1FAE5', padding: '1px 6px', borderRadius: '8px',
+                    }}>
+                      {readyCandidates.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {readyCandidates.map(c => (
+                      <CandidateCard key={c.clientId} candidate={c} onReview={handleCandidateReview} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Already invoiced section */}
+              {existingCandidates.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#9CA3AF' }} />
+                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Already Invoiced
+                    </h3>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 600, color: '#6B7280',
+                      backgroundColor: '#F3F4F6', padding: '1px 6px', borderRadius: '8px',
+                    }}>
+                      {existingCandidates.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {existingCandidates.map(c => (
+                      <CandidateCard key={c.clientId} candidate={c} onReview={handleCandidateReview} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state when all are invoiced */}
+              {readyCandidates.length === 0 && attentionCandidates.length === 0 && (
+                <div
+                  className="flex flex-col items-center justify-center py-16"
+                  style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
+                >
+                  <CheckCircle2 style={{ width: '40px', height: '40px', color: '#00A896', marginBottom: '12px' }} />
+                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>All invoiced!</p>
+                  <p style={{ fontSize: '14px', color: '#888888' }}>
+                    No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${monthOptions.find(o => o.value === displayMonth)?.label}` : ''}.
+                  </p>
+                  {draftsCount > 0 && (
+                    <p style={{ fontSize: '13px', color: '#00A896', marginTop: '8px', fontWeight: 500 }}>
+                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} ready to send →
+                    </p>
+                  )}
+                </div>
               )}
             </div>
-          ) : filteredClients.length === 0 && searchQuery ? (
-            <div
-              className="flex flex-col items-center justify-center py-16"
-              style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
-            >
-              <Search style={{ width: '40px', height: '40px', color: '#DDDDDD', marginBottom: '12px' }} />
-              <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>No results</p>
-              <p style={{ fontSize: '14px', color: '#888888' }}>No clients match &ldquo;{searchQuery}&rdquo;</p>
+          ) : candidatesLoading ? (
+            /* Loading skeleton for candidates */
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div
+                  key={i}
+                  style={{
+                    height: '64px', borderRadius: '12px',
+                    backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                  }}
+                />
+              ))}
             </div>
           ) : (
-            <div style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px', overflow: 'hidden' }}>
-              {filteredClients.map((entry, idx) => {
-                const hasEmail = !!entry.client.invoicingEmail || !!entry.client.communicationEmail
-                const isLast = idx === filteredClients.length - 1
-                const jobSummary = getJobSummary(entry)
+            /* Fallback: legacy client list when candidates aren't available */
+            <>
+              {filteredReadyCount === 0 && !searchQuery ? (
+                <div
+                  className="flex flex-col items-center justify-center py-16"
+                  style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
+                >
+                  <CheckCircle2 style={{ width: '40px', height: '40px', color: '#00A896', marginBottom: '12px' }} />
+                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>All invoiced!</p>
+                  <p style={{ fontSize: '14px', color: '#888888' }}>No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${monthOptions.find(o => o.value === displayMonth)?.label}` : ''}.</p>
+                  {draftsCount > 0 && (
+                    <p style={{ fontSize: '13px', color: '#00A896', marginTop: '8px', fontWeight: 500 }}>
+                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} ready to send →
+                    </p>
+                  )}
+                </div>
+              ) : filteredClients.length === 0 && searchQuery ? (
+                <div
+                  className="flex flex-col items-center justify-center py-16"
+                  style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
+                >
+                  <Search style={{ width: '40px', height: '40px', color: '#DDDDDD', marginBottom: '12px' }} />
+                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>No results</p>
+                  <p style={{ fontSize: '14px', color: '#888888' }}>No clients match &ldquo;{searchQuery}&rdquo;</p>
+                </div>
+              ) : (
+                <div style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px', overflow: 'hidden' }}>
+                  {filteredClients.map((entry, idx) => {
+                    const hasEmail = !!entry.client.invoicingEmail || !!entry.client.communicationEmail
+                    const isLast = idx === filteredClients.length - 1
+                    const jobSummary = getJobSummary(entry)
 
-                const clientJobIds = entry.jobs.map((job) => job.id)
-                const allSelected = selectionMode && clientJobIds.length > 0 && clientJobIds.every((id: string) => selectedJobIds.has(id))
-                const someSelected = selectionMode && clientJobIds.some((id: string) => selectedJobIds.has(id))
+                    const clientJobIds = entry.jobs.map((job) => job.id)
+                    const allSelected = selectionMode && clientJobIds.length > 0 && clientJobIds.every((id: string) => selectedJobIds.has(id))
+                    const someSelected = selectionMode && clientJobIds.some((id: string) => selectedJobIds.has(id))
 
-                return (
-                  <div
-                    key={entry.client.id}
-                    onClick={() => {
-                      if (selectionMode) {
-                        toggleAllJobsForClient(entry)
-                      } else {
-                        handleQuickInvoice(entry)
-                      }
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '14px 16px',
-                      cursor: 'pointer',
-                      borderBottom: isLast ? 'none' : '1px solid #F3F3F3',
-                      transition: 'background-color 80ms',
-                      backgroundColor: allSelected ? 'rgba(0,168,150,0.04)' : 'white',
-                    }}
-                    onMouseEnter={e => { if (!allSelected) e.currentTarget.style.backgroundColor = '#FAFAFA' }}
-                    onMouseLeave={e => { if (!allSelected) e.currentTarget.style.backgroundColor = allSelected ? 'rgba(0,168,150,0.04)' : 'white' }}
-                  >
-                    {/* Selection checkbox (only in selection mode) */}
-                    {selectionMode && (
+                    return (
                       <div
-                        style={{
-                          width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0,
-                          border: allSelected ? '2px solid #00A896' : someSelected ? '2px solid #00A896' : '2px solid #DDDDDD',
-                          backgroundColor: allSelected ? '#00A896' : someSelected ? 'rgba(0,168,150,0.15)' : 'white',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 120ms',
+                        key={entry.client.id}
+                        onClick={() => {
+                          if (selectionMode) {
+                            toggleAllJobsForClient(entry)
+                          } else {
+                            handleQuickInvoice(entry)
+                          }
                         }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '14px 16px',
+                          cursor: 'pointer',
+                          borderBottom: isLast ? 'none' : '1px solid #F3F3F3',
+                          transition: 'background-color 80ms',
+                          backgroundColor: allSelected ? 'rgba(0,168,150,0.04)' : 'white',
+                        }}
+                        onMouseEnter={e => { if (!allSelected) e.currentTarget.style.backgroundColor = '#FAFAFA' }}
+                        onMouseLeave={e => { if (!allSelected) e.currentTarget.style.backgroundColor = allSelected ? 'rgba(0,168,150,0.04)' : 'white' }}
                       >
-                        {allSelected && <span style={{ color: 'white', fontSize: '12px', lineHeight: 1, fontWeight: 700 }}>✓</span>}
-                        {someSelected && !allSelected && <span style={{ color: '#00A896', fontSize: '10px', lineHeight: 1, fontWeight: 700 }}>–</span>}
-                      </div>
-                    )}
+                        {selectionMode && (
+                          <div
+                            style={{
+                              width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0,
+                              border: allSelected ? '2px solid #00A896' : someSelected ? '2px solid #00A896' : '2px solid #DDDDDD',
+                              backgroundColor: allSelected ? '#00A896' : someSelected ? 'rgba(0,168,150,0.15)' : 'white',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              transition: 'all 120ms',
+                            }}
+                          >
+                            {allSelected && <span style={{ color: 'white', fontSize: '12px', lineHeight: 1, fontWeight: 700 }}>✓</span>}
+                            {someSelected && !allSelected && <span style={{ color: '#00A896', fontSize: '10px', lineHeight: 1, fontWeight: 700 }}>–</span>}
+                          </div>
+                        )}
 
-                    {/* Client info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                        <span style={{
-                          fontSize: '15px', fontWeight: 600, color: '#111111',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>
-                          {entry.client.name}
-                        </span>
-                        {!hasEmail && (
-                          <span title="No email on file" style={{ flexShrink: 0, display: 'flex' }}>
-                            <AlertCircle style={{ width: '14px', height: '14px', color: '#F59E0B' }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                            <span style={{
+                              fontSize: '15px', fontWeight: 600, color: '#111111',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {entry.client.name}
+                            </span>
+                            {!hasEmail && (
+                              <span title="No email on file" style={{ flexShrink: 0, display: 'flex' }}>
+                                <AlertCircle style={{ width: '14px', height: '14px', color: '#F59E0B' }} />
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#777777', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>{entry.billingType === 'FLAT_RATE' ? 'Flat rate' : 'Per clean'}</span>
+                            <span style={{ color: '#DDDDDD' }}>·</span>
+                            <span>{jobSummary}</span>
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <span style={{ fontSize: '15px', fontWeight: 700, color: '#111111' }}>
+                            {formatCurrency(entry.totalAmount)}
                           </span>
+                        </div>
+
+                        {!selectionMode && (
+                          <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC', flexShrink: 0 }} />
                         )}
                       </div>
-                      <div style={{ fontSize: '12px', color: '#777777', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>{entry.billingType === 'FLAT_RATE' ? 'Flat rate' : 'Per clean'}</span>
-                        <span style={{ color: '#DDDDDD' }}>·</span>
-                        <span>{jobSummary}</span>
-                      </div>
-                    </div>
-
-                    {/* Amount */}
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <span style={{ fontSize: '15px', fontWeight: 700, color: '#111111' }}>
-                        {formatCurrency(entry.totalAmount)}
-                      </span>
-                    </div>
-
-                    {/* Chevron (not in selection mode) */}
-                    {!selectionMode && (
-                      <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC', flexShrink: 0 }} />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
           )}
         </>
       )}

@@ -16,6 +16,14 @@ export async function GET() {
             latitude: true,
             longitude: true,
             accessInfo: true,
+            schedules: {
+              where: { isActive: true },
+              select: {
+                subcontractor: {
+                  select: { id: true, name: true },
+                },
+              },
+            },
           },
         },
       },
@@ -24,11 +32,39 @@ export async function GET() {
       },
     })
     
-    // Serialize dates to strings for client components
-    const serializedClients = clients.map(client => ({
-      ...client,
-      createdAt: client.createdAt.toISOString(),
-    }))
+    // Serialize dates and compute cleaner display for each client
+    const serializedClients = clients.map(client => {
+      // Gather all unique assigned cleaner names from active schedules
+      const cleanerNames = new Set<string>()
+      let hasSchedules = false
+      for (const loc of client.locations) {
+        for (const sch of loc.schedules) {
+          hasSchedules = true
+          if (sch.subcontractor?.name) {
+            cleanerNames.add(sch.subcontractor.name)
+          }
+        }
+      }
+
+      let cleanerDisplay = 'Unassigned'
+      if (cleanerNames.size === 1) {
+        cleanerDisplay = [...cleanerNames][0]
+      } else if (cleanerNames.size > 1) {
+        cleanerDisplay = 'Mixed'
+      } else if (!hasSchedules) {
+        cleanerDisplay = 'Unassigned'
+      }
+
+      // Strip schedules from locations for backward compat
+      const locationsClean = client.locations.map(({ schedules: _s, ...rest }) => rest)
+
+      return {
+        ...client,
+        createdAt: client.createdAt.toISOString(),
+        locations: locationsClean,
+        cleanerDisplay,
+      }
+    })
 
     return NextResponse.json(serializedClients)
   } catch (error) {

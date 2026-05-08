@@ -10,6 +10,7 @@ import {
 import { ActionSpinner } from "@/components/ui/action-spinner"
 import { logger } from "@/lib/logger"
 import { showError } from "@/lib/toast"
+import { generateQuarterHourTimes, formatTimeLabel } from "@/lib/time-utils"
 
 interface Subcontractor {
   id: string
@@ -1071,37 +1072,52 @@ export function AddClientWizard({
                       <TogglePill label="Time window" active={timeType === 'WINDOW'} onClick={() => setTimeType('WINDOW')} />
                     </div>
                     {timeType === 'SPECIFIC' ? (
-                      <input
-                        type="time"
+                      <select
                         value={startTime}
                         onChange={e => setStartTime(e.target.value)}
                         style={{
                           height: '40px', padding: '0 12px', borderRadius: '8px',
                           border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                          backgroundColor: 'white', minWidth: '150px',
                         }}
-                      />
+                      >
+                        <option value="">Select time</option>
+                        {generateQuarterHourTimes().map(t => (
+                          <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                        ))}
+                      </select>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ fontSize: '13px', color: '#888888' }}>Arrive between</span>
-                        <input
-                          type="time"
+                        <select
                           value={startWindowBegin}
                           onChange={e => setStartWindowBegin(e.target.value)}
                           style={{
                             height: '40px', padding: '0 12px', borderRadius: '8px',
                             border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                            backgroundColor: 'white',
                           }}
-                        />
+                        >
+                          <option value="">Start</option>
+                          {generateQuarterHourTimes().map(t => (
+                            <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                          ))}
+                        </select>
                         <span style={{ color: '#BBBBBB', fontSize: '16px' }}>—</span>
-                        <input
-                          type="time"
+                        <select
                           value={startWindowEnd}
                           onChange={e => setStartWindowEnd(e.target.value)}
                           style={{
                             height: '40px', padding: '0 12px', borderRadius: '8px',
                             border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                            backgroundColor: 'white',
                           }}
-                        />
+                        >
+                          <option value="">End</option>
+                          {generateQuarterHourTimes().map(t => (
+                            <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                          ))}
+                        </select>
                       </div>
                     )}
                   </div>

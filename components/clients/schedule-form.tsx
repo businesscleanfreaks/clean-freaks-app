@@ -205,7 +205,7 @@ function ScheduleFormInner({
   const [monthlyPatternType, setMonthlyPatternType] = useState<'FIXED_DATES' | 'NTH_WEEKDAY'>(initialPattern.type)
   const [fixedDates, setFixedDates] = useState<[number, number]>([initialPattern.dates[0] || 1, initialPattern.dates[1] || 15])
   const [nthWeekday, setNthWeekday] = useState<number>(initialPattern.weekday)
-  const [nthWeeks, setNthWeeks] = useState<number[]>(initialPattern.weeks)
+  const [nthWeeks, setNthWeeks] = useState<(number | 'last')[]>(initialPattern.weeks)
   
   // Safely parse daysOfWeek JSON
   const parseDaysOfWeek = (daysOfWeek: string | null | undefined): number[] => {
@@ -326,7 +326,7 @@ function ScheduleFormInner({
     const startDate = new Date(formData.startDate + 'T12:00:00Z')
     const endDate = formData.endDate ? new Date(formData.endDate + 'T12:00:00Z') : null
     
-    // Build monthly pattern JSON for 2X_MONTHLY
+    // Build monthly pattern JSON for MONTHLY or 2X_MONTHLY
     let monthlyPattern: string | null = null
     if (formData.frequency === '2X_MONTHLY') {
       if (monthlyPatternType === 'FIXED_DATES') {
@@ -334,11 +334,13 @@ function ScheduleFormInner({
       } else {
         monthlyPattern = JSON.stringify({ type: 'NTH_WEEKDAY', weekday: nthWeekday, weeks: nthWeeks })
       }
+    } else if (formData.frequency === 'MONTHLY' && monthlyPatternType === 'NTH_WEEKDAY') {
+      monthlyPattern = JSON.stringify({ type: 'NTH_WEEKDAY', weekday: nthWeekday, weeks: nthWeeks })
     }
     
     const validationData = {
       ...formData,
-      daysOfWeek: formData.frequency === '2X_MONTHLY' ? null : JSON.stringify(formData.daysOfWeek),
+      daysOfWeek: (formData.frequency === '2X_MONTHLY' || (formData.frequency === 'MONTHLY' && monthlyPatternType === 'NTH_WEEKDAY')) ? null : JSON.stringify(formData.daysOfWeek),
       monthlyPattern,
       defaultClientRate: parseFloat(formData.defaultClientRate),
       defaultSubcontractorRate: parseFloat(formData.defaultSubcontractorRate),
@@ -725,6 +727,113 @@ function ScheduleFormInner({
             </Select>
           </div>
 
+          {/* Monthly Pattern Options */}
+          {formData.frequency === 'MONTHLY' && (
+            <div className="space-y-4 p-4 bg-teal-50 rounded-xl border border-teal-200">
+              <div>
+                <Label className="text-teal-900">How do you want to schedule?</Label>
+                <p className="text-xs text-teal-700 mt-0.5">Choose a pattern for the monthly cleans</p>
+              </div>
+              
+              {/* Pattern Type Toggle */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMonthlyPatternType('FIXED_DATES')}
+                  className={`flex-1 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+                    monthlyPatternType === 'FIXED_DATES'
+                      ? 'bg-teal-600 text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  Same date each month
+                  <span className="block text-xs mt-0.5 opacity-80">e.g., the 9th of each month</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMonthlyPatternType('NTH_WEEKDAY')}
+                  className={`flex-1 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+                    monthlyPatternType === 'NTH_WEEKDAY'
+                      ? 'bg-teal-600 text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  Specific weekday
+                  <span className="block text-xs mt-0.5 opacity-80">e.g., 1st Tuesday or 1st &amp; 3rd Tuesday</span>
+                </button>
+              </div>
+
+              {/* NTH_WEEKDAY Options for MONTHLY */}
+              {monthlyPatternType === 'NTH_WEEKDAY' && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-teal-900">Day of week</Label>
+                    <Select
+                      value={nthWeekday.toString()}
+                      onValueChange={(value) => setNthWeekday(parseInt(value))}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Sunday</SelectItem>
+                        <SelectItem value="1">Monday</SelectItem>
+                        <SelectItem value="2">Tuesday</SelectItem>
+                        <SelectItem value="3">Wednesday</SelectItem>
+                        <SelectItem value="4">Thursday</SelectItem>
+                        <SelectItem value="5">Friday</SelectItem>
+                        <SelectItem value="6">Saturday</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-teal-900">Which weeks of the month?</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { value: 1 as number | 'last', label: '1st' },
+                        { value: 2 as number | 'last', label: '2nd' },
+                        { value: 3 as number | 'last', label: '3rd' },
+                        { value: 4 as number | 'last', label: '4th' },
+                        { value: 'last' as number | 'last', label: 'Last' },
+                      ].map(week => (
+                        <button
+                          key={String(week.value)}
+                          type="button"
+                          onClick={() => {
+                            if (nthWeeks.includes(week.value)) {
+                              setNthWeeks(nthWeeks.filter(w => w !== week.value))
+                            } else {
+                              const next = [...nthWeeks, week.value]
+                              // Sort: numbers first, then 'last'
+                              next.sort((a, b) => {
+                                if (a === 'last') return 1
+                                if (b === 'last') return -1
+                                return (a as number) - (b as number)
+                              })
+                              setNthWeeks(next)
+                            }
+                          }}
+                          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                            nthWeeks.includes(week.value)
+                              ? 'bg-teal-600 text-white shadow-sm'
+                              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          {week.label}
+                        </button>
+                      ))}
+                    </div>
+                    {nthWeeks.length > 0 && (
+                      <p className="text-xs text-teal-700 font-medium">
+                        Every {nthWeeks.map(w => w === 'last' ? 'Last' : w === 1 ? '1st' : w === 2 ? '2nd' : w === 3 ? '3rd' : `${w}th`).join(' and ')} {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][nthWeekday]}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 2x Monthly Pattern Options */}
           {formData.frequency === '2X_MONTHLY' && (
             <div className="space-y-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
@@ -826,24 +935,30 @@ function ScheduleFormInner({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                    <div className="space-y-2">
                     <Label className="text-blue-900">Which weeks of the month?</Label>
                     <div className="flex flex-wrap gap-2">
                       {[
-                        { value: 1, label: '1st' },
-                        { value: 2, label: '2nd' },
-                        { value: 3, label: '3rd' },
-                        { value: 4, label: '4th' },
-                        { value: 5, label: '5th' },
+                        { value: 1 as number | 'last', label: '1st' },
+                        { value: 2 as number | 'last', label: '2nd' },
+                        { value: 3 as number | 'last', label: '3rd' },
+                        { value: 4 as number | 'last', label: '4th' },
+                        { value: 'last' as number | 'last', label: 'Last' },
                       ].map(week => (
                         <button
-                          key={week.value}
+                          key={String(week.value)}
                           type="button"
                           onClick={() => {
                             if (nthWeeks.includes(week.value)) {
                               setNthWeeks(nthWeeks.filter(w => w !== week.value))
                             } else {
-                              setNthWeeks([...nthWeeks, week.value].sort())
+                              const next = [...nthWeeks, week.value]
+                              next.sort((a, b) => {
+                                if (a === 'last') return 1
+                                if (b === 'last') return -1
+                                return (a as number) - (b as number)
+                              })
+                              setNthWeeks(next)
                             }
                           }}
                           className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
@@ -858,7 +973,7 @@ function ScheduleFormInner({
                     </div>
                     {nthWeeks.length > 0 && (
                       <p className="text-xs text-blue-700 font-medium">
-                        Every {nthWeeks.map(w => w === 1 ? '1st' : w === 2 ? '2nd' : w === 3 ? '3rd' : `${w}th`).join(' and ')} {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][nthWeekday]}
+                        Every {nthWeeks.map(w => w === 'last' ? 'Last' : w === 1 ? '1st' : w === 2 ? '2nd' : w === 3 ? '3rd' : `${w}th`).join(' and ')} {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][nthWeekday]}
                       </p>
                     )}
                   </div>

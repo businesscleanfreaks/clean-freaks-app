@@ -625,15 +625,59 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     }
   }
 
-  const handleQuickReassign = async (scheduleId: string, newSubcontractorId: string | null) => {
+  const handleQuickReassign = async (
+    scheduleId: string,
+    newSubcontractorId: string | null,
+    effectiveDate?: string // YYYY-MM-DD, defaults to today
+  ) => {
     try {
-      const response = await fetch(`/api/schedules/${scheduleId}`, {
-        method: 'PUT',
+      // Find the schedule from client data
+      let schedule: ClientSchedule | undefined
+      let scheduleLocationId: string | undefined
+      for (const loc of client.locations || []) {
+        const found = loc.schedules?.find((s: ClientSchedule) => s.id === scheduleId)
+        if (found) {
+          schedule = found
+          scheduleLocationId = loc.id
+          break
+        }
+      }
+
+      if (!schedule || !scheduleLocationId) {
+        showError('Schedule not found')
+        return
+      }
+
+      const effectiveDateStr = effectiveDate || new Date().toISOString().split('T')[0]
+
+      // Use change-going-forward to safely preserve past jobs
+      const response = await fetch(`/api/schedules/${scheduleId}/change-going-forward`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subcontractorId: newSubcontractorId }),
+        body: JSON.stringify({
+          locationId: scheduleLocationId,
+          frequency: schedule.frequency,
+          daysOfWeek: schedule.daysOfWeek || null,
+          monthlyPattern: schedule.monthlyPattern || null,
+          startDate: effectiveDateStr,
+          endDate: schedule.endDate || null,
+          defaultClientRate: schedule.defaultClientRate || 0,
+          defaultSubcontractorRate: schedule.defaultSubcontractorRate || 0,
+          clientPayType: schedule.clientPayType || client.billingType || 'PER_CLEAN',
+          subcontractorPayType: schedule.subcontractorPayType || client.cleanerPayType || 'PER_CLEAN',
+          subcontractorId: newSubcontractorId,
+          timeType: schedule.timeType || 'SPECIFIC',
+          startTime: schedule.startTime || null,
+          startWindowBegin: schedule.startWindowBegin || null,
+          startWindowEnd: schedule.startWindowEnd || null,
+          carryForwardRecurringAddOns: true,
+        }),
       })
-      if (!response.ok) throw new Error('Failed to reassign')
-      showSuccess('Cleaner reassigned')
+      if (!response.ok) {
+        await showApiError(response, 'Failed to reassign cleaner')
+        return
+      }
+      showSuccess('Cleaner reassigned (future jobs updated)')
       setReassigningSchedule(null)
       onDataChange?.()
     } catch (error) {

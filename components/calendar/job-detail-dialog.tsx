@@ -473,8 +473,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                   <label style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', display: 'block' }}>
                     Time
                   </label>
-                  <input
-                    type="time"
+                  <select
                     value={draftTime}
                     onChange={(e) => {
                       setQuickRescheduleLabel(null)
@@ -482,8 +481,18 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                     }}
                     disabled={isSavingInlineDate}
                     className="w-full rounded-[12px] bg-white px-3 py-2.5 outline-none"
-                    style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light' }}
-                  />
+                    style={{ fontSize: '15px', color: '#111111', border: '1px solid #D9E3E1', colorScheme: 'light', height: '42px' }}
+                  >
+                    <option value="">No time set</option>
+                    {Array.from({ length: 24 * 4 }, (_, i) => {
+                      const h = Math.floor(i / 4)
+                      const m = (i % 4) * 15
+                      const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+                      const ampm = h < 12 ? 'AM' : 'PM'
+                      return <option key={val} value={val}>{h12}:{String(m).padStart(2, '0')} {ampm}</option>
+                    })}
+                  </select>
                 </div>
               </div>
 

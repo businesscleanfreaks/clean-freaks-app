@@ -2,6 +2,7 @@
 
 import useSWR, { mutate as globalMutate } from "swr"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
 import { formatCurrency } from "@/lib/utils"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
-import { ArrowLeft, Phone, Mail, CreditCard, Users, Settings, Clock } from "lucide-react"
+import { ArrowLeft, Phone, Mail, CreditCard, Users, Settings, Clock, Building2, MapPin } from "lucide-react"
 import { PaymentBreakdownModal } from "@/components/subcontractors/payment-breakdown-modal"
 import { SubcontractorDetail } from "@/components/subcontractors/subcontractor-detail"
 import {
@@ -24,6 +25,7 @@ import { differenceInDays, format } from "date-fns"
 import { showError, showSuccess } from "@/lib/toast"
 import { CADENCE_LABELS, CADENCE_DESCRIPTIONS } from "@/lib/payment-cadence"
 import type { CleanerData } from "@/types"
+import { formatFrequency } from "@/lib/frequency-utils"
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error("Failed to fetch")
@@ -176,6 +178,49 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
                 >
                   {member.trim()}
                 </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Accounts (Active Schedule Assignments) */}
+        {sub.accounts && sub.accounts.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Building2 className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-semibold text-gray-700">Accounts</span>
+              <span className="text-xs text-gray-400 ml-auto">{sub.accounts.length} active</span>
+            </div>
+            <div className="space-y-2">
+              {sub.accounts.map((acct) => (
+                <Link
+                  key={acct.id}
+                  href={`/clients/${acct.location.client.id}`}
+                  className="block rounded-lg border border-gray-100 p-3 hover:border-teal-200 hover:bg-teal-50/30 transition-all no-underline"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">
+                        {acct.location.client.name}
+                      </p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                        <p className="text-xs text-gray-500 truncate">
+                          {acct.location.name || acct.location.address.split(',')[0]}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold text-teal-700">
+                        {formatCurrency(acct.defaultSubcontractorRate ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    {formatFrequency(acct.frequency, acct.daysOfWeek || undefined, acct.monthlyPattern || undefined)}
+                    {acct.startTime && ` • ${acct.startTime}`}
+                  </p>
+                </Link>
               ))}
             </div>
           </div>

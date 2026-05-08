@@ -10,7 +10,7 @@ import { AddClientWizard } from "./add-client-wizard"
 import Link from "next/link"
 import {
   Plus, Search, Phone, Mail,
-  UserPlus, Building2, ChevronRight
+  UserPlus, Building2, ChevronRight, User
 } from "lucide-react"
 
 
@@ -37,6 +37,7 @@ interface Client {
   isActive: boolean
   createdAt: string
   locations: Location[]
+  cleanerDisplay?: string
 }
 
 interface ClientsPageWrapperProps {
@@ -194,6 +195,19 @@ function ClientCard({
             <Mail className="w-[13px] h-[13px] text-gray-400 flex-shrink-0" />
             <span className="text-[13px] text-gray-500 truncate">
               {email}
+            </span>
+          </div>
+        )}
+
+        {client.cleanerDisplay && (
+          <div className="flex items-center gap-1.5">
+            <User className="w-[13px] h-[13px] text-gray-400 flex-shrink-0" />
+            <span className={`text-[13px] font-medium ${
+              client.cleanerDisplay === 'Unassigned' ? 'text-gray-400 italic'
+                : client.cleanerDisplay === 'Mixed' ? 'text-amber-600'
+                : 'text-teal-700'
+            }`}>
+              {client.cleanerDisplay}
             </span>
           </div>
         )}
