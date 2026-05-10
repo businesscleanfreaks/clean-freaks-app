@@ -1174,14 +1174,14 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   // Desktop header — single row, balanced layout
   const renderHeader = () => (
     <div
-      className="hidden lg:block px-5 py-3"
+      className="hidden lg:block px-4 py-2 shrink-0"
       style={{
         borderBottom: '1px solid #E8EAE4',
         background: 'linear-gradient(180deg, #F6F6F1 0%, #FFFFFF 78%)',
       }}
     >
       <div
-        className="rounded-[22px] px-5 py-3.5"
+        className="rounded-[16px] px-4 py-2.5"
         style={{
           border: '1px solid #E7E7DF',
           backgroundColor: 'rgba(255,255,255,0.92)',
@@ -1190,11 +1190,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       >
         <div className="flex items-start justify-between gap-5">
           <div className="min-w-0">
-            <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#7C7C72', marginBottom: '5px' }}>
+            <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#7C7C72', marginBottom: '2px' }}>
               Operations Calendar
             </p>
             <div className="flex items-center gap-3 flex-wrap">
-              <p style={{ fontSize: '28px', fontWeight: 700, color: '#111827', lineHeight: 1 }}>
+              <p style={{ fontSize: '24px', fontWeight: 700, color: '#111827', lineHeight: 1 }}>
                 {monthLabel}
               </p>
               <span
@@ -1224,7 +1224,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 </span>
               )}
             </div>
-            <p style={{ fontSize: '13px', color: '#6B7280', marginTop: '6px' }}>
+            <p style={{ fontSize: '13px', color: '#6B7280', marginTop: '2px' }}>
               Use this to move jobs fast, check exceptions, and keep the schedule clean.
             </p>
           </div>
@@ -1420,7 +1420,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         </div>
 
         <div
-          className="mt-4 flex items-center gap-2 flex-wrap rounded-[16px] px-3 py-3"
+          className="mt-2 flex items-center gap-2 flex-wrap rounded-[12px] px-3 py-2 shrink-0"
           style={{ border: '1px solid #E7E7DF', backgroundColor: '#FCFCFA' }}
         >
           <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8A8D83', marginRight: '4px' }}>
@@ -1526,7 +1526,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
           return (
             <div
-              className="mt-2 flex items-center gap-2 flex-wrap rounded-[16px] px-3 py-2.5"
+              className="mt-1 flex items-center gap-2 flex-wrap rounded-[12px] px-3 py-1.5 shrink-0"
               style={{ border: '1px solid #E7E7DF', backgroundColor: '#FCFCFA' }}
             >
               <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8A8D83', marginRight: '4px' }}>
@@ -1583,185 +1583,212 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   // Old filter panel removed — filters now live in the header
 
 
-  // Week View — colored left border, cleaner name, no TBD
+  // Helper for parsing time
+  const getCompactTime = (timeStr: string | null) => {
+    if (!timeStr) return '';
+    const [h, m] = timeStr.split(':').map(Number);
+    const isPM = h >= 12;
+    const hour = h % 12 || 12;
+    const min = m > 0 ? `:${m.toString().padStart(2, '0')}` : '';
+    return `${hour}${min}${isPM ? 'p' : 'a'}`;
+  };
+
   const renderWeekView = () => {
     const weekStart = startOfWeek(currentDate)
+    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+    
+    let minHour = 5;
+    let maxHour = 23; // 11 PM
+
+    days.forEach(day => {
+      getJobsForDate(day).forEach(job => {
+        const t = job.startTime || job.startWindowBegin;
+        if (t) {
+          const [h] = t.split(':').map(Number);
+          if (!isNaN(h) && h < minHour) minHour = h;
+          
+          const e = job.startWindowEnd;
+          if (e) {
+            const [eh] = e.split(':').map(Number);
+            if (!isNaN(eh) && eh + 1 > maxHour) maxHour = Math.min(24, eh + 1);
+          } else {
+            if (!isNaN(h) && h + 2 > maxHour) maxHour = Math.min(24, h + 2);
+          }
+        }
+      });
+    });
+
+    const startHour = minHour;
+    const endHour = maxHour;
+    const hoursCount = endHour - startHour; // 18
+    const hourHeight = 60; // px
+    
+    const getTopOffset = (timeStr: string | null) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      if (isNaN(h) || isNaN(m)) return 0;
+      return (h - startHour) * hourHeight + (m / 60) * hourHeight;
+    };
 
     return (
-      <div
-        className="overflow-hidden"
-        style={{
-          borderTop: '1px solid #E8EAED',
-          background: 'linear-gradient(180deg, #F8F8F4 0%, #FFFFFF 18%)',
-        }}
-      >
-        <div className="grid grid-cols-7">
-          {Array.from({ length: 7 }, (_, i) => {
-            const day = addDays(weekStart, i)
-            const dayJobs = getJobsForDate(day)
-            const isTodayDate = isToday(day)
-
-            return (
-              <div
-                key={day.toString()}
-                className="last:border-r-0 min-h-[400px]"
-                style={{
-                  borderRight: '1px solid #E8EAED',
-                  backgroundColor: isTodayDate ? 'rgba(15,118,110,0.025)' : 'rgba(255,255,255,0.84)',
-                  backdropFilter: 'blur(2px)',
-                }}
-              >
-                <div
-                  className="p-3 text-center"
-                  style={{
-                    borderBottom: '1px solid #E8EAED',
-                    borderTop: isTodayDate ? '2px solid #0F766E' : '2px solid transparent',
-                    backgroundColor: isTodayDate ? 'rgba(15,118,110,0.05)' : 'rgba(255,255,255,0.88)',
-                  }}
-                >
-                  <div
-                    className="uppercase"
-                    style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', color: isTodayDate ? '#0F766E' : '#70757A' }}
-                  >
+      <div className="flex-1 min-h-0 flex flex-col bg-white overflow-hidden">
+        {/* Header Row */}
+        <div className="flex border-b border-gray-200 shrink-0">
+          <div className="w-14 shrink-0 border-r border-gray-200" />
+          <div className="flex-1 grid grid-cols-7">
+            {days.map(day => {
+              const isTodayDate = isToday(day);
+              return (
+                <div key={day.toString()} className="text-center py-2 border-r border-gray-200 last:border-r-0">
+                  <div className={`text-[11px] font-semibold uppercase ${isTodayDate ? 'text-teal-700' : 'text-gray-500'}`}>
                     {format(day, 'EEE')}
                   </div>
-                  {isTodayDate ? (
-                    <div className="flex items-center justify-center mt-0.5">
-                      <div
-                        className="rounded-full flex items-center justify-center"
-                        style={{ width: '30px', height: '30px', backgroundColor: '#0F766E', boxShadow: '0 8px 18px rgba(15,118,110,0.18)' }}
-                      >
-                        <span className="text-white leading-none" style={{ fontSize: '15px', fontWeight: 600 }}>{format(day, 'd')}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-0.5" style={{ fontSize: '16px', fontWeight: 500, color: '#202124', fontVariantNumeric: 'tabular-nums' }}>
-                      {format(day, 'd')}
-                    </div>
-                  )}
+                  <div className={`text-lg mt-0.5 font-medium ${isTodayDate ? 'text-white bg-teal-600 w-8 h-8 rounded-full flex items-center justify-center mx-auto' : 'text-gray-900'}`}>
+                    {format(day, 'd')}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+        
+        {/* Scrollable Time Grid */}
+        <div className="flex-1 overflow-y-auto relative">
+          <div className="flex" style={{ height: hoursCount * hourHeight }}>
+            {/* Time Gutter */}
+            <div className="w-14 shrink-0 border-r border-gray-200 relative bg-white z-10">
+              {Array.from({ length: hoursCount }).map((_, i) => {
+                const h = startHour + i;
+                const isPM = h >= 12;
+                const displayH = h % 12 || 12;
+                return (
+                  <div key={i} className="absolute w-full text-right pr-2 text-[10px] font-medium text-gray-500" style={{ top: i * hourHeight - 6 }}>
+                    {displayH} {isPM ? 'PM' : 'AM'}
+                  </div>
+                );
+              })}
+            </div>
 
-                {/* Job cards */}
-                <div className="p-2 space-y-1.5">
-                  {dayJobs
-                    .sort((a, b) => {
-                      const timeA = a.startTime || a.startWindowBegin || '00:00'
-                      const timeB = b.startTime || b.startWindowBegin || '00:00'
-                      return timeA.localeCompare(timeB)
-                    })
-                    .map(job => {
-                      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
-                      const borderColor = job.subcontractor ? hex : '#E0E0E0'
-                      const timeDisplay = job.startTime
-                        ? formatTime(job.startTime)
-                        : job.startWindowBegin
-                          ? formatTime(job.startWindowBegin)
-                          : null
+            {/* Grid */}
+            <div className="flex-1 grid grid-cols-7 relative">
+              {/* Hour lines */}
+              <div className="absolute inset-0 pointer-events-none">
+                {Array.from({ length: hoursCount }).map((_, i) => (
+                  <div key={i} className="absolute w-full border-t border-gray-100" style={{ top: i * hourHeight }} />
+                ))}
+              </div>
 
-                          const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
-                          const isSelected = selectedJobIds.has(job.id)
+              {/* Day Columns */}
+              {days.map((day, di) => {
+                const dayJobs = getJobsForDate(day);
+                
+                const unscheduledJobs: any[] = [];
+                const scheduledJobs: any[] = [];
+                
+                dayJobs.forEach(job => {
+                  const t = job.startTime || job.startWindowBegin;
+                  if (!t) {
+                    unscheduledJobs.push(job);
+                  } else {
+                    scheduledJobs.push(job);
+                  }
+                });
 
+                return (
+                  <div key={di} className="relative border-r border-gray-100 last:border-r-0">
+                    
+                    {/* Unscheduled Row at top */}
+                    {unscheduledJobs.length > 0 && (
+                      <div className="absolute top-0 left-0 right-0 z-20 flex flex-col gap-1 p-1 bg-gray-50/95 border-b border-gray-200 shadow-sm" style={{ minHeight: '30px' }}>
+                        {unscheduledJobs.map(job => {
+                          const { hex } = getCleanerColorInfo(job.subcontractor?.name || null);
+                          const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id);
+                          const isSelected = selectedJobIds.has(job.id);
                           return (
+                            <div
+                              key={job.id}
+                              onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
+                              className={`text-[10px] leading-tight px-1.5 py-1 rounded cursor-pointer truncate ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
+                              style={{
+                                backgroundColor: isSelected ? '#F0FDFA' : 'white',
+                                borderLeft: `3px solid ${hex}`,
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                opacity: isDimmed ? 0.3 : 1
+                              }}
+                            >
+                              TBD · {job.location.client.name}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Scheduled Jobs */}
+                    {scheduledJobs.map(job => {
+                      const tStr = job.startTime || job.startWindowBegin!;
+                      const [hStr, mStr] = tStr.split(':');
+                      const h = parseInt(hStr, 10);
+                      const m = parseInt(mStr, 10);
+                      
+                      let durationMins = 120;
+                      if (job.startWindowEnd) {
+                         const [ehStr, emStr] = job.startWindowEnd.split(':');
+                         const eh = parseInt(ehStr, 10);
+                         const em = parseInt(emStr, 10);
+                         const diff = (eh * 60 + em) - (h * 60 + m);
+                         if (diff > 0) durationMins = diff;
+                      }
+                      
+                      let top = getTopOffset(tStr);
+                      const height = (durationMins / 60) * hourHeight;
+
+                      const { colorKey } = getCleanerColorInfo(job.subcontractor?.name || null);
+                      const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default;
+                      const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id);
+                      const isSelected = selectedJobIds.has(job.id);
+
+                      return (
                         <div
                           key={job.id}
-                          onClick={() => {
-                            if (isSelectionMode) toggleJobSelection(job.id)
-                            else handleJobClick(job)
-                          }}
-                          className={`cursor-pointer rounded-lg relative ${
-                            isSelected ? 'ring-[3px] ring-teal-500 ring-offset-1' : ''
-                          }`}
+                          onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
+                          className={`absolute left-1 right-1 rounded-md overflow-hidden cursor-pointer shadow-sm border border-black/5 hover:shadow-md transition-shadow z-10 ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
                           style={{
-                            backgroundColor: isSelected ? '#F0FDFA' : 'white',
-                            borderLeft: `3px solid ${borderColor}`,
-                            padding: '5px 8px',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-                            opacity: isDimmed ? 0.15 : 1,
-                            transition: 'opacity 0.2s ease, box-shadow 0.15s ease, transform 0.15s ease',
+                            top: `${top}px`,
+                            height: `${height}px`,
+                            background: gradient,
+                            opacity: isDimmed ? 0.3 : 1
                           }}
-                          onMouseEnter={(e) => { if (!isDimmed) { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)'; (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.02)' } }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'; (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)' }}
                         >
-                          {isSelected && (
-                            <div
-                              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center shadow-sm"
-                              style={{ zIndex: 2 }}
-                            >
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5L4.5 7.5L8 3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          <div className="h-full w-full p-1.5 flex flex-col relative text-white">
+                            <div className="text-[10px] font-bold opacity-90 leading-none mb-0.5">
+                              {getCompactTime(tStr)}
                             </div>
-                          )}
-                          <div className="truncate" style={{ fontSize: '13px', fontWeight: 600, color: '#202124', lineHeight: '1.3' }}>
-                            {job.location.client.name}
-                          </div>
-                          {timeDisplay && (
-                            <div className="truncate mt-0.5" style={{ fontSize: '11px', color: '#70757A', lineHeight: '1.3' }}>
-                              {timeDisplay}
+                            <div className="text-[11px] font-semibold leading-tight truncate">
+                              {job.location.client.name}
                             </div>
-                          )}
-                          {job.subcontractor ? (
-                            <div className="truncate mt-0.5" style={{ fontSize: '11px', color: '#70757A', lineHeight: '1.3' }}>
-                              {job.subcontractor.name.split(' ')[0]}
-                            </div>
-                          ) : (
-                            <div className="truncate mt-0.5 italic" style={{ fontSize: '11px', color: '#BBBBBB', lineHeight: '1.3' }}>
-                              Unassigned
-                            </div>
-                          )}
-                          {/* Billing type badges */}
-                          {(() => {
-                            const cPay = (job as any).schedule?.clientPayType || (job as any).location?.client?.billingType || 'PER_CLEAN'
-                            const sPay = (job as any).schedule?.subcontractorPayType || (job as any).location?.client?.cleanerPayType || 'PER_CLEAN'
-                            const cLabel = cPay === 'FLAT_RATE' ? 'FR' : 'PC'
-                            const sLabel = sPay === 'FLAT_RATE' ? 'FR' : 'PC'
-                            return (
-                              <div className="flex items-center gap-1 mt-1">
-                                <span
-                                  title={`Client: ${cPay === 'FLAT_RATE' ? 'Flat Rate' : 'Per Clean'}`}
-                                  style={{
-                                    fontSize: '9px',
-                                    fontWeight: 700,
-                                    letterSpacing: '0.04em',
-                                    padding: '1px 4px',
-                                    borderRadius: '3px',
-                                    backgroundColor: cPay === 'FLAT_RATE' ? 'rgba(59,130,246,0.10)' : 'rgba(107,114,128,0.08)',
-                                    color: cPay === 'FLAT_RATE' ? '#3B82F6' : '#6B7280',
-                                    border: cPay === 'FLAT_RATE' ? '1px solid rgba(59,130,246,0.20)' : '1px solid rgba(107,114,128,0.15)',
-                                  }}
-                                >{cLabel}</span>
-                                <span style={{ fontSize: '8px', color: '#D1D5DB' }}>·</span>
-                                <span
-                                  title={`Cleaner: ${sPay === 'FLAT_RATE' ? 'Flat Rate' : 'Per Clean'}`}
-                                  style={{
-                                    fontSize: '9px',
-                                    fontWeight: 700,
-                                    letterSpacing: '0.04em',
-                                    padding: '1px 4px',
-                                    borderRadius: '3px',
-                                    backgroundColor: sPay === 'FLAT_RATE' ? 'rgba(168,85,247,0.10)' : 'rgba(107,114,128,0.08)',
-                                    color: sPay === 'FLAT_RATE' ? '#A855F7' : '#6B7280',
-                                    border: sPay === 'FLAT_RATE' ? '1px solid rgba(168,85,247,0.20)' : '1px solid rgba(107,114,128,0.15)',
-                                  }}
-                                >{sLabel}</span>
+                            {height >= 40 && job.subcontractor && (
+                              <div className="text-[10px] opacity-90 leading-tight truncate mt-auto">
+                                {job.subcontractor.name}
                               </div>
-                            )
-                          })()}
+                            )}
+                          </div>
                         </div>
                       )
                     })}
-                </div>
-              </div>
-            )
-          })}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </div>
     )
   }
 
-
   if (!mounted) return null
 
   return (
-    <div ref={calendarWrapperRef} className="flex flex-col relative" style={{ height: '100%' }}>
+    <div ref={calendarWrapperRef} className="flex flex-col relative h-full min-h-0 overflow-hidden lg:h-[calc(100vh-56px)]" style={{ height: '100%' }}>
       {renderMobileHeader()}
       {renderHeader()}
       
@@ -1882,35 +1909,29 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                   const status = getJobStatus(j)
                                   const { colorKey } = getCleanerColorInfo(j.subcontractor?.name || null)
                                   const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default
+                                  const timeDisplay = getCompactTime(j.startTime || j.startWindowBegin || null);
+                                  const cleanerInit = j.subcontractor ? j.subcontractor.name.charAt(0) : '';
+
                                   return (
                                     <div
                                       key={j.id}
-                                      onClick={(e) => { e.stopPropagation(); handleJobClick(j) }}
+                                      onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(j.id); else handleJobClick(j); }}
+                                      className="px-1.5 h-5 rounded-sm text-[11px] font-semibold leading-5 text-white truncate cursor-pointer hover:opacity-90"
                                       style={{
-                                        padding: '1px 3px',
-                                        borderRadius: '4px',
-                                        fontSize: '9px',
-                                        fontWeight: 600,
-                                        color: 'white',
                                         background: status === 'cancelled' ? '#9CA3AF' : gradient,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        cursor: 'pointer',
                                         opacity: (dimmedClientIds && !dimmedClientIds.has(j.location.client.id)) ? 0.15 : (status === 'cancelled' ? 0.5 : 1),
                                         transition: 'opacity 0.2s ease',
                                       }}
                                     >
-                                      {j.location.client.name}
+                                      {timeDisplay && `${timeDisplay} `}{j.location.client.name}{cleanerInit ? ` · ${cleanerInit}` : ''}
                                     </div>
                                   )
                                 })}
                                 {dayJobs.length > 5 && (
                                   <div
                                     onClick={(e) => { e.stopPropagation(); setDayPopoverDate(d); setDayPopoverJobs(dayJobs) }}
-                                    style={{ fontSize: '9px', color: '#0F766E', fontWeight: 700, paddingLeft: '4px', cursor: 'pointer' }}
-                                    onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.textDecoration = 'underline' }}
-                                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.textDecoration = 'none' }}
+                                    style={{ fontSize: '10px', color: '#0F766E', fontWeight: 600, paddingLeft: '4px', cursor: 'pointer', marginTop: '2px' }}
+                                    className="hover:underline"
                                   >
                                     +{dayJobs.length - 5} more
                                   </div>

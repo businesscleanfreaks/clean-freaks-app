@@ -1,11 +1,11 @@
 "use client"
 
-import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
 import { differenceInDays, format } from "date-fns"
-import { CheckCircle2, ChevronDown, User } from "lucide-react"
+import { CheckCircle2, ChevronDown } from "lucide-react"
 import type { CleanerData, CleanerJob } from "@/types"
 
 interface PaymentGroup {
@@ -113,6 +113,7 @@ interface CleanerListRowProps {
 }
 
 export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }: CleanerListRowProps) {
+  const router = useRouter()
   const status = getStatusInfo(sub, owed)
   const { hex } = getCleanerColorInfo(sub.name)
   const lastPayment = sub.payments?.[0]
@@ -131,19 +132,19 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
 
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-3 transition-colors ${isExpanded ? 'bg-teal-50/40' : ''}`}
+      onClick={() => router.push(`/subcontractors/${sub.id}`)}
+      className={`cursor-pointer group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50 ${isExpanded ? 'bg-teal-50/40' : ''}`}
     >
-      {/* Avatar — links to profile */}
-      <Link
-        href={`/subcontractors/${sub.id}`}
-        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 hover:ring-2 hover:ring-teal-400 hover:ring-offset-1 transition-all"
+      {/* Avatar */}
+      <div
+        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 group-hover:ring-2 group-hover:ring-teal-400 group-hover:ring-offset-1 transition-all"
         style={{ backgroundColor: hex }}
       >
         {initials}
-      </Link>
+      </div>
 
-      {/* Name + status + subtitle — links to profile */}
-      <Link href={`/subcontractors/${sub.id}`} className="flex-1 min-w-0 no-underline group">
+      {/* Name + status + subtitle */}
+      <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-gray-900 truncate text-[15px] group-hover:text-teal-600 transition-colors">
             {sub.name}
@@ -154,10 +155,10 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
           </span>
         </div>
         <p className="text-sm text-gray-400 truncate">{subtitle}</p>
-      </Link>
+      </div>
 
       {/* Amount + actions */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-3 flex-shrink-0">
         {isPaidUp ? (
           <div className="flex items-center gap-1.5 text-teal-600">
             <CheckCircle2 className="w-4 h-4" />
@@ -170,7 +171,7 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
             </span>
             <Button
               size="sm"
-              className="bg-teal-600 hover:bg-teal-700 text-white h-8 px-3 text-sm font-medium rounded-lg"
+              className="bg-teal-600 hover:bg-teal-700 text-white h-8 px-4 text-sm font-medium rounded-lg relative z-10"
               onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPay(sub) }}
             >
               Pay
@@ -178,21 +179,11 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
           </>
         )}
 
-        {/* Open Profile button — always visible */}
-        <Link
-          href={`/subcontractors/${sub.id}`}
-          className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium text-teal-600 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors no-underline"
-          title="Open Profile"
-        >
-          <User className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Profile</span>
-        </Link>
-
         {/* Expand chevron for quick inline details */}
         {onToggleExpand && (
           <button
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleExpand(sub.id) }}
-            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors relative z-10"
             aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
           >
             <ChevronDown
@@ -204,3 +195,4 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
     </div>
   )
 }
+

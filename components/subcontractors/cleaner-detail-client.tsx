@@ -50,10 +50,10 @@ function getStatusInfo(sub: CleanerData, owed: number) {
 function DetailSkeleton() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <SkeletonPulse className="h-5 w-24 mb-6" />
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-3 space-y-4">
             <div className="flex items-center gap-4 mb-6">
               <SkeletonPulse className="w-14 h-14" rounded="full" />
               <div>
@@ -64,7 +64,7 @@ function DetailSkeleton() {
             <SkeletonPulse className="h-32 w-full" rounded="xl" />
             <SkeletonPulse className="h-40 w-full" rounded="xl" />
           </div>
-          <div className="lg:col-span-8 space-y-4">
+          <div className="lg:col-span-9 space-y-4">
             <SkeletonPulse className="h-10 w-48 mx-auto mb-4" rounded="lg" />
             <SkeletonPulse className="h-64 w-full" rounded="xl" />
           </div>
@@ -285,7 +285,7 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 [overflow-anchor:none]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {/* Back nav */}
         <button
           onClick={() => router.push("/subcontractors")}
@@ -298,7 +298,7 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
           
           {/* LEFT COLUMN: Info, Balance, Settings */}
-          <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-4 lg:self-start">
+          <div className="lg:col-span-3 space-y-6 lg:sticky lg:top-4 lg:self-start">
             
             {/* Header */}
             <div className="flex items-start gap-4">
@@ -470,7 +470,7 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
           </div>
 
           {/* RIGHT COLUMN: Ledger */}
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-9">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col [overflow-anchor:none]">
               
               {/* Ledger Header & Controls */}
