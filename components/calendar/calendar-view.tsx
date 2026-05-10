@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { 
   ChevronLeft, ChevronRight,
   AlertCircle, Plus, ChevronDown, X, Loader2,
-  Search, MoreHorizontal
+  Search, MoreHorizontal, SlidersHorizontal
 } from "lucide-react"
 import { 
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, 
@@ -24,6 +24,7 @@ import { refreshCalendarData } from "./calendar-client"
 import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor, TouchSensor, closestCenter } from '@dnd-kit/core'
 import { getCleanerColorInfo, JOB_GRADIENTS, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
 import { useCalendarFilters } from '@/lib/calendar-filter-context'
+import { CalendarFilterDrawer } from './calendar-filter-drawer'
 
 interface CalendarViewProps {
   jobs: JobWithFullRelations[]
@@ -76,6 +77,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [originalJobPositions, setOriginalJobPositions] = useState<Map<string, { date: Date; time: string | null }>>(new Map())
   const [clientSearchQuery, setClientSearchQuery] = useState('')
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false)
   const overflowMenuRef = useRef<HTMLDivElement>(null)
 
   // Day popover state for "+N more" click in month view
@@ -1171,414 +1173,149 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     }
   }
 
-  // Desktop header — single row, balanced layout
-  const renderHeader = () => (
-    <div
-      className="hidden lg:block px-4 py-2 shrink-0"
-      style={{
-        borderBottom: '1px solid #E8EAE4',
-        background: 'linear-gradient(180deg, #F6F6F1 0%, #FFFFFF 78%)',
-      }}
-    >
-      <div
-        className="rounded-[16px] px-4 py-2.5"
-        style={{
-          border: '1px solid #E7E7DF',
-          backgroundColor: 'rgba(255,255,255,0.92)',
-          boxShadow: '0 12px 28px rgba(15, 23, 42, 0.05)',
-        }}
-      >
-        <div className="flex items-start justify-between gap-5">
-          <div className="min-w-0">
-            <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#7C7C72', marginBottom: '2px' }}>
-              Operations Calendar
-            </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <p style={{ fontSize: '24px', fontWeight: 700, color: '#111827', lineHeight: 1 }}>
-                {monthLabel}
-              </p>
-              <span
-                className="rounded-full px-3 py-1"
-                style={{
-                  backgroundColor: '#F3F4EF',
-                  border: '1px solid #E5E7DE',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: '#4B5563',
-                }}
-              >
-                {calendarSummaryLabel}
-              </span>
-              {activeFilterCount > 0 && (
-                <span
-                  className="rounded-full px-3 py-1"
-                  style={{
-                    backgroundColor: 'rgba(15,118,110,0.08)',
-                    border: '1px solid rgba(15,118,110,0.16)',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#0F766E',
-                  }}
-                >
-                  {activeFilterCount} filters on
+  // Desktop header — Google Calendar style, compact toolbar
+  const renderHeader = () => {
+    const isAllCleanersSelected = selectedCleanerIds.size === subcontractors.length && showUnassigned
+    const isAllClientsSelected = filterBarClientIds.size === 0
+    const filterCount = (isAllCleanersSelected ? 0 : 1) + (isAllClientsSelected ? 0 : 1)
+    
+    // Build active filter summary text
+    let activeSummaryParts: string[] = []
+    if (!isAllCleanersSelected) {
+      const names = Array.from(selectedCleanerIds).map(id => subcontractors.find(s => s.id === id)?.name.split(' ')[0]).filter(Boolean)
+      if (showUnassigned) names.push("Unassigned")
+      if (names.length > 0) activeSummaryParts.push(names.join(", "))
+    }
+    if (!isAllClientsSelected) {
+      const names = Array.from(filterBarClientIds).map(id => clients.find(c => c.id === id)?.name).filter(Boolean)
+      if (names.length > 0) activeSummaryParts.push(names.join(", "))
+    }
+    const activeSummaryText = activeSummaryParts.join(" · ")
+
+    return (
+      <div className="hidden lg:flex flex-col shrink-0 border-b border-gray-200 bg-white">
+        <div className="flex items-center justify-between px-4 h-16">
+          <div className="flex items-center gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold leading-none mb-1">Operations Calendar</p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-gray-900 leading-none">{monthLabel}</h1>
+                <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
+                  {calendarSummaryLabel}
                 </span>
-              )}
+              </div>
             </div>
-            <p style={{ fontSize: '13px', color: '#6B7280', marginTop: '2px' }}>
-              Use this to move jobs fast, check exceptions, and keep the schedule clean.
-            </p>
+            
+            <div className="h-6 w-px bg-gray-200 mx-1" />
+            
+            <div className="flex items-center gap-1">
+              <button
+                onClick={goToToday}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                Today
+              </button>
+              <button onClick={() => navigate('prev')} className="w-8 h-8 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button onClick={() => navigate('next')} className="w-8 h-8 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+            {isLoadingMore && <Loader2 className="w-4 h-4 animate-spin text-teal-600" />}
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ width: '14px', height: '14px', color: '#9AA0A6' }} />
-              <input
-                type="text"
-                placeholder="Find a client fast"
-                value={clientSearchQuery}
-                onChange={(e) => setClientSearchQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Escape') setClientSearchQuery('') }}
-                className="text-[14px] text-gray-900 placeholder-gray-400 focus:outline-none transition-all"
-                style={{
-                  width: '220px',
-                  padding: '9px 34px 9px 36px',
-                  borderRadius: '12px',
-                  backgroundColor: '#FFFFFF',
-                  border: '1px solid #E3E5DF',
-                  boxShadow: 'none',
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#0F766E'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(15,118,110,0.12)' }}
-                onBlur={(e) => { setTimeout(() => { e.target.style.borderColor = '#E3E5DF'; e.target.style.boxShadow = 'none' }, 150) }}
-              />
-              {clientSearchQuery && (
-                <button onClick={() => setClientSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
-                  <X style={{ width: '13px', height: '13px' }} />
+          <div className="flex items-center gap-3">
+            {/* Week/Month toggle */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+              {(['week', 'month'] as ViewMode[]).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    viewMode === mode 
+                      ? 'bg-white text-gray-900 shadow-sm' 
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                  }`}
+                >
+                  {mode === 'week' ? 'Week' : 'Month'}
                 </button>
-              )}
-              {/* Search suggestions dropdown */}
-              {clientSearchQuery.trim().length >= 1 && matchingClientIds && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-200 z-50 max-h-[240px] overflow-y-auto py-1">
-                  {clients
-                    .filter(c => matchingClientIds.has(c.id))
-                    .slice(0, 8)
-                    .map(c => (
-                      <button
-                        key={c.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          setFilterBarClientIds(new Set([c.id]))
-                          setClientSearchQuery('')
-                        }}
-                        className="w-full text-left px-3 py-2 text-[13px] text-gray-700 hover:bg-teal-50 hover:text-teal-700 transition-colors truncate"
-                      >
-                        {c.name}
-                      </button>
-                    ))}
-                  {matchingClientIds.size === 0 && (
-                    <p className="px-3 py-2 text-[13px] text-gray-400 italic">No clients found</p>
-                  )}
-                </div>
-              )}
+              ))}
             </div>
-
+            
             <button
               onClick={() => handleDateClick(currentDate)}
-              className="flex items-center gap-2 rounded-[12px] px-4 text-white transition-all duration-150 hover:scale-[1.01] active:scale-[0.98]"
-              style={{ height: '42px', backgroundColor: '#0F766E', boxShadow: '0 8px 18px rgba(15,118,110,0.22)' }}
-              title="Schedule Job"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors shadow-sm text-sm font-medium"
             >
-              <Plus style={{ width: '16px', height: '16px' }} />
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>Add Job</span>
+              <Plus className="w-4 h-4" />
+              Add Job
             </button>
 
+            <button
+              onClick={() => setFilterDrawerOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                filterCount > 0 
+                  ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100' 
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+              {filterCount > 0 && (
+                <span className="flex items-center justify-center min-w-[20px] h-5 px-1 ml-0.5 bg-teal-600 text-white text-[10px] rounded-full">
+                  {filterCount}
+                </span>
+              )}
+            </button>
+            
+            {/* Overflow */}
             <div className="relative" ref={overflowMenuRef}>
               <button
                 onClick={() => setShowOverflowMenu(!showOverflowMenu)}
-                className="w-10 h-10 rounded-[12px] flex items-center justify-center transition-colors"
-                style={{ border: '1px solid #E3E5DF', backgroundColor: '#FFFFFF' }}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
               >
-                <MoreHorizontal style={{ width: '18px', height: '18px', color: '#5F6368' }} />
+                <MoreHorizontal className="w-5 h-5" />
               </button>
               {showOverflowMenu && (
-                <div className="absolute right-0 top-full mt-2 bg-white rounded-[14px] shadow-lg py-1 z-50 w-[220px]" style={{ border: '1px solid #e8eaed' }}>
+                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-50 w-48">
                   <button
                     onClick={() => {
                       setIsSelectionMode(!isSelectionMode)
                       if (isSelectionMode) clearSelection()
                       setShowOverflowMenu(false)
                     }}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                   >
-                    <span className="text-[13px] text-gray-700 font-medium">{isSelectionMode ? 'Done Editing' : 'Bulk Edit Jobs'}</span>
-                    {!isSelectionMode && <p className="text-[11px] text-gray-400 mt-0.5">Tap jobs to mark complete, reassign, or cancel</p>}
+                    {isSelectionMode ? 'Exit Bulk Edit' : 'Bulk Edit Jobs'}
                   </button>
-                  {hasActiveFilters && (
-                    <button
-                      onClick={() => { clearFilters(); setShowOverflowMenu(false) }}
-                      className="w-full text-left px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
-                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-4">
-          <div
-            className="flex items-center gap-1 rounded-[16px] px-2 py-1.5"
-            style={{ border: '1px solid #E7E7DF', backgroundColor: '#FCFCFA' }}
-          >
-            {(['week', 'month'] as ViewMode[]).map(mode => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                style={{
-                  padding: '4px 14px',
-                  borderRadius: '12px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  backgroundColor: viewMode === mode ? '#0F766E' : 'transparent',
-                  color: viewMode === mode ? 'white' : '#5F6368',
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {mode === 'week' ? 'Week' : 'Month'}
-              </button>
-            ))}
-          </div>
-
-          <div
-            className="flex items-center gap-2 rounded-[16px] px-3 py-1.5"
-            style={{ border: '1px solid #E7E7DF', backgroundColor: '#FCFCFA' }}
-          >
-            <button onClick={() => navigate('prev')} className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-stone-100 transition-colors">
-              <ChevronLeft style={{ width: '16px', height: '16px', color: '#5F6368' }} />
-            </button>
-
-            <div className="relative">
-              <button
-                onClick={() => { setMonthPickerYear(currentDate.getFullYear()); setShowMonthPicker(!showMonthPicker) }}
-                className="min-w-[170px] text-center px-3 py-2 rounded-[10px] hover:bg-stone-100 transition-colors"
-              >
-                <span style={{ fontSize: '16px', fontWeight: 700, color: '#202124' }}>
-                  {monthLabel}
-                </span>
-              </button>
-
-              {showMonthPicker && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white rounded-[18px] shadow-xl p-4 z-50 w-[300px]" style={{ border: '1px solid #e8eaed' }}>
-                  <div className="flex items-center justify-between mb-3">
-                    <button onClick={() => setMonthPickerYear(y => y - 1)} className="w-8 h-8 rounded-lg hover:bg-stone-100 flex items-center justify-center">
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="font-bold text-gray-900">{monthPickerYear}</span>
-                    <button onClick={() => setMonthPickerYear(y => y + 1)} className="w-8 h-8 rounded-lg hover:bg-stone-100 flex items-center justify-center">
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {MONTHS.map((month, idx) => {
-                      const isCurrentMonth = currentDate.getMonth() === idx && currentDate.getFullYear() === monthPickerYear
-                      const isTodayMonth = new Date().getMonth() === idx && new Date().getFullYear() === monthPickerYear
-                      return (
-                        <button key={month} onClick={() => selectMonth(idx)}
-                          className={`py-2 rounded-lg text-sm font-medium transition-all ${
-                            isCurrentMonth ? 'bg-teal-700 text-white' : isTodayMonth ? 'bg-teal-100 text-teal-700 hover:bg-teal-200' : 'hover:bg-stone-100 text-gray-600'
-                          }`}
-                        >{month}</button>
-                      )
-                    })}
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-gray-100 flex justify-center">
-                    <button onClick={() => { setCurrentDate(new Date()); setShowMonthPicker(false) }} className="text-sm text-teal-700 font-medium hover:text-teal-800">Go to Today</button>
-                  </div>
-                </div>
-              )}
+        {/* Active Filter Summary Row */}
+        {filterCount > 0 && (
+          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs">
+            <div className="flex items-center gap-2 overflow-hidden text-gray-600">
+              <span className="font-semibold text-gray-700 shrink-0">Filters:</span>
+              <span className="truncate">{activeSummaryText}</span>
             </div>
-
-            <button onClick={() => navigate('next')} className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-stone-100 transition-colors">
-              <ChevronRight style={{ width: '16px', height: '16px', color: '#5F6368' }} />
-            </button>
-
-            {isLoadingMore && (
-              <Loader2 className="w-4 h-4 animate-spin text-teal-700" />
-            )}
-
             <button
-              onClick={goToToday}
-              className="px-3 py-2 rounded-[10px] text-[13px] font-semibold transition-colors"
-              style={{ border: '1px solid #D8DDD8', color: '#0F766E', backgroundColor: '#FFFFFF' }}
-            >
-              Today
-            </button>
-          </div>
-        </div>
-
-        <div
-          className="mt-2 flex items-center gap-2 flex-wrap rounded-[12px] px-3 py-2 shrink-0"
-          style={{ border: '1px solid #E7E7DF', backgroundColor: '#FCFCFA' }}
-        >
-          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8A8D83', marginRight: '4px' }}>
-            Team Filters
-          </span>
-
-          <button
-            onClick={() => {
-              setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
-              setShowUnassigned(true)
-            }}
-            style={{
-              padding: '6px 14px',
-              borderRadius: '999px',
-              fontSize: '13px',
-              fontWeight: 600,
-              transition: 'all 0.15s ease',
-              backgroundColor: isAllCleanersSelected ? '#0F766E' : '#FFFFFF',
-              color: isAllCleanersSelected ? 'white' : '#5F6368',
-              border: isAllCleanersSelected ? '1px solid #0F766E' : '1px solid #DADCE0',
-            }}
-          >All</button>
-
-          {subcontractors.map(sub => {
-            const { hex } = getCleanerColorInfo(sub.name)
-            const isFiltered = !isAllCleanersSelected
-            const isActive = selectedCleanerIds.has(sub.id) && isFiltered
-            const isShowing = selectedCleanerIds.has(sub.id)
-            return (
-              <button
-                key={sub.id}
-                onClick={() => handleCleanerClick(sub.id)}
-                className="flex items-center gap-1.5"
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '999px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  transition: 'all 0.15s ease',
-                  backgroundColor: isActive ? hex : '#FFFFFF',
-                  color: isActive ? 'white' : '#5F6368',
-                  border: isActive ? `1px solid ${hex}` : isAllCleanersSelected ? '1px solid #FFFFFF' : '1px solid #DADCE0',
-                  opacity: isAllCleanersSelected ? 1 : isShowing ? 1 : 0.45,
-                }}
-              >
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.9)' : hex }} />
-                {sub.name.split(' ')[0]}
-              </button>
-            )
-          })}
-
-          <button
-            onClick={handleUnassignedClick}
-            className="flex items-center gap-1.5"
-            style={{
-              padding: '6px 14px',
-              borderRadius: '999px',
-              fontSize: '13px',
-              fontWeight: 600,
-              transition: 'all 0.15s ease',
-              backgroundColor: showUnassigned && !isAllCleanersSelected ? '#DC2626' : '#FFFFFF',
-              color: showUnassigned && !isAllCleanersSelected ? 'white' : '#5F6368',
-              border: showUnassigned && !isAllCleanersSelected ? '1px solid #DC2626' : isAllCleanersSelected ? '1px solid #FFFFFF' : '1px solid #DADCE0',
-              opacity: isAllCleanersSelected ? 1 : showUnassigned ? 1 : 0.45,
-            }}
-          >
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: showUnassigned && !isAllCleanersSelected ? 'rgba(255,255,255,0.9)' : '#EF4444' }} />
-            Unassigned
-          </button>
-
-          {stats.unassignedJobs.length > 0 && (
-            <button
-              onClick={() => setQuickAssignOpen(true)}
-              className="flex items-center gap-1.5 rounded-full px-3 py-1.5"
-              style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                color: '#B45309',
-                backgroundColor: '#FFF7ED',
-                border: '1px solid #FED7AA',
+              onClick={() => {
+                setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
+                setShowUnassigned(true)
+                setFilterBarClientIds(new Set())
               }}
+              className="text-teal-600 hover:text-teal-700 font-medium shrink-0 ml-4"
             >
-              <AlertCircle style={{ width: '13px', height: '13px' }} />
-              {stats.unassignedJobs.length} need cleaner
+              Clear All
             </button>
-          )}
-        </div>
-
-        {/* Client Filter — row of client pills below team filters */}
-        {(() => {
-          // Get distinct clients visible in the current week
-          const weekStart = startOfWeek(currentDate)
-          const weekClientIds = new Set<string>()
-          for (let i = 0; i < 7; i++) {
-            const day = addDays(weekStart, i)
-            getJobsForDate(day).forEach(j => weekClientIds.add(j.location.client.id))
-          }
-          const weekClients = clients
-            .filter(c => weekClientIds.has(c.id))
-            .sort((a, b) => a.name.localeCompare(b.name))
-          
-          if (weekClients.length === 0) return null
-
-          return (
-            <div
-              className="mt-1 flex items-center gap-2 flex-wrap rounded-[12px] px-3 py-1.5 shrink-0"
-              style={{ border: '1px solid #E7E7DF', backgroundColor: '#FCFCFA' }}
-            >
-              <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8A8D83', marginRight: '4px' }}>
-                Client
-              </span>
-
-              <button
-                onClick={() => setFilterBarClientIds(new Set())}
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: '999px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  transition: 'all 0.15s ease',
-                  backgroundColor: filterBarClientIds.size === 0 ? '#0F766E' : '#FFFFFF',
-                  color: filterBarClientIds.size === 0 ? 'white' : '#5F6368',
-                  border: filterBarClientIds.size === 0 ? '1px solid #0F766E' : '1px solid #DADCE0',
-                }}
-              >All</button>
-
-              {weekClients.map(c => {
-                const isActive = filterBarClientIds.has(c.id)
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => toggleFilterBarClient(c.id)}
-                    style={{
-                      padding: '5px 12px',
-                      borderRadius: '999px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      transition: 'all 0.15s ease',
-                      backgroundColor: isActive ? '#0F766E' : '#FFFFFF',
-                      color: isActive ? 'white' : '#5F6368',
-                      border: isActive ? '1px solid #0F766E' : '1px solid #DADCE0',
-                      maxWidth: '150px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={c.name}
-                  >
-                    {c.name.length > 18 ? c.name.slice(0, 16) + '…' : c.name}
-                  </button>
-                )
-              })}
-            </div>
-          )
-        })()}
+          </div>
+        )}
       </div>
-    </div>
-  )
+    )
+  }
 
   // Old filter panel removed — filters now live in the header
 
@@ -1730,7 +1467,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       const h = parseInt(hStr, 10);
                       const m = parseInt(mStr, 10);
                       
-                      let durationMins = 120;
+                      let durationMins = 60;
                       if (job.startWindowEnd) {
                          const [ehStr, emStr] = job.startWindowEnd.split(':');
                          const eh = parseInt(ehStr, 10);
@@ -1792,7 +1529,19 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       {renderMobileHeader()}
       {renderHeader()}
       
-      {/* Filter bar moved to sidebar -- see nav-sidebar.tsx */}
+      {/* Filter drawer overlay */}
+      <CalendarFilterDrawer
+        isOpen={filterDrawerOpen}
+        onClose={() => setFilterDrawerOpen(false)}
+        subcontractors={subcontractors}
+        clients={clients}
+        selectedCleanerIds={selectedCleanerIds}
+        setSelectedCleanerIds={setSelectedCleanerIds}
+        filterBarClientIds={filterBarClientIds}
+        setFilterBarClientIds={setFilterBarClientIds}
+        showUnassigned={showUnassigned}
+        setShowUnassigned={setShowUnassigned}
+      />
       
       {/* Mobile Calendar Content */}
       {renderMobileContent()}
