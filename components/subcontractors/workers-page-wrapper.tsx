@@ -140,12 +140,6 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     })
   }
 
-  // Inline expansion state (lightweight quick preview)
-  const [expandedSubId, setExpandedSubId] = useState<string | null>(null)
-
-  const handleToggleExpand = useCallback((subId: string) => {
-    setExpandedSubId(prev => prev === subId ? null : subId)
-  }, [])
 
   // Batch Pay state
   const [batchPayMode, setBatchPayMode] = useState(false)
@@ -257,11 +251,6 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     }
   }
 
-  // Build compact quick-pay preview data for expanded row
-  const getQuickPayGroups = (sub: CleanerData) => {
-    return getPaymentGroups(sub)
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top bar */}
@@ -311,29 +300,20 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
           </button>
         </div>
 
-        {/* Stat banner */}
-        {totalOwed > 0 && (
-          <div className="bg-white rounded-xl px-4 py-3 flex items-center justify-between mb-4 border border-gray-200 border-l-4 border-l-teal-600">
-            <div className="flex items-center gap-3">
-              <DollarSign className="w-5 h-5 text-teal-600 flex-shrink-0" />
-              <div>
-                <p className="text-xs text-gray-500 font-medium">Total Owed</p>
-                <p className="text-2xl font-bold text-gray-900" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatCurrency(totalOwed)}</p>
-              </div>
+        {/* Summary Strip */}
+        {subcontractors.length > 0 && (
+          <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-5">
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 flex flex-col justify-center">
+              <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Outstanding</span>
+              <span className="text-xl sm:text-2xl font-bold text-gray-900 leading-none truncate">{formatCurrency(totalOwed)}</span>
             </div>
-            <div className="text-right">
-              <p className="text-sm font-semibold text-amber-600">{subcontractorsWithBalance.length} unpaid</p>
-              <p className="text-xs text-gray-400">{paidUpSubcontractors.length} paid up</p>
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 flex flex-col justify-center">
+              <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Unpaid</span>
+              <span className="text-xl sm:text-2xl font-bold text-gray-900 leading-none">{subcontractorsWithBalance.length}</span>
             </div>
-          </div>
-        )}
-
-        {totalOwed === 0 && subcontractors.length > 0 && (
-          <div className="bg-white rounded-xl px-4 py-3 flex items-center gap-3 mb-4 border border-gray-200 border-l-4 border-l-teal-600">
-            <CheckCircle2 className="w-5 h-5 text-teal-600 flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-gray-900">All caught up!</p>
-              <p className="text-sm text-gray-400">Everyone has been paid</p>
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 flex flex-col justify-center">
+              <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Paid Up</span>
+              <span className="text-xl sm:text-2xl font-bold text-gray-900 leading-none">{paidUpSubcontractors.length}</span>
             </div>
           </div>
         )}
@@ -369,57 +349,19 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
         {owedFiltered.length > 0 && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-2 px-1">
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Owed Money</h2>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Unpaid</h2>
               <span className="text-xs font-medium text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">
                 {owedFiltered.length}
               </span>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {owedFiltered.map(sub => (
-                <div key={sub.id}>
-                  <CleanerListRow
-                    sub={sub}
-                    owed={getCorrectOwedAmount(sub)}
-                    onPay={setPayingSubcontractor}
-                    onToggleExpand={handleToggleExpand}
-                    isExpanded={expandedSubId === sub.id}
-                  />
-                  {/* Compact quick-pay preview */}
-                  {expandedSubId === sub.id && (
-                    <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3">
-                      <Link
-                        href={`/subcontractors/${sub.id}`}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 mb-3 transition-colors"
-                      >
-                        Open Profile <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
-                      <div className="space-y-1.5">
-                        {getQuickPayGroups(sub).map(group => (
-                          <div key={group.id} className="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-100">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">{group.clientName}</p>
-                              <p className="text-xs text-gray-400">
-                                {group.type === 'FLAT_RATE' ? 'Flat Rate' : `${group.jobCount} clean${group.jobCount !== 1 ? 's' : ''}`}
-                              </p>
-                            </div>
-                            <p className="text-sm font-bold text-gray-900 ml-3">{formatCurrency(group.amount)}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-200">
-                        <p className="text-sm font-bold text-gray-900">Total: {formatCurrency(getCorrectOwedAmount(sub))}</p>
-                        <Button
-                          size="sm"
-                          className="bg-teal-600 hover:bg-teal-700 text-white h-8 px-4 text-sm font-medium rounded-lg"
-                          onClick={() => setPayingSubcontractor(sub)}
-                        >
-                          <DollarSign className="w-3.5 h-3.5 mr-1" />
-                          Record Payment
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <CleanerListRow
+                  key={sub.id}
+                  sub={sub}
+                  owed={getCorrectOwedAmount(sub)}
+                  onPay={setPayingSubcontractor}
+                />
               ))}
             </div>
           </div>

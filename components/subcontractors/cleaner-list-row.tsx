@@ -108,11 +108,9 @@ interface CleanerListRowProps {
   sub: CleanerData
   owed: number
   onPay: (sub: CleanerData) => void
-  onToggleExpand?: (subId: string) => void
-  isExpanded?: boolean
 }
 
-export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }: CleanerListRowProps) {
+export function CleanerListRow({ sub, owed, onPay }: CleanerListRowProps) {
   const router = useRouter()
   const status = getStatusInfo(sub, owed)
   const { hex } = getCleanerColorInfo(sub.name)
@@ -133,7 +131,7 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
   return (
     <div
       onClick={() => router.push(`/subcontractors/${sub.id}`)}
-      className={`cursor-pointer group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50 ${isExpanded ? 'bg-teal-50/40' : ''}`}
+      className="cursor-pointer group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50"
     >
       {/* Avatar */}
       <div
@@ -179,18 +177,7 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
           </>
         )}
 
-        {/* Expand chevron for quick inline details */}
-        {onToggleExpand && (
-          <button
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleExpand(sub.id) }}
-            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors relative z-10"
-            aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
-          >
-            <ChevronDown
-              className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-            />
-          </button>
-        )}
+
       </div>
     </div>
   )
