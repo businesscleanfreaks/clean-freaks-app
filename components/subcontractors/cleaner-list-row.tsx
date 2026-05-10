@@ -1,12 +1,11 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
-import { getCleanerColorInfo, CLEANER_HEX_COLORS } from "@/lib/calendar-design-tokens"
+import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
 import { differenceInDays, format } from "date-fns"
-import { CheckCircle2, ChevronDown } from "lucide-react"
+import { CheckCircle2, ChevronDown, User } from "lucide-react"
 import type { CleanerData, CleanerJob } from "@/types"
 
 interface PaymentGroup {
@@ -114,7 +113,6 @@ interface CleanerListRowProps {
 }
 
 export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }: CleanerListRowProps) {
-  const router = useRouter()
   const status = getStatusInfo(sub, owed)
   const { hex } = getCleanerColorInfo(sub.name)
   const lastPayment = sub.payments?.[0]
@@ -131,75 +129,78 @@ export function CleanerListRow({ sub, owed, onPay, onToggleExpand, isExpanded }:
 
   const initials = sub.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 
-  const handleClick = () => {
-    if (onToggleExpand) {
-      onToggleExpand(sub.id)
-    } else {
-      router.push(`/subcontractors/${sub.id}`)
-    }
-  }
-
   return (
     <div
-      className={`flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors ${isExpanded ? 'bg-teal-50/40' : 'hover:bg-gray-50 active:bg-gray-100'}`}
-      onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') handleClick() }}
+      className={`flex items-center gap-3 px-4 py-3 transition-colors ${isExpanded ? 'bg-teal-50/40' : ''}`}
     >
-      {/* Avatar */}
-      <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+      {/* Avatar — links to profile */}
+      <Link
+        href={`/subcontractors/${sub.id}`}
+        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 hover:ring-2 hover:ring-teal-400 hover:ring-offset-1 transition-all"
         style={{ backgroundColor: hex }}
       >
         {initials}
-      </div>
+      </Link>
 
-      {/* Name + status + subtitle */}
-      <div className="flex-1 min-w-0">
+      {/* Name + status + subtitle — links to profile */}
+      <Link href={`/subcontractors/${sub.id}`} className="flex-1 min-w-0 no-underline group">
         <div className="flex items-center gap-2">
-          <Link
-            href={`/subcontractors/${sub.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="font-semibold text-gray-900 truncate text-[15px] hover:text-teal-600 transition-colors"
-          >
+          <span className="font-semibold text-gray-900 truncate text-[15px] group-hover:text-teal-600 transition-colors">
             {sub.name}
-          </Link>
+          </span>
           <span className="flex items-center gap-1 flex-shrink-0">
             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: status.dotColor }} />
             <span className="text-xs text-gray-500">{status.label}</span>
           </span>
         </div>
         <p className="text-sm text-gray-400 truncate">{subtitle}</p>
-      </div>
+      </Link>
 
-      {/* Amount + action */}
-      {isPaidUp ? (
-        <div className="flex items-center gap-1.5 text-teal-600 flex-shrink-0">
-          <CheckCircle2 className="w-4 h-4" />
-          <span className="text-sm font-medium">$0</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="font-bold text-gray-900 text-[15px] tabular-nums">
-            {formatCurrency(owed)}
-          </span>
-          <Button
-            size="sm"
-            className="bg-teal-600 hover:bg-teal-700 text-white h-8 px-4 text-sm font-medium rounded-lg"
-            onClick={(e) => { e.stopPropagation(); onPay(sub) }}
+      {/* Amount + actions */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {isPaidUp ? (
+          <div className="flex items-center gap-1.5 text-teal-600">
+            <CheckCircle2 className="w-4 h-4" />
+            <span className="text-sm font-medium">$0</span>
+          </div>
+        ) : (
+          <>
+            <span className="font-bold text-gray-900 text-[15px] tabular-nums">
+              {formatCurrency(owed)}
+            </span>
+            <Button
+              size="sm"
+              className="bg-teal-600 hover:bg-teal-700 text-white h-8 px-3 text-sm font-medium rounded-lg"
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPay(sub) }}
+            >
+              Pay
+            </Button>
+          </>
+        )}
+
+        {/* Open Profile button — always visible */}
+        <Link
+          href={`/subcontractors/${sub.id}`}
+          className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium text-teal-600 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors no-underline"
+          title="Open Profile"
+        >
+          <User className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Profile</span>
+        </Link>
+
+        {/* Expand chevron for quick inline details */}
+        {onToggleExpand && (
+          <button
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleExpand(sub.id) }}
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
           >
-            Pay
-          </Button>
-        </div>
-      )}
-
-      {/* Expand chevron */}
-      {onToggleExpand && (
-        <ChevronDown
-          className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-        />
-      )}
+            <ChevronDown
+              className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

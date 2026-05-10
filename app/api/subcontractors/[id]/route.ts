@@ -14,6 +14,10 @@ export async function GET(
     await requireAuth()
     const { id } = await params
 
+    // Parse optional period query param (e.g. ?period=2026-05)
+    const url = new URL(request.url)
+    const periodParam = url.searchParams.get('period')
+
     const sub = await prisma.subcontractor.findUnique({
       where: { id },
     })
@@ -26,8 +30,18 @@ export async function GET(
     const today = new Date()
     today.setHours(23, 59, 59, 999)
 
+    // Build period query if period param provided
+    const periodQuery = (() => {
+      if (!periodParam) return null
+      const [y, m] = periodParam.split('-').map(Number)
+      if (!y || !m || m < 1 || m > 12) return null
+      const start = new Date(y, m - 1, 1)
+      const end = new Date(y, m, 0, 23, 59, 59, 999)
+      return { start, end }
+    })()
+
     // Parallelize DB queries for speed
-    const [unpaidJobs, payments, accounts] = await Promise.all([
+    const queries: [any, any, any, any?] = [
       prisma.job.findMany({
         where: {
           subcontractorId: id,
@@ -92,10 +106,36 @@ export async function GET(
           },
         },
       }),
-    ])
+    ]
+
+    // If period requested, also query ALL jobs for that month (paid + unpaid)
+    if (periodQuery) {
+      queries.push(
+        prisma.job.findMany({
+          where: {
+            subcontractorId: id,
+            date: { gte: periodQuery.start, lte: periodQuery.end },
+            status: { in: ['COMPLETED', 'SCHEDULED'] },
+          },
+          include: {
+            location: { include: { client: true } },
+            schedule: true,
+            paymentLineItems: {
+              include: {
+                payment: { select: { datePaid: true } },
+              },
+              take: 1,
+            },
+          },
+          orderBy: { date: "asc" },
+        })
+      )
+    }
+
+    const [unpaidJobs, payments, accounts, rawPeriodJobs] = await Promise.all(queries)
 
     // Filter out jobs with missing location/client data (data integrity safety)
-    const validJobs = unpaidJobs.filter(job => job.location && job.location.client)
+    const validJobs = unpaidJobs.filter((job: any) => job.location && job.location.client)
 
     // Build cadence info and filter jobs
     const cadenceSub: CadenceSubcontractorInfo = {
@@ -104,7 +144,7 @@ export async function GET(
     }
 
     const scheduleMap = new Map<string, CadenceScheduleInfo>()
-    validJobs.forEach(job => {
+    validJobs.forEach((job: any) => {
       if (job.scheduleId && job.schedule && !scheduleMap.has(job.scheduleId)) {
         scheduleMap.set(job.scheduleId, {
           paymentCadenceOverride: job.schedule.paymentCadenceOverride ?? null,
@@ -112,38 +152,38 @@ export async function GET(
       }
     })
 
-    const payableJobs = validJobs.filter(job => {
+    const payableJobs = validJobs.filter((job: any) => {
       const schedule = job.scheduleId ? (scheduleMap.get(job.scheduleId) || null) : null
       return isJobPayable(job, cadenceSub, schedule)
     })
 
     const jobsByClientSchedule = new Map<string, typeof payableJobs>()
-    payableJobs.forEach(job => {
+    payableJobs.forEach((job: any) => {
       const key = `${job.location.client.id}-${job.scheduleId || "one-off"}`
       if (!jobsByClientSchedule.has(key)) jobsByClientSchedule.set(key, [])
       jobsByClientSchedule.get(key)!.push(job)
     })
 
     let owedAmount = 0
-    jobsByClientSchedule.forEach(jobsGroup => {
+    jobsByClientSchedule.forEach((jobsGroup: any[]) => {
       if (jobsGroup.length === 0) return
       const schedule = jobsGroup[0].schedule
       const isRecurring = jobsGroup[0].scheduleId !== null
       if (schedule?.subcontractorPayType === "FLAT_RATE" && isRecurring) {
         const firstJob = jobsGroup[0]
         owedAmount += firstJob.subcontractorRate
-        firstJob.addOnServices.forEach(a => { owedAmount += a.subcontractorRate })
+        firstJob.addOnServices.forEach((a: any) => { owedAmount += a.subcontractorRate })
       } else {
-        jobsGroup.forEach(job => {
+        jobsGroup.forEach((job: any) => {
           owedAmount += job.subcontractorRate
-          job.addOnServices.forEach(a => { owedAmount += a.subcontractorRate })
+          job.addOnServices.forEach((a: any) => { owedAmount += a.subcontractorRate })
         })
       }
     })
 
     const serializeDate = (d: Date) => d.toISOString()
 
-    const serializedJobs = payableJobs.map(job => ({
+    const serializedJobs = payableJobs.map((job: any) => ({
       ...job,
       date: serializeDate(job.date),
       createdAt: serializeDate(job.createdAt),
@@ -166,11 +206,11 @@ export async function GET(
         : null,
     }))
 
-    const serializedPayments = payments.map(payment => ({
+    const serializedPayments = payments.map((payment: any) => ({
       ...payment,
       datePaid: serializeDate(payment.datePaid),
       createdAt: serializeDate(payment.createdAt),
-      lineItems: payment.lineItems.map(item => ({
+      lineItems: payment.lineItems.map((item: any) => ({
         ...item,
         job: item.job && item.job.location && item.job.location.client
           ? {
@@ -190,10 +230,34 @@ export async function GET(
       })),
     }))
 
-    const serializedAccounts = accounts.map(acct => ({
+    const serializedAccounts = accounts.map((acct: any) => ({
       ...acct,
       startDate: serializeDate(acct.startDate),
     }))
+
+    // Serialize period jobs if present
+    const serializedPeriodJobs = rawPeriodJobs
+      ? (rawPeriodJobs as any[]).filter((j: any) => j.location && j.location.client).map((job: any) => ({
+          id: job.id,
+          date: serializeDate(job.date),
+          subcontractorRate: job.subcontractorRate,
+          subcontractorPaid: job.subcontractorPaid,
+          scheduleId: job.scheduleId,
+          paidDate: job.paymentLineItems?.[0]?.payment?.datePaid
+            ? serializeDate(job.paymentLineItems[0].payment.datePaid)
+            : null,
+          location: {
+            name: job.location.name,
+            address: job.location.address,
+            client: {
+              id: job.location.client.id,
+              name: job.location.client.name,
+              billingType: job.location.client.billingType,
+              cleanerPayType: job.location.client.cleanerPayType,
+            },
+          },
+        }))
+      : undefined
 
     return NextResponse.json({
       ...sub,
@@ -202,6 +266,7 @@ export async function GET(
       jobs: serializedJobs,
       payments: serializedPayments,
       accounts: serializedAccounts,
+      ...(serializedPeriodJobs ? { periodJobs: serializedPeriodJobs } : {}),
     })
   } catch (error) {
     logger.error("Subcontractor detail error:", error)

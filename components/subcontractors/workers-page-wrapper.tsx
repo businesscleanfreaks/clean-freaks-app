@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback, useRef } from "react"
+import { useState, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { mutate as globalMutate } from "swr"
 import { Button } from "@/components/ui/button"
@@ -15,11 +15,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react"
+import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays, ArrowRight } from "lucide-react"
 import { ActionSpinner } from "@/components/ui/action-spinner"
 import { PaymentBreakdownModal } from "@/components/subcontractors/payment-breakdown-modal"
 import { CleanerListRow, getCorrectOwedAmount } from "@/components/subcontractors/cleaner-list-row"
-import { SubcontractorDetail } from "@/components/subcontractors/subcontractor-detail"
 import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
 import { format } from "date-fns"
 import { logger } from "@/lib/logger"
@@ -46,6 +45,7 @@ function getSummaryText(sub: CleanerData): string {
 interface PaymentGroup {
   id: string
   type: 'FLAT_RATE' | 'PER_CLEAN'
+  clientName: string
   amount: number
   jobIds: string[]
   jobCount?: number
@@ -63,6 +63,7 @@ function getPaymentGroups(sub: CleanerData): PaymentGroup[] {
   })
 
   const allPerCleanJobs: CleanerData['jobs'] = []
+  const perCleanClientNames: string[] = []
 
   jobsByClient.forEach((jobs) => {
     const client = jobs[0].location.client
@@ -79,12 +80,14 @@ function getPaymentGroups(sub: CleanerData): PaymentGroup[] {
         groups.push({
           id: `${client.id}-${monthKey}`,
           type: 'FLAT_RATE',
+          clientName: client.name,
           amount: monthJobs[0].subcontractorRate,
           jobIds: monthJobs.map(j => j.id),
         })
       })
     } else {
       allPerCleanJobs.push(...jobs)
+      if (!perCleanClientNames.includes(client.name)) perCleanClientNames.push(client.name)
     }
   })
 
@@ -99,6 +102,7 @@ function getPaymentGroups(sub: CleanerData): PaymentGroup[] {
       groups.push({
         id: `perclean-${monthKey}`,
         type: 'PER_CLEAN',
+        clientName: perCleanClientNames.join(', '),
         amount: monthJobs.reduce((sum, j) => sum + j.subcontractorRate, 0),
         jobIds: monthJobs.map(j => j.id),
         jobCount: monthJobs.length,
@@ -136,73 +140,12 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     })
   }
 
-  // Inline expansion state
+  // Inline expansion state (lightweight quick preview)
   const [expandedSubId, setExpandedSubId] = useState<string | null>(null)
-  const [expandedSubData, setExpandedSubData] = useState<CleanerData | null>(null)
-  const [expandedSubLoading, setExpandedSubLoading] = useState(false)
 
-  // Cache previously loaded subcontractor data for instant re-expansion
-  const subDetailCache = useRef<Map<string, CleanerData>>(new Map())
-
-  const handleToggleExpand = useCallback(async (subId: string) => {
-    if (expandedSubId === subId) {
-      // Collapse
-      setExpandedSubId(null)
-      setExpandedSubData(null)
-      return
-    }
-
-    // Expand: use cache for instant display, then refresh in background
-    setExpandedSubId(subId)
-    const cached = subDetailCache.current.get(subId)
-    if (cached) {
-      setExpandedSubData(cached)
-      setExpandedSubLoading(false)
-      // Background refresh
-      fetch(`/api/subcontractors/${subId}`)
-        .then(res => res.ok ? res.json() : Promise.reject())
-        .then(data => {
-          subDetailCache.current.set(subId, data)
-          setExpandedSubData(data)
-        })
-        .catch(() => {})
-      return
-    }
-
-    // First load: show spinner
-    setExpandedSubData(null)
-    setExpandedSubLoading(true)
-    try {
-      const res = await fetch(`/api/subcontractors/${subId}`)
-      if (!res.ok) throw new Error('Failed to load')
-      const data = await res.json()
-      subDetailCache.current.set(subId, data)
-      setExpandedSubData(data)
-    } catch {
-      showError('Failed to load cleaner details')
-      setExpandedSubId(null)
-    } finally {
-      setExpandedSubLoading(false)
-    }
-  }, [expandedSubId])
-
-  const handleExpandedDataChange = useCallback(() => {
-    // Refresh both the list and the expanded detail
-    onDataChange()
-    // Invalidate dashboard stats so payout totals update
-    globalMutate('/api/dashboard-stats')
-    if (expandedSubId) {
-      // Clear cached detail so stale owed amounts don't persist
-      subDetailCache.current.delete(expandedSubId)
-      fetch(`/api/subcontractors/${expandedSubId}`)
-        .then(res => res.json())
-        .then(data => {
-          subDetailCache.current.set(expandedSubId, data)
-          setExpandedSubData(data)
-        })
-        .catch(() => {})
-    }
-  }, [expandedSubId, onDataChange])
+  const handleToggleExpand = useCallback((subId: string) => {
+    setExpandedSubId(prev => prev === subId ? null : subId)
+  }, [])
 
   // Batch Pay state
   const [batchPayMode, setBatchPayMode] = useState(false)
@@ -314,30 +257,38 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     }
   }
 
+  // Build compact quick-pay preview data for expanded row
+  const getQuickPayGroups = (sub: CleanerData) => {
+    return getPaymentGroups(sub)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top bar */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-end gap-2">
-          {subcontractorsWithBalance.length > 1 && (
-            <Button
-              onClick={startBatchPay}
-              className="bg-teal-600 hover:bg-teal-700 text-white h-9 px-3 sm:px-4 text-sm rounded-lg"
-            >
-              <DollarSign className="w-4 h-4 sm:mr-1.5" />
-              <span className="hidden sm:inline">Pay All</span>
-            </Button>
-          )}
-          <Link href="/subcontractors/new">
-            <Button variant="outline" className="h-9 px-3 sm:px-4 text-sm rounded-lg">
-              <Plus className="w-4 h-4 sm:mr-1.5" />
-              <span className="hidden sm:inline">Add Cleaner</span>
-            </Button>
-          </Link>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+          <h1 className="text-lg font-bold text-gray-900">Cleaners</h1>
+          <div className="flex items-center gap-2">
+            {subcontractorsWithBalance.length > 1 && (
+              <Button
+                onClick={startBatchPay}
+                className="bg-teal-600 hover:bg-teal-700 text-white h-9 px-3 sm:px-4 text-sm rounded-lg"
+              >
+                <DollarSign className="w-4 h-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Pay All</span>
+              </Button>
+            )}
+            <Link href="/subcontractors/new">
+              <Button variant="outline" className="h-9 px-3 sm:px-4 text-sm rounded-lg">
+                <Plus className="w-4 h-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Add Cleaner</span>
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {/* Period Selector */}
         <div className="flex items-center justify-center gap-3 mb-4">
           <button
@@ -433,24 +384,39 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
                     onToggleExpand={handleToggleExpand}
                     isExpanded={expandedSubId === sub.id}
                   />
+                  {/* Compact quick-pay preview */}
                   {expandedSubId === sub.id && (
-                    <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-4">
-                      {expandedSubLoading ? (
-                        <div className="space-y-3">
-                          <SkeletonPulse className="h-10 w-full" rounded="lg" />
-                          <SkeletonPulse className="h-32 w-full" rounded="xl" />
-                        </div>
-                      ) : expandedSubData ? (
-                        <>
-                          <Link
-                            href={`/subcontractors/${sub.id}`}
-                            className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 mb-3 transition-colors"
-                          >
-                            View Full Profile →
-                          </Link>
-                          <SubcontractorDetail subcontractor={expandedSubData} onDataChange={handleExpandedDataChange} />
-                        </>
-                      ) : null}
+                    <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3">
+                      <Link
+                        href={`/subcontractors/${sub.id}`}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 mb-3 transition-colors"
+                      >
+                        Open Profile <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                      <div className="space-y-1.5">
+                        {getQuickPayGroups(sub).map(group => (
+                          <div key={group.id} className="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-100">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{group.clientName}</p>
+                              <p className="text-xs text-gray-400">
+                                {group.type === 'FLAT_RATE' ? 'Flat Rate' : `${group.jobCount} clean${group.jobCount !== 1 ? 's' : ''}`}
+                              </p>
+                            </div>
+                            <p className="text-sm font-bold text-gray-900 ml-3">{formatCurrency(group.amount)}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-200">
+                        <p className="text-sm font-bold text-gray-900">Total: {formatCurrency(getCorrectOwedAmount(sub))}</p>
+                        <Button
+                          size="sm"
+                          className="bg-teal-600 hover:bg-teal-700 text-white h-8 px-4 text-sm font-medium rounded-lg"
+                          onClick={() => setPayingSubcontractor(sub)}
+                        >
+                          <DollarSign className="w-3.5 h-3.5 mr-1" />
+                          Record Payment
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -470,35 +436,12 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
             </div>
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {paidFiltered.map(sub => (
-                <div key={sub.id}>
-                  <CleanerListRow
-                    sub={sub}
-                    owed={0}
-                    onPay={setPayingSubcontractor}
-                    onToggleExpand={handleToggleExpand}
-                    isExpanded={expandedSubId === sub.id}
-                  />
-                  {expandedSubId === sub.id && (
-                    <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-4">
-                      {expandedSubLoading ? (
-                        <div className="space-y-3">
-                          <SkeletonPulse className="h-10 w-full" rounded="lg" />
-                          <SkeletonPulse className="h-32 w-full" rounded="xl" />
-                        </div>
-                      ) : expandedSubData ? (
-                        <>
-                          <Link
-                            href={`/subcontractors/${sub.id}`}
-                            className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 mb-3 transition-colors"
-                          >
-                            View Full Profile →
-                          </Link>
-                          <SubcontractorDetail subcontractor={expandedSubData} onDataChange={handleExpandedDataChange} />
-                        </>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
+                <CleanerListRow
+                  key={sub.id}
+                  sub={sub}
+                  owed={0}
+                  onPay={setPayingSubcontractor}
+                />
               ))}
             </div>
           </div>

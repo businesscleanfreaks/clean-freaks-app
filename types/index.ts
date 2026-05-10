@@ -253,6 +253,7 @@ export interface CleanerJob {
   subcontractorRate: number
   subcontractorPaid: boolean
   scheduleId: string | null
+  paidDate?: string | null
   location: {
     name: string
     address: string
@@ -299,6 +300,7 @@ export interface CleanerData {
   jobs: CleanerJob[]
   payments?: CleanerPayment[]
   paidJobs?: CleanerJob[]
+  periodJobs?: CleanerJob[]
   accounts?: Array<{
     id: string
     frequency: string
