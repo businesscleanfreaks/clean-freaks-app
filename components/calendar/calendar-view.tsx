@@ -34,6 +34,7 @@ interface CalendarViewProps {
 
 type ViewMode = 'week' | 'month'
 type MobileViewMode = 'day' | '3day' | 'week' | 'month'
+type WeekDensity = 'Comfortable' | 'Compact' | 'Dense'
 
 const COLOR_KEY_TO_TAILWIND: Record<string, { bg: string; dot: string }> = {
   teal: { bg: 'bg-teal-100', dot: 'bg-teal-500' },
@@ -59,6 +60,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const calendarWrapperRef = useRef<HTMLDivElement>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [mobileView, setMobileView] = useState<MobileViewMode>('3day')
+  const [weekDensity, setWeekDensity] = useState<WeekDensity>('Compact')
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<JobWithFullRelations | null>(null)
@@ -206,12 +208,21 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       if (saved && ['day', '3day', 'week', 'month'].includes(saved)) {
         setMobileView(saved)
       }
+      const savedDensity = localStorage.getItem('cleanfreaks-week-density') as WeekDensity
+      if (savedDensity && ['Comfortable', 'Compact', 'Dense'].includes(savedDensity)) {
+        setWeekDensity(savedDensity)
+      }
     } catch {}
   }, [])
 
   const changeMobileView = (view: MobileViewMode) => {
     setMobileView(view)
     try { localStorage.setItem('cleanfreaks-mobile-view', view) } catch {}
+  }
+
+  const changeWeekDensity = (density: WeekDensity) => {
+    setWeekDensity(density)
+    try { localStorage.setItem('cleanfreaks-week-density', density) } catch {}
   }
 
   // Lazy load jobs when navigating to a month that hasn't been loaded
@@ -1288,6 +1299,30 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   >
                     {isSelectionMode ? 'Exit Bulk Edit' : 'Bulk Edit Jobs'}
                   </button>
+                  {viewMode === 'week' && (
+                    <>
+                      <div className="h-px bg-gray-100 my-1" />
+                      <div className="px-4 py-1.5">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Week Density</p>
+                        <div className="flex flex-col">
+                          {(['Comfortable', 'Compact', 'Dense'] as WeekDensity[]).map(d => (
+                            <button
+                              key={d}
+                              onClick={() => {
+                                changeWeekDensity(d)
+                                setShowOverflowMenu(false)
+                              }}
+                              className={`text-left px-2 py-1.5 text-xs rounded-md transition-colors ${
+                                weekDensity === d ? 'bg-teal-50 text-teal-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1358,7 +1393,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const startHour = minHour;
     const endHour = maxHour;
     const hoursCount = endHour - startHour; // 18
-    const hourHeight = 60; // px
+    const hourHeight = weekDensity === 'Comfortable' ? 72 : weekDensity === 'Compact' ? 56 : 44; // px
     
     const getTopOffset = (timeStr: string | null) => {
       if (!timeStr) return 0;
