@@ -3,6 +3,10 @@ import { prisma } from "@/lib/db"
 import { getBillingStartDate } from "@/lib/billing-settings"
 import { isJobPayable } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo } from "@/lib/payment-cadence"
+import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 // Subcontractors data API for instant page loads
 export async function GET() {
@@ -122,38 +126,8 @@ export async function GET() {
         return isJobPayable(job, cadenceSub, schedule)
       })
       
-      // Calculate owed amount with FLAT_RATE handling (only from cadence-filtered jobs)
-      const jobsByClientSchedule = new Map<string, typeof jobs>()
-      jobs.forEach(job => {
-        const key = `${job.location.client.id}-${job.scheduleId || 'one-off'}`
-        if (!jobsByClientSchedule.has(key)) {
-          jobsByClientSchedule.set(key, [])
-        }
-        jobsByClientSchedule.get(key)!.push(job)
-      })
-      
-      let owedAmount = 0
-      jobsByClientSchedule.forEach((jobsGroup) => {
-        if (jobsGroup.length === 0) return
-        
-        const schedule = jobsGroup[0].schedule
-        const isRecurring = jobsGroup[0].scheduleId !== null
-        
-        if (schedule?.subcontractorPayType === 'FLAT_RATE' && isRecurring) {
-          const firstJob = jobsGroup[0]
-          owedAmount += firstJob.subcontractorRate
-          firstJob.addOnServices.forEach(addOn => {
-            owedAmount += addOn.subcontractorRate
-          })
-        } else {
-          jobsGroup.forEach(job => {
-            owedAmount += job.subcontractorRate
-            job.addOnServices.forEach(addOn => {
-              owedAmount += addOn.subcontractorRate
-            })
-          })
-        }
-      })
+      // Calculate owed amount using the centralized helper
+      const { totalOwed: owedAmount } = buildSubcontractorPayLedger(jobs)
 
       // Serialize dates
       const serializedJobs = jobs.map(job => ({

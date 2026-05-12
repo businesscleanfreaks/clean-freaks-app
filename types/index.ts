@@ -42,6 +42,7 @@ export interface Subcontractor {
   paymentCadence: string
   paymentCadenceNotes: string | null
   excludeClientIds: string | null
+  isActive?: boolean
   createdAt: Date
   schedules?: Schedule[]
   jobs?: Job[]
@@ -254,7 +255,17 @@ export interface CleanerJob {
   subcontractorPaid: boolean
   scheduleId: string | null
   paidDate?: string | null
+  schedule?: {
+    subcontractorPayType?: string
+    defaultSubcontractorRate?: number
+    [key: string]: any
+  } | null
+  addOnServices?: Array<{
+    id: string
+    subcontractorRate: number
+  }>
   location: {
+    id: string
     name: string
     address: string
     client: {
@@ -296,6 +307,7 @@ export interface CleanerData {
   paymentCadence: string
   paymentCadenceNotes: string | null
   excludeClientIds: string | null
+  isActive?: boolean
   owedAmount: number
   jobs: CleanerJob[]
   payments?: CleanerPayment[]

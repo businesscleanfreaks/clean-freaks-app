@@ -100,40 +100,52 @@ export function PaymentBreakdownModal({
 
       const byClient = new Map<string, CleanerJob[]>()
       monthJobs.forEach((job) => {
+        // Group by clientId:scheduleId to keep multi-location clients separate
         const cid = job.location.client.id
-        if (!byClient.has(cid)) byClient.set(cid, [])
-        byClient.get(cid)!.push(job)
+        const key = job.scheduleId
+          ? `${cid}:${job.scheduleId}`
+          : `${cid}:${job.location.id}:one-off:${job.id}`
+        if (!byClient.has(key)) byClient.set(key, [])
+        byClient.get(key)!.push(job)
       })
 
       const clients: ClientRow[] = []
       const allJobIds: string[] = []
 
-      byClient.forEach((clientJobs, clientId) => {
+      byClient.forEach((clientJobs, groupKey) => {
         const first = clientJobs[0]
         const client = first.location.client
-        const cleanerPayType = (client.cleanerPayType || "PER_CLEAN") as string
+        const schedule = first.schedule
         const isOneOff = first.scheduleId === null
 
+        // Determine pay type using schedule data first, then client fallback
         let payType: "FLAT_RATE" | "PER_CLEAN" | "ONE_OFF"
         let amount: number
 
         if (isOneOff && clientJobs.length === 1) {
           payType = "ONE_OFF"
           amount = clientJobs[0].subcontractorRate
-        } else if (cleanerPayType === "FLAT_RATE" && !isOneOff) {
-          payType = "FLAT_RATE"
-          amount = first.subcontractorRate
         } else {
-          payType = "PER_CLEAN"
-          amount = clientJobs.reduce((s, j) => s + j.subcontractorRate, 0)
+          // Use the same fallback chain as the centralized payout helper
+          const resolvedPayType = schedule?.subcontractorPayType || client.cleanerPayType || 'PER_CLEAN'
+          if (resolvedPayType === "FLAT_RATE" && !isOneOff) {
+            payType = "FLAT_RATE"
+            amount = schedule?.defaultSubcontractorRate ?? first.subcontractorRate
+          } else {
+            payType = "PER_CLEAN"
+            amount = clientJobs.reduce((s, j) => s + j.subcontractorRate, 0)
+          }
         }
+
+        const locationName = first.location?.name
+        const displayName = locationName ? `${client.name} — ${locationName}` : client.name
 
         const sorted = [...clientJobs].sort(
           (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
         )
 
         allJobIds.push(...sorted.map((j) => j.id))
-        clients.push({ clientId, clientName: client.name, payType, amount, jobs: sorted })
+        clients.push({ clientId: groupKey, clientName: displayName, payType, amount, jobs: sorted })
       })
 
       clients.sort((a, b) => b.amount - a.amount)

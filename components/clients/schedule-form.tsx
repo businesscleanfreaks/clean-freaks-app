@@ -195,7 +195,7 @@ function ScheduleFormInner({
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [futurePreview, setFuturePreview] = useState<FutureChangePreviewData | null>(null)
   const [pendingSaveData, setPendingSaveData] = useState<Record<string, unknown> | null>(null)
-  const [subcontractors, setSubcontractors] = useState<Array<{ id: string; name: string }>>([])
+  const [subcontractors, setSubcontractors] = useState<Array<{ id: string; name: string; isActive?: boolean }>>([])
   const [carryForwardRecurringAddOns, setCarryForwardRecurringAddOns] = useState(true)
   const isFutureChange = mode === 'future'
   const recurringAddOnCount = schedule?.recurringAddOnServices?.length || 0
@@ -1208,7 +1208,7 @@ function ScheduleFormInner({
                 {subcontractors.length === 0 && (
                   <SelectItem value="loading" disabled>Loading cleaners...</SelectItem>
                 )}
-                {subcontractors.map(sub => (
+                {subcontractors.filter(sub => sub.isActive !== false).map(sub => (
                   <SelectItem key={sub.id} value={sub.id}>
                     {sub.name}
                   </SelectItem>

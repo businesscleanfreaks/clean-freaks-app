@@ -229,8 +229,11 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium" style={{ color: '#00A896' }}>{formatCurrency(profit)}/mo</span>
+                      <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-end text-right">
+                          <span className="text-xs font-medium text-slate-600">Client billing: {formatCurrency(rev)}/mo</span>
+                          <span className="text-xs font-medium text-slate-500">Cleaner pay: {formatCurrency(cost)}/mo</span>
+                        </div>
                         <div className="relative">
                           <button
                             onClick={(e) => { e.stopPropagation(); setScheduleMenuOpen(scheduleMenuOpen === sch.id ? null : sch.id) }}

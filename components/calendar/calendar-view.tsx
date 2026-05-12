@@ -1531,19 +1531,24 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             opacity: isDimmed ? 0.3 : 1
                           }}
                         >
-                          <div className="h-full w-full p-1.5 flex flex-col relative text-white">
-                            <div className="text-[10px] font-bold opacity-90 leading-none mb-0.5">
-                              {getCompactTime(tStr)}
-                            </div>
-                            <div className="text-[11px] font-semibold leading-tight truncate">
-                              {job.location.client.name}
-                            </div>
-                            {height >= 40 && job.subcontractor && (
-                              <div className="text-[10px] opacity-90 leading-tight truncate mt-auto">
-                                {job.subcontractor.name}
+                            <div className="absolute inset-0 p-1.5 flex flex-col overflow-hidden text-white leading-tight">
+                              <div className="text-[10px] font-bold opacity-90 truncate">
+                                {getCompactTime(tStr)}
                               </div>
-                            )}
-                          </div>
+                              <div className="text-[11px] font-semibold truncate">
+                                {job.location.client.name}
+                              </div>
+                              {height >= 46 && job.subcontractor && (
+                                <div className="text-[10px] opacity-90 truncate">
+                                  {job.subcontractor.name}
+                                </div>
+                              )}
+                              {height >= 60 && (
+                                <div className="text-[10px] opacity-80 truncate">
+                                  {job.location.name}
+                                </div>
+                              )}
+                            </div>
                         </div>
                       )
                     })}

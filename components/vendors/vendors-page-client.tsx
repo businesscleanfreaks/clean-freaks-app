@@ -26,6 +26,7 @@ const fetcher = (url: string) => fetch(url).then(res => {
 interface VendorData {
   id: string
   name: string
+  isActive: boolean
   phone: string | null
   email: string | null
   notes: string | null
@@ -113,6 +114,24 @@ export function VendorsPageClient() {
       showError("Failed to record payment")
     } finally {
       setPayingSaving(false)
+    }
+  }
+
+  const handleToggleArchive = async (vendor: VendorData) => {
+    const isArchiving = vendor.isActive
+    if (!confirm(isArchiving ? `Archive ${vendor.name}?` : `Restore ${vendor.name}?`)) return
+    
+    try {
+      const res = await fetch(`/api/vendors/${vendor.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !isArchiving }),
+      })
+      if (!res.ok) throw new Error("Failed to update status")
+      showSuccess(isArchiving ? "Vendor archived" : "Vendor restored")
+      mutate()
+    } catch {
+      showError("Failed to update vendor status")
     }
   }
 
@@ -270,6 +289,15 @@ export function VendorsPageClient() {
                     {!vendor.phone && !vendor.email && vendor.unpaidAddOns === 0 && (
                       <p className="text-sm text-gray-400">No details to show</p>
                     )}
+                    
+                    <div className="pt-2">
+                      <button
+                        onClick={() => handleToggleArchive(vendor)}
+                        className={`text-sm font-medium transition-colors ${vendor.isActive ? 'text-red-500 hover:text-red-600' : 'text-teal-600 hover:text-teal-700'}`}
+                      >
+                        {vendor.isActive ? 'Archive Vendor' : 'Restore Vendor'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

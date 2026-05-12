@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { X, Calendar, MapPin, Check, User, Sparkles } from "lucide-react"
 import { format } from "date-fns"
 import { formatTime } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { logger } from "@/lib/logger"
 import { refreshCalendarData } from "./calendar-client"
 
@@ -29,6 +30,7 @@ interface Job {
 interface Subcontractor {
   id: string
   name: string
+  isActive?: boolean
 }
 
 interface QuickAssignModalProps {
@@ -162,16 +164,18 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
                 <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-sm font-medium text-gray-600">Quick: Assign all to</span>
-                    <select
-                      value={bulkWorker}
-                      onChange={(e) => setBulkWorker(e.target.value)}
-                      className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white"
-                    >
-                      <option value="">Choose cleaner...</option>
-                      {subcontractors.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
+                    <Select value={bulkWorker} onValueChange={setBulkWorker}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Choose cleaner..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subcontractors.filter(s => s.isActive !== false).map(s => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
                       size="sm"
                       disabled={!bulkWorker}
@@ -238,20 +242,18 @@ export function QuickAssignModal({ isOpen, onClose, unassignedJobs, subcontracto
                               </span>
                             </div>
                           ) : (
-                            <select
-                              value={assignments[job.id] || ''}
-                              onChange={(e) => handleAssign(job.id, e.target.value)}
-                              disabled={isSaving}
-                              className={`text-sm border-2 rounded-lg px-3 py-2 min-w-[160px] transition-all ${isSaving
-                                ? 'border-teal-300 bg-teal-50 animate-pulse'
-                                : 'border-amber-300 bg-amber-50 hover:border-amber-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20'
-                                }`}
-                            >
-                              <option value="">Choose cleaner...</option>
-                              {subcontractors.map(s => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
-                              ))}
-                            </select>
+                            <Select value={assignments[job.id] || ''} onValueChange={(val) => handleAssign(job.id, val)} disabled={isSaving}>
+                              <SelectTrigger className={`w-[180px] ${isSaving ? 'border-teal-300 bg-teal-50 animate-pulse' : 'border-amber-300 bg-amber-50'}`}>
+                                <SelectValue placeholder="Choose cleaner..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {subcontractors.filter(s => s.isActive !== false).map(s => (
+                                  <SelectItem key={s.id} value={s.id}>
+                                    {s.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           )}
                         </div>
                       </div>

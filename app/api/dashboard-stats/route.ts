@@ -7,6 +7,7 @@ import { getBillingStartDate } from "@/lib/billing-settings"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { isJobPayable } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo } from "@/lib/payment-cadence"
+import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
 
 export const dynamic = 'force-dynamic'
 
@@ -401,42 +402,26 @@ export async function GET() {
     // Filter unpaid jobs through cadence rules per subcontractor
     const cadenceFilteredUnpaidJobs = completedUnpaidJobs.filter(job => {
       if (!job.subcontractor) return true // safety
+      
       const cadenceSub: CadenceSubcontractorInfo = {
-        paymentCadence: job.subcontractor.paymentCadence || 'IMMEDIATE',
-        excludeClientIds: job.subcontractor.excludeClientIds || null,
+        paymentCadence: job.subcontractor.paymentCadence,
+        excludeClientIds: job.subcontractor.excludeClientIds,
       }
-      const schedule: CadenceScheduleInfo | null = job.schedule
-        ? { paymentCadenceOverride: job.schedule.paymentCadenceOverride ?? null }
-        : null
-      return isJobPayable(job, cadenceSub, schedule)
+      const cadenceSchedule: CadenceScheduleInfo | null = job.schedule ? {
+        paymentCadenceOverride: job.schedule.paymentCadenceOverride ?? null
+      } : null
+
+      return isJobPayable(job, cadenceSub, cadenceSchedule)
     })
 
-    const unpaidJobsByClientSchedule = new Map<string, typeof cadenceFilteredUnpaidJobs>()
-    cadenceFilteredUnpaidJobs.forEach(job => {
-      const key = `${job.location.client.id}-${job.scheduleId || 'one-off'}`
-      if (!unpaidJobsByClientSchedule.has(key)) {
-        unpaidJobsByClientSchedule.set(key, [])
-      }
-      unpaidJobsByClientSchedule.get(key)!.push(job)
-    })
+    const { totalOwed: pendingPayoutsTotal } = buildSubcontractorPayLedger(cadenceFilteredUnpaidJobs)
     
-    let pendingPayoutsTotal = 0
-    unpaidJobsByClientSchedule.forEach((jobsGroup) => {
-      if (jobsGroup.length === 0) return
-      
-      const schedule = jobsGroup[0].schedule
-      const isRecurring = jobsGroup[0].scheduleId !== null
-      
-      if (schedule?.subcontractorPayType === 'FLAT_RATE' && isRecurring) {
-        pendingPayoutsTotal += jobsGroup[0].subcontractorRate || 0
-      } else {
-        jobsGroup.forEach(job => {
-          pendingPayoutsTotal += job.subcontractorRate || 0
-        })
-      }
-    })
-    
-    const uniqueSubcontractorsOwed = new Set(cadenceFilteredUnpaidJobs.map(job => job.subcontractorId)).size
+    // Calculate unique subcontractors owed
+    const uniqueSubcontractorsOwed = new Set(
+      cadenceFilteredUnpaidJobs
+        .filter(j => j.subcontractorId)
+        .map(j => j.subcontractorId)
+    ).size
 
     // Sent invoices totals (Money to Collect)
     const sentInvoicesCount = sentInvoices.length

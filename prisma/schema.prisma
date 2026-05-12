@@ -97,12 +97,14 @@ model Subcontractor {
   // ON_CLEANER_INVOICE — only payable when manually released
   paymentCadenceNotes String?  // Free-text notes about this cleaner's payment rules
   excludeClientIds    String?  // JSON array of client IDs whose jobs are excluded from payouts
+  isActive            Boolean  @default(true)
 
   schedules        Schedule[]
   jobs             Job[]
   payments         SubcontractorPayment[]
   assignedClients  Client[]
 
+  @@index([isActive])
   @@map("subcontractors")
 }
 
@@ -300,12 +302,14 @@ model Vendor {
   phone     String?
   email     String?
   notes     String?
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   addOnServices  AddOnService[]
   payments       VendorPayment[]
 
+  @@index([isActive])
   @@map("vendors")
 }
 

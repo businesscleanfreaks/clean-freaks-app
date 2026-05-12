@@ -86,6 +86,7 @@ export async function GET() {
               id: true,
               name: true,
               createdAt: true,
+              isActive: true,
             },
           },
           addOnServices: {
@@ -150,6 +151,7 @@ export async function GET() {
           phone: true,
           email: true,
           createdAt: true,
+          isActive: true,
         },
         orderBy: {
           name: 'asc',

@@ -66,7 +66,7 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    const allowedFields = ['name', 'phone', 'email', 'notes']
+    const allowedFields = ['name', 'phone', 'email', 'notes', 'isActive']
     const data: Record<string, unknown> = {}
     for (const field of allowedFields) {
       if (field in body) data[field] = body[field]

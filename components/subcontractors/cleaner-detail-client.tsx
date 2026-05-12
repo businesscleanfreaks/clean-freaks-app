@@ -20,17 +20,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import { differenceInDays, format } from "date-fns"
 import { showError, showSuccess, showApiError } from "@/lib/toast"
 import { CADENCE_LABELS, CADENCE_DESCRIPTIONS } from "@/lib/payment-cadence"
 import type { CleanerData, CleanerJob } from "@/types"
 import { formatFrequency } from "@/lib/frequency-utils"
 import { useConfirm } from "@/hooks/use-confirm"
+import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error("Failed to fetch")
@@ -81,6 +77,9 @@ interface ClientGroup {
   jobs: CleanerJob[]
   monthlyAmount?: number
   totalAmount: number
+  owedAmount: number
+  paidCount: number
+  unpaidCount: number
   month?: string
 }
 
@@ -131,64 +130,10 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
     })
   }
 
-  const clientGroups = useMemo(() => {
-    if (!sub?.periodJobs) return []
-    
-    const groups: ClientGroup[] = []
-    const jobsByClient = new Map<string, CleanerJob[]>()
-
-    sub.periodJobs.forEach(job => {
-      if (!job.location?.client) return
-      const clientId = job.location.client.id
-      if (!jobsByClient.has(clientId)) jobsByClient.set(clientId, [])
-      jobsByClient.get(clientId)!.push(job)
-    })
-
-    jobsByClient.forEach((jobs, clientId) => {
-      const firstJob = jobs[0]
-      const client = firstJob.location.client
-      const payType = (client.cleanerPayType || 'PER_CLEAN') as 'FLAT_RATE' | 'PER_CLEAN'
-
-      if (payType === 'FLAT_RATE') {
-        const monthlyRate = firstJob.subcontractorRate
-        const jobsByMonth = new Map<string, CleanerJob[]>()
-        jobs.forEach(job => {
-          const monthKey = format(new Date(job.date), 'yyyy-MM')
-          if (!jobsByMonth.has(monthKey)) jobsByMonth.set(monthKey, [])
-          jobsByMonth.get(monthKey)!.push(job)
-        })
-        jobsByMonth.forEach((monthJobs, monthKey) => {
-          const monthDisplay = format(new Date(monthJobs[0].date), 'MMMM yyyy')
-          groups.push({
-            clientId: `${clientId}-${monthKey}`,
-            clientName: client.name,
-            payType: 'FLAT_RATE',
-            jobs: monthJobs,
-            monthlyAmount: monthlyRate,
-            totalAmount: monthlyRate,
-            month: monthDisplay,
-          })
-        })
-      } else {
-        const totalAmount = jobs.reduce((sum, job) => sum + job.subcontractorRate, 0)
-        groups.push({
-          clientId,
-          clientName: client.name,
-          payType: 'PER_CLEAN',
-          jobs: jobs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-          totalAmount,
-        })
-      }
-    })
-
-    // Sort unpaid/partially unpaid groups first, then fully paid
-    return groups.sort((a, b) => {
-      const aUnpaid = a.jobs.some(j => !j.subcontractorPaid)
-      const bUnpaid = b.jobs.some(j => !j.subcontractorPaid)
-      if (aUnpaid && !bUnpaid) return -1
-      if (!aUnpaid && bUnpaid) return 1
-      return b.totalAmount - a.totalAmount
-    })
+  const { clientGroups, periodOwed } = useMemo(() => {
+    if (!sub?.periodJobs) return { clientGroups: [] as ClientGroup[], periodOwed: 0 }
+    const { groups, totalOwed } = buildSubcontractorPayLedger(sub.periodJobs)
+    return { clientGroups: groups as ClientGroup[], periodOwed: totalOwed }
   }, [sub?.periodJobs])
 
   const filteredClientGroups = useMemo(() => {
@@ -261,6 +206,35 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
     }
   }
 
+  const handleToggleArchive = async () => {
+    if (!sub) return
+    const isArchiving = sub.isActive
+    const confirmed = await confirm({
+      title: isArchiving ? "Archive Cleaner?" : "Restore Cleaner?",
+      description: isArchiving 
+        ? "They will be hidden from new assignment dropdowns, but their historical jobs and payments will remain."
+        : "They will be restored and appear in assignment dropdowns again.",
+      confirmText: isArchiving ? "Archive" : "Restore",
+      cancelText: "Cancel",
+      variant: isArchiving ? "destructive" : "default",
+    })
+    if (!confirmed) return
+
+    try {
+      const response = await fetch(`/api/subcontractors/${sub.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !isArchiving }),
+      })
+      if (!response.ok) throw new Error('Failed to update status')
+      showSuccess(isArchiving ? 'Cleaner archived' : 'Cleaner restored')
+      mutate()
+      globalMutate('/api/subcontractors/data')
+    } catch {
+      showError('Failed to update cleaner status.')
+    }
+  }
+
   if (isLoading) return <DetailSkeleton />
 
   if (error || !sub) {
@@ -280,15 +254,6 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
   const initials = sub.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
   const status = getStatusInfo(sub, sub.owedAmount)
   const lastPayment = sub.payments?.[0]
-  
-  const periodTotalOwed = clientGroups.reduce((sum, group) => {
-    if (group.payType === 'FLAT_RATE') {
-      const hasUnpaid = group.jobs.some(j => !j.subcontractorPaid)
-      return sum + (hasUnpaid ? (group.monthlyAmount || 0) : 0)
-    } else {
-      return sum + group.jobs.filter(j => !j.subcontractorPaid).reduce((s, j) => s + j.subcontractorRate, 0)
-    }
-  }, 0)
 
   return (
     <div className="min-h-screen bg-gray-50 [overflow-anchor:none]">
@@ -297,14 +262,23 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
       */}
       <div className="w-full max-w-[1280px] xl:max-w-[1400px] mx-auto px-5 py-6">
         
-        {/* Back nav */}
-        <button
-          onClick={() => router.push("/subcontractors")}
-          className="flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 mb-6 transition-colors group"
-        >
-          <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-          Cleaners Queue
-        </button>
+        {/* Back nav & Actions */}
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={() => router.push("/subcontractors")}
+            className="flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors group"
+          >
+            <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+            Cleaners Queue
+          </button>
+
+          <button
+            onClick={handleToggleArchive}
+            className={`text-sm font-medium transition-colors ${sub.isActive ? 'text-red-500 hover:text-red-600' : 'text-teal-600 hover:text-teal-700'}`}
+          >
+            {sub.isActive ? 'Archive Cleaner' : 'Restore Cleaner'}
+          </button>
+        </div>
 
         {/* 1. Pay Strip */}
         <div className="bg-white rounded-t-xl border border-gray-200 border-b-0 p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
@@ -340,15 +314,20 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
 
           <div className="flex items-center gap-6">
             <div className="text-right">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Owed Balance</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Ready to Pay</p>
               <p className="text-3xl font-bold text-gray-900 leading-none">{formatCurrency(sub.owedAmount)}</p>
+              {periodOwed !== sub.owedAmount && periodOwed > 0 && (
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  {formatCurrency(periodOwed)} {periodLabel} scheduled
+                </p>
+              )}
             </div>
             {sub.owedAmount > 0 && (
               <Button
                 onClick={() => setPayModalOpen(true)}
                 className="bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl h-12 px-6 shadow-sm"
               >
-                <DollarSign className="w-5 h-5 mr-2" /> Pay Balance
+                <DollarSign className="w-5 h-5 mr-2" /> Pay {formatCurrency(sub.owedAmount)}
               </Button>
             )}
           </div>
@@ -479,14 +458,23 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
                               {!hasUnpaid && <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />}
                             </h3>
                             <p className="text-xs text-gray-500">
-                              {group.payType === 'FLAT_RATE' ? 'Flat Rate Monthly' : `${group.jobs.length} cleans`}
+                              {group.payType === 'FLAT_RATE'
+                                ? 'Flat Rate Monthly'
+                                : `${group.jobs.length} clean${group.jobs.length !== 1 ? 's' : ''}${group.paidCount > 0 && group.unpaidCount > 0 ? ` · ${group.paidCount} paid, ${group.unpaidCount} unpaid` : ''}`}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
-                          <span className={`font-bold ${hasUnpaid ? 'text-gray-900' : 'text-gray-500'}`}>
-                            {formatCurrency(group.payType === 'FLAT_RATE' ? (group.monthlyAmount || 0) : group.totalAmount)}
-                          </span>
+                          <div className="text-right">
+                            <span className={`font-bold ${hasUnpaid ? 'text-gray-900' : 'text-gray-500'}`}>
+                              {formatCurrency(group.owedAmount)}
+                            </span>
+                            {group.paidCount > 0 && group.unpaidCount > 0 && group.payType === 'PER_CLEAN' && (
+                              <p className="text-[10px] text-gray-400">
+                                of {formatCurrency(group.totalAmount)} total
+                              </p>
+                            )}
+                          </div>
                           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                         </div>
                       </button>
@@ -531,8 +519,10 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
                               </div>
                             </div>
                           ) : (
-                            group.jobs.map(job => (
-                              <div key={job.id} className="flex items-center justify-between p-3 pl-14 hover:bg-gray-50/50 transition-colors">
+                            group.jobs.map(job => {
+                              const isFuture = new Date(job.date) > new Date()
+                              return (
+                              <div key={job.id} className={`flex items-center justify-between p-3 pl-14 hover:bg-gray-50/50 transition-colors ${isFuture && !job.subcontractorPaid ? 'opacity-60' : ''}`}>
                                 <div>
                                   <p className="text-sm font-medium text-gray-900">
                                     {format(new Date(job.date), 'EEE, MMM d')}
@@ -560,6 +550,12 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
                                       </p>
                                       <p className="text-[10px] text-gray-400">{job.paidDate ? format(new Date(job.paidDate), 'MMM d, yyyy') : 'Recorded'}</p>
                                     </div>
+                                  ) : isFuture ? (
+                                    <div className="w-24 text-right">
+                                      <p className="text-xs font-medium text-slate-400 flex items-center justify-end gap-1">
+                                        <Clock className="w-3.5 h-3.5" /> Scheduled
+                                      </p>
+                                    </div>
                                   ) : (
                                     <Button
                                       size="sm"
@@ -573,7 +569,8 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
                                   )}
                                 </div>
                               </div>
-                            ))
+                              )
+                            })
                           )}
                         </div>
                       )}

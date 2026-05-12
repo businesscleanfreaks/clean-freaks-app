@@ -72,7 +72,9 @@ function getPaymentGroupsForRow(sub: CleanerData): PaymentGroup[] {
 }
 
 export function getCorrectOwedAmount(sub: CleanerData): number {
-  return getPaymentGroupsForRow(sub).reduce((sum, g) => sum + g.amount, 0)
+  // Use the server-calculated owedAmount from the centralized payout helper
+  // instead of recalculating client-side with potentially divergent logic
+  return sub.owedAmount ?? 0
 }
 
 function getSummaryText(sub: CleanerData): string {

@@ -5,6 +5,7 @@ import { logger, getErrorMessage } from "@/lib/logger"
 import { getBillingStartDate } from "@/lib/billing-settings"
 import { isJobPayable } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo } from "@/lib/payment-cadence"
+import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
 
 export async function GET(
   request: Request,
@@ -120,6 +121,7 @@ export async function GET(
           include: {
             location: { include: { client: true } },
             schedule: true,
+            addOnServices: true,
             paymentLineItems: {
               include: {
                 payment: { select: { datePaid: true } },
@@ -157,29 +159,7 @@ export async function GET(
       return isJobPayable(job, cadenceSub, schedule)
     })
 
-    const jobsByClientSchedule = new Map<string, typeof payableJobs>()
-    payableJobs.forEach((job: any) => {
-      const key = `${job.location.client.id}-${job.scheduleId || "one-off"}`
-      if (!jobsByClientSchedule.has(key)) jobsByClientSchedule.set(key, [])
-      jobsByClientSchedule.get(key)!.push(job)
-    })
-
-    let owedAmount = 0
-    jobsByClientSchedule.forEach((jobsGroup: any[]) => {
-      if (jobsGroup.length === 0) return
-      const schedule = jobsGroup[0].schedule
-      const isRecurring = jobsGroup[0].scheduleId !== null
-      if (schedule?.subcontractorPayType === "FLAT_RATE" && isRecurring) {
-        const firstJob = jobsGroup[0]
-        owedAmount += firstJob.subcontractorRate
-        firstJob.addOnServices.forEach((a: any) => { owedAmount += a.subcontractorRate })
-      } else {
-        jobsGroup.forEach((job: any) => {
-          owedAmount += job.subcontractorRate
-          job.addOnServices.forEach((a: any) => { owedAmount += a.subcontractorRate })
-        })
-      }
-    })
+    const { totalOwed: owedAmount } = buildSubcontractorPayLedger(payableJobs)
 
     const serializeDate = (d: Date) => d.toISOString()
 
@@ -236,6 +216,8 @@ export async function GET(
     }))
 
     // Serialize period jobs if present
+    // IMPORTANT: include schedule data so the frontend payout helper can determine
+    // the correct flat-rate amount per location (e.g. Beverly Hills $3,400 vs DTLA $4,500)
     const serializedPeriodJobs = rawPeriodJobs
       ? (rawPeriodJobs as any[]).filter((j: any) => j.location && j.location.client).map((job: any) => ({
           id: job.id,
@@ -246,7 +228,18 @@ export async function GET(
           paidDate: job.paymentLineItems?.[0]?.payment?.datePaid
             ? serializeDate(job.paymentLineItems[0].payment.datePaid)
             : null,
+          schedule: job.schedule
+            ? {
+                subcontractorPayType: job.schedule.subcontractorPayType,
+                defaultSubcontractorRate: job.schedule.defaultSubcontractorRate,
+              }
+            : null,
+          addOnServices: (job.addOnServices || []).map((a: any) => ({
+            id: a.id,
+            subcontractorRate: a.subcontractorRate,
+          })),
           location: {
+            id: job.location.id,
             name: job.location.name,
             address: job.location.address,
             client: {
@@ -290,6 +283,7 @@ export async function PATCH(
     const allowedFields = [
       'name', 'phone', 'email', 'notes', 'teamMembers',
       'paymentCadence', 'paymentCadenceNotes', 'excludeClientIds',
+      'isActive'
     ]
 
     const data: Record<string, unknown> = {}
