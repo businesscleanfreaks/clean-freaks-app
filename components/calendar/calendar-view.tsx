@@ -1531,24 +1531,61 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             opacity: isDimmed ? 0.3 : 1
                           }}
                         >
-                            <div className="absolute inset-0 p-1.5 flex flex-col overflow-hidden text-white leading-tight">
-                              <div className="text-[10px] font-bold opacity-90 truncate">
-                                {getCompactTime(tStr)}
-                              </div>
-                              <div className="text-[11px] font-semibold truncate">
-                                {job.location.client.name}
-                              </div>
-                              {height >= 46 && job.subcontractor && (
-                                <div className="text-[10px] opacity-90 truncate">
-                                  {job.subcontractor.name}
+                          {(() => {
+                            // Height-aware text: show more info only if the card has room
+                            const compactTime = getCompactTime(tStr)
+                            const clientName = job.location.client.name
+                            const cleanerName = job.subcontractor?.name || ''
+                            const cleanerShort = cleanerName ? cleanerName.split(' ')[0] + (cleanerName.split(' ')[1] ? ` ${cleanerName.split(' ')[1][0]}.` : '') : ''
+                            const locationName = job.location.name
+                            const tooltipText = `${compactTime} ${clientName}${cleanerName ? ` · ${cleanerName}` : ''}${locationName ? ` · ${locationName}` : ''}`
+
+                            if (height < 38) {
+                              // Very small: single line — time + client
+                              return (
+                                <div className="absolute inset-0 px-1.5 py-0.5 overflow-hidden" title={tooltipText}>
+                                  <div className="text-[10px] font-semibold text-white truncate leading-[1.4]">
+                                    {compactTime} {clientName}
+                                  </div>
                                 </div>
-                              )}
-                              {height >= 60 && (
-                                <div className="text-[10px] opacity-80 truncate">
-                                  {job.location.name}
+                              )
+                            }
+
+                            if (height < 54) {
+                              // Medium: two lines — time+client, cleaner
+                              return (
+                                <div className="absolute inset-0 px-1.5 py-1 overflow-hidden" title={tooltipText}>
+                                  <div className="text-[10px] font-semibold text-white truncate leading-[1.3]">
+                                    {compactTime} {clientName}
+                                  </div>
+                                  {cleanerShort && (
+                                    <div className="text-[10px] text-white/80 truncate leading-[1.3]">
+                                      {cleanerShort}
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
+                              )
+                            }
+
+                            // Large: three lines — time+client, cleaner, location
+                            return (
+                              <div className="absolute inset-0 px-1.5 py-1 overflow-hidden" title={tooltipText}>
+                                <div className="text-[10px] font-semibold text-white truncate leading-[1.3]">
+                                  {compactTime} {clientName}
+                                </div>
+                                {cleanerShort && (
+                                  <div className="text-[10px] text-white/80 truncate leading-[1.3]">
+                                    {cleanerShort}
+                                  </div>
+                                )}
+                                {height >= 68 && locationName && (
+                                  <div className="text-[9px] text-white/70 truncate leading-[1.3]">
+                                    {locationName}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
                         </div>
                       )
                     })}
@@ -1925,7 +1962,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           selectedJobIds={selectedJobIds}
           onClearSelection={clearSelection}
           onJobsUpdated={handleJobsUpdated}
-          subcontractors={subcontractors.map(s => ({ id: s.id, name: s.name }))}
+          subcontractors={subcontractors.filter(s => (s as any).isActive !== false).map(s => ({ id: s.id, name: s.name }))}
         />
       )}
 

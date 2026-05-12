@@ -181,6 +181,7 @@ export interface SubcontractorSummary {
   name: string
   phone: string | null
   email: string | null
+  isActive?: boolean
 }
 
 // ─── Expense types ───────────────────────────────────────────────────────────

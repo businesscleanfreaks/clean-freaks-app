@@ -43,6 +43,9 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
   if (!job || !state) return null
 
+  // Filter archived cleaners from assignment dropdowns, but always include the currently assigned one
+  const activeSubcontractors = subcontractors.filter(s => (s as any).isActive !== false || s.id === job.subcontractor?.id)
+
   const {
     ConfirmDialog,
     // State
@@ -546,7 +549,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                   <span className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === 'unassigned' ? '#0F766E' : '#111111' }}>Unassigned</span>
                   {selectedSubcontractorId === 'unassigned' && <Check className="h-4 w-4" style={{ color: '#0F766E' }} />}
                 </button>
-                {subcontractors.map((sub) => (
+                {activeSubcontractors.map((sub) => (
                   <button key={sub.id} onClick={() => setSelectedSubcontractorId(sub.id)} className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-[#F7FAFA] transition-colors" style={{ borderBottom: '1px solid #EEF2F1' }}>
                     <div>
                       <p className="font-medium" style={{ fontSize: '14px', color: selectedSubcontractorId === sub.id ? '#0F766E' : '#111111' }}>{sub.name}</p>
@@ -1501,7 +1504,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                       </span>
                       {!job.subcontractor && <Check className="h-4 w-4" style={{ color: '#00A896' }} />}
                     </button>
-                    {subcontractors.map(sub => (
+                    {activeSubcontractors.map(sub => (
                       <button
                         key={sub.id}
                         onClick={() => handleSaveSubcontractorMobile(sub.id)}

@@ -316,3 +316,46 @@ export async function PATCH(
   }
 }
 
+// DELETE — permanently delete subcontractor (only if no linked history)
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await requireAuth()
+    const { id } = await params
+
+    // Safety check: count linked records
+    const [jobCount, scheduleCount, paymentCount] = await Promise.all([
+      prisma.job.count({ where: { subcontractorId: id } }),
+      prisma.schedule.count({ where: { subcontractorId: id } }),
+      prisma.subcontractorPayment.count({ where: { subcontractorId: id } }),
+    ])
+
+    const totalLinked = jobCount + scheduleCount + paymentCount
+
+    if (totalLinked > 0) {
+      return NextResponse.json(
+        {
+          error: 'Cannot delete: this cleaner has linked history',
+          details: {
+            jobs: jobCount,
+            schedules: scheduleCount,
+            payments: paymentCount,
+          },
+        },
+        { status: 409 }
+      )
+    }
+
+    await prisma.subcontractor.delete({ where: { id } })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    logger.error("Subcontractor delete error:", error)
+    return NextResponse.json(
+      { error: getErrorMessage(error) },
+      { status: 500 }
+    )
+  }
+}

@@ -18,6 +18,7 @@ export interface SubcontractorRecord {
   name: string
   phone: string | null
   email: string | null
+  isActive?: boolean
 }
 
 /** Job shape enriched with location info for the job feed */

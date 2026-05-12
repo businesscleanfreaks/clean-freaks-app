@@ -67,6 +67,7 @@ export function CreateJobDialog({
   subcontractors,
   preSelectedClientId,
 }: CreateJobDialogProps) {
+  const activeSubcontractors = useMemo(() => subcontractors.filter(s => s.isActive !== false), [subcontractors])
   const [loading, setLoading] = useState(false)
 
   // Vendors for add-on assignment
@@ -1023,10 +1024,10 @@ export function CreateJobDialog({
                         <SelectItem value="unassigned">
                           <span className="text-amber-600">Leave unassigned</span>
                         </SelectItem>
-                        {subcontractors.length > 0 && (
+                        {activeSubcontractors.length > 0 && (
                           <>
                             <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Cleaners</div>
-                            {subcontractors.map(sub => (
+                            {activeSubcontractors.map(sub => (
                               <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
                             ))}
                           </>
@@ -1146,7 +1147,7 @@ export function CreateJobDialog({
                     <SelectItem value="unassigned">
                       <span className="text-amber-600">Leave unassigned</span>
                     </SelectItem>
-                    {subcontractors.map(sub => (
+                    {activeSubcontractors.map(sub => (
                       <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
                     ))}
                   </SelectContent>

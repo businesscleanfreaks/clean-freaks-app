@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays, ArrowRight } from "lucide-react"
+import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays, ArrowRight, Archive, RotateCcw, Trash2 } from "lucide-react"
 import { ActionSpinner } from "@/components/ui/action-spinner"
 import { PaymentBreakdownModal } from "@/components/subcontractors/payment-breakdown-modal"
 import { CleanerListRow, getCorrectOwedAmount } from "@/components/subcontractors/cleaner-list-row"
@@ -144,13 +144,20 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
   // Batch Pay state
   const [batchPayMode, setBatchPayMode] = useState(false)
   const [batchSelectedSubs, setBatchSelectedSubs] = useState<Set<string>>(new Set())
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
-  const { totalOwed, subcontractorsWithBalance, paidUpSubcontractors } = useMemo(() => {
+  const { totalOwed, subcontractorsWithBalance, paidUpSubcontractors, archivedSubcontractors } = useMemo(() => {
     let total = 0
     const withBalance: CleanerData[] = []
     const paidUp: CleanerData[] = []
+    const archived: CleanerData[] = []
 
     subcontractors.forEach(sub => {
+      if (sub.isActive === false) {
+        archived.push(sub)
+        return
+      }
       const owed = getCorrectOwedAmount(sub)
       if (owed > 0) {
         withBalance.push(sub)
@@ -161,7 +168,7 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     })
 
     withBalance.sort((a, b) => getCorrectOwedAmount(b) - getCorrectOwedAmount(a))
-    return { totalOwed: total, subcontractorsWithBalance: withBalance, paidUpSubcontractors: paidUp }
+    return { totalOwed: total, subcontractorsWithBalance: withBalance, paidUpSubcontractors: paidUp, archivedSubcontractors: archived }
   }, [subcontractors])
 
   const filteredSubcontractors = useMemo(() => {
@@ -388,6 +395,118 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
             </div>
           </div>
         )}
+
+        {/* Archived Section */}
+        {archivedSubcontractors.length > 0 && (
+          <div className="mt-6">
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <Archive className="w-3.5 h-3.5 text-gray-400" />
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Archived</h2>
+              <span className="text-xs font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                {archivedSubcontractors.length}
+              </span>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden opacity-60">
+              {archivedSubcontractors.map(sub => {
+                const hasHistory = (sub.jobs?.length || 0) > 0 || (sub.payments?.length || 0) > 0
+                return (
+                <div key={sub.id} className="flex items-center gap-3 px-4 py-3">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+                    style={{ backgroundColor: getCleanerColorInfo(sub.name).hex, filter: 'grayscale(50%)' }}
+                  >
+                    {sub.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-gray-500 truncate text-[15px]">{sub.name}</span>
+                    <p className="text-sm text-gray-400">
+                      {hasHistory ? 'Archived · Has job/payment history' : 'Archived · No history'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-3 text-sm gap-1.5"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/subcontractors/${sub.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ isActive: true }),
+                          })
+                          if (!res.ok) throw new Error('Failed to restore')
+                          showSuccess(`${sub.name} restored`)
+                          onDataChange()
+                        } catch {
+                          showError('Failed to restore cleaner')
+                        }
+                      }}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Restore
+                    </Button>
+                    {!hasHistory && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-3 text-sm gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                        onClick={() => setConfirmDeleteId(sub.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )})}
+            </div>
+          </div>
+        )}
+
+        {/* Confirm Delete Dialog */}
+        <Dialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-500" />
+                Delete permanently?
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-gray-600">
+              This will permanently remove <strong>{archivedSubcontractors.find(s => s.id === confirmDeleteId)?.name}</strong>. This cannot be undone.
+            </p>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setConfirmDeleteId(null)} disabled={isDeleting}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white"
+                disabled={isDeleting}
+                onClick={async () => {
+                  if (!confirmDeleteId) return
+                  setIsDeleting(true)
+                  try {
+                    const res = await fetch(`/api/subcontractors/${confirmDeleteId}`, { method: 'DELETE' })
+                    if (res.status === 409) {
+                      showError('Cannot delete: this cleaner has job/payment history. Use Archive instead.')
+                      setConfirmDeleteId(null)
+                      return
+                    }
+                    if (!res.ok) throw new Error('Failed to delete')
+                    showSuccess('Cleaner permanently deleted')
+                    setConfirmDeleteId(null)
+                    onDataChange()
+                  } catch {
+                    showError('Failed to delete cleaner')
+                  } finally {
+                    setIsDeleting(false)
+                  }
+                }}
+              >
+                {isDeleting ? 'Deleting…' : 'Delete Permanently'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* BATCH PAY MODAL */}

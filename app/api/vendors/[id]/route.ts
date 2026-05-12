@@ -87,7 +87,7 @@ export async function PATCH(
   }
 }
 
-// DELETE — delete vendor
+// DELETE — permanently delete vendor (only if no linked history)
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -95,6 +95,27 @@ export async function DELETE(
   try {
     await requireAuth()
     const { id } = await params
+
+    // Safety check: count linked records
+    const [addOnCount, paymentCount] = await Promise.all([
+      prisma.addOnService.count({ where: { vendorId: id } }),
+      prisma.vendorPayment.count({ where: { vendorId: id } }),
+    ])
+
+    const totalLinked = addOnCount + paymentCount
+
+    if (totalLinked > 0) {
+      return NextResponse.json(
+        {
+          error: 'Cannot delete: this vendor has linked history',
+          details: {
+            addOnServices: addOnCount,
+            payments: paymentCount,
+          },
+        },
+        { status: 409 }
+      )
+    }
 
     await prisma.vendor.delete({ where: { id } })
 

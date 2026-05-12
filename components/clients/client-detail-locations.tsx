@@ -213,7 +213,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                               Unassigned
                               {!sch.subcontractorId && <CheckCircle className="w-4 h-4 ml-auto text-teal-600" />}
                             </button>
-                            {subcontractors.map((sub: SubcontractorRecord) => (
+                            {subcontractors.filter((sub: SubcontractorRecord) => sub.isActive !== false || sub.id === sch.subcontractorId).map((sub: SubcontractorRecord) => (
                               <button
                                 key={sub.id}
                                 onClick={() => handleQuickReassign(sch.id, sub.id, reassignEffectiveDate)}

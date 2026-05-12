@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, Package, Phone, Mail, ChevronDown, DollarSign, CheckCircle2 } from "lucide-react"
+import { Plus, Search, Package, Phone, Mail, ChevronDown, DollarSign, CheckCircle2, Archive, RotateCcw, Trash2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -58,17 +58,27 @@ export function VendorsPageClient() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [payingVendor, setPayingVendor] = useState<VendorData | null>(null)
   const [payingSaving, setPayingSaving] = useState(false)
+  const [confirmDeleteVendorId, setConfirmDeleteVendorId] = useState<string | null>(null)
+  const [isDeletingVendor, setIsDeletingVendor] = useState(false)
+
+  const { activeVendors, archivedVendors } = useMemo(() => {
+    if (!vendors) return { activeVendors: [] as VendorData[], archivedVendors: [] as VendorData[] }
+    return {
+      activeVendors: vendors.filter(v => v.isActive !== false),
+      archivedVendors: vendors.filter(v => v.isActive === false),
+    }
+  }, [vendors])
 
   const filtered = useMemo(() => {
-    if (!vendors) return []
-    if (!searchQuery.trim()) return vendors
+    if (!activeVendors.length) return []
+    if (!searchQuery.trim()) return activeVendors
     const q = searchQuery.toLowerCase()
-    return vendors.filter(v => v.name.toLowerCase().includes(q))
-  }, [vendors, searchQuery])
+    return activeVendors.filter(v => v.name.toLowerCase().includes(q))
+  }, [activeVendors, searchQuery])
 
   const totalOwed = useMemo(() => {
-    return (vendors || []).reduce((sum, v) => sum + v.owedAmount, 0)
-  }, [vendors])
+    return activeVendors.reduce((sum, v) => sum + v.owedAmount, 0)
+  }, [activeVendors])
 
   const handleAddVendor = async () => {
     if (!addForm.name.trim()) return
@@ -303,6 +313,102 @@ export function VendorsPageClient() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Archived Section */}
+      {archivedVendors.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Archive className="w-3.5 h-3.5 text-gray-400" />
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Archived</h2>
+            <span className="text-xs font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+              {archivedVendors.length}
+            </span>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden opacity-60">
+            {archivedVendors.map(vendor => {
+              const hasHistory = (vendor.unpaidAddOns || 0) > 0 || !!vendor.lastPayment || (vendor.addOnServices?.length || 0) > 0
+              return (
+              <div key={vendor.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="w-10 h-10 rounded-lg bg-gray-200 flex items-center justify-center text-gray-500 font-bold text-sm flex-shrink-0">
+                  {vendor.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold text-gray-500 truncate text-[15px]">{vendor.name}</span>
+                  <p className="text-sm text-gray-400">
+                    {hasHistory ? 'Archived · Has service/payment history' : 'Archived · No history'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3 text-sm gap-1.5"
+                    onClick={() => handleToggleArchive(vendor)}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Restore
+                  </Button>
+                  {!hasHistory && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-3 text-sm gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => setConfirmDeleteVendorId(vendor.id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )})}
+          </div>
+
+          {/* Confirm Delete Vendor Dialog */}
+          <Dialog open={!!confirmDeleteVendorId} onOpenChange={(open) => !open && setConfirmDeleteVendorId(null)}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Trash2 className="w-5 h-5 text-red-500" />
+                  Delete permanently?
+                </DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-gray-600">
+                This will permanently remove <strong>{archivedVendors.find(v => v.id === confirmDeleteVendorId)?.name}</strong>. This cannot be undone.
+              </p>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setConfirmDeleteVendorId(null)} disabled={isDeletingVendor}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  disabled={isDeletingVendor}
+                  onClick={async () => {
+                    if (!confirmDeleteVendorId) return
+                    setIsDeletingVendor(true)
+                    try {
+                      const res = await fetch(`/api/vendors/${confirmDeleteVendorId}`, { method: 'DELETE' })
+                      if (res.status === 409) {
+                        showError('Cannot delete: this vendor has service/payment history. Use Archive instead.')
+                        setConfirmDeleteVendorId(null)
+                        return
+                      }
+                      if (!res.ok) throw new Error('Failed to delete')
+                      showSuccess('Vendor permanently deleted')
+                      setConfirmDeleteVendorId(null)
+                      mutate()
+                    } catch {
+                      showError('Failed to delete vendor')
+                    } finally {
+                      setIsDeletingVendor(false)
+                    }
+                  }}
+                >
+                  {isDeletingVendor ? 'Deleting…' : 'Delete Permanently'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
