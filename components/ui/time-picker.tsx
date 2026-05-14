@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import {
   Select,
   SelectContent,
@@ -47,10 +48,14 @@ function formatTimeDisplay(time24: string): string {
 }
 
 export function TimePicker({ value, onChange, required, id }: TimePickerProps) {
-  const timeOptions = generateTimeOptions()
+  const timeOptions = useMemo(() => {
+    const base = generateTimeOptions()
+    if (!value || base.includes(value)) return base
+    return [...base, value].sort((a, b) => a.localeCompare(b))
+  }, [value])
 
   return (
-    <Select value={value} onValueChange={onChange} required={required}>
+    <Select value={value || undefined} onValueChange={onChange} required={required}>
       <SelectTrigger id={id}>
         <SelectValue placeholder="Select time">
           {value ? formatTimeDisplay(value) : 'Select time'}

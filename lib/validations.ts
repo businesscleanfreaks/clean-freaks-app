@@ -103,6 +103,8 @@ export const createJobSchema = z.object({
   startWindowEnd: z.string().optional().nullable(),
   clientRate: z.number().min(0, 'Client rate must be positive'),
   subcontractorRate: z.number().min(0, 'Subcontractor rate must be positive'),
+  isTrial: z.boolean().optional().default(false),
+  trialNotes: z.string().max(5000, 'Trial notes too long').optional().nullable(),
 })
 
 export const updateJobSchema = z.object({
@@ -117,6 +119,8 @@ export const updateJobSchema = z.object({
   status: z.enum(['SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
   subcontractorPaid: z.boolean().optional(),
   notes: z.string().max(5000, 'Notes too long').optional().nullable(),
+  isTrial: z.boolean().optional(),
+  trialNotes: z.string().max(5000, 'Trial notes too long').optional().nullable(),
 })
 
 // Invoice schemas
@@ -195,10 +199,17 @@ export const createPaymentSchema = z.object({
 
 // Email Invoice Schema
 export const emailInvoiceSchema = z.object({
-  to: z.string().email('Invalid email address'),
+  to: z.union([
+    z.string().email('Invalid email address'),
+    z.array(z.string().email('Invalid email address')).min(1, 'At least one recipient is required')
+  ]),
   subject: z.string().min(1, 'Subject is required').max(200, 'Subject too long'),
   message: z.string().min(1, 'Message is required').max(10000, 'Message too long'),
-  cc: z.string().email('Invalid CC email address').optional().or(z.literal('')),
+  cc: z.union([
+    z.string().email('Invalid CC email address'),
+    z.array(z.string().email('Invalid CC email address')),
+    z.literal('')
+  ]).optional(),
   isTest: z.boolean().default(false),
   showPaymentOptions: z.boolean().optional(),
 })

@@ -5,12 +5,15 @@ import useSWR from "swr"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { showError, showSuccess } from "@/lib/toast"
 import { logger } from "@/lib/logger"
 
 interface RecurringAddonFormProps {
   scheduleId: string
+  /** Other active schedule IDs on the same client — used for optional bulk apply */
+  siblingScheduleIds?: string[]
   onSuccess: () => void
   onCancel: () => void
 }
@@ -24,8 +27,9 @@ const FREQUENCY_OPTIONS = [
   { value: 'MONTHLY', label: 'Monthly' },
 ]
 
-export function RecurringAddonForm({ scheduleId, onSuccess, onCancel }: RecurringAddonFormProps) {
+export function RecurringAddonForm({ scheduleId, siblingScheduleIds = [], onSuccess, onCancel }: RecurringAddonFormProps) {
   const [loading, setLoading] = useState(false)
+  const [applyToAllSchedules, setApplyToAllSchedules] = useState(false)
   const [formData, setFormData] = useState({
     description: '',
     clientRate: '',
@@ -37,7 +41,7 @@ export function RecurringAddonForm({ scheduleId, onSuccess, onCancel }: Recurrin
   const [showNewVendor, setShowNewVendor] = useState(false)
 
   const fetcher = (url: string) => fetch(url).then(r => r.json())
-  const { data: vendors, mutate: mutateVendors } = useSWR<Array<{ id: string; name: string }>>('/api/vendors', fetcher)
+  const { data: vendors, mutate: mutateVendors } = useSWR<Array<{ id: string; name: string; isActive?: boolean }>>('/api/vendors', fetcher)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,26 +63,36 @@ export function RecurringAddonForm({ scheduleId, onSuccess, onCancel }: Recurrin
         }
       }
 
-      const response = await fetch('/api/add-on-services', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scheduleId,
-          description: formData.description,
-          clientRate: parseFloat(formData.clientRate) || 0,
-          subcontractorRate: parseFloat(formData.subcontractorRate) || 0,
-          frequency: formData.frequency,
-          isRecurring: true,
-          vendorId,
-        }),
-      })
+      const targets = applyToAllSchedules && siblingScheduleIds.length > 0
+        ? [scheduleId, ...siblingScheduleIds]
+        : [scheduleId]
 
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to create add-on')
+      for (const sid of targets) {
+        const response = await fetch('/api/add-on-services', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scheduleId: sid,
+            description: formData.description,
+            clientRate: parseFloat(formData.clientRate) || 0,
+            subcontractorRate: parseFloat(formData.subcontractorRate) || 0,
+            frequency: formData.frequency,
+            isRecurring: true,
+            vendorId,
+          }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || 'Failed to create add-on')
+        }
       }
 
-      showSuccess('Recurring add-on created successfully')
+      showSuccess(
+        targets.length > 1
+          ? `Recurring add-on added to ${targets.length} schedules`
+          : 'Recurring add-on created successfully'
+      )
       onSuccess()
     } catch (error) {
       logger.error('Error creating add-on:', error)
@@ -184,7 +198,7 @@ export function RecurringAddonForm({ scheduleId, onSuccess, onCancel }: Recurrin
               className="w-full h-10 px-3 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
             >
               <option value="">None (in-house)</option>
-              {(vendors || []).map(v => (
+              {(vendors || []).filter(v => v.isActive !== false).map(v => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
               <option value="__new__">+ Add new vendor...</option>
@@ -193,6 +207,23 @@ export function RecurringAddonForm({ scheduleId, onSuccess, onCancel }: Recurrin
           <p className="text-xs text-gray-400">If this add-on is performed by an external subcontractor</p>
         </div>
       </div>
+
+      {siblingScheduleIds.length > 0 && (
+        <label className="flex items-start gap-3 rounded-lg border border-purple-100 bg-white/80 px-3 py-3 cursor-pointer md:col-span-2">
+          <Checkbox
+            checked={applyToAllSchedules}
+            onCheckedChange={(checked) => setApplyToAllSchedules(checked === true)}
+            className="mt-0.5"
+          />
+          <div>
+            <p className="text-sm font-medium text-gray-900">Add to every recurring schedule for this client</p>
+            <p className="text-xs text-gray-500">
+              Also creates the same add-on on {siblingScheduleIds.length} other active schedule
+              {siblingScheduleIds.length !== 1 ? 's' : ''} (same rates and frequency).
+            </p>
+          </div>
+        </label>
+      )}
       
       <div className="flex gap-2">
         <Button type="submit" disabled={loading} className="bg-purple-600 hover:bg-purple-700">

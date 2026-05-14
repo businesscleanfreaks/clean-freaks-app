@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 import { ActionSpinner } from "@/components/ui/action-spinner"
 import { ProgressBar } from "@/components/ui/progress-bar"
+import { Checkbox } from "@/components/ui/checkbox"
 import { format } from "date-fns"
 import { useQuickInvoice, type QuickInvoiceClient, type QuickInvoiceJob } from "./use-quick-invoice"
 
@@ -73,8 +74,12 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     notes, setNotes,
     lineItems,
     progress, progressStep,
-    emailTo, setEmailTo,
     emailCc, setEmailCc,
+    recipientPool,
+    selectedRecipients,
+    manualEmailInput, setManualEmailInput,
+    toggleRecipient,
+    addManualRecipient,
     emailSubject, setEmailSubject,
     emailMessage, setEmailMessage,
     showPaymentOptions, setShowPaymentOptions,
@@ -789,7 +794,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                 <div className="flex items-center gap-2">
                   {!isSectionExpanded('email') && (
                     <span className="text-xs text-slate-400 truncate max-w-[180px]">
-                      {emailTo || 'No recipient'}
+                      {selectedRecipients.length > 0 ? selectedRecipients.join(', ') : 'No recipient'}
                     </span>
                   )}
                   <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isSectionExpanded('email') ? 'rotate-180' : ''}`} />
@@ -798,15 +803,42 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
               {isSectionExpanded('email') && (
                 <div className="px-3 py-3 space-y-3 border-t bg-white">
                   <div>
-                    <Label htmlFor="emailTo" className="text-xs text-slate-600">To *</Label>
-                    <Input
-                      id="emailTo"
-                      type="email"
-                      value={emailTo}
-                      onChange={(e) => setEmailTo(e.target.value)}
-                      placeholder="client@example.com"
-                      className="mt-1 text-sm"
-                    />
+                    <Label className="text-xs text-slate-600">To * <span className="text-slate-400 font-normal">(select one or more)</span></Label>
+                    <div className="mt-2 space-y-2 max-h-44 overflow-y-auto border rounded-md p-2 bg-slate-50/60">
+                      {recipientPool.length === 0 ? (
+                        <p className="text-xs text-slate-500 py-1">No saved addresses on file. Add an address below.</p>
+                      ) : (
+                        recipientPool.map((email) => (
+                          <label key={email} className="flex items-center gap-2.5 text-sm cursor-pointer py-0.5">
+                            <Checkbox
+                              checked={selectedRecipients.some((r) => r.toLowerCase() === email.toLowerCase())}
+                              onCheckedChange={() => toggleRecipient(email)}
+                              className="data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
+                            />
+                            <span className="truncate text-slate-800">{email}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="flex-1">
+                      <Label htmlFor="manualEmailTo" className="text-xs text-slate-600">Add email</Label>
+                      <Input
+                        id="manualEmailTo"
+                        type="email"
+                        value={manualEmailInput}
+                        onChange={(e) => setManualEmailInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualRecipient() } }}
+                        placeholder="billing@example.com"
+                        className="mt-1 text-sm"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button type="button" variant="outline" size="sm" className="h-9" onClick={addManualRecipient}>
+                        Add
+                      </Button>
+                    </div>
                   </div>
                   <div>
                     <Label htmlFor="emailCc" className="text-xs text-slate-600">CC (Optional)</Label>
@@ -1050,9 +1082,9 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                     ⚠️ Send Invoice to Client?
                   </h3>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between py-1">
-                      <span className="text-gray-600">To:</span>
-                      <span className="font-semibold text-gray-900">{emailTo}</span>
+                    <div className="flex justify-between py-1 gap-4">
+                      <span className="text-gray-600 flex-shrink-0">To:</span>
+                      <span className="font-semibold text-gray-900 text-right break-all">{selectedRecipients.join(', ')}</span>
                     </div>
                     {emailCc && (
                       <div className="flex justify-between py-1">

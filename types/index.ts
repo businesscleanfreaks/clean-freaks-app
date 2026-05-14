@@ -63,6 +63,8 @@ export interface Job {
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
   invoiced: boolean
   subcontractorPaid: boolean
+  isTrial: boolean
+  trialNotes: string | null
   createdAt: Date
   updatedAt: Date
   location?: Location
@@ -303,6 +305,7 @@ export interface CleanerData {
   name: string
   phone: string | null
   email: string | null
+  notes: string | null
   teamMembers: string | null
   paymentCadence: string
   paymentCadenceNotes: string | null

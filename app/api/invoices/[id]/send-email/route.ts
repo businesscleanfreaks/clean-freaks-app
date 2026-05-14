@@ -29,6 +29,12 @@ export async function POST(
 
     const { to, subject, message, cc, isTest, showPaymentOptions } = validationResult.data
 
+    // Normalize recipients to arrays for consistent handling
+    const toRecipients = Array.isArray(to) ? to : [to]
+    const ccRecipients = cc 
+      ? (Array.isArray(cc) ? cc : cc === '' ? [] : [cc])
+      : []
+
     // CRITICAL SAFETY CHECK: Force test mode if safety flags not set
     const allowRealEmails = process.env.ALLOW_REAL_CLIENT_EMAILS === 'true'
     const enableSending = process.env.ENABLE_EMAIL_SENDING === 'true'
@@ -97,7 +103,7 @@ export async function POST(
         result = await sendTestEmail({
           subject,
           html: emailHtml,
-          cc: cc || undefined,
+          cc: ccRecipients.length > 0 ? ccRecipients : undefined,
         })
       } catch {
         // If test email fails (e.g., no TEST_EMAIL configured), simulate success
@@ -107,10 +113,10 @@ export async function POST(
       }
     } else {
       result = await sendEmail({
-        to,
+        to: toRecipients,
         subject,
         html: emailHtml,
-        cc: cc || undefined,
+        cc: ccRecipients.length > 0 ? ccRecipients : undefined,
       })
     }
 
@@ -126,7 +132,7 @@ export async function POST(
       where: { id: resolvedParams.id },
       data: {
         dateSent: new Date(),
-        sentTo: isActuallyTest ? `[TEST] ${to}` : to,
+        sentTo: isActuallyTest ? `[TEST] ${toRecipients.join(', ')}` : toRecipients.join(', '),
         emailSubject: subject,
         emailBody: message,
         status: 'SENT',

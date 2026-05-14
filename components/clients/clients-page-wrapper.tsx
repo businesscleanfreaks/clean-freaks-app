@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { mutate } from "swr"
 import { useIsMobile } from "@/lib/hooks/use-media-query"
 import { useRouter } from "next/navigation"
@@ -10,12 +10,14 @@ import { AddClientWizard } from "./add-client-wizard"
 import Link from "next/link"
 import {
   Plus, Search, Phone, Mail,
-  UserPlus, Building2, ChevronRight, User
+  UserPlus, Building2, ChevronRight, User, Archive
 } from "lucide-react"
 
 
 
 import { EmptyState } from "@/components/ui/empty-state"
+import { useConfirm } from "@/hooks/use-confirm"
+import { showApiError, showError, showSuccess } from "@/lib/toast"
 
 interface Location {
   id: string
@@ -103,14 +105,22 @@ function SegmentedFilter({
 function ClientCard({
   client,
   isHovered,
-  onHover
+  onHover,
+  onArchiveFromList,
 }: {
   client: Client
   isHovered?: boolean
   onHover?: (clientId: string | null) => void
+  onArchiveFromList: (client: Client) => void
 }) {
   const email = client.communicationEmail || client.invoicingEmail
-  const status = !client.isActive ? 'inactive' : 'active'
+  const isClientActive = client.isActive !== false
+  const status = !isClientActive ? 'inactive' : 'active'
+
+  // Check if client is newly created (within 7 days)
+  const createdDate = new Date(client.createdAt)
+  const daysSinceCreation = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+  const isNew = daysSinceCreation <= 7
 
   const getInitials = (name: string) =>
     name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
@@ -121,46 +131,60 @@ function ClientCard({
     inactive: { bg: 'rgba(0,0,0,0.06)', color: '#6B7280' },
   }[status]
 
+  const cardShell = `
+    bg-white rounded-xl overflow-hidden relative
+    border transition-all duration-200 ease-out
+    hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]
+    ${isHovered
+      ? 'border-teal-500 -translate-y-0.5 shadow-[0_4px_12px_rgba(0,0,0,0.08)]'
+      : 'border-gray-200'}
+  `
+
   return (
-    <Link
-      href={`/clients/${client.id}`}
+    <div
       onMouseEnter={() => onHover?.(client.id)}
       onMouseLeave={() => onHover?.(null)}
-      className={`
-        block bg-white rounded-xl p-4 relative no-underline
-        border transition-all duration-200 ease-out
-        hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]
-        active:scale-[0.98] active:shadow-sm
-        ${isHovered
-          ? 'border-teal-500 -translate-y-0.5 shadow-[0_4px_12px_rgba(0,0,0,0.08)]'
-          : 'border-gray-200'}
-      `}
+      className={cardShell}
     >
-      <ChevronRight
-        className={`
-          absolute top-4 right-4 w-[18px] h-[18px] flex-shrink-0
-          text-gray-400 transition-transform duration-200
-          ${isHovered ? 'translate-x-0.5' : ''}
-        `}
-      />
+      <Link
+        href={`/clients/${client.id}`}
+        className="block p-4 pb-3 relative no-underline text-inherit active:scale-[0.99] active:shadow-inner transition-transform"
+      >
+        <ChevronRight
+          className={`
+            absolute top-4 right-4 w-[18px] h-[18px] flex-shrink-0
+            text-gray-400 transition-transform duration-200
+            ${isHovered ? 'translate-x-0.5' : ''}
+          `}
+        />
 
-      <div className="flex items-start gap-3 mb-3 pr-6">
-        <div
-          className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[15px] font-semibold"
-          style={{ backgroundColor: client.isActive ? '#00A896' : '#9CA3AF' }}
-        >
-          {getInitials(client.name)}
-        </div>
+        <div className="flex items-start gap-3 mb-3 pr-6">
+          <div
+            className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[15px] font-semibold"
+            style={{ backgroundColor: isClientActive ? '#00A896' : '#9CA3AF' }}
+          >
+            {getInitials(client.name)}
+          </div>
         <div className="min-w-0 flex-1">
           <p className="text-[17px] font-bold text-gray-900 leading-snug mb-1 break-words">
             {client.name}
           </p>
-          <span
-            className="inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded"
-            style={{ color: badgeStyles.color, backgroundColor: badgeStyles.bg }}
-          >
-            {badgeLabel}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className="inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded"
+              style={{ color: badgeStyles.color, backgroundColor: badgeStyles.bg }}
+            >
+              {badgeLabel}
+            </span>
+            {isNew && (
+              <span
+                className="inline-block text-[11px] font-bold px-1.5 py-0.5 rounded"
+                style={{ color: '#FFFFFF', backgroundColor: '#F59E0B' }}
+              >
+                NEW
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -212,7 +236,35 @@ function ClientCard({
           </div>
         )}
       </div>
-    </Link>
+      </Link>
+
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 bg-gray-50/90">
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          {isClientActive && (
+            <button
+              type="button"
+              onClick={() => onArchiveFromList(client)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900 px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors shrink-0"
+            >
+              <Archive className="w-3.5 h-3.5" aria-hidden />
+              Archive
+            </button>
+          )}
+          <Link
+            href={`/clients/${client.id}#client-remove-section`}
+            className="text-xs font-semibold text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0"
+          >
+            Remove…
+          </Link>
+        </div>
+        <Link
+          href={`/clients/${client.id}`}
+          className="text-xs font-semibold text-teal-700 hover:text-teal-800 shrink-0 py-1.5"
+        >
+          Open
+        </Link>
+      </div>
+    </div>
   )
 }
 
@@ -227,8 +279,38 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
   // On mobile, always force card/grid view
   const [hoveredClientId, setHoveredClientId] = useState<string | null>(null)
 
+  const { confirm, ConfirmDialog } = useConfirm()
 
-
+  const handleArchiveFromList = useCallback(
+    async (client: Client) => {
+      const confirmed = await confirm({
+        title: 'Archive Client?',
+        description: `Archive "${client.name}"? They will be marked inactive and hidden from the active clients list. All jobs, invoices, and payment history will be preserved.`,
+        confirmText: 'Archive',
+        cancelText: 'Cancel',
+        variant: 'destructive',
+      })
+      if (!confirmed) return
+      try {
+        const response = await fetch(`/api/clients/${client.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isActive: false }),
+        })
+        if (!response.ok) {
+          await showApiError(response, 'Failed to archive client')
+          return
+        }
+        showSuccess('Client archived')
+        mutate('/api/clients/data')
+        mutate('/api/dashboard-stats')
+        router.refresh()
+      } catch {
+        showError('Failed to archive client. Please try again.')
+      }
+    },
+    [confirm, router],
+  )
   useEffect(() => {
     if (prefillProspect) {
       setShowWizard(true)
@@ -374,6 +456,9 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
                   client={client}
                   isHovered={hoveredClientId === client.id}
                   onHover={setHoveredClientId}
+                  onArchiveFromList={(c) => {
+                    void handleArchiveFromList(c)
+                  }}
                 />
               ))}
             </div>
@@ -431,6 +516,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
           router.push(`/clients/${clientId}`)
         }}
       />
+      <ConfirmDialog />
     </div>
   )
 }

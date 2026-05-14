@@ -1,12 +1,14 @@
 "use client"
 
+import { useState } from "react"
+
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
 import { format } from "date-fns"
 import {
   Plus, Edit, Calendar, Receipt, ArrowLeft,
-  PauseCircle, PlayCircle,
+  PauseCircle, PlayCircle, MoreHorizontal, Archive, Trash2,
 } from "lucide-react"
 import { getInitials } from "./client-detail-helpers"
 import type { ClientDetailState } from "./use-client-detail"
@@ -29,7 +31,12 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
     handleGenerateInvoice,
     setShowAdditionalServiceChoice,
     setEditing,
+    clientHasHistory,
+    handleArchiveClient,
+    handleDeleteClient,
   } = state
+
+  const [showOverflow, setShowOverflow] = useState(false)
 
   return (
     <>
@@ -38,7 +45,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
         <div className="px-4 sm:px-6 py-4">
           <button
             onClick={() => router.push('/clients')}
-            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 mb-4 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 mb-2.5 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             Back to Clients
@@ -52,12 +59,21 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl font-bold text-gray-900 leading-tight">{client.name}</h1>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
+                <div className="flex items-center gap-2 text-sm text-slate-500 flex-wrap">
                   <span>{locationCount} location{locationCount !== 1 ? 's' : ''}</span>
                   <span>·</span>
                   <span>{client.billingType === 'FLAT_RATE' ? 'Monthly flat rate' : 'Per clean'}</span>
                   <span>·</span>
                   <span>Since {stats.clientSince ? format(stats.clientSince, 'MMM d, yyyy') : '—'}</span>
+                  {nextClean && (
+                    <>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(0,168,150,0.08)', color: '#00A896' }}>
+                        <Calendar className="w-3 h-3" />
+                        Next: {nextClean.date}{nextClean.time ? ` at ${nextClean.time}` : ''}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -81,19 +97,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
             </div>
           </div>
 
-          {/* Next Clean Banner */}
-          {nextClean && (
-            <div className={`mt-4 flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-500 ${fadeIn}`} style={{ background: 'rgba(0,168,150,0.06)', border: '1px solid rgba(0,168,150,0.2)' }}>
-              <Calendar className="w-4 h-4 flex-shrink-0" style={{ color: '#00A896' }} />
-              <p className="text-sm text-gray-700">
-                <span className="font-semibold" style={{ color: '#00A896' }}>Next clean:</span>{' '}
-                <span className="font-medium">{nextClean.date}</span>{' '}at{' '}
-                <span className="font-medium">{nextClean.time}</span>
-                {nextClean.location && <span className="text-slate-600"> — {nextClean.location}</span>}
-                {nextClean.worker && <span className="text-slate-500"> ({nextClean.worker})</span>}
-              </p>
-            </div>
-          )}
+
         </div>
       </div>
 
@@ -142,6 +146,50 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
               </>
             )}
           </button>
+
+          {/* Overflow menu */}
+          <div className="relative">
+            <button
+              onClick={() => setShowOverflow(!showOverflow)}
+              className="flex items-center justify-center w-9 h-9 rounded-lg bg-white hover:bg-gray-50 transition-colors"
+              style={{ border: '1px solid #E0E0E0' }}
+            >
+              <MoreHorizontal className="w-4 h-4 text-gray-500" />
+            </button>
+            {showOverflow && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowOverflow(false)} />
+                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[180px]">
+                  {clientHasHistory ? (
+                    <button
+                      onClick={() => {
+                        if (!isActive) return
+                        setShowOverflow(false)
+                        handleArchiveClient()
+                      }}
+                      disabled={!isActive}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        color: '#D97706',
+                        backgroundColor: 'transparent',
+                      }}
+                    >
+                      <Archive className="w-4 h-4" />
+                      Archive Client
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { setShowOverflow(false); handleDeleteClient() }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Permanently
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </>

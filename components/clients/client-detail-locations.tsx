@@ -1,21 +1,20 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScheduleForm } from "./schedule-form"
 import { RecurringAddonForm } from "./recurring-addon-form"
 import { AddOnCard } from "./add-on-card"
-import { SimpleTooltip } from "@/components/ui/simple-tooltip"
 import { formatCurrency, formatTime } from "@/lib/utils"
 import { format } from "date-fns"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getPrimaryScheduleForDisplay, sortSchedulesForDisplay } from "@/lib/schedule-timing"
 import {
   Plus, Edit, Trash2, MapPin, ChevronDown, Calendar,
-  Sparkles, User, CalendarPlus, CheckCircle, TrendingUp,
-  PauseCircle, PlayCircle, MoreVertical, Clock,
+  Sparkles, User, CalendarPlus, CheckCircle,
+  PauseCircle, PlayCircle, MoreVertical,
 } from "lucide-react"
 import type { ClientSchedule, ClientLocation, SubcontractorRecord, BillingType } from "./client-detail-types"
 import {
@@ -27,6 +26,17 @@ import type { ClientDetailState } from "./use-client-detail"
 
 interface ClientDetailLocationsProps {
   state: ClientDetailState
+}
+
+function scheduleTimeSuffix(sch: ClientSchedule) {
+  if (sch.timeType === 'WINDOW' && (sch.startWindowBegin || sch.startWindowEnd)) {
+    const a = sch.startWindowBegin ? formatTime(sch.startWindowBegin) : ''
+    const b = sch.startWindowEnd ? formatTime(sch.startWindowEnd) : ''
+    if (!a && !b) return ''
+    return ` · ${a}${a && b ? '–' : ''}${b}`
+  }
+  if (sch.startTime) return ` · ${formatTime(sch.startTime)}`
+  return ''
 }
 
 export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
@@ -91,6 +101,14 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     return () => document.removeEventListener('mousedown', handler)
   }, [scheduleMenuOpen, reassigningSchedule, setScheduleMenuOpen, setReassigningSchedule])
 
+  const allActiveScheduleIds = useMemo(
+    () =>
+      (client.locations || []).flatMap((l) =>
+        (l.schedules || []).filter((s) => s.isActive !== false).map((s) => s.id)
+      ),
+    [client.locations]
+  )
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -136,6 +154,12 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-gray-900 text-sm">{location.name}</p>
                   <p className="text-xs text-slate-500 truncate mt-0.5">{location.address}</p>
+                  {location.accessInfo && (
+                    <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                      <span className="inline-block w-3 h-3 text-slate-300">🔑</span>
+                      {location.accessInfo}
+                    </p>
+                  )}
                   {scheduleHistoryOverview && (
                     <p className="text-[11px] text-slate-500 mt-1">{scheduleHistoryOverview}</p>
                   )}
@@ -172,13 +196,14 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                 const cost = subPayType === 'FLAT_RATE' ? (sch.defaultSubcontractorRate || 0) : ((sch.defaultSubcontractorRate || 0) * avgOcc)
                 const profit = rev - cost
                 return (
-                  <div key={sch.id} className={`px-4 py-2.5 border-t border-gray-100 ${sch.isActive === false ? 'opacity-60' : ''}`}>
+                  <Fragment key={sch.id}>
+                  <div className={`px-4 py-2.5 border-t border-gray-100 ${sch.isActive === false ? 'opacity-60' : ''}`}>
                     <p className="text-sm text-gray-700 mb-1 flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{getScheduleFrequencyLabel(sch.frequency)}</span>
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${timingBadge.className}`}>{timingBadge.label}</span>
                       {sch.isActive === false && <span className="ml-2 text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Paused</span>}
                       {days.length > 0 && <span className="text-slate-500"> · {days.map((d: number) => DAY_NAMES[d]).join(', ')}</span>}
-                      <span className="text-slate-500"> · {formatTime(sch.startTime || '09:00')}</span>
+                      {scheduleTimeSuffix(sch) && <span className="text-slate-500">{scheduleTimeSuffix(sch)}</span>}
                     </p>
                     <p className="text-xs text-slate-600 mb-2">{getScheduleHistoryLine(sch)}</p>
                     <div className="flex items-center justify-between">
@@ -229,11 +254,17 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="flex flex-col items-end text-right">
-                          <span className="text-xs font-medium text-slate-600">Client billing: {formatCurrency(rev)}/mo</span>
-                          <span className="text-xs font-medium text-slate-500">Cleaner pay: {formatCurrency(cost)}/mo</span>
-                        </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-medium text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">{formatCurrency(rev)}/mo</span>
+                        <span className="text-[11px] font-medium text-slate-400">→</span>
+                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${profit >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>
+                          {profit >= 0 ? '+' : ''}{formatCurrency(profit)}
+                        </span>
+                        {(sch as any).recurringAddOnServices?.length > 0 && (
+                          <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded-full">
+                            {(sch as any).recurringAddOnServices.length} add-on{(sch as any).recurringAddOnServices.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
                         <div className="relative">
                           <button
                             onClick={(e) => { e.stopPropagation(); setScheduleMenuOpen(scheduleMenuOpen === sch.id ? null : sch.id) }}
@@ -284,6 +315,17 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                               <button
                                 onClick={() => {
                                   setScheduleMenuOpen(null)
+                                  setExpandedLocation(location.id)
+                                  setAddingAddonToSchedule(sch.id)
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                                Add recurring add-on
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setScheduleMenuOpen(null)
                                   handleDeleteSchedule(sch.id)
                                 }}
                                 className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
@@ -297,6 +339,17 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                       </div>
                     </div>
                   </div>
+                  {addingAddonToSchedule === sch.id && (
+                    <div className="px-4 py-3 bg-purple-50/40 border-t border-purple-100">
+                      <RecurringAddonForm
+                        scheduleId={sch.id}
+                        siblingScheduleIds={allActiveScheduleIds.filter((id) => id !== sch.id)}
+                        onSuccess={() => { setAddingAddonToSchedule(null); onDataChange?.() }}
+                        onCancel={() => setAddingAddonToSchedule(null)}
+                      />
+                    </div>
+                  )}
+                  </Fragment>
                 )
               }) : (
                 <div className="px-4 py-2.5 border-t border-gray-100">
@@ -371,6 +424,32 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                           <button onClick={() => { setScheduleFormMode('edit'); setEditingSchedule(sch) }} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Edit schedule"><Edit className="w-3.5 h-3.5 text-gray-400" /></button>
                           <button onClick={() => { setScheduleFormMode('future'); setEditingSchedule(sch) }} className="p-1.5 hover:bg-blue-50 rounded-lg" title="Change going forward"><CalendarPlus className="w-3.5 h-3.5 text-blue-500" /></button>
                           <button onClick={() => handleDeleteSchedule(sch.id)} className="p-1.5 hover:bg-gray-100 rounded-lg"><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {sortedSchedules.map((sch: ClientSchedule) => {
+                    if (editingSchedule?.id === sch.id) return null
+                    const recurring = (sch as { recurringAddOnServices?: Array<{
+                      id: string
+                      description: string
+                      clientRate: number
+                      subcontractorRate: number
+                      frequency?: string | null
+                      isRecurring: boolean
+                    }> }).recurringAddOnServices
+                    if (!recurring?.length) return null
+                    return (
+                      <div key={`addon-list-${sch.id}`} className="mt-2 mb-2 p-3 bg-white rounded-lg border border-purple-100">
+                        <p className="text-xs font-semibold text-purple-800 mb-2">{getScheduleFrequencyLabel(sch.frequency)} — recurring add-ons</p>
+                        <div className="space-y-2">
+                          {recurring.map((addon) => (
+                            <AddOnCard
+                              key={addon.id}
+                              addOn={{ ...addon, isRecurring: true }}
+                              onDelete={() => onDataChange?.()}
+                            />
+                          ))}
                         </div>
                       </div>
                     )

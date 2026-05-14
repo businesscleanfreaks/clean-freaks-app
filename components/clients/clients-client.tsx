@@ -17,9 +17,9 @@ export function ClientsClient() {
     '/api/clients/data',
     fetcher,
     {
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-      dedupingInterval: 30000,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      dedupingInterval: 5000,
     }
   )
 

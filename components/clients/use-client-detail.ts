@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { mutate as globalMutate } from "swr"
 import { getErrorMessage } from '@/lib/logger'
 import { useRouter } from "next/navigation"
 import { formatTime } from "@/lib/utils"
@@ -406,34 +407,70 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     setScheduleFormMode('edit')
   }
 
-  const handleDeleteClient = async () => {
+  // Check if client has history (jobs, schedules, invoices)
+  const clientHasHistory = useMemo(() => {
     const totalJobs = client.locations?.reduce((sum: number, loc: ClientLocation) => sum + (loc.jobs?.length || 0), 0) || 0
     const totalSchedules = client.locations?.reduce((sum: number, loc: ClientLocation) => sum + (loc.schedules?.length || 0), 0) || 0
+    const totalInvoices = client.invoices?.length || 0
+    return (totalJobs + totalSchedules + totalInvoices) > 0
+  }, [client])
 
-    const impactParts: string[] = []
-    if (totalJobs > 0) impactParts.push(`${totalJobs} job${totalJobs === 1 ? '' : 's'}`)
-    if (totalSchedules > 0) impactParts.push(`${totalSchedules} schedule${totalSchedules === 1 ? '' : 's'}`)
-
-    const impactText = impactParts.length > 0
-      ? ` This will permanently remove ${impactParts.join(' and ')}.`
-      : ''
-
+  const handleArchiveClient = async () => {
     const confirmed = await confirm({
-      title: "Delete Client?",
-      description: `Delete "${client.name}"? This cannot be undone.${impactText}`,
-      confirmText: "Delete",
+      title: "Archive Client?",
+      description: `Archive "${client.name}"? They will be marked inactive and hidden from the active clients list. All jobs, invoices, and payment history will be preserved.`,
+      confirmText: "Archive",
+      cancelText: "Cancel",
+      variant: "destructive",
+    })
+    if (!confirmed) return
+    try {
+      const response = await fetch(`/api/clients/${client.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: false }),
+      })
+      if (!response.ok) {
+        await showApiError(response, 'Failed to archive client')
+        return
+      }
+      showSuccess('Client archived')
+      // Invalidate SWR caches and navigate
+      globalMutate('/api/clients/data')
+      globalMutate('/api/dashboard-stats')
+      router.push('/clients')
+      router.refresh()
+    } catch {
+      showError('Failed to archive client. Please try again.')
+    }
+  }
+
+  const handleDeleteClient = async () => {
+    const confirmed = await confirm({
+      title: "Delete Permanently?",
+      description: `Permanently delete "${client.name}"? This cannot be undone. This is only allowed for clients with no jobs, invoices, or payment history.`,
+      confirmText: "Delete Permanently",
       cancelText: "Cancel",
       variant: "destructive",
     })
     if (!confirmed) return
     try {
       const response = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
+      if (response.status === 409) {
+        // Backend says client has history — offer archive instead
+        showError('This client has job/invoice history and cannot be permanently deleted. Use Archive instead.')
+        return
+      }
       if (!response.ok) {
         await showApiError(response, 'Failed to delete client')
         return
       }
-      showSuccess('Client deleted')
+      showSuccess('Client permanently deleted')
+      // Invalidate SWR caches and navigate
+      globalMutate('/api/clients/data')
+      globalMutate('/api/dashboard-stats')
       router.push('/clients')
+      router.refresh()
     } catch {
       showError('Failed to delete client. Please try again.')
     }
@@ -462,7 +499,30 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     }
 
     setIsTogglingPause(true)
+    const prevClient = client
+    const now = new Date()
     try {
+      // Optimistic UI update: immediately reflect paused/resumed state and keep
+      // the job feed / next clean coherent without requiring a full page refresh.
+      setClient((prev) => {
+        const nextIsActive = !currentlyActive
+        const nextLocations = (prev.locations || []).map((loc) => {
+          const nextSchedules = (loc.schedules || []).map((sch) => ({
+            ...sch,
+            ...(nextIsActive ? { isActive: true } : { isActive: false }),
+          }))
+          const nextJobs = (loc.jobs || []).map((j) => {
+            // When pausing: cancel only future scheduled jobs (match API behavior)
+            if (!nextIsActive && j.status === 'SCHEDULED' && new Date(j.date) >= now) {
+              return { ...j, status: 'CANCELLED' as const }
+            }
+            return j
+          })
+          return { ...loc, schedules: nextSchedules, jobs: nextJobs }
+        })
+        return { ...prev, isActive: nextIsActive, locations: nextLocations }
+      })
+
       const response = await fetch(`/api/clients/${client.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -475,9 +535,13 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       const updated = await response.json()
       setClient(updated)
       showSuccess(currentlyActive ? 'Client paused — upcoming jobs cancelled' : 'Client resumed — schedules reactivated')
+      // Ensure any server-only changes (e.g. regenerated jobs on resume)
+      // are pulled in.
       onDataChange?.()
     } catch {
       showError(`Failed to ${currentlyActive ? 'pause' : 'resume'} client. Please try again.`)
+      // Revert optimistic update
+      setClient(prevClient)
     } finally {
       setIsTogglingPause(false)
     }
@@ -740,30 +804,6 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     }
   }
   
-  const formatNextClean = () => {
-    if (!stats.nextJob) return null
-    const date = new Date(stats.nextJob.date)
-    const today = new Date()
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    
-    let dateStr = ''
-    if (date.toDateString() === today.toDateString()) {
-      dateStr = 'Today'
-    } else if (date.toDateString() === tomorrow.toDateString()) {
-      dateStr = 'Tomorrow'
-    } else {
-      dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    }
-    
-    return {
-      date: dateStr,
-      time: formatTime(stats.nextJob.startTime || '09:00'),
-      location: stats.nextJobLocation,
-      worker: stats.nextJob.subcontractor?.name
-    }
-  }
-
   const { upcomingJobs, recentJobs } = useMemo(() => {
     const nowDate = new Date()
     nowDate.setHours(0, 0, 0, 0)
@@ -781,8 +821,51 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     return { upcomingJobs: upcoming, recentJobs: recent }
   }, [client])
 
+  const nextClean = useMemo(() => {
+    if (!stats.nextJob) return null
+    const job = stats.nextJob
+    const date = new Date(job.date)
+    const today = new Date()
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+
+    let dateStr = ''
+    if (date.toDateString() === today.toDateString()) {
+      dateStr = 'Today'
+    } else if (date.toDateString() === tomorrow.toDateString()) {
+      dateStr = 'Tomorrow'
+    } else {
+      dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    }
+
+    let timeStr = ''
+    if (job.startTime) {
+      timeStr = formatTime(job.startTime)
+    } else if (job.startWindowBegin || job.startWindowEnd) {
+      const a = job.startWindowBegin ? formatTime(job.startWindowBegin) : ''
+      const b = job.startWindowEnd ? formatTime(job.startWindowEnd) : ''
+      timeStr = [a, b].filter(Boolean).join('–') || 'Window TBD'
+    } else if (job.schedule) {
+      const sch = job.schedule
+      if (sch.timeType === 'WINDOW' && (sch.startWindowBegin || sch.startWindowEnd)) {
+        const a = sch.startWindowBegin ? formatTime(sch.startWindowBegin) : ''
+        const b = sch.startWindowEnd ? formatTime(sch.startWindowEnd) : ''
+        timeStr = [a, b].filter(Boolean).join('–') || ''
+      } else if (sch.startTime) {
+        timeStr = formatTime(sch.startTime)
+      }
+    }
+    if (!timeStr) timeStr = 'Time TBD'
+
+    return {
+      date: dateStr,
+      time: timeStr,
+      location: stats.nextJobLocation,
+      worker: job.subcontractor?.name,
+    }
+  }, [stats.nextJob, stats.nextJobLocation])
+
   const displayJobs = jobTab === 'upcoming' ? upcomingJobs : recentJobs
-  const nextClean = formatNextClean()
   const isActive = client.isActive !== false
   const locationCount = client.locations?.length || 0
   const hasDifferentInvoicingEmail = client.invoicingEmail && client.invoicingEmail !== client.communicationEmail
@@ -881,6 +964,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     handleDeleteSchedule,
     handleToggleSchedulePause,
     closeScheduleEditor,
+    clientHasHistory,
+    handleArchiveClient,
     handleDeleteClient,
     handleTogglePause,
     handleGenerateInvoice,

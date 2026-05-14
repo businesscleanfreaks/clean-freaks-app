@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, Package, Phone, Mail, ChevronDown, DollarSign, CheckCircle2, Archive, RotateCcw, Trash2 } from "lucide-react"
+import { Plus, Search, Package, Phone, Mail, ChevronDown, DollarSign, CheckCircle2, Archive, RotateCcw, Trash2, Edit2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -60,6 +60,40 @@ export function VendorsPageClient() {
   const [payingSaving, setPayingSaving] = useState(false)
   const [confirmDeleteVendorId, setConfirmDeleteVendorId] = useState<string | null>(null)
   const [isDeletingVendor, setIsDeletingVendor] = useState(false)
+
+  // Edit Vendor state
+  const [editingVendor, setEditingVendor] = useState<VendorData | null>(null)
+  const [vendorEditForm, setVendorEditForm] = useState({ name: '', phone: '', email: '', notes: '' })
+  const [isSavingVendorEdit, setIsSavingVendorEdit] = useState(false)
+
+  const openEditVendor = (vendor: VendorData) => {
+    setVendorEditForm({
+      name: vendor.name || '',
+      phone: vendor.phone || '',
+      email: vendor.email || '',
+      notes: vendor.notes || '',
+    })
+    setEditingVendor(vendor)
+  }
+
+  const handleSaveVendorEdit = async () => {
+    if (!editingVendor || !vendorEditForm.name.trim()) return
+    setIsSavingVendorEdit(true)
+    try {
+      const res = await fetch(`/api/vendors/${editingVendor.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vendorEditForm),
+      })
+      if (!res.ok) throw new Error('Failed to update')
+      setEditingVendor(null)
+      mutate()
+    } catch {
+      alert('Failed to update vendor')
+    } finally {
+      setIsSavingVendorEdit(false)
+    }
+  }
 
   const { activeVendors, archivedVendors } = useMemo(() => {
     if (!vendors) return { activeVendors: [] as VendorData[], archivedVendors: [] as VendorData[] }
@@ -300,7 +334,14 @@ export function VendorsPageClient() {
                       <p className="text-sm text-gray-400">No details to show</p>
                     )}
                     
-                    <div className="pt-2">
+                    <div className="pt-2 flex items-center gap-3">
+                      <button
+                        onClick={() => openEditVendor(vendor)}
+                        className="text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors flex items-center gap-1"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        Edit
+                      </button>
                       <button
                         onClick={() => handleToggleArchive(vendor)}
                         className={`text-sm font-medium transition-colors ${vendor.isActive ? 'text-red-500 hover:text-red-600' : 'text-teal-600 hover:text-teal-700'}`}
@@ -524,6 +565,72 @@ export function VendorsPageClient() {
               className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg"
             >
               {payingSaving ? "Processing..." : `Pay ${payingVendor ? formatCurrency(payingVendor.owedAmount) : ""}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT VENDOR DIALOG */}
+      <Dialog open={!!editingVendor} onOpenChange={(open) => !open && setEditingVendor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center">
+                <Edit2 className="w-4 h-4 text-teal-700" />
+              </div>
+              Edit Vendor
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs text-gray-500 font-medium">Name *</Label>
+              <Input
+                value={vendorEditForm.name}
+                onChange={(e) => setVendorEditForm({ ...vendorEditForm, name: e.target.value })}
+                placeholder="Vendor name"
+                className="mt-1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-gray-500 font-medium">Phone</Label>
+                <Input
+                  value={vendorEditForm.phone}
+                  onChange={(e) => setVendorEditForm({ ...vendorEditForm, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-gray-500 font-medium">Email</Label>
+                <Input
+                  value={vendorEditForm.email}
+                  onChange={(e) => setVendorEditForm({ ...vendorEditForm, email: e.target.value })}
+                  placeholder="vendor@email.com"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-gray-500 font-medium">Notes</Label>
+              <Input
+                value={vendorEditForm.notes}
+                onChange={(e) => setVendorEditForm({ ...vendorEditForm, notes: e.target.value })}
+                placeholder="Optional notes"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditingVendor(null)} disabled={isSavingVendorEdit} className="flex-1 rounded-lg">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveVendorEdit}
+              disabled={isSavingVendorEdit || !vendorEditForm.name.trim()}
+              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg"
+            >
+              {isSavingVendorEdit ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>

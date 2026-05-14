@@ -50,10 +50,13 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     ConfirmDialog,
     // State
     isDeleting, isCancelling, isCompleting,
+    isSavingTrial,
     isEditingSubcontractor, setIsEditingSubcontractor,
     selectedSubcontractorId, setSelectedSubcontractorId,
     isSavingSubcontractor,
     isMarkingInvoiced,
+    trialEnabled, setTrialEnabled,
+    trialNotesDraft, setTrialNotesDraft,
     addOns, setAddOns,
     isAddingAddOn, setIsAddingAddOn,
     deletingAddOnId,
@@ -99,6 +102,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     // Helpers
     getStatusColor, getMobileStatusStyle, getMobileStatusLabel,
     // Handlers
+    handleToggleTrial, handleSaveTrialNotes,
     handleEditSubcontractor, handleSaveSubcontractor, handleCancelEdit,
     handleDeleteAddOn, handleDelete, handleComplete, handleCancel,
     handleMarkAsInvoiced,
@@ -1101,6 +1105,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
   const structuredNoteLines = structuredNotePrefix ? (job.notes?.split('\n') || []) : []
   const generalNotes = job.notes && !structuredNotePrefix ? job.notes : null
   const isQuickFixMode = activeQuickFixPanel !== null
+  const isTrial = (job as any).isTrial === true
 
   const renderStructuredNoteCard = () => {
     if (!structuredNotePrefix) return null
@@ -1378,6 +1383,55 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       </Dialog>
     )
   }
+
+  const renderTrialCard = () => (
+    <div className="rounded-[12px] p-3" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px', color: '#B45309' }}>
+            Trial Clean
+          </p>
+          <p style={{ fontSize: '13px', color: '#111111', marginTop: '4px' }}>
+            Mark this clean as a trial/intro visit. Badge only — no billing logic changes.
+          </p>
+        </div>
+        <label className="flex items-center gap-2" style={{ cursor: isSavingTrial ? 'default' : 'pointer' }}>
+          <span style={{ fontSize: '12px', color: '#92400E', fontWeight: 600 }}>{trialEnabled ? 'On' : 'Off'}</span>
+          <input
+            type="checkbox"
+            checked={trialEnabled}
+            disabled={isSavingTrial}
+            onChange={(e) => handleToggleTrial(e.target.checked)}
+            style={{ width: '16px', height: '16px', accentColor: '#D97706' }}
+          />
+        </label>
+      </div>
+
+      {trialEnabled && (
+        <div className="mt-3">
+          <Label className="text-xs text-amber-900/80 mb-1 block">Trial notes</Label>
+          <textarea
+            value={trialNotesDraft}
+            onChange={(e) => setTrialNotesDraft(e.target.value)}
+            placeholder="Entry details, expectations, special prep…"
+            rows={3}
+            className="w-full rounded-[10px] px-3 py-2 outline-none resize-none"
+            style={{ border: '1px solid #FDE68A', backgroundColor: 'white', fontSize: '14px', color: '#111111' }}
+          />
+          <div className="mt-2 flex items-center justify-end">
+            <button
+              onClick={handleSaveTrialNotes}
+              disabled={isSavingTrial}
+              className="rounded-full px-4 py-2 font-semibold text-white disabled:opacity-50"
+              style={{ backgroundColor: '#D97706', fontSize: '13px' }}
+            >
+              {isSavingTrial ? 'Saving…' : 'Save trial notes'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <>
@@ -1696,6 +1750,18 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                 {job.location.client.name}
               </p>
 
+            {/* Trial badge */}
+            {isTrial && (
+              <div className="flex justify-center mt-2">
+                <span
+                  className="text-[10px] font-extrabold tracking-wider uppercase px-3 py-1 rounded-full border"
+                  style={{ backgroundColor: 'rgba(217,119,6,0.14)', color: '#B45309', borderColor: 'rgba(217,119,6,0.35)' }}
+                >
+                  Trial Clean
+                </span>
+              </div>
+            )}
+
               {/* Location subtitle */}
               <p className="text-[#888888] mt-1" style={{ fontSize: isQuickFixMode ? '14px' : '15px' }}>
                 {job.location.name}
@@ -1725,6 +1791,8 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                       <p className="text-sm text-green-900">The cleaner is already paid, so money changes should be handled carefully.</p>
                     </div>
                   )}
+
+                  {renderTrialCard()}
 
                   {renderSummarySection(true)}
 
@@ -1979,6 +2047,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
               {!isQuickFixMode && (
                 <div className="space-y-4">
+                  {renderTrialCard()}
                   <div className={`grid items-start gap-4 ${canUseQuickFixes ? 'xl:grid-cols-[320px_minmax(0,1fr)]' : 'grid-cols-1'}`}>
                     <div>
                       {renderDesktopOverviewSection()}

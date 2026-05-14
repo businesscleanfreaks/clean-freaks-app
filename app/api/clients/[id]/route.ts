@@ -30,6 +30,8 @@ export async function GET(
                 id: true,
                 date: true,
                 startTime: true,
+                startWindowBegin: true,
+                startWindowEnd: true,
                 status: true,
                 invoiced: true,
                 scheduleId: true,
@@ -45,6 +47,12 @@ export async function GET(
                   select: {
                     id: true,
                     frequency: true,
+                    defaultClientRate: true,
+                    defaultSubcontractorRate: true,
+                    timeType: true,
+                    startTime: true,
+                    startWindowBegin: true,
+                    startWindowEnd: true,
                   },
                 },
               },
@@ -268,102 +276,40 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Get all jobs for this client to find related payments
-    const clientJobs = await prisma.job.findMany({
-      where: {
-        location: {
-          clientId: params.id,
+    // Safety check: count linked records to prevent destroying real data
+    const [jobCount, invoiceCount, scheduleCount, paymentLineCount] = await Promise.all([
+      prisma.job.count({ where: { location: { clientId: params.id } } }),
+      prisma.invoice.count({ where: { clientId: params.id } }),
+      prisma.schedule.count({ where: { location: { clientId: params.id } } }),
+      prisma.subcontractorPaymentLineItem.count({
+        where: { job: { location: { clientId: params.id } } },
+      }),
+    ])
+
+    const totalLinked = jobCount + invoiceCount + scheduleCount + paymentLineCount
+
+    if (totalLinked > 0) {
+      return NextResponse.json(
+        {
+          error: 'Cannot delete: this client has linked history. Use Archive instead.',
+          details: {
+            jobs: jobCount,
+            invoices: invoiceCount,
+            schedules: scheduleCount,
+            payments: paymentLineCount,
+          },
         },
-      },
-      select: {
-        id: true,
-      },
-    })
+        { status: 409 }
+      )
+    }
 
-    const jobIds = clientJobs.map(job => job.id)
-
-    // Use transaction to ensure all deletions happen atomically
+    // Safe to permanently delete — no linked history
     await prisma.$transaction(async (tx) => {
-      // 1. Delete all invoices for this client (this will cascade delete invoice line items)
-      // Jobs will be automatically unmarked as invoiced when invoices are deleted
-      await tx.invoice.deleteMany({
-        where: {
-          clientId: params.id,
-        },
-      })
+      // Delete any client contacts
+      await tx.clientContact.deleteMany({ where: { clientId: params.id } })
 
-      // 2. Find all subcontractor payments that reference jobs from this client
-      const paymentsToDelete = await tx.subcontractorPayment.findMany({
-        where: {
-          lineItems: {
-            some: {
-              jobId: {
-                in: jobIds,
-              },
-            },
-          },
-        },
-        select: {
-          id: true,
-        },
-      })
-
-      const paymentIds = paymentsToDelete.map(p => p.id)
-
-      // 3. Delete subcontractor payment line items that reference these jobs
-      // This will unlink the payments from the jobs
-      await tx.subcontractorPaymentLineItem.deleteMany({
-        where: {
-          jobId: {
-            in: jobIds,
-          },
-        },
-      })
-
-      // 4. Delete payments that no longer have any line items (orphaned payments)
-      // First, find payments with no remaining line items
-      const orphanedPayments = await tx.subcontractorPayment.findMany({
-        where: {
-          id: {
-            in: paymentIds,
-          },
-        },
-        include: {
-          lineItems: true,
-        },
-      })
-
-      const paymentsToRemove = orphanedPayments
-        .filter(payment => payment.lineItems.length === 0)
-        .map(payment => payment.id)
-
-      if (paymentsToRemove.length > 0) {
-        await tx.subcontractorPayment.deleteMany({
-          where: {
-            id: {
-              in: paymentsToRemove,
-            },
-          },
-        })
-      }
-
-      // 5. Unmark all jobs as paid (since we're deleting the payments)
-      await tx.job.updateMany({
-        where: {
-          id: {
-            in: jobIds,
-          },
-          subcontractorPaid: true,
-        },
-        data: {
-          subcontractorPaid: false,
-        },
-      })
-
-      // 6. Finally, delete the client (this will cascade delete locations, schedules, and jobs)
-      await tx.client.delete({
-        where: { id: params.id },
-      })
+      // Delete the client (cascades locations via schema)
+      await tx.client.delete({ where: { id: params.id } })
     })
 
     // Revalidate all client-related pages
@@ -372,7 +318,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error('Error deleting client:', error)
-    // Provide more helpful error message
     const errorMessage = error instanceof Error ? error.message : 'Failed to delete client'
     return NextResponse.json(
       { error: errorMessage },

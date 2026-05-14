@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays, ArrowRight, Archive, RotateCcw, Trash2 } from "lucide-react"
+import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays, ArrowRight, Archive, RotateCcw, Trash2, Edit2 } from "lucide-react"
 import { ActionSpinner } from "@/components/ui/action-spinner"
 import { PaymentBreakdownModal } from "@/components/subcontractors/payment-breakdown-modal"
 import { CleanerListRow, getCorrectOwedAmount } from "@/components/subcontractors/cleaner-list-row"
@@ -146,6 +146,57 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
   const [batchSelectedSubs, setBatchSelectedSubs] = useState<Set<string>>(new Set())
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Edit Cleaner state
+  const [editingCleaner, setEditingCleaner] = useState<CleanerData | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', notes: '' })
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  const openEditCleaner = (sub: CleanerData) => {
+    setEditForm({
+      name: sub.name || '',
+      phone: sub.phone || '',
+      email: sub.email || '',
+      notes: sub.notes || '',
+    })
+    setEditingCleaner(sub)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingCleaner || !editForm.name.trim()) return
+    setIsSavingEdit(true)
+    try {
+      const res = await fetch(`/api/subcontractors/${editingCleaner.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      })
+      if (!res.ok) throw new Error('Failed to update')
+      showSuccess(`${editForm.name} updated`)
+      setEditingCleaner(null)
+      onDataChange()
+    } catch {
+      showError('Failed to update cleaner')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  const handleArchiveCleaner = async (sub: CleanerData) => {
+    if (!confirm(`Archive ${sub.name}? They will be hidden from the active list but all history will be preserved.`)) return
+    try {
+      const res = await fetch(`/api/subcontractors/${sub.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: false }),
+      })
+      if (!res.ok) throw new Error('Failed to archive')
+      showSuccess(`${sub.name} archived`)
+      onDataChange()
+    } catch {
+      showError('Failed to archive cleaner')
+    }
+  }
 
   const { totalOwed, subcontractorsWithBalance, paidUpSubcontractors, archivedSubcontractors } = useMemo(() => {
     let total = 0
@@ -285,6 +336,60 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        {/* Cleaner cards — quick view of contact + assigned clients */}
+        {filteredSubcontractors.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 px-1">Directory</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filteredSubcontractors.map((sub) => {
+                const { hex } = getCleanerColorInfo(sub.name)
+                const initials = sub.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
+                const clientNames = new Map<string, string>()
+                ;(sub.jobs || []).forEach((job) => {
+                  const c = job.location?.client
+                  if (c?.id && c.name) clientNames.set(c.id, c.name)
+                })
+                const clients = Array.from(clientNames.values()).slice(0, 8)
+                return (
+                  <Link
+                    key={sub.id}
+                    href={`/subcontractors/${sub.id}`}
+                    className="block bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:border-teal-300 hover:shadow-md transition-all no-underline text-inherit"
+                  >
+                    <div className="flex items-start gap-3 mb-3">
+                      <div
+                        className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+                        style={{ backgroundColor: hex }}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-gray-900 truncate">{sub.name}</p>
+                        {sub.phone && (
+                          <p className="text-xs text-gray-500 truncate mt-0.5">{sub.phone}</p>
+                        )}
+                        {sub.email && (
+                          <p className="text-xs text-gray-500 truncate">{sub.email}</p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Clients</p>
+                    {clients.length === 0 ? (
+                      <p className="text-xs text-gray-400">No client-linked jobs in current data</p>
+                    ) : (
+                      <ul className="text-xs text-gray-700 space-y-0.5">
+                        {clients.map((name) => (
+                          <li key={name} className="truncate border-l-2 border-teal-200 pl-2">{name}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Period Selector */}
         <div className="flex items-center justify-center gap-3 mb-4">
           <button
@@ -368,6 +473,8 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
                   sub={sub}
                   owed={getCorrectOwedAmount(sub)}
                   onPay={setPayingSubcontractor}
+                  onEdit={openEditCleaner}
+                  onArchive={handleArchiveCleaner}
                 />
               ))}
             </div>
@@ -390,6 +497,8 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
                   sub={sub}
                   owed={0}
                   onPay={setPayingSubcontractor}
+                  onEdit={openEditCleaner}
+                  onArchive={handleArchiveCleaner}
                 />
               ))}
             </div>
@@ -635,6 +744,72 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
         onOpenChange={(open) => !open && setPayingSubcontractor(null)}
         onPaymentComplete={() => { setPayingSubcontractor(null); onDataChange(); globalMutate('/api/dashboard-stats') }}
       />
+
+      {/* EDIT CLEANER DIALOG */}
+      <Dialog open={!!editingCleaner} onOpenChange={(open) => !open && setEditingCleaner(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center">
+                <Edit2 className="w-4 h-4 text-teal-700" />
+              </div>
+              Edit Cleaner
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs text-gray-500 font-medium">Name *</Label>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                placeholder="Cleaner name"
+                className="mt-1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-gray-500 font-medium">Phone</Label>
+                <Input
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-gray-500 font-medium">Email</Label>
+                <Input
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  placeholder="cleaner@email.com"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-gray-500 font-medium">Notes</Label>
+              <Input
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                placeholder="Optional notes"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditingCleaner(null)} disabled={isSavingEdit} className="flex-1 rounded-lg">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={isSavingEdit || !editForm.name.trim()}
+              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg"
+            >
+              {isSavingEdit ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -40,10 +40,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const [isDeleting, setIsDeleting] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
   const [isCompleting, setIsCompleting] = useState(false)
+  const [isSavingTrial, setIsSavingTrial] = useState(false)
   const [isEditingSubcontractor, setIsEditingSubcontractor] = useState(false)
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string>('')
   const [isSavingSubcontractor, setIsSavingSubcontractor] = useState(false)
   const [isMarkingInvoiced, setIsMarkingInvoiced] = useState(false)
+  const [trialEnabled, setTrialEnabled] = useState<boolean>(Boolean((job as any).isTrial))
+  const [trialNotesDraft, setTrialNotesDraft] = useState<string>(((job as any).trialNotes as string | null) || '')
 
   const [addOns, setAddOns] = useState<AddOnService[]>(job?.addOnServices || [])
   const [isAddingAddOn, setIsAddingAddOn] = useState(false)
@@ -103,6 +106,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     }
   }, [job])
 
+  useEffect(() => {
+    setTrialEnabled(Boolean((job as any).isTrial))
+    setTrialNotesDraft(((job as any).trialNotes as string | null) || '')
+  }, [job?.id])
+
   // Reset ALL state when dialog closes
   useEffect(() => {
     if (!open) {
@@ -112,6 +120,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setIsDeleting(false)
       setIsMarkingInvoiced(false)
       setIsSavingSubcontractor(false)
+      setIsSavingTrial(false)
       setIsSavingRates(false)
       setIsSavingOutcome(false)
       setIsSavingInlineDate(false)
@@ -180,6 +189,38 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }
 
   // ─── Shared handlers ───────────────────────────────────────────────────────
+
+  const handleSaveTrialFields = async (nextIsTrial: boolean, nextTrialNotes: string) => {
+    setIsSavingTrial(true)
+    try {
+      const response = await fetch(`/api/jobs/${job.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isTrial: nextIsTrial,
+          trialNotes: nextIsTrial ? (nextTrialNotes.trim() || null) : null,
+        }),
+      })
+      if (!response.ok) {
+        await showApiError(response, 'Failed to update trial fields')
+        return
+      }
+      showSuccess(nextIsTrial ? 'Marked as trial clean' : 'Removed trial flag')
+      refreshCalendarData()
+    } finally {
+      setIsSavingTrial(false)
+    }
+  }
+
+  const handleToggleTrial = async (next: boolean) => {
+    setTrialEnabled(next)
+    if (!next) setTrialNotesDraft('')
+    await handleSaveTrialFields(next, next ? trialNotesDraft : '')
+  }
+
+  const handleSaveTrialNotes = async () => {
+    await handleSaveTrialFields(trialEnabled, trialNotesDraft)
+  }
 
   const handleEditSubcontractor = () => {
     setSelectedSubcontractorId(job.subcontractor?.id || 'unassigned')
@@ -1335,10 +1376,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
     // State
     isDeleting, isCancelling, isCompleting,
+    isSavingTrial,
     isEditingSubcontractor, setIsEditingSubcontractor,
     selectedSubcontractorId, setSelectedSubcontractorId,
     isSavingSubcontractor,
     isMarkingInvoiced,
+    trialEnabled, setTrialEnabled,
+    trialNotesDraft, setTrialNotesDraft,
     addOns, setAddOns,
     isAddingAddOn, setIsAddingAddOn,
     deletingAddOnId,
@@ -1388,6 +1432,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     getStatusColor, getMobileStatusStyle, getMobileStatusLabel,
 
     // Handlers  
+    handleToggleTrial, handleSaveTrialNotes,
     handleEditSubcontractor, handleSaveSubcontractor, handleCancelEdit,
     handleDeleteAddOn, handleDelete, handleComplete, handleCancel,
     handleMarkAsInvoiced,

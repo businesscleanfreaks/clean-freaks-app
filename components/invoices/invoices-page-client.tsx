@@ -182,6 +182,7 @@ export function InvoicesPageClient({
   const [uninvoicingId, setUninvoicingId] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [exportMonth, setExportMonth] = useState('all')
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
 
   const handleBulkExport = async () => {
     setIsExporting(true)
@@ -451,6 +452,46 @@ export function InvoicesPageClient({
   const readyCandidates = candidates.filter(c => c.status === 'READY')
   const attentionCandidates = candidates.filter(c => c.status === 'NEEDS_ATTENTION')
   const existingCandidates = candidates.filter(c => c.status === 'DRAFT_EXISTS' || c.status === 'SENT' || c.status === 'PAID')
+
+  // Split actionable candidates (READY + NEEDS_ATTENTION) by billing type
+  const actionableCandidates = useMemo(() => [...readyCandidates, ...attentionCandidates], [readyCandidates, attentionCandidates])
+  const flatRateCandidates = useMemo(() => actionableCandidates.filter(c => c.billingType === 'FLAT_RATE'), [actionableCandidates])
+  const perCleanCandidates = useMemo(() => actionableCandidates.filter(c => c.billingType !== 'FLAT_RATE'), [actionableCandidates])
+
+  const toggleCandidateSelection = (clientId: string) => {
+    setSelectedCandidateIds(prev => {
+      const next = new Set(prev)
+      if (next.has(clientId)) {
+        next.delete(clientId)
+      } else {
+        next.add(clientId)
+      }
+      return next
+    })
+  }
+
+  const selectAllCandidates = () => {
+    setSelectedCandidateIds(new Set(actionableCandidates.map(c => c.clientId)))
+  }
+
+  const clearCandidateSelection = () => {
+    setSelectedCandidateIds(new Set())
+  }
+
+  const handleBatchReviewSelected = () => {
+    // Start batch mode with the first selected candidate
+    const selectedList = actionableCandidates.filter(c => selectedCandidateIds.has(c.clientId))
+    if (selectedList.length === 0) return
+    const firstCandidate = selectedList[0]
+    const matchingClient = allReadyClients.find(c => c.client.id === firstCandidate.clientId)
+    if (matchingClient) {
+      const idx = monthFilteredClients.findIndex(c => c.client.id === firstCandidate.clientId)
+      setSelectedClient(matchingClient)
+      setSelectedClientIndex(idx >= 0 ? idx : 0)
+      setBatchMode(true)
+      setQuickInvoiceOpen(true)
+    }
+  }
 
   const handleCandidateReview = (candidate: InvoiceCandidate) => {
     // Find matching client in the legacy data to open QuickInvoice modal
@@ -808,54 +849,74 @@ export function InvoicesPageClient({
         <>
           {/* Candidate-based Review Queue (when candidates are loaded) */}
           {candidates.length > 0 && !candidatesLoading ? (
-            <div className="space-y-4">
-              {/* Needs Attention section */}
-              {attentionCandidates.length > 0 && (
+            <div className="space-y-5">
+              {/* ── Flat Rate Section ── */}
+              {flatRateCandidates.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2 px-1">
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
-                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Needs Attention
-                    </h3>
-                    <span style={{
-                      fontSize: '11px', fontWeight: 600, color: '#92400E',
-                      backgroundColor: '#FEF3C7', padding: '1px 6px', borderRadius: '8px',
+                  <div className="flex items-center gap-2 mb-2.5 px-1">
+                    <div style={{
+                      padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                      backgroundColor: '#EEF2FF', color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.5px',
                     }}>
-                      {attentionCandidates.length}
+                      Flat Rate
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: 500, color: '#888888' }}>
+                      {flatRateCandidates.length} client{flatRateCandidates.length !== 1 ? 's' : ''}
+                    </span>
+                    <span style={{ color: '#DDDDDD', fontSize: '12px' }}>·</span>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#4F46E5' }}>
+                      {formatCurrency(flatRateCandidates.reduce((s, c) => s + c.total, 0))}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {attentionCandidates.map(c => (
-                      <CandidateCard key={c.clientId} candidate={c} onReview={handleCandidateReview} />
+                    {flatRateCandidates.map(c => (
+                      <CandidateCard
+                        key={c.clientId}
+                        candidate={c}
+                        onReview={handleCandidateReview}
+                        selectable={selectedCandidateIds.size > 0 || undefined}
+                        selected={selectedCandidateIds.has(c.clientId)}
+                        onToggleSelect={toggleCandidateSelection}
+                      />
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Ready to Review section */}
-              {readyCandidates.length > 0 && (
+              {/* ── Per Clean Section ── */}
+              {perCleanCandidates.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2 px-1">
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#00A896' }} />
-                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Ready to Review
-                    </h3>
-                    <span style={{
-                      fontSize: '11px', fontWeight: 600, color: '#047857',
-                      backgroundColor: '#D1FAE5', padding: '1px 6px', borderRadius: '8px',
+                  <div className="flex items-center gap-2 mb-2.5 px-1">
+                    <div style={{
+                      padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                      backgroundColor: '#F0FDF4', color: '#15803D', textTransform: 'uppercase', letterSpacing: '0.5px',
                     }}>
-                      {readyCandidates.length}
+                      Per Clean
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: 500, color: '#888888' }}>
+                      {perCleanCandidates.length} client{perCleanCandidates.length !== 1 ? 's' : ''}
+                    </span>
+                    <span style={{ color: '#DDDDDD', fontSize: '12px' }}>·</span>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#15803D' }}>
+                      {formatCurrency(perCleanCandidates.reduce((s, c) => s + c.total, 0))}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {readyCandidates.map(c => (
-                      <CandidateCard key={c.clientId} candidate={c} onReview={handleCandidateReview} />
+                    {perCleanCandidates.map(c => (
+                      <CandidateCard
+                        key={c.clientId}
+                        candidate={c}
+                        onReview={handleCandidateReview}
+                        selectable={selectedCandidateIds.size > 0 || undefined}
+                        selected={selectedCandidateIds.has(c.clientId)}
+                        onToggleSelect={toggleCandidateSelection}
+                      />
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Already invoiced section */}
+              {/* ── Already Invoiced Section ── */}
               {existingCandidates.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2 px-1">
@@ -894,6 +955,70 @@ export function InvoicesPageClient({
                       {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} ready to send →
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* ── Sticky Batch Selection Bar ── */}
+              {selectedCandidateIds.size > 0 && (
+                <div
+                  style={{
+                    position: 'sticky',
+                    bottom: '0',
+                    zIndex: 20,
+                    margin: '0 -16px',
+                    padding: '12px 20px',
+                    backgroundColor: 'rgba(255,255,255,0.97)',
+                    borderTop: '1px solid #E5E7EB',
+                    backdropFilter: 'blur(8px)',
+                    boxShadow: '0 -4px 20px rgba(0,0,0,0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    animation: 'slideUp 200ms ease-out',
+                  }}
+                >
+                  <style>{`@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#111111' }}>
+                      {selectedCandidateIds.size} selected
+                    </span>
+                    <span style={{ color: '#DDDDDD' }}>·</span>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#00A896' }}>
+                      {formatCurrency(actionableCandidates.filter(c => selectedCandidateIds.has(c.clientId)).reduce((s, c) => s + c.total, 0))}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (selectedCandidateIds.size === actionableCandidates.length) {
+                        clearCandidateSelection()
+                      } else {
+                        selectAllCandidates()
+                      }
+                    }}
+                    style={{
+                      padding: '7px 14px', fontSize: '13px', fontWeight: 500,
+                      color: '#555555', backgroundColor: '#F5F5F5',
+                      border: '1px solid #E5E7EB', borderRadius: '8px',
+                      cursor: 'pointer', transition: 'background-color 120ms',
+                    }}
+                  >
+                    {selectedCandidateIds.size === actionableCandidates.length ? 'Clear All' : 'Select All'}
+                  </button>
+                  <button
+                    onClick={handleBatchReviewSelected}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '8px 18px', fontSize: '13px', fontWeight: 600,
+                      color: 'white', backgroundColor: '#00A896',
+                      border: 'none', borderRadius: '8px',
+                      cursor: 'pointer', transition: 'background-color 150ms',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#008F7E' }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#00A896' }}
+                  >
+                    <Zap style={{ width: '14px', height: '14px' }} />
+                    Review Selected
+                  </button>
                 </div>
               )}
             </div>
@@ -1001,7 +1126,14 @@ export function InvoicesPageClient({
                             )}
                           </div>
                           <div style={{ fontSize: '12px', color: '#777777', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span>{entry.billingType === 'FLAT_RATE' ? 'Flat rate' : 'Per clean'}</span>
+                            <span style={{
+                              padding: '1px 6px', borderRadius: '4px',
+                              fontSize: '11px', fontWeight: 500,
+                              backgroundColor: entry.billingType === 'FLAT_RATE' ? '#EEF2FF' : '#F0FDF4',
+                              color: entry.billingType === 'FLAT_RATE' ? '#4F46E5' : '#15803D',
+                            }}>
+                              {entry.billingType === 'FLAT_RATE' ? 'Flat rate' : 'Per clean'}
+                            </span>
                             <span style={{ color: '#DDDDDD' }}>·</span>
                             <span>{jobSummary}</span>
                           </div>

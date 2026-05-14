@@ -76,8 +76,8 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
               <ClientDetailSidebar state={state} />
             </div>
 
-            {/* RIGHT COLUMN: Job Feed */}
-            <div className="order-1 lg:order-2">
+            {/* RIGHT COLUMN: Job Feed (sticky on desktop) */}
+            <div className="order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
               <ClientDetailJobFeed state={state} />
             </div>
           </div>

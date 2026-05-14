@@ -90,13 +90,24 @@ export interface ClientJobSummary {
   id: string
   date: string | Date
   startTime: string | null
+  startWindowBegin?: string | null
+  startWindowEnd?: string | null
   status: string
   invoiced: boolean
   scheduleId: string | null
   clientRate: number
   subcontractorRate: number
   subcontractor: { id: string; name: string } | null
-  schedule: { id: string; frequency: string } | null
+  schedule: {
+    id: string
+    frequency: string
+    defaultClientRate?: number | null
+    defaultSubcontractorRate?: number | null
+    timeType?: string | null
+    startTime?: string | null
+    startWindowBegin?: string | null
+    startWindowEnd?: string | null
+  } | null
 }
 
 // ─── Schedule types ──────────────────────────────────────────────────────────

@@ -37,6 +37,8 @@ export async function PUT(
       status,
       subcontractorPaid,
       notes,
+      isTrial,
+      trialNotes,
     } = validationResult.data
 
     // All job updates now happen in a transaction to prevent race conditions
@@ -142,6 +144,8 @@ export async function PUT(
         status?: string
         subcontractorPaid?: boolean
         notes?: string | null
+        isTrial?: boolean
+        trialNotes?: string | null
       } = {}
 
       if (locationId !== undefined) updateData.locationId = locationId
@@ -157,6 +161,8 @@ export async function PUT(
         updateData.subcontractorPaid = subcontractorPaid
       }
       if (notes !== undefined) updateData.notes = notes || null
+      if (isTrial !== undefined) updateData.isTrial = isTrial
+      if (trialNotes !== undefined) updateData.trialNotes = trialNotes || null
 
       // Handle cancelled job cleanup
       const isBeingCancelled = status === 'CANCELLED' && currentJob.status !== 'CANCELLED'

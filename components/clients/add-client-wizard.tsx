@@ -239,6 +239,7 @@ function ExtraLocationCard({
   onUpdate: (data: Partial<ExtraLocationData>) => void
   onRemove: () => void
 }) {
+  const isMonthly = location.frequency === 'MONTHLY'
   return (
     <div style={{ background: 'white', border: '1px solid #EEEEEE', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -287,6 +288,162 @@ function ExtraLocationCard({
           <span style={{ fontSize: '13px', color: '#5F6368' }}>Same schedule as primary location</span>
         </label>
       </div>
+
+      {/* Independent schedule UI when sameSchedule is unchecked */}
+      {!location.sameSchedule && (
+        <div style={{ borderTop: '1px solid #F5F5F5', marginTop: '12px', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Frequency */}
+          <div>
+            <StepLabel text="Frequency" />
+            <FrequencyPills selected={location.frequency} onChange={v => onUpdate({ frequency: v })} />
+          </div>
+
+          {/* Days or Day-of-month */}
+          {isMonthly ? (
+            <div>
+              <StepLabel text="Day of month" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={(location as ExtraLocationData & { monthlyDay?: number }).monthlyDay || 1}
+                  onChange={e => onUpdate({ monthlyDay: Math.min(28, Math.max(1, parseInt(e.target.value) || 1)) } as any)}
+                  style={{
+                    width: '70px', height: '40px', padding: '0 12px', borderRadius: '8px',
+                    border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                    textAlign: 'center',
+                  }}
+                />
+                <span style={{ fontSize: '13px', color: '#888888' }}>of each month</span>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <StepLabel text="Which days?" />
+              <DayPicker selected={location.daysOfWeek} onChange={d => onUpdate({ daysOfWeek: d })} />
+            </div>
+          )}
+
+          {/* Time type */}
+          <div>
+            <StepLabel text="Arrival time" />
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <TogglePill label="Specific time" active={location.timeType === 'SPECIFIC'} onClick={() => onUpdate({ timeType: 'SPECIFIC' })} />
+              <TogglePill label="Time window" active={location.timeType === 'WINDOW'} onClick={() => onUpdate({ timeType: 'WINDOW' })} />
+            </div>
+            {location.timeType === 'SPECIFIC' ? (
+              <select
+                value={location.startTime}
+                onChange={e => onUpdate({ startTime: e.target.value })}
+                style={{
+                  height: '40px', padding: '0 12px', borderRadius: '8px',
+                  border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                  backgroundColor: 'white', minWidth: '150px',
+                }}
+              >
+                <option value="">Select time</option>
+                {generateQuarterHourTimes().map(t => (
+                  <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                ))}
+              </select>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '13px', color: '#888888' }}>Between</span>
+                <select
+                  value={location.startWindowBegin}
+                  onChange={e => onUpdate({ startWindowBegin: e.target.value })}
+                  style={{
+                    height: '40px', padding: '0 12px', borderRadius: '8px',
+                    border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                    backgroundColor: 'white',
+                  }}
+                >
+                  <option value="">Start</option>
+                  {generateQuarterHourTimes().map(t => (
+                    <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                  ))}
+                </select>
+                <span style={{ color: '#BBBBBB', fontSize: '16px' }}>—</span>
+                <select
+                  value={location.startWindowEnd}
+                  onChange={e => onUpdate({ startWindowEnd: e.target.value })}
+                  style={{
+                    height: '40px', padding: '0 12px', borderRadius: '8px',
+                    border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                    backgroundColor: 'white',
+                  }}
+                >
+                  <option value="">End</option>
+                  {generateQuarterHourTimes().map(t => (
+                    <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Rates */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div>
+              <StepLabel text="Client rate" />
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#888888', fontSize: '15px', pointerEvents: 'none' }}>$</span>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={location.clientRate}
+                  onChange={e => onUpdate({ clientRate: e.target.value })}
+                  placeholder="150"
+                  style={{
+                    width: '100%', height: '40px', paddingLeft: '28px', paddingRight: '12px',
+                    borderRadius: '8px', border: '1px solid #E0E0E0',
+                    fontSize: '14px', fontWeight: 600, color: '#111111', outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            </div>
+            <div>
+              <StepLabel text="Cleaner rate" />
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#888888', fontSize: '15px', pointerEvents: 'none' }}>$</span>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={location.subcontractorRate}
+                  onChange={e => onUpdate({ subcontractorRate: e.target.value })}
+                  placeholder="100"
+                  style={{
+                    width: '100%', height: '40px', paddingLeft: '28px', paddingRight: '12px',
+                    borderRadius: '8px', border: '1px solid #E0E0E0',
+                    fontSize: '14px', fontWeight: 600, color: '#111111', outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Cleaner assignment */}
+          <div>
+            <StepLabel text="Assigned Cleaner" />
+            <select
+              value={location.subcontractorId}
+              onChange={e => onUpdate({ subcontractorId: e.target.value })}
+              style={{
+                width: '100%', height: '40px', padding: '0 12px',
+                borderRadius: '8px', border: '1px solid #E0E0E0',
+                fontSize: '13px', color: location.subcontractorId ? '#111111' : '#BBBBBB',
+                backgroundColor: 'white', outline: 'none', cursor: 'pointer',
+              }}
+            >
+              <option value="">Same as primary</option>
+              {subcontractors.map(sub => (
+                <option key={sub.id} value={sub.id}>{sub.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -332,8 +489,9 @@ export function AddClientWizard({
   // Step 3: Schedule
   const [frequency, setFrequency] = useState('WEEKLY')
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([])
+  const [monthlyDay, setMonthlyDay] = useState(1)
   const [timeType, setTimeType] = useState<'SPECIFIC' | 'WINDOW'>('WINDOW')
-  const [startTime, setStartTime] = useState('09:00')
+  const [startTime, setStartTime] = useState('')
   const [startWindowBegin, setStartWindowBegin] = useState('09:00')
   const [startWindowEnd, setStartWindowEnd] = useState('12:00')
   const [firstCleanDate, setFirstCleanDate] = useState('')
@@ -380,7 +538,7 @@ export function AddClientWizard({
     frequency: 'WEEKLY',
     daysOfWeek: [],
     timeType: 'WINDOW',
-    startTime: '09:00',
+    startTime: '',
     startWindowBegin: '09:00',
     startWindowEnd: '12:00',
     clientRate: '',
@@ -410,8 +568,9 @@ export function AddClientWizard({
     setExtraLocations([])
     setFrequency('WEEKLY')
     setDaysOfWeek([])
+    setMonthlyDay(1)
     setTimeType('WINDOW')
-    setStartTime('09:00')
+    setStartTime('')
     setStartWindowBegin('09:00')
     setStartWindowEnd('12:00')
     setFirstCleanDate('')
@@ -471,7 +630,7 @@ export function AddClientWizard({
     }
 
     if (step === 3) {
-      if (daysOfWeek.length === 0) newErrors.daysOfWeek = 'Select at least one day'
+      if (frequency !== 'MONTHLY' && daysOfWeek.length === 0) newErrors.daysOfWeek = 'Select at least one day'
     }
 
     if (step === 4) {
@@ -571,27 +730,32 @@ export function AddClientWizard({
           logger.debug(`[wizard] Location created in ${Math.round(performance.now() - t1)}ms`)
 
           // Step 3: Create schedule + jobs (this is the slow part)
-          if (daysOfWeek.length > 0 && clientRate) {
+          const canCreateSchedule = frequency === 'MONTHLY' ? true : daysOfWeek.length > 0
+          if (canCreateSchedule && clientRate) {
             const t2 = performance.now()
             setSubmitProgress('Setting up schedule...')
+            const schedPayload: Record<string, unknown> = {
+              locationId: loc.id,
+              frequency,
+              daysOfWeek: frequency === 'MONTHLY' ? null : JSON.stringify(daysOfWeek),
+              startDate: new Date().toISOString(),
+              defaultClientRate: parseFloat(clientRate) || 0,
+              defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
+              clientPayType: billingType,
+              subcontractorPayType: cleanerPayType,
+              subcontractorId: subcontractorId || null,
+              timeType,
+              startTime: timeType === 'SPECIFIC' ? startTime : null,
+              startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
+              startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
+            }
+            if (frequency === 'MONTHLY') {
+              schedPayload.monthlyPattern = JSON.stringify({ type: 'FIXED_DATES', dates: [monthlyDay] })
+            }
             const schedRes = await fetch('/api/schedules', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                locationId: loc.id,
-                frequency,
-                daysOfWeek: JSON.stringify(daysOfWeek),
-                startDate: new Date().toISOString(),
-                defaultClientRate: parseFloat(clientRate) || 0,
-                defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
-                clientPayType: billingType,
-                subcontractorPayType: cleanerPayType,
-                subcontractorId: subcontractorId || null,
-                timeType,
-                startTime: timeType === 'SPECIFIC' ? startTime : null,
-                startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
-                startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
-              }),
+              body: JSON.stringify(schedPayload),
             })
 
             if (schedRes.ok) {
@@ -697,7 +861,7 @@ export function AddClientWizard({
         logger.debug(`[wizard] Extra locations created in ${Math.round(performance.now() - t4)}ms (parallel)`)
       }
 
-      // Step 6: Create first clean one-off job — use primaryLocationId directly
+      // Step 6: Create trial / intro clean one-off job — use primaryLocationId directly
       // instead of re-fetching from API (saves a round trip)
       if (firstCleanDate && primaryLocationId) {
         try {
@@ -714,10 +878,12 @@ export function AddClientWizard({
               subcontractorRate: parseFloat(subcontractorRate) || 0,
               subcontractorId: subcontractorId || null,
               scheduleId: null,
+              isTrial: true,
+              trialNotes: null,
             }),
           })
         } catch (err) {
-          logger.error('Error creating first clean job:', err)
+          logger.error('Error creating trial clean job:', err)
         }
       }
 
@@ -1057,12 +1223,36 @@ export function AddClientWizard({
                     <FrequencyPills selected={frequency} onChange={setFrequency} />
                   </div>
 
-                  {/* Days */}
-                  <div style={{ marginBottom: '18px' }}>
-                    <StepLabel text="Which days?" />
-                    <DayPicker selected={daysOfWeek} onChange={d => { setDaysOfWeek(d); setErrors(e => ({ ...e, daysOfWeek: '' })) }} />
-                    <FieldError msg={errors.daysOfWeek} />
-                  </div>
+                  {/* Days (weekday picker) OR Day-of-month (for MONTHLY) */}
+                  {frequency === 'MONTHLY' ? (
+                    <div style={{ marginBottom: '18px' }}>
+                      <StepLabel text="Day of month" />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <input
+                          type="number"
+                          min={1}
+                          max={28}
+                          value={monthlyDay}
+                          onChange={e => setMonthlyDay(Math.min(28, Math.max(1, parseInt(e.target.value) || 1)))}
+                          style={{
+                            width: '80px', height: '44px', padding: '0 12px', borderRadius: '8px',
+                            border: '1px solid #E0E0E0', fontSize: '16px', fontWeight: 600,
+                            color: '#111111', outline: 'none', textAlign: 'center',
+                          }}
+                        />
+                        <span style={{ fontSize: '14px', color: '#5F6368' }}>of each month (1–28)</span>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#888888', marginTop: '6px' }}>
+                        For more complex monthly patterns (e.g. 2nd &amp; 4th Tuesday), use the schedule editor on the client profile after creation.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom: '18px' }}>
+                      <StepLabel text="Which days?" />
+                      <DayPicker selected={daysOfWeek} onChange={d => { setDaysOfWeek(d); setErrors(e => ({ ...e, daysOfWeek: '' })) }} />
+                      <FieldError msg={errors.daysOfWeek} />
+                    </div>
+                  )}
 
                   {/* Arrival time */}
                   <div>
@@ -1122,11 +1312,12 @@ export function AddClientWizard({
                     )}
                   </div>
 
-                  {/* First Clean Date (optional) */}
+                  {/* First clean on a different date (optional) */}
                   <div style={{ marginTop: '18px' }}>
-                    <StepLabel text="First clean date (optional)" />
+                    <StepLabel text="First clean on a different date (optional)" />
                     <p style={{ fontSize: '12px', color: '#888888', marginBottom: '8px' }}>
-                      If the first clean is on a different day (e.g. a Saturday deep clean before the schedule starts), set it here.
+                      Leave blank if the first visit should follow the recurring schedule you set above.
+                      Use this only when you need a one-time intro or deep clean on a different day before the normal rotation starts.
                     </p>
                     <input
                       type="date"

@@ -1545,7 +1545,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               return (
                                 <div className="absolute inset-0 px-1.5 py-0.5 overflow-hidden" title={tooltipText}>
                                   <div className="text-[10px] font-semibold text-white truncate leading-[1.4]">
-                                    {compactTime} {clientName}
+                                    {(job as any).isTrial && <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{compactTime} {clientName}
                                   </div>
                                 </div>
                               )
@@ -1556,7 +1556,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               return (
                                 <div className="absolute inset-0 px-1.5 py-1 overflow-hidden" title={tooltipText}>
                                   <div className="text-[10px] font-semibold text-white truncate leading-[1.3]">
-                                    {compactTime} {clientName}
+                                    {(job as any).isTrial && <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{compactTime} {clientName}
                                   </div>
                                   {cleanerShort && (
                                     <div className="text-[10px] text-white/80 truncate leading-[1.3]">
@@ -1571,7 +1571,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             return (
                               <div className="absolute inset-0 px-1.5 py-1 overflow-hidden" title={tooltipText}>
                                 <div className="text-[10px] font-semibold text-white truncate leading-[1.3]">
-                                  {compactTime} {clientName}
+                                  {(job as any).isTrial && <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{compactTime} {clientName}
                                 </div>
                                 {cleanerShort && (
                                   <div className="text-[10px] text-white/80 truncate leading-[1.3]">
@@ -1749,7 +1749,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                         transition: 'opacity 0.2s ease',
                                       }}
                                     >
-                                      {timeDisplay && `${timeDisplay} `}{j.location.client.name}{cleanerInit ? ` · ${cleanerInit}` : ''}
+                                      {(j as any).isTrial && <span style={{ fontSize: '8px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 3px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{timeDisplay && `${timeDisplay} `}{j.location.client.name}{cleanerInit ? ` · ${cleanerInit}` : ''}
                                     </div>
                                   )
                                 })}

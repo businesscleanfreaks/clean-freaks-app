@@ -7,6 +7,22 @@ import { format, startOfMonth, endOfMonth } from "date-fns"
 import { logger } from "@/lib/logger"
 import { generateInvoiceSubject, getDefaultEmailMessage } from "@/lib/email-templates"
 
+function mergeUniqueEmails(...candidates: (string | null | undefined | string[])[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  const flat = candidates.flatMap((c) => (Array.isArray(c) ? c : c ? [c] : []))
+  for (const raw of flat) {
+    const t = raw.trim()
+    if (!t) continue
+    const low = t.toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(low)) continue
+    if (seen.has(low)) continue
+    seen.add(low)
+    out.push(t)
+  }
+  return out
+}
+
 export interface LineItemDraft {
   id: string
   jobId: string | null
@@ -89,8 +105,10 @@ export function useQuickInvoice({
   const [progress, setProgress] = useState(0)
   const [progressStep, setProgressStep] = useState('')
   
-  // Email fields
-  const [emailTo, setEmailTo] = useState('')
+  // Email fields — "To" supports multiple recipients (invoice API accepts string | string[])
+  const [recipientPool, setRecipientPool] = useState<string[]>([])
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([])
+  const [manualEmailInput, setManualEmailInput] = useState('')
   const [emailCc, setEmailCc] = useState('')
   const [emailSubject, setEmailSubject] = useState('')
   const [emailMessage, setEmailMessage] = useState('')
@@ -473,7 +491,11 @@ export function useQuickInvoice({
       const generatedItems = generateLineItems()
       setLineItems(generatedItems)
       setCreatedInvoiceId(null)
-      setEmailTo(client.invoicingEmail || client.communicationEmail || '')
+      const basePool = mergeUniqueEmails(client.invoicingEmail, client.communicationEmail)
+      setRecipientPool(basePool)
+      const firstTo = client.invoicingEmail?.trim() || client.communicationEmail?.trim() || basePool[0] || ''
+      setSelectedRecipients(firstTo ? [firstTo.trim()] : [])
+      setManualEmailInput('')
       setEmailCc('')
       setEmailSubject('Invoice from Clean Freaks')
       const totalAmountStr = formatCurrency(generatedItems.reduce((sum, item) => sum + item.amount, 0))
@@ -481,7 +503,24 @@ export function useQuickInvoice({
       setEmailMessage(getDefaultEmailMessage({ totalAmount: totalAmountStr, dueDate: dueDateStr }))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, jobs, client.billingType, client.invoicingEmail, client.communicationEmail, initialMonth])
+  }, [open, jobs, client.billingType, client.invoicingEmail, client.communicationEmail, client.id, initialMonth])
+
+  // Merge saved client contacts into recipient suggestions when the modal opens
+  useEffect(() => {
+    if (!open || !client.id) return
+    let cancelled = false
+    fetch(`/api/clients/${client.id}/contacts`)
+      .then((r) => (r.ok ? r.json() : { contacts: [] }))
+      .then((data: { contacts?: Array<{ email?: string | null }> }) => {
+        if (cancelled) return
+        const extras = (data.contacts || []).map((c) => c.email).filter(Boolean) as string[]
+        setRecipientPool((prev) => mergeUniqueEmails(prev, extras))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open, client.id])
 
   // Regenerate line items when job selection changes (not on initial mount)
   useEffect(() => {
@@ -567,6 +606,26 @@ export function useQuickInvoice({
     setLineItems(prev => [...prev, newItem])
   }
 
+  const toggleRecipient = useCallback((email: string) => {
+    const low = email.toLowerCase()
+    setSelectedRecipients((prev) => {
+      if (prev.some((p) => p.toLowerCase() === low)) {
+        return prev.filter((p) => p.toLowerCase() !== low)
+      }
+      return [...prev, email]
+    })
+  }, [])
+
+  const addManualRecipient = useCallback(() => {
+    const t = manualEmailInput.trim()
+    if (!t) return
+    const low = t.toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(low)) return
+    setRecipientPool((pool) => mergeUniqueEmails(pool, t))
+    setSelectedRecipients((prev) => mergeUniqueEmails(prev, t))
+    setManualEmailInput('')
+  }, [manualEmailInput])
+
   // Create invoice
   const handleCreateInvoice = async (sendTest: boolean = false) => {
     if (sendTest) {
@@ -643,7 +702,7 @@ export function useQuickInvoice({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: emailTo || client.invoicingEmail || '',
+            to: selectedRecipients.length > 0 ? selectedRecipients : mergeUniqueEmails(client.invoicingEmail, client.communicationEmail),
             subject: emailSubject || generateInvoiceSubject(invoice?.invoiceNumber || 'Invoice'),
             message: emailMessage || getDefaultEmailMessage({
               totalAmount: formatCurrency(invoice?.totalAmount || totalAmount),
@@ -693,9 +752,9 @@ export function useQuickInvoice({
 
   // Send to client (real email)
   const handleSendToClient = async () => {
-    if (!emailTo || !emailSubject || !emailMessage) {
+    if (selectedRecipients.length === 0 || !emailSubject || !emailMessage) {
       const { showError } = await import('@/lib/toast')
-      showError('Please fill in all required email fields (To, Subject, Message)')
+      showError('Please select at least one recipient and fill in subject and message')
       return
     }
     const { showInfo } = await import('@/lib/toast')
@@ -775,7 +834,7 @@ export function useQuickInvoice({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: emailTo,
+          to: selectedRecipients,
           subject: emailSubject || generateInvoiceSubject(invoice?.invoiceNumber || 'Invoice'),
           message: emailMessage || getDefaultEmailMessage({
             totalAmount: formatCurrency(invoice?.totalAmount || totalAmount),
@@ -789,7 +848,7 @@ export function useQuickInvoice({
       if (emailResponse.ok) {
         setProgress(100)
         const { showSuccess } = await import('@/lib/toast')
-        showSuccess(`Invoice sent to ${emailTo}`)
+        showSuccess(`Invoice sent to ${selectedRecipients.join(', ')}`)
       } else {
         const { showApiError } = await import('@/lib/toast')
         await showApiError(emailResponse, 'Invoice created but email failed. Check your email settings.')
@@ -948,8 +1007,12 @@ export function useQuickInvoice({
     lineItems, setLineItems,
     createdInvoiceId,
     progress, progressStep,
-    emailTo, setEmailTo,
     emailCc, setEmailCc,
+    recipientPool,
+    selectedRecipients,
+    manualEmailInput, setManualEmailInput,
+    toggleRecipient,
+    addManualRecipient,
     emailSubject, setEmailSubject,
     emailMessage, setEmailMessage,
     showPaymentOptions, setShowPaymentOptions,

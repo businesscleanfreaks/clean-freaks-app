@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
 import { differenceInDays, format } from "date-fns"
-import { CheckCircle2, ChevronDown } from "lucide-react"
+import { CheckCircle2, ChevronDown, Phone, Mail, Edit2, Archive } from "lucide-react"
 import type { CleanerData, CleanerJob } from "@/types"
 
 interface PaymentGroup {
@@ -110,9 +110,11 @@ interface CleanerListRowProps {
   sub: CleanerData
   owed: number
   onPay: (sub: CleanerData) => void
+  onEdit?: (sub: CleanerData) => void
+  onArchive?: (sub: CleanerData) => void
 }
 
-export function CleanerListRow({ sub, owed, onPay }: CleanerListRowProps) {
+export function CleanerListRow({ sub, owed, onPay, onEdit, onArchive }: CleanerListRowProps) {
   const router = useRouter()
   const status = getStatusInfo(sub, owed)
   const { hex } = getCleanerColorInfo(sub.name)
@@ -143,7 +145,7 @@ export function CleanerListRow({ sub, owed, onPay }: CleanerListRowProps) {
         {initials}
       </div>
 
-      {/* Name + status + subtitle */}
+      {/* Name + status + subtitle + contact */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-gray-900 truncate text-[15px] group-hover:text-teal-600 transition-colors">
@@ -155,6 +157,45 @@ export function CleanerListRow({ sub, owed, onPay }: CleanerListRowProps) {
           </span>
         </div>
         <p className="text-sm text-gray-400 truncate">{subtitle}</p>
+        {/* Phone/Email — hidden on mobile for density */}
+        {(sub.phone || sub.email) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+            {sub.phone && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <Phone className="w-3 h-3" />
+                {sub.phone}
+              </span>
+            )}
+            {sub.email && (
+              <span className="flex items-center gap-1 text-xs text-gray-400 truncate">
+                <Mail className="w-3 h-3" />
+                {sub.email}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Edit/Archive buttons (hover visible) */}
+      <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        {onEdit && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(sub) }}
+            className="p-1.5 rounded-md hover:bg-teal-100 transition-colors"
+            title="Edit"
+          >
+            <Edit2 className="w-3.5 h-3.5 text-teal-600" />
+          </button>
+        )}
+        {onArchive && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive(sub) }}
+            className="p-1.5 rounded-md hover:bg-amber-100 transition-colors"
+            title="Archive"
+          >
+            <Archive className="w-3.5 h-3.5 text-amber-600" />
+          </button>
+        )}
       </div>
 
       {/* Amount + actions */}

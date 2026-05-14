@@ -132,14 +132,23 @@ export async function GET() {
           },
         },
       }),
-      // Unassigned jobs
+      // Jobs still needing a cleaner: no assignee on the job AND no default cleaner on the linked schedule.
+      // (Many recurring jobs inherit the schedule's cleaner even when job.subcontractorId is null.)
       prisma.job.count({
         where: {
           status: "SCHEDULED",
-          subcontractorId: null,
           date: {
             gte: startOfDay(now),
           },
+          AND: [
+            { subcontractorId: null },
+            {
+              OR: [
+                { scheduleId: null },
+                { schedule: { subcontractorId: null } },
+              ],
+            },
+          ],
         },
       }),
       // Jobs scheduled for today

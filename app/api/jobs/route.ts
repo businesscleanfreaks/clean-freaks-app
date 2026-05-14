@@ -29,6 +29,8 @@ export async function POST(request: Request) {
       startWindowEnd,
       clientRate,
       subcontractorRate,
+      isTrial,
+      trialNotes,
     } = validationResult.data
 
     // Create the job - scheduleId can be provided for one-time jobs linked to a schedule
@@ -44,6 +46,8 @@ export async function POST(request: Request) {
         clientRate,
         subcontractorRate,
         status: 'SCHEDULED',
+        isTrial: isTrial || false,
+        trialNotes: trialNotes || null,
       },
       include: {
         location: {

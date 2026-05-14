@@ -71,7 +71,7 @@ export function CreateJobDialog({
   const [loading, setLoading] = useState(false)
 
   // Vendors for add-on assignment
-  const [vendors, setVendors] = useState<{ id: string; name: string }[]>([])
+  const [vendors, setVendors] = useState<{ id: string; name: string; isActive?: boolean }[]>([])
   useEffect(() => {
     if (open) {
       fetch('/api/vendors')
@@ -111,6 +111,8 @@ export function CreateJobDialog({
   const [startTime, setStartTime] = useState(selectedTime || '')
   const [startWindowBegin, setStartWindowBegin] = useState('')
   const [startWindowEnd, setStartWindowEnd] = useState('')
+  const [isTrial, setIsTrial] = useState(false)
+  const [trialNotes, setTrialNotes] = useState('')
   
   // Step 3: Pricing (cleaning flow)
   const [clientRate, setClientRate] = useState('')
@@ -160,6 +162,8 @@ export function CreateJobDialog({
     setStartTime('')
     setStartWindowBegin('')
     setStartWindowEnd('')
+    setIsTrial(false)
+    setTrialNotes('')
     setClientRate('')
     setSubcontractorRate('')
     setSelectedSubcontractorId('unassigned')
@@ -270,6 +274,8 @@ export function CreateJobDialog({
               startWindowEnd: timeType === 'window' && startWindowEnd ? startWindowEnd : null,
               clientRate: parseFloat(clientRate),
               subcontractorRate: parseFloat(subcontractorRate),
+              isTrial,
+              trialNotes: isTrial ? (trialNotes.trim() || null) : null,
             }),
           })
         )
@@ -345,6 +351,8 @@ export function CreateJobDialog({
             startWindowEnd: timeType === 'window' && startWindowEnd ? startWindowEnd : null,
             clientRate: 0,
             subcontractorRate: 0,
+            isTrial,
+            trialNotes: isTrial ? (trialNotes.trim() || null) : null,
           }),
         })
         if (!jobRes.ok) throw new Error('Failed to create job')
@@ -912,6 +920,38 @@ export function CreateJobDialog({
                       </div>
                     )}
                   </div>
+
+                  {/* Trial clean toggle */}
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-amber-900">Trial clean</p>
+                        <p className="text-xs text-amber-800/80 mt-0.5">Visual badge only. No billing changes.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={isTrial}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                          setIsTrial(next)
+                          if (!next) setTrialNotes('')
+                        }}
+                        style={{ width: '16px', height: '16px', accentColor: '#D97706' }}
+                      />
+                    </div>
+                    {isTrial && (
+                      <div className="mt-2">
+                        <Label className="text-xs text-amber-900/80 mb-1 block">Trial notes (optional)</Label>
+                        <textarea
+                          value={trialNotes}
+                          onChange={(e) => setTrialNotes(e.target.value)}
+                          placeholder="Entry details, expectations, special prep…"
+                          rows={2}
+                          className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none resize-none"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
 
@@ -1032,10 +1072,10 @@ export function CreateJobDialog({
                             ))}
                           </>
                         )}
-                        {vendors.length > 0 && (
+                        {vendors.filter(v => v.isActive !== false).length > 0 && (
                           <>
                             <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Vendors</div>
-                            {vendors.map(v => (
+                            {vendors.filter(v => v.isActive !== false).map(v => (
                               <SelectItem key={`vendor:${v.id}`} value={`vendor:${v.id}`}>{v.name}</SelectItem>
                             ))}
                           </>
@@ -1080,6 +1120,38 @@ export function CreateJobDialog({
                           <span className="text-[10px] text-stone-500">To</span>
                           <TimePicker value={startWindowEnd} onChange={setStartWindowEnd} />
                         </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Trial clean toggle */}
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-amber-900">Trial clean</p>
+                        <p className="text-xs text-amber-800/80 mt-0.5">If we create a container job, it’ll be marked TRIAL.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={isTrial}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                          setIsTrial(next)
+                          if (!next) setTrialNotes('')
+                        }}
+                        style={{ width: '16px', height: '16px', accentColor: '#D97706' }}
+                      />
+                    </div>
+                    {isTrial && (
+                      <div className="mt-2">
+                        <Label className="text-xs text-amber-900/80 mb-1 block">Trial notes (optional)</Label>
+                        <textarea
+                          value={trialNotes}
+                          onChange={(e) => setTrialNotes(e.target.value)}
+                          placeholder="Entry details, expectations, special prep…"
+                          rows={2}
+                          className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none resize-none"
+                        />
                       </div>
                     )}
                   </div>
