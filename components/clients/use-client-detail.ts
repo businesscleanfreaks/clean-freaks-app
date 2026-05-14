@@ -54,6 +54,10 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
   const [showOneTimeServiceDialog, setShowOneTimeServiceDialog] = useState(false)
   const [isTogglingPause, setIsTogglingPause] = useState(false)
   const [pauseResumeAction, setPauseResumeAction] = useState<'pause' | 'resume' | null>(null)
+  const [isArchivingClient, setIsArchivingClient] = useState(false)
+  const [isDeletingClient, setIsDeletingClient] = useState(false)
+  const [togglingScheduleId, setTogglingScheduleId] = useState<string | null>(null)
+  const [reassigningScheduleId, setReassigningScheduleId] = useState<string | null>(null)
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState<string | null>(null)
   const [showAdditionalServiceChoice, setShowAdditionalServiceChoice] = useState(false)
 
@@ -386,6 +390,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
   }
 
   const handleToggleSchedulePause = async (scheduleId: string, currentlyActive: boolean) => {
+    setTogglingScheduleId(scheduleId)
     try {
       const response = await fetch(`/api/schedules/${scheduleId}`, {
         method: 'PUT',
@@ -400,6 +405,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       onDataChange?.()
     } catch {
       showError('Failed to update schedule. Please try again.')
+    } finally {
+      setTogglingScheduleId(null)
     }
   }
 
@@ -425,6 +432,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       variant: "destructive",
     })
     if (!confirmed) return
+    setIsArchivingClient(true)
     try {
       const response = await fetch(`/api/clients/${client.id}`, {
         method: 'PUT',
@@ -443,6 +451,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       router.refresh()
     } catch {
       showError('Failed to archive client. Please try again.')
+    } finally {
+      setIsArchivingClient(false)
     }
   }
 
@@ -455,6 +465,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       variant: "destructive",
     })
     if (!confirmed) return
+    setIsDeletingClient(true)
     try {
       const response = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
       if (response.status === 409) {
@@ -474,6 +485,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       router.refresh()
     } catch {
       showError('Failed to delete client. Please try again.')
+    } finally {
+      setIsDeletingClient(false)
     }
   }
 
@@ -707,6 +720,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     newSubcontractorId: string | null,
     effectiveDate?: string // YYYY-MM-DD, defaults to today
   ) => {
+    setReassigningScheduleId(scheduleId)
     try {
       // Find the schedule from client data
       let schedule: ClientSchedule | undefined
@@ -759,6 +773,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       onDataChange?.()
     } catch (error) {
       showError('Failed to reassign cleaner')
+    } finally {
+      setReassigningScheduleId(null)
     }
   }
 
@@ -970,6 +986,10 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     // Pause state
     isTogglingPause,
     pauseResumeAction,
+    isArchivingClient,
+    isDeletingClient,
+    togglingScheduleId,
+    reassigningScheduleId,
     
     // Handlers
     handleUpdate,

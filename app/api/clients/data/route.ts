@@ -25,7 +25,7 @@ export async function GET() {
               },
             },
             jobs: {
-              select: { status: true },
+              select: { status: true, date: true },
             },
           },
         },
@@ -59,7 +59,13 @@ export async function GET() {
       }
 
       // Strip schedules from locations for backward compat
-      const locationsClean = client.locations.map(({ schedules: _s, ...rest }) => rest)
+      const locationsClean = client.locations.map(({ schedules: _s, jobs, ...rest }) => ({
+        ...rest,
+        jobs: jobs.map((job) => ({
+          ...job,
+          date: job.date.toISOString(),
+        })),
+      }))
 
       return {
         ...client,

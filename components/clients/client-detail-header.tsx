@@ -35,6 +35,8 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
     clientHasHistory,
     handleArchiveClient,
     handleDeleteClient,
+    isArchivingClient,
+    isDeletingClient,
   } = state
 
   const [showOverflow, setShowOverflow] = useState(false)
@@ -108,11 +110,12 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleGenerateInvoice}
+            disabled={creatingInvoice}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
             style={{ background: '#00A896', color: '#FFFFFF' }}
           >
             <Receipt className="w-4 h-4" />
-            Generate Invoice
+            {creatingInvoice ? 'Generating...' : 'Generate Invoice'}
           </button>
           <button
             onClick={() => setShowAdditionalServiceChoice(true)}
@@ -165,11 +168,11 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
                   {clientHasHistory ? (
                     <button
                       onClick={() => {
-                        if (!isActive) return
+                        if (!isActive || isArchivingClient) return
                         setShowOverflow(false)
                         handleArchiveClient()
                       }}
-                      disabled={!isActive}
+                      disabled={!isActive || isArchivingClient}
                       className="flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{
                         color: '#D97706',
@@ -177,15 +180,16 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
                       }}
                     >
                       <Archive className="w-4 h-4" />
-                      Archive Client
+                      {isArchivingClient ? 'Archiving...' : 'Archive Client'}
                     </button>
                   ) : (
                     <button
                       onClick={() => { setShowOverflow(false); handleDeleteClient() }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      disabled={isDeletingClient}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="w-4 h-4" />
-                      Delete Permanently
+                      {isDeletingClient ? 'Deleting...' : 'Delete Permanently'}
                     </button>
                   )}
                 </div>

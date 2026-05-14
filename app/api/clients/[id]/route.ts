@@ -309,7 +309,7 @@ export async function DELETE(
 ) {
   try {
     // Safety check: count linked records to prevent destroying real data
-    const [jobCount, invoiceCount, scheduleCount, paymentLineCount] = await Promise.all([
+    const [jobCount, invoiceCount, scheduleCount, paymentLineCount] = await prisma.$transaction([
       prisma.job.count({ where: { location: { clientId: params.id } } }),
       prisma.invoice.count({ where: { clientId: params.id } }),
       prisma.schedule.count({ where: { location: { clientId: params.id } } }),

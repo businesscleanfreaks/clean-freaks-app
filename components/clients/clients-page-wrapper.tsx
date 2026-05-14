@@ -25,7 +25,7 @@ interface Location {
   address: string
   latitude: number | null
   longitude: number | null
-  jobs?: Array<{ status: string }>
+  jobs?: Array<{ status: string; date?: string | Date }>
 }
 
 interface Client {
@@ -109,30 +109,40 @@ function ClientCard({
   isHovered,
   onHover,
   onArchiveFromList,
+  onDeleteFromList,
+  isArchiving,
+  isDeleting,
 }: {
   client: Client
   isHovered?: boolean
   onHover?: (clientId: string | null) => void
   onArchiveFromList: (client: Client) => void
+  onDeleteFromList: (client: Client) => void
+  isArchiving?: boolean
+  isDeleting?: boolean
 }) {
   const email = client.communicationEmail || client.invoicingEmail
   const isClientActive = client.isActive !== false
   const status = !isClientActive ? 'inactive' : 'active'
 
-  // Imported clients can have a recent createdAt even when the relationship is old.
-  // Prefer startDate when present so the NEW badge only marks genuinely new clients.
-  const relationshipDate = new Date(client.startDate || client.createdAt)
-  const daysSinceRelationshipStart = Number.isFinite(relationshipDate.getTime())
-    ? Math.floor((Date.now() - relationshipDate.getTime()) / (1000 * 60 * 60 * 24))
+  const createdDate = new Date(client.createdAt)
+  const daysSinceCreated = Number.isFinite(createdDate.getTime())
+    ? Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
     : Infinity
   
-  // Check if client has any completed jobs
-  const hasCompletedJobs = client.locations?.some(loc => 
-    loc.jobs?.some((j: any) => j.status === 'COMPLETED')
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const hasHistoricalJobs = client.locations?.some(loc =>
+    loc.jobs?.some((job) => {
+      if (!job.date || job.status === 'CANCELLED') return false
+      const jobDate = new Date(job.date)
+      if (!Number.isFinite(jobDate.getTime())) return false
+      return jobDate <= todayStart
+    })
   ) ?? false
   
-  // Show NEW badge only if: created within 7 days AND has NO completed jobs yet
-  const isNew = isClientActive && daysSinceRelationshipStart >= 0 && daysSinceRelationshipStart <= 7 && !hasCompletedJobs
+  // Show NEW badge only if: added recently and has no service activity dated today or earlier.
+  const isNew = isClientActive && daysSinceCreated >= 0 && daysSinceCreated <= 7 && !hasHistoricalJobs
 
   const getInitials = (name: string) =>
     name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
@@ -256,18 +266,21 @@ function ClientCard({
             <button
               type="button"
               onClick={() => onArchiveFromList(client)}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900 px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors shrink-0"
+              disabled={isArchiving || isDeleting}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900 px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Archive className="w-3.5 h-3.5" aria-hidden />
-              Archive
+              {isArchiving ? 'Archiving...' : 'Archive'}
             </button>
           )}
-          <Link
-            href={`/clients/${client.id}#client-remove-section`}
-            className="text-xs font-semibold text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0"
+          <button
+            type="button"
+            onClick={() => onDeleteFromList(client)}
+            disabled={isArchiving || isDeleting}
+            className="text-xs font-semibold text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Remove…
-          </Link>
+            {isDeleting ? 'Removing...' : 'Remove...'}
+          </button>
         </div>
         <Link
           href={`/clients/${client.id}`}
@@ -290,6 +303,8 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
 
   // On mobile, always force card/grid view
   const [hoveredClientId, setHoveredClientId] = useState<string | null>(null)
+  const [archivingClientId, setArchivingClientId] = useState<string | null>(null)
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null)
 
   const { confirm, ConfirmDialog } = useConfirm()
 
@@ -303,6 +318,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
         variant: 'destructive',
       })
       if (!confirmed) return
+      setArchivingClientId(client.id)
       try {
         const response = await fetch(`/api/clients/${client.id}`, {
           method: 'PUT',
@@ -319,6 +335,42 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
         router.refresh()
       } catch {
         showError('Failed to archive client. Please try again.')
+      } finally {
+        setArchivingClientId(null)
+      }
+    },
+    [confirm, router],
+  )
+
+  const handleDeleteFromList = useCallback(
+    async (client: Client) => {
+      const confirmed = await confirm({
+        title: 'Remove Client?',
+        description: `Permanently delete "${client.name}"? This is only allowed for clients with no jobs, invoices, schedules, or payment history. If they have history, keep them archived instead.`,
+        confirmText: 'Remove',
+        cancelText: 'Cancel',
+        variant: 'destructive',
+      })
+      if (!confirmed) return
+      setDeletingClientId(client.id)
+      try {
+        const response = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
+        if (response.status === 409) {
+          showError('This client has job/invoice history and cannot be permanently deleted. Keep them archived instead.')
+          return
+        }
+        if (!response.ok) {
+          await showApiError(response, 'Failed to remove client')
+          return
+        }
+        showSuccess('Client removed')
+        mutate('/api/clients/data')
+        mutate('/api/dashboard-stats')
+        router.refresh()
+      } catch {
+        showError('Failed to remove client. Please try again.')
+      } finally {
+        setDeletingClientId(null)
       }
     },
     [confirm, router],
@@ -471,6 +523,11 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
                   onArchiveFromList={(c) => {
                     void handleArchiveFromList(c)
                   }}
+                  onDeleteFromList={(c) => {
+                    void handleDeleteFromList(c)
+                  }}
+                  isArchiving={archivingClientId === client.id}
+                  isDeleting={deletingClientId === client.id}
                 />
               ))}
             </div>

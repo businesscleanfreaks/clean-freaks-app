@@ -56,6 +56,8 @@ function ContactCard({
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [settingPrimary, setSettingPrimary] = useState(false)
   const [form, setForm] = useState({
     name: contact.name,
     email: contact.email || "",
@@ -84,25 +86,33 @@ function ContactCard({
   }
 
   const togglePrimary = async () => {
+    setSettingPrimary(true)
     try {
-      await fetch(`/api/clients/${clientId}/contacts/${contact.id}`, {
+      const res = await fetch(`/api/clients/${clientId}/contacts/${contact.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isPrimary: !contact.isPrimary, role: contact.role }),
       })
+      if (!res.ok) throw new Error()
       onMutate()
     } catch {
       showError("Failed to update")
+    } finally {
+      setSettingPrimary(false)
     }
   }
 
   const deleteContact = async () => {
+    setDeleting(true)
     try {
-      await fetch(`/api/clients/${clientId}/contacts/${contact.id}`, { method: "DELETE" })
+      const res = await fetch(`/api/clients/${clientId}/contacts/${contact.id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error()
       onMutate()
       showSuccess("Contact removed")
     } catch {
       showError("Failed to delete")
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -209,9 +219,10 @@ function ContactCard({
         <div className="flex gap-2">
           <button
             onClick={deleteContact}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500 text-white hover:bg-red-600"
+            disabled={deleting}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
           >
-            Remove
+            {deleting ? "Removing..." : "Remove"}
           </button>
           <button onClick={() => setConfirmDelete(false)} className="text-xs text-gray-500 px-2">
             Cancel
@@ -226,14 +237,19 @@ function ContactCard({
       {/* Primary star */}
       <button
         onClick={togglePrimary}
+        disabled={settingPrimary}
         title={contact.isPrimary ? "Primary contact" : "Set as primary"}
-        className="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
       >
-        <Star
-          className="w-3.5 h-3.5"
-          fill={contact.isPrimary ? "#F59E0B" : "none"}
-          stroke={contact.isPrimary ? "#F59E0B" : "#D1D5DB"}
-        />
+        {settingPrimary ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+        ) : (
+          <Star
+            className="w-3.5 h-3.5"
+            fill={contact.isPrimary ? "#F59E0B" : "none"}
+            stroke={contact.isPrimary ? "#F59E0B" : "#D1D5DB"}
+          />
+        )}
       </button>
 
       {/* Action icons */}
@@ -444,7 +460,7 @@ function AddContactSheet({
             style={{ background: "#00C9A7" }}
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            Add Contact
+            {saving ? "Adding..." : "Add Contact"}
           </button>
           <button onClick={onClose} className="px-4 h-10 rounded-xl text-sm text-gray-500 border border-gray-200 hover:bg-gray-50">
             Cancel

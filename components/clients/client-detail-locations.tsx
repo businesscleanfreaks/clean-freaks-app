@@ -150,6 +150,8 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     oneTimeJobTime,
     setOneTimeJobTime,
     creatingOneTimeJob,
+    togglingScheduleId,
+    reassigningScheduleId,
     handleDeleteLocation,
     handleDeleteSchedule,
     handleToggleSchedulePause,
@@ -341,9 +343,12 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                         </button>
                         <button
                           onClick={() => handleToggleSchedulePause(sch.id, sch.isActive !== false)}
+                          disabled={togglingScheduleId === sch.id}
                           className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-gray-100"
                         >
-                          {sch.isActive !== false ? 'Pause' : 'Resume'}
+                          {togglingScheduleId === sch.id
+                            ? sch.isActive !== false ? 'Pausing...' : 'Resuming...'
+                            : sch.isActive !== false ? 'Pause' : 'Resume'}
                         </button>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
