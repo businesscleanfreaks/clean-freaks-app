@@ -49,6 +49,8 @@ export const createLocationSchema = z.object({
   accessInfo: z.string().max(2000, 'Access info too long').optional().nullable(), // Gate codes, key locations, entry instructions
 })
 
+export const updateLocationSchema = createLocationSchema.omit({ clientId: true }).partial()
+
 // Monthly pattern schemas for 2x monthly scheduling
 export const fixedDatesPatternSchema = z.object({
   type: z.literal('FIXED_DATES'),

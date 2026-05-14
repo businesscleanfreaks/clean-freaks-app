@@ -8,7 +8,6 @@ import {
   Clock,
   FileText,
   MailX,
-  ArrowRight,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -46,63 +45,46 @@ interface CandidateCardProps {
   onToggleSelect?: (clientId: string) => void
 }
 
-const statusConfig: Record<InvoiceCandidate['status'], {
-  dot: string
-  bg: string
-  border: string
-}> = {
-  READY: { dot: '#00A896', bg: 'rgba(0,168,150,0.04)', border: '#E8F5F3' },
-  NEEDS_ATTENTION: { dot: '#F59E0B', bg: 'rgba(245,158,11,0.04)', border: '#FEF3C7' },
-  DRAFT_EXISTS: { dot: '#6B7280', bg: 'rgba(107,114,128,0.03)', border: '#E5E7EB' },
-  SENT: { dot: '#3B82F6', bg: 'rgba(59,130,246,0.03)', border: '#DBEAFE' },
-  PAID: { dot: '#10B981', bg: 'rgba(16,185,129,0.03)', border: '#D1FAE5' },
-}
-
-function getCleanSummary(candidate: InvoiceCandidate) {
-  if (candidate.jobCount === 0) return ''
-  const scheduled = Math.max(candidate.jobCount - candidate.completedCount, 0)
-  const cleanLabel = `${candidate.jobCount} clean${candidate.jobCount !== 1 ? 's' : ''}`
-  return `${cleanLabel} · ${candidate.completedCount} done, ${scheduled} scheduled`
-}
-
 function getExceptionLabel(exception: InvoiceCandidate['exceptions'][number]) {
-  if (exception.type === 'SKIPPED') return exception.message.replace('clean was skipped', 'skipped clean')
+  if (exception.type === 'SKIPPED') return exception.message.replace('clean was skipped', 'skipped')
   if (exception.type === 'MISSING_EMAIL') return 'No email on file'
+
+  if (exception.type === 'PRICE_CHANGE') {
+    const match = exception.message.match(/Rate override on (.*?): \$(.*?) vs schedule \$(.*)/)
+    if (match) return `${match[1]}: Billed $${match[2]} instead of regular $${match[3]}.`
+  }
+
   return exception.message
 }
 
 export function CandidateCard({ candidate, onReview, selectable, selected, onToggleSelect }: CandidateCardProps) {
-  const config = statusConfig[candidate.status]
   const hasExceptions = candidate.exceptions.length > 0
   const isActionable = candidate.status === 'READY' || candidate.status === 'NEEDS_ATTENTION'
   const hasExisting = !!candidate.existingInvoiceId
   const isFlatRate = candidate.billingType === 'FLAT_RATE'
   const showNoChanges = isFlatRate && isActionable && !hasExceptions
-  const cleanSummary = getCleanSummary(candidate)
   const visibleExceptions = candidate.exceptions.slice(0, 2)
 
   return (
     <div
       style={{
-        backgroundColor: selected ? 'rgba(0,168,150,0.06)' : config.bg,
-        border: `1px solid ${selected ? 'rgba(0,168,150,0.3)' : config.border}`,
-        borderRadius: '12px',
-        overflow: 'hidden',
-        transition: 'box-shadow 150ms, border-color 150ms',
+        backgroundColor: selected ? 'rgba(0,168,150,0.06)' : 'white',
+        borderBottom: '1px solid #F1F5F9',
+        transition: 'background-color 120ms',
       }}
       onMouseEnter={e => {
-        if (isActionable) e.currentTarget.style.boxShadow = '0 2px 12px rgba(0,0,0,0.06)'
+        if (isActionable && !selected) e.currentTarget.style.backgroundColor = '#FAFAFA'
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.boxShadow = 'none'
+        e.currentTarget.style.backgroundColor = selected ? 'rgba(0,168,150,0.06)' : 'white'
       }}
     >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '10px',
-          padding: isFlatRate && isActionable ? '12px 14px' : '14px 16px',
+          gap: '12px',
+          padding: '10px 14px',
           cursor: isActionable ? 'pointer' : 'default',
         }}
         onClick={() => isActionable && onReview(candidate)}
@@ -114,10 +96,15 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
               onToggleSelect?.(candidate.clientId)
             }}
             style={{
-              width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0,
+              width: '20px',
+              height: '20px',
+              borderRadius: '6px',
+              flexShrink: 0,
               border: selected ? '2px solid #00A896' : '2px solid #D1D5DB',
               backgroundColor: selected ? '#00A896' : 'white',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               cursor: 'pointer',
               transition: 'all 120ms',
             }}
@@ -126,22 +113,18 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           </div>
         )}
 
-        <div
-          style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            backgroundColor: config.dot,
-            flexShrink: 0,
-          }}
-        />
-
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-            <span style={{
-              fontSize: '15px', fontWeight: 600, color: '#111111',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
+            <span
+              style={{
+                fontSize: '15px',
+                fontWeight: 700,
+                color: '#111111',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {candidate.clientName}
             </span>
             {!candidate.hasEmail && (
@@ -151,42 +134,27 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
             )}
           </div>
 
-          <div style={{
-            fontSize: '12px', color: '#777777',
-            display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
-          }}>
-            <span style={{
-              padding: '1px 6px',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontWeight: 500,
-              backgroundColor: isFlatRate ? '#EEF2FF' : '#F0FDF4',
-              color: isFlatRate ? '#4F46E5' : '#15803D',
-            }}>
-              {isFlatRate ? 'Flat rate' : 'Per clean'}
-            </span>
-            {candidate.scheduleSummary && (
-              <>
-                <span style={{ color: '#DDDDDD' }}>·</span>
-                <span>{candidate.scheduleSummary}</span>
-              </>
-            )}
-            {cleanSummary && (
-              <>
-                <span style={{ color: '#DDDDDD' }}>·</span>
-                <span>{cleanSummary}</span>
-              </>
-            )}
+          <div
+            style={{
+              fontSize: '12px',
+              color: '#64748B',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexWrap: 'wrap',
+            }}
+          >
+            {candidate.scheduleSummary && <span>{candidate.scheduleSummary}</span>}
             {showNoChanges && (
               <>
-                <span style={{ color: '#DDDDDD' }}>·</span>
-                <span style={{ color: '#047857', fontWeight: 600 }}>No changes ✓</span>
+                {candidate.scheduleSummary && <span style={{ color: '#CBD5E1' }}>·</span>}
+                <span style={{ color: '#047857', fontWeight: 700 }}>No changes ✓</span>
               </>
             )}
           </div>
 
           {hasExceptions && isActionable && (
-            <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            <div style={{ marginTop: '5px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {visibleExceptions.map((ex, idx) => (
                 <span
                   key={`${ex.type}-${idx}`}
@@ -194,11 +162,8 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    padding: '2px 7px',
-                    borderRadius: '999px',
-                    backgroundColor: '#FEF3C7',
                     color: '#92400E',
-                    fontSize: '11px',
+                    fontSize: '12px',
                     fontWeight: 600,
                   }}
                 >
@@ -207,7 +172,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
                 </span>
               ))}
               {candidate.exceptions.length > visibleExceptions.length && (
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#92400E' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#92400E' }}>
                   +{candidate.exceptions.length - visibleExceptions.length} more
                 </span>
               )}
@@ -215,54 +180,25 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           )}
         </div>
 
-        {showNoChanges && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '4px',
-            padding: '4px 10px', borderRadius: '16px',
-            backgroundColor: '#D1FAE5',
-            fontSize: '12px', fontWeight: 600, color: '#047857',
-            flexShrink: 0,
-          }}>
-            <CheckCircle2 style={{ width: '12px', height: '12px' }} />
-            No changes
-          </div>
-        )}
-
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <span style={{ fontSize: '15px', fontWeight: 700, color: '#111111' }}>
+          <span style={{ fontSize: '15px', fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(candidate.total)}
           </span>
         </div>
 
         {isActionable ? (
-          isFlatRate ? (
-            <div
-              style={{
-                display: 'flex', alignItems: 'center', gap: '4px',
-                padding: '5px 12px',
-                fontSize: '12px', fontWeight: 600,
-                color: '#00A896',
-                backgroundColor: 'rgba(0,168,150,0.08)',
-                border: '1px solid rgba(0,168,150,0.2)',
-                borderRadius: '8px',
-                flexShrink: 0,
-                transition: 'background-color 120ms',
-              }}
-            >
-              Invoice
-              <ArrowRight style={{ width: '12px', height: '12px' }} />
-            </div>
-          ) : (
-            <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC', flexShrink: 0 }} />
-          )
+          <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC', flexShrink: 0 }} />
         ) : hasExisting ? (
           <Link
             href={`/invoices/${candidate.existingInvoiceId}`}
             onClick={(e) => e.stopPropagation()}
             style={{
-              display: 'flex', alignItems: 'center', gap: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
               padding: '4px 10px',
-              fontSize: '12px', fontWeight: 500,
+              fontSize: '12px',
+              fontWeight: 500,
               color: '#00A896',
               textDecoration: 'none',
               flexShrink: 0,

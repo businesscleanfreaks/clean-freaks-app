@@ -1,7 +1,41 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { revalidateLocationPages } from '@/lib/revalidate'
+import { updateLocationSchema } from '@/lib/validations'
+import { revalidateLocationPages, revalidateSchedulePages } from '@/lib/revalidate'
 import { logger } from '@/lib/logger'
+
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const body = await request.json()
+    const validationResult = updateLocationSchema.safeParse(body)
+
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { error: validationResult.error.errors[0].message },
+        { status: 400 }
+      )
+    }
+
+    const location = await prisma.location.update({
+      where: { id: params.id },
+      data: validationResult.data,
+      include: { client: true },
+    })
+
+    revalidateSchedulePages(location.clientId)
+
+    return NextResponse.json(location)
+  } catch (error) {
+    logger.error('Error updating location:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to update location' },
+      { status: 500 }
+    )
+  }
+}
 
 export async function DELETE(
   request: Request,
@@ -41,8 +75,8 @@ export async function DELETE(
 
     if (invoicedJobCount > 0) {
       return NextResponse.json(
-        { 
-          error: `Cannot delete location. This location has ${invoicedJobCount} invoiced job(s). Please delete the associated invoices first.` 
+        {
+          error: `Cannot delete location. This location has ${invoicedJobCount} invoiced job(s). Please delete the associated invoices first.`
         },
         { status: 400 }
       )
@@ -50,8 +84,8 @@ export async function DELETE(
 
     if (paidJobCount > 0) {
       return NextResponse.json(
-        { 
-          error: `Cannot delete location. This location has ${paidJobCount} job(s) that have been paid to subcontractors. Please handle those payments first.` 
+        {
+          error: `Cannot delete location. This location has ${paidJobCount} job(s) that have been paid to subcontractors. Please handle those payments first.`
         },
         { status: 400 }
       )

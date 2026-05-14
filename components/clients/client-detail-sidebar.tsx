@@ -106,6 +106,16 @@ function getFirstName(name: string | null | undefined) {
   return name.trim().split(/\s+/)[0] || name
 }
 
+function compactLocationName(locationName: string, clientName: string) {
+  let name = (locationName || "Location").trim()
+  const client = clientName.trim()
+  if (client && name.toLowerCase().startsWith(client.toLowerCase())) {
+    name = name.slice(client.length).trim()
+  }
+  name = name.replace(/^\((.*)\)$/, "$1").trim()
+  return name || locationName || "Location"
+}
+
 export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
   const {
     router,
@@ -120,9 +130,9 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
   const locationOptions = useMemo(() => {
     return (client.locations || []).map((location) => ({
       id: location.id,
-      name: location.name || "Location",
+      name: compactLocationName(location.name || "Location", client.name),
     }))
-  }, [client.locations])
+  }, [client.locations, client.name])
 
   const displayJobs = useMemo(() => {
     const jobs = jobTab === "upcoming" ? upcomingJobs : recentJobs
@@ -222,7 +232,7 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
                 style={isCancelled ? { opacity: 0.45 } : {}}
               >
                 <span className="w-[74px] flex-shrink-0 text-slate-500">{getJobTimeLabel(job)}</span>
-                <span className="min-w-0 flex-1 text-gray-800">{job.location.name}</span>
+                <span className="min-w-0 flex-1 text-gray-800">{compactLocationName(job.location.name, client.name)}</span>
                 <span className="flex-shrink-0 text-slate-500">{getFirstName(job.subcontractor?.name)}</span>
               </div>
             )

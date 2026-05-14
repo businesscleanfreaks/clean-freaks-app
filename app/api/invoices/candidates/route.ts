@@ -6,6 +6,23 @@ import { logger } from "@/lib/logger"
 
 export const dynamic = 'force-dynamic'
 
+function jobMatchesScheduleDay(job: {
+  date: Date
+  schedule?: { frequency: string; daysOfWeek: string | null } | null
+}) {
+  if (!job.schedule?.daysOfWeek) return true
+
+  const weeklyFrequencies = new Set(['WEEKLY', 'BI_WEEKLY', 'EVERY_3_WEEKS', 'EVERY_4_WEEKS', 'EVERY_6_WEEKS'])
+  if (!weeklyFrequencies.has(job.schedule.frequency)) return true
+
+  try {
+    const daysOfWeek = JSON.parse(job.schedule.daysOfWeek) as number[]
+    return daysOfWeek.includes(job.date.getUTCDay())
+  } catch {
+    return true
+  }
+}
+
 /**
  * GET /api/invoices/candidates?start=YYYY-MM-DD&end=YYYY-MM-DD
  *
@@ -199,7 +216,7 @@ export async function GET(request: Request) {
 
       // Separate jobs by type
       const uninvoicedJobs = jobs.filter(j => !j.invoiced && j.status !== 'CANCELLED')
-      const skippedJobs = jobs.filter(j => j.status === 'CANCELLED')
+      const skippedJobs = jobs.filter(j => j.status === 'CANCELLED' && jobMatchesScheduleDay(j))
       const recurringJobs = uninvoicedJobs.filter(j => j.scheduleId)
       const oneOffJobs = uninvoicedJobs.filter(j => !j.scheduleId)
 
@@ -231,7 +248,7 @@ export async function GET(request: Request) {
           if (!addOn.scheduleId) {
             exceptions.push({
               type: 'ONE_TIME_ADD_ON',
-              message: `${addOn.description} on ${format(job.date, 'MMM d')} ($${addOn.clientRate})`,
+              message: `${addOn.description} add-on on ${format(job.date, 'MMM d')}`,
             })
           }
         })
@@ -242,7 +259,7 @@ export async function GET(request: Request) {
         if (job.schedule && job.clientRate !== job.schedule.defaultClientRate) {
           exceptions.push({
             type: 'PRICE_CHANGE',
-            message: `Rate override on ${format(job.date, 'MMM d')}: $${job.clientRate} vs schedule $${job.schedule.defaultClientRate}`,
+            message: `${format(job.date, 'MMM d')}: Billed $${job.clientRate} instead of regular $${job.schedule.defaultClientRate}.`,
           })
         }
       })

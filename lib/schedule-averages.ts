@@ -18,8 +18,14 @@ const WEEK_INTERVALS: Record<string, number> = {
   EVERY_6_WEEKS: 6,
 }
 
-function toNoonUTC(date: Date) {
+function utcDateOnly(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12, 0, 0))
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const next = new Date(date)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next
 }
 
 function getNthWeekdayOfMonth(year: number, month: number, weekday: number, nth: number): Date | null {
@@ -40,9 +46,9 @@ function getNthWeekdayOfMonth(year: number, month: number, weekday: number, nth:
 }
 
 function calculateScheduleDates(params: ScheduleAverageParams, rangeEnd: Date): Date[] {
-  const startDate = startOfDay(new Date(params.startDate))
-  const projectedEndDate = startOfDay(rangeEnd)
-  const scheduleEndDate = params.endDate ? startOfDay(new Date(params.endDate)) : null
+  const startDate = utcDateOnly(new Date(params.startDate))
+  const projectedEndDate = utcDateOnly(rangeEnd)
+  const scheduleEndDate = params.endDate ? utcDateOnly(new Date(params.endDate)) : null
   const endDate = scheduleEndDate && scheduleEndDate < projectedEndDate ? scheduleEndDate : projectedEndDate
   const dates: Date[] = []
 
@@ -56,11 +62,11 @@ function calculateScheduleDates(params: ScheduleAverageParams, rangeEnd: Date): 
     let weekCount = 0
 
     while (currentDate <= endDate) {
-      if (weekCount % weekInterval === 0 && daysOfWeek.includes(currentDate.getDay())) {
+      if (weekCount % weekInterval === 0 && daysOfWeek.includes(currentDate.getUTCDay())) {
         dates.push(new Date(currentDate))
       }
-      const nextDay = addDays(currentDate, 1)
-      if (nextDay.getDay() === 0 && currentDate.getDay() === 6) weekCount++
+      const nextDay = addUtcDays(currentDate, 1)
+      if (nextDay.getUTCDay() === 0 && currentDate.getUTCDay() === 6) weekCount++
       currentDate = nextDay
     }
   } else if (params.frequency === 'MONTHLY') {
@@ -120,7 +126,7 @@ function calculateScheduleDates(params: ScheduleAverageParams, rangeEnd: Date): 
       const dateStr = date.toISOString().split('T')[0]
       return !excludedDates.includes(dateStr)
     })
-    .map((date) => toNoonUTC(date))
+    .map((date) => utcDateOnly(date))
 }
 
 export function getAverageScheduleOccurrencesPerMonth(

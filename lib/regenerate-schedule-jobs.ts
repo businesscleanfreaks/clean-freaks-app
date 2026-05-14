@@ -30,8 +30,26 @@ const WEEK_INTERVALS: Record<string, number> = {
   EVERY_6_WEEKS: 6,
 }
 
-function toNoonUTC(date: Date): Date {
+function utcDateOnly(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12, 0, 0))
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const next = new Date(date)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next
+}
+
+function startOfUtcMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 12, 0, 0))
+}
+
+function endOfUtcMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 12, 0, 0))
+}
+
+function addUtcMonths(date: Date, months: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1, 12, 0, 0))
 }
 
 function getNthWeekdayOfMonth(year: number, month: number, weekday: number, nth: number): Date | null {
@@ -66,10 +84,10 @@ function getLastWeekdayOfMonth(year: number, month: number, weekday: number): Da
  *   Pass a custom date to project further into the future (e.g. for P&L forecasts).
  */
 export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Date): Date[] {
-  const now = startOfDay(new Date())
-  const startDate = startOfDay(new Date(params.startDate))
-  const projectedEndDate = rangeEnd ? startOfDay(rangeEnd) : addMonths(now, 3)
-  const scheduleEndDate = params.endDate ? startOfDay(new Date(params.endDate)) : null
+  const now = utcDateOnly(new Date())
+  const startDate = utcDateOnly(new Date(params.startDate))
+  const projectedEndDate = rangeEnd ? utcDateOnly(rangeEnd) : addUtcMonths(now, 3)
+  const scheduleEndDate = params.endDate ? utcDateOnly(new Date(params.endDate)) : null
   const endDate = scheduleEndDate && scheduleEndDate < projectedEndDate ? scheduleEndDate : projectedEndDate
   const dates: Date[] = []
 
@@ -85,11 +103,11 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
     let weekCount = 0
 
     while (currentDate <= endDate) {
-      if (weekCount % weekInterval === 0 && daysOfWeek.includes(currentDate.getDay())) {
+      if (weekCount % weekInterval === 0 && daysOfWeek.includes(currentDate.getUTCDay())) {
         dates.push(new Date(currentDate))
       }
-      const nextDay = addDays(currentDate, 1)
-      if (nextDay.getDay() === 0 && currentDate.getDay() === 6) weekCount++
+      const nextDay = addUtcDays(currentDate, 1)
+      if (nextDay.getUTCDay() === 0 && currentDate.getUTCDay() === 6) weekCount++
       currentDate = nextDay
     }
   } else if (params.frequency === 'MONTHLY' && params.monthlyPattern) {
@@ -175,7 +193,7 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
       const dateStr = date.toISOString().split('T')[0]
       return !excludedDates.includes(dateStr)
     })
-    .map((date) => toNoonUTC(date))
+    .map((date) => utcDateOnly(date))
 }
 
 /**
@@ -197,8 +215,8 @@ export async function previewScheduleChanges(
 
   // Merge updates with current schedule to simulate the change
   const merged = { ...schedule, ...updates }
-  const now = startOfDay(new Date())
-  const startDate = startOfDay(new Date(merged.startDate))
+  const now = utcDateOnly(new Date())
+  const startDate = utcDateOnly(new Date(merged.startDate))
 
   // Count protected jobs
   const protectedCount = await prisma.job.count({
@@ -324,8 +342,8 @@ export async function regenerateJobsForSchedule(
     return emptySummary
   }
 
-  const now = startOfDay(options?.effectiveDate ?? new Date())
-  const startDate = startOfDay(new Date(schedule.startDate))
+  const now = utcDateOnly(options?.effectiveDate ?? new Date())
+  const startDate = utcDateOnly(new Date(schedule.startDate))
 
   // Wrap all delete/update/create operations in a transaction so a crash
   // mid-way doesn't leave the schedule in a broken state
@@ -474,7 +492,7 @@ export async function regenerateJobsForSchedule(
       firstJobDate,
       lastJobDate,
     }
-  })
+  }, { maxWait: 10000, timeout: 30000 })
 
   logger.info(`[regenerateJobs] Schedule ${scheduleId} regeneration complete:`, {
     deleted: summary.deletedCount,

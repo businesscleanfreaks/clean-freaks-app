@@ -781,14 +781,6 @@ export function InvoicesPageClient({
                       <span style={{ fontSize: '12px', fontWeight: 600, color: '#4F46E5' }}>
                         {formatCurrency(flatRateCandidates.reduce((s, c) => s + c.total, 0))}
                       </span>
-                      {flaggedFlatRateCandidates.length > 0 && (
-                        <span style={{
-                          fontSize: '12px', fontWeight: 600, color: '#92400E',
-                          backgroundColor: '#FEF3C7', padding: '2px 8px', borderRadius: '10px',
-                        }}>
-                          {flaggedFlatRateCandidates.length} need review
-                        </span>
-                      )}
                       {cleanFlatRateCandidates.length > 0 && (
                         <button
                           onClick={selectCleanFlatRateCandidates}
@@ -809,10 +801,10 @@ export function InvoicesPageClient({
                       )}
                     </div>
                     <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748B' }}>
-                      Stable monthly invoices are grouped here. Use No changes to quickly approve the predictable ones.
+                      Same every month unless something changed
                     </p>
                   </div>
-                  <div className="space-y-2">
+                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden' }}>
                     {[...flaggedFlatRateCandidates, ...cleanFlatRateCandidates].map(c => (
                       <CandidateCard
                         key={c.clientId}
@@ -847,10 +839,10 @@ export function InvoicesPageClient({
                       </span>
                     </div>
                     <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748B' }}>
-                      Variable invoices stay separate so completed, upcoming, skipped, and add-on work is easier to inspect.
+                      Amount varies - verify before sending
                     </p>
                   </div>
-                  <div className="space-y-2">
+                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden' }}>
                     {perCleanCandidates.map(c => (
                       <CandidateCard
                         key={c.clientId}
@@ -880,7 +872,7 @@ export function InvoicesPageClient({
                       {existingCandidates.length}
                     </span>
                   </div>
-                  <div className="space-y-2">
+                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden' }}>
                     {existingCandidates.map(c => (
                       <CandidateCard key={c.clientId} candidate={c} onReview={handleCandidateReview} />
                     ))}

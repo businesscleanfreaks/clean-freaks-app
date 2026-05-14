@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import type { KeyboardEvent, ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,6 +10,7 @@ import { RecurringAddonForm } from "./recurring-addon-form"
 import { AddOnCard } from "./add-on-card"
 import { formatCurrency, formatTime } from "@/lib/utils"
 import { format } from "date-fns"
+import { showApiError, showError, showSuccess } from "@/lib/toast"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getPrimaryScheduleForDisplay, sortSchedulesForDisplay } from "@/lib/schedule-timing"
 import {
@@ -50,6 +51,24 @@ function payLabel(amount: number | null | undefined, payType: string | null | un
   return `${formatCurrency(amount || 0)}${payType === 'FLAT_RATE' ? '/mo' : '/clean'}`
 }
 
+const INLINE_FREQUENCIES = [
+  { value: 'WEEKLY', label: 'Weekly' },
+  { value: 'BI_WEEKLY', label: 'Bi-weekly' },
+  { value: 'EVERY_3_WEEKS', label: 'Every 3 weeks' },
+  { value: 'EVERY_4_WEEKS', label: 'Every 4 weeks' },
+  { value: 'EVERY_6_WEEKS', label: 'Every 6 weeks' },
+]
+
+function compactLocationName(locationName: string, clientName: string) {
+  let name = (locationName || 'Location').trim()
+  const client = clientName.trim()
+  if (client && name.toLowerCase().startsWith(client.toLowerCase())) {
+    name = name.slice(client.length).trim()
+  }
+  name = name.replace(/^\((.*)\)$/, '$1').trim()
+  return name || locationName || 'Location'
+}
+
 function getNextJobLabel(location: ClientLocation) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -82,16 +101,19 @@ function DetailRow({
   value,
   onClick,
   muted,
+  children,
 }: {
   label: string
   value: ReactNode
   onClick?: () => void
   muted?: boolean
+  children?: ReactNode
 }) {
   const content = (
     <>
-      <span className="w-28 flex-shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</span>
-      <span className={`min-w-0 flex-1 truncate text-sm ${muted ? 'text-slate-400' : 'text-slate-700'}`}>{value}</span>
+      <span className="w-24 flex-shrink-0 text-xs font-normal lowercase text-slate-400">{label}</span>
+      <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${muted ? 'text-slate-400' : 'text-slate-800'}`}>{value}</span>
+      {children}
     </>
   )
 
@@ -100,7 +122,7 @@ function DetailRow({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-2.5 text-left hover:bg-gray-50 last:border-b-0"
+        className="flex w-full items-center gap-3 border-b border-gray-100 px-3.5 py-1.5 text-left hover:bg-gray-50 last:border-b-0"
       >
         {content}
       </button>
@@ -108,7 +130,7 @@ function DetailRow({
   }
 
   return (
-    <div className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
+    <div className="flex w-full items-center gap-3 border-b border-gray-100 px-3.5 py-1.5 last:border-b-0">
       {content}
     </div>
   )
@@ -119,6 +141,22 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     new Date().toISOString().split('T')[0]
   )
   const [locationMenuOpen, setLocationMenuOpen] = useState<string | null>(null)
+  const [inlineEdit, setInlineEdit] = useState<
+    | { type: 'schedule'; scheduleId: string; field: 'defaultClientRate' | 'defaultSubcontractorRate' }
+    | { type: 'location'; locationId: string; field: 'accessInfo' }
+    | null
+  >(null)
+  const [inlineValue, setInlineValue] = useState('')
+  const [scheduleInlineEdit, setScheduleInlineEdit] = useState<{
+    scheduleId: string
+    frequency: string
+    daysOfWeek: number[]
+    timeType: 'SPECIFIC' | 'WINDOW'
+    startTime: string
+    startWindowBegin: string
+    startWindowEnd: string
+  } | null>(null)
+  const [savingInline, setSavingInline] = useState(false)
   const {
     client,
     subcontractors,
@@ -187,6 +225,135 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     [client.locations]
   )
 
+  const startScheduleRateEdit = (
+    scheduleId: string,
+    field: 'defaultClientRate' | 'defaultSubcontractorRate',
+    value: number | null | undefined
+  ) => {
+    setInlineEdit({ type: 'schedule', scheduleId, field })
+    setInlineValue(String(value ?? 0))
+  }
+
+  const startLocationEdit = (locationId: string, field: 'accessInfo', value: string | null | undefined) => {
+    setInlineEdit({ type: 'location', locationId, field })
+    setInlineValue(value || '')
+  }
+
+  const startScheduleInlineEdit = (schedule: ClientSchedule) => {
+    setScheduleInlineEdit({
+      scheduleId: schedule.id,
+      frequency: schedule.frequency || 'WEEKLY',
+      daysOfWeek: parseScheduleDays(schedule.daysOfWeek),
+      timeType: (schedule.timeType || 'SPECIFIC') as 'SPECIFIC' | 'WINDOW',
+      startTime: schedule.startTime || '',
+      startWindowBegin: schedule.startWindowBegin || '',
+      startWindowEnd: schedule.startWindowEnd || '',
+    })
+  }
+
+  const cancelInlineEdit = () => {
+    setInlineEdit(null)
+    setInlineValue('')
+  }
+
+  const saveInlineEdit = async () => {
+    if (!inlineEdit || savingInline) return
+    setSavingInline(true)
+
+    try {
+      const endpoint = inlineEdit.type === 'schedule'
+        ? `/api/schedules/${inlineEdit.scheduleId}`
+        : `/api/locations/${inlineEdit.locationId}`
+      const value = inlineEdit.type === 'schedule'
+        ? Number(inlineValue)
+        : inlineValue.trim() || null
+
+      if (inlineEdit.type === 'schedule' && (!Number.isFinite(value as number) || (value as number) < 0)) {
+        showError('Enter a valid non-negative amount')
+        setSavingInline(false)
+        return
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [inlineEdit.field]: value }),
+      })
+
+      if (!response.ok) {
+        await showApiError(response, 'Failed to save field')
+        return
+      }
+
+      showSuccess('Saved')
+      cancelInlineEdit()
+      onDataChange?.()
+    } catch {
+      showError('Failed to save field')
+    } finally {
+      setSavingInline(false)
+    }
+  }
+
+  const saveScheduleInlineEdit = async () => {
+    if (!scheduleInlineEdit || savingInline) return
+
+    if (scheduleInlineEdit.daysOfWeek.length === 0) {
+      showError('Select at least one schedule day')
+      return
+    }
+
+    if (scheduleInlineEdit.timeType === 'SPECIFIC' && !scheduleInlineEdit.startTime) {
+      showError('Choose a start time')
+      return
+    }
+
+    if (scheduleInlineEdit.timeType === 'WINDOW' && !scheduleInlineEdit.startWindowBegin && !scheduleInlineEdit.startWindowEnd) {
+      showError('Choose a time window')
+      return
+    }
+
+    setSavingInline(true)
+    try {
+      const response = await fetch(`/api/schedules/${scheduleInlineEdit.scheduleId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          frequency: scheduleInlineEdit.frequency,
+          daysOfWeek: JSON.stringify([...scheduleInlineEdit.daysOfWeek].sort()),
+          timeType: scheduleInlineEdit.timeType,
+          startTime: scheduleInlineEdit.timeType === 'SPECIFIC' ? scheduleInlineEdit.startTime : null,
+          startWindowBegin: scheduleInlineEdit.timeType === 'WINDOW' ? scheduleInlineEdit.startWindowBegin || null : null,
+          startWindowEnd: scheduleInlineEdit.timeType === 'WINDOW' ? scheduleInlineEdit.startWindowEnd || null : null,
+        }),
+      })
+
+      if (!response.ok) {
+        await showApiError(response, 'Failed to save schedule')
+        return
+      }
+
+      showSuccess('Schedule saved')
+      setScheduleInlineEdit(null)
+      onDataChange?.()
+    } catch {
+      showError('Failed to save schedule')
+    } finally {
+      setSavingInline(false)
+    }
+  }
+
+  const handleInlineKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      saveInlineEdit()
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelInlineEdit()
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -216,7 +383,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {client.locations?.length > 0 ? client.locations.map((location: ClientLocation) => {
           const isExpanded = expandedLocation === location.id
           const sortedSchedules = sortSchedulesForDisplay(location.schedules || [])
@@ -227,20 +394,14 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
           const additionalRuleCount = Math.max(sortedSchedules.length - 1, 0)
           const nextJobLabel = getNextJobLabel(location)
           return (
-            <div key={location.id} className="bg-white rounded-xl border border-gray-200 overflow-visible">
+            <div key={location.id} className="bg-white rounded-lg border border-gray-200 overflow-visible">
               {/* Location name + address */}
-              <div className="px-4 py-3 flex items-start justify-between">
+              <div className="px-3.5 py-2 flex items-start justify-between">
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">{location.name}</p>
+                  <p className="font-semibold text-gray-900 text-sm">{compactLocationName(location.name, client.name)}</p>
                   <p className="text-xs text-slate-500 truncate mt-0.5">{location.address}</p>
                   {nextJobLabel && (
                     <p className="text-xs font-medium text-teal-700 mt-1">Next: {nextJobLabel}</p>
-                  )}
-                  {location.accessInfo && (
-                    <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
-                      <span className="inline-block w-3 h-3 text-slate-300">🔑</span>
-                      {location.accessInfo}
-                    </p>
                   )}
                   {scheduleHistoryOverview && (
                     <p className="text-[11px] text-slate-500 mt-1">{scheduleHistoryOverview}</p>
@@ -290,6 +451,9 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                 const subPayType = sch.subcontractorPayType || client.cleanerPayType || 'PER_CLEAN'
                 const cost = subPayType === 'FLAT_RATE' ? (sch.defaultSubcontractorRate || 0) : ((sch.defaultSubcontractorRate || 0) * avgOcc)
                 const profit = rev - cost
+                const editingClientRate = inlineEdit?.type === 'schedule' && inlineEdit.scheduleId === sch.id && inlineEdit.field === 'defaultClientRate'
+                const editingCleanerRate = inlineEdit?.type === 'schedule' && inlineEdit.scheduleId === sch.id && inlineEdit.field === 'defaultSubcontractorRate'
+                const editingAccessInfo = inlineEdit?.type === 'location' && inlineEdit.locationId === location.id && inlineEdit.field === 'accessInfo'
                 return (
                   <Fragment key={sch.id}>
                   <div className={`border-t border-gray-100 ${sch.isActive === false ? 'opacity-60' : ''}`}>
@@ -298,47 +462,184 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                       value={(
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="truncate">{scheduleSummary(sch)}</span>
-                          <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${timingBadge.className}`}>{timingBadge.label}</span>
+                          {timingBadge.label !== 'Current' && (
+                            <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${timingBadge.className}`}>{timingBadge.label}</span>
+                          )}
                           {sch.isActive === false && <span className="shrink-0 text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Paused</span>}
                         </span>
                       )}
-                      onClick={() => {
-                        setExpandedLocation(location.id)
-                        setScheduleFormMode('edit')
-                        setEditingSchedule({ ...sch, locationId: location.id })
-                      }}
+                      onClick={() => startScheduleInlineEdit(sch)}
                     />
+                    {scheduleInlineEdit?.scheduleId === sch.id && (
+                      <div className="border-b border-gray-100 bg-gray-50 px-3.5 py-2">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr]">
+                          <select
+                            value={scheduleInlineEdit.frequency}
+                            onChange={(event) => setScheduleInlineEdit((prev) => prev ? { ...prev, frequency: event.target.value } : prev)}
+                            className="h-8 rounded-md border border-gray-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-teal-500"
+                          >
+                            {INLINE_FREQUENCIES.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                          <div className="flex flex-wrap gap-1">
+                            {DAY_LETTERS.map((letter, day) => {
+                              const active = scheduleInlineEdit.daysOfWeek.includes(day)
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  onClick={() => setScheduleInlineEdit((prev) => {
+                                    if (!prev) return prev
+                                    const days = active
+                                      ? prev.daysOfWeek.filter((d) => d !== day)
+                                      : [...prev.daysOfWeek, day]
+                                    return { ...prev, daysOfWeek: days }
+                                  })}
+                                  className={`h-8 w-8 rounded-md border text-xs font-semibold ${active ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-gray-200 bg-white text-slate-500 hover:bg-gray-100'}`}
+                                >
+                                  {letter}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            value={scheduleInlineEdit.timeType}
+                            onChange={(event) => setScheduleInlineEdit((prev) => prev ? { ...prev, timeType: event.target.value as 'SPECIFIC' | 'WINDOW' } : prev)}
+                            className="h-8 rounded-md border border-gray-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-teal-500"
+                          >
+                            <option value="SPECIFIC">Specific time</option>
+                            <option value="WINDOW">Time window</option>
+                          </select>
+                          {scheduleInlineEdit.timeType === 'SPECIFIC' ? (
+                            <Input
+                              type="time"
+                              value={scheduleInlineEdit.startTime}
+                              onChange={(event) => setScheduleInlineEdit((prev) => prev ? { ...prev, startTime: event.target.value } : prev)}
+                              className="h-8 w-32"
+                            />
+                          ) : (
+                            <>
+                              <Input
+                                type="time"
+                                value={scheduleInlineEdit.startWindowBegin}
+                                onChange={(event) => setScheduleInlineEdit((prev) => prev ? { ...prev, startWindowBegin: event.target.value } : prev)}
+                                className="h-8 w-32"
+                              />
+                              <span className="text-xs text-slate-400">to</span>
+                              <Input
+                                type="time"
+                                value={scheduleInlineEdit.startWindowEnd}
+                                onChange={(event) => setScheduleInlineEdit((prev) => prev ? { ...prev, startWindowEnd: event.target.value } : prev)}
+                                className="h-8 w-32"
+                              />
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={saveScheduleInlineEdit}
+                            disabled={savingInline}
+                            className="h-8 rounded-md bg-teal-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {savingInline ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setScheduleInlineEdit(null)}
+                            className="h-8 rounded-md border border-gray-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-gray-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <DetailRow
                       label="Client Billing"
-                      value={payLabel(sch.defaultClientRate, clientPayType)}
-                      onClick={() => {
-                        setExpandedLocation(location.id)
-                        setScheduleFormMode('edit')
-                        setEditingSchedule({ ...sch, locationId: location.id })
-                      }}
+                      value={editingClientRate ? (
+                        <Input
+                          autoFocus
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={inlineValue}
+                          onChange={(event) => setInlineValue(event.target.value)}
+                          onKeyDown={handleInlineKeyDown}
+                          onBlur={saveInlineEdit}
+                          disabled={savingInline}
+                          className="h-7 w-28 text-sm font-semibold"
+                        />
+                      ) : payLabel(sch.defaultClientRate, clientPayType)}
+                      onClick={editingClientRate ? undefined : () => startScheduleRateEdit(sch.id, 'defaultClientRate', sch.defaultClientRate)}
                     />
                     <DetailRow
                       label="Cleaner Pay"
-                      value={payLabel(sch.defaultSubcontractorRate, subPayType)}
-                      onClick={() => {
-                        setExpandedLocation(location.id)
-                        setScheduleFormMode('edit')
-                        setEditingSchedule({ ...sch, locationId: location.id })
-                      }}
+                      value={editingCleanerRate ? (
+                        <Input
+                          autoFocus
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={inlineValue}
+                          onChange={(event) => setInlineValue(event.target.value)}
+                          onKeyDown={handleInlineKeyDown}
+                          onBlur={saveInlineEdit}
+                          disabled={savingInline}
+                          className="h-7 w-28 text-sm font-semibold"
+                        />
+                      ) : payLabel(sch.defaultSubcontractorRate, subPayType)}
+                      onClick={editingCleanerRate ? undefined : () => startScheduleRateEdit(sch.id, 'defaultSubcontractorRate', sch.defaultSubcontractorRate)}
+                    />
+                    <DetailRow
+                      label="Margin"
+                      value={`${formatCurrency(profit)}/mo`}
+                      muted={profit < 0}
                     />
                     <DetailRow
                       label="Cleaner"
                       value={sch.subcontractor?.name || 'Unassigned'}
                       muted={!sch.subcontractor?.name}
-                      onClick={() => setExpandedLocation(location.id)}
+                      onClick={() => setReassigningSchedule(reassigningSchedule === sch.id ? null : sch.id)}
                     />
+                    {reassigningSchedule === sch.id && (
+                      <div className="border-b border-gray-100 bg-gray-50 px-3.5 py-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => handleQuickReassign(sch.id, null, reassignEffectiveDate)}
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-gray-100"
+                          >
+                            Unassigned
+                          </button>
+                          {subcontractors.filter((sub: SubcontractorRecord) => sub.isActive !== false || sub.id === sch.subcontractorId).map((sub: SubcontractorRecord) => (
+                            <button
+                              key={sub.id}
+                              onClick={() => handleQuickReassign(sch.id, sub.id, reassignEffectiveDate)}
+                              className={`rounded-md border px-2 py-1 text-xs font-medium ${sch.subcontractorId === sub.id ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-gray-200 bg-white text-slate-600 hover:bg-gray-100'}`}
+                            >
+                              {sub.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <DetailRow
                       label="Entry Codes"
-                      value={location.accessInfo || 'Add entry info'}
+                      value={editingAccessInfo ? (
+                        <Input
+                          autoFocus
+                          value={inlineValue}
+                          onChange={(event) => setInlineValue(event.target.value)}
+                          onKeyDown={handleInlineKeyDown}
+                          onBlur={saveInlineEdit}
+                          disabled={savingInline}
+                          className="h-7 text-sm font-semibold"
+                        />
+                      ) : location.accessInfo || 'Add entry info'}
                       muted={!location.accessInfo}
-                      onClick={() => setExpandedLocation(location.id)}
+                      onClick={editingAccessInfo ? undefined : () => startLocationEdit(location.id, 'accessInfo', location.accessInfo)}
                     />
-                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-gray-50/70">
+                    <div className="flex flex-wrap items-center gap-2 px-3.5 py-2 bg-gray-50/70">
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           onClick={() => {
@@ -364,15 +665,6 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                             ? sch.isActive !== false ? 'Pausing...' : 'Resuming...'
                             : sch.isActive !== false ? 'Pause' : 'Resume'}
                         </button>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-                        <span className="font-medium text-slate-500">Client: {formatCurrency(rev)}/mo</span>
-                        <span className="text-slate-300">/</span>
-                        <span className="font-medium text-slate-500">Cleaner: {formatCurrency(cost)}/mo</span>
-                        <span className="text-slate-300">/</span>
-                        <span className={`font-semibold ${profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                          Margin: {formatCurrency(profit)}/mo
-                        </span>
                       </div>
                     </div>
                   </div>
