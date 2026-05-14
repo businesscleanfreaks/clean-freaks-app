@@ -26,7 +26,7 @@ export function NeedsAttention({
     items.push({
       id: 'unassigned',
       icon: Calendar,
-      label: `${unassignedJobsCount} job${unassignedJobsCount !== 1 ? 's' : ''} need a cleaner`,
+      label: `${unassignedJobsCount} job${unassignedJobsCount !== 1 ? 's' : ''} need a cleaner today`,
       href: '/calendar',
       actionLabel: 'Assign',
       color: 'warning' as const,

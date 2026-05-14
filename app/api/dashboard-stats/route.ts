@@ -138,7 +138,8 @@ export async function GET() {
         where: {
           status: "SCHEDULED",
           date: {
-            gte: startOfDay(now),
+            gte: todayStart,
+            lte: todayEnd,
           },
           AND: [
             { subcontractorId: null },
@@ -279,6 +280,11 @@ export async function GET() {
             },
           },
           subcontractor: true,
+          schedule: {
+            include: {
+              subcontractor: true,
+            },
+          },
         },
         orderBy: [
           { startTime: 'asc' },
@@ -441,7 +447,7 @@ export async function GET() {
       id: job.id,
       clientName: job.location.client.name,
       locationName: job.location.name,
-      cleanerName: job.subcontractor?.name || null,
+      cleanerName: job.subcontractor?.name || job.schedule?.subcontractor?.name || null,
       startTime: job.startTime || null,
       status: job.status,
     }))
