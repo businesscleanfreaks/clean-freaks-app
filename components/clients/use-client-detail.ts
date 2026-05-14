@@ -530,6 +530,9 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       })
       if (!response.ok) {
         await showApiError(response, `Failed to ${currentlyActive ? 'pause' : 'resume'} client`)
+        // CRITICAL: Revert optimistic update on error
+        setClient(prevClient)
+        setIsTogglingPause(false)
         return
       }
       const updated = await response.json()

@@ -117,10 +117,17 @@ function ClientCard({
   const isClientActive = client.isActive !== false
   const status = !isClientActive ? 'inactive' : 'active'
 
-  // Check if client is newly created (within 7 days)
+  // Check if client is newly created: created within 7 days AND has never had a completed cleaning
   const createdDate = new Date(client.createdAt)
   const daysSinceCreation = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
-  const isNew = daysSinceCreation <= 7
+  
+  // Check if client has any completed jobs
+  const hasCompletedJobs = client.locations?.some(loc => 
+    loc.jobs?.some((j: any) => j.status === 'COMPLETED')
+  ) ?? false
+  
+  // Show NEW badge only if: created within 7 days AND has NO completed jobs yet
+  const isNew = daysSinceCreation <= 7 && !hasCompletedJobs
 
   const getInitials = (name: string) =>
     name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)

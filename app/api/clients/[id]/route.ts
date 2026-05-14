@@ -243,9 +243,24 @@ export async function PUT(
       }
 
       if (regenerationErrors > 0 && regenerationErrors === allScheduleIds.length) {
-        // Only fail if ALL schedules failed
+        // CRITICAL: If ALL schedules failed, revert the client back to paused state
+        // to avoid leaving the client in an inconsistent state
+        await prisma.client.update({
+          where: { id: params.id },
+          data: { isActive: false },
+        })
+        
+        // Also deactivate the schedules we just activated
+        for (const location of client.locations) {
+          await prisma.schedule.updateMany({
+            where: { locationId: location.id },
+            data: { isActive: false },
+          })
+        }
+        
+        logger.error(`[resumeClient] Failed to resume client ${params.id}: all schedule regenerations failed. Client reverted to paused state.`)
         return NextResponse.json(
-          { error: 'Failed to resume client. Schedule regeneration failed. Please try again.' },
+          { error: 'Failed to resume client. Schedule regeneration failed. Client remains paused. Please try again.' },
           { status: 500 }
         )
       }

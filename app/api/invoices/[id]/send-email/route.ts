@@ -127,17 +127,20 @@ export async function POST(
       )
     }
 
-    // Update invoice status to SENT (even for test/simulated sends so the workflow can be tested)
-    await prisma.invoice.update({
-      where: { id: resolvedParams.id },
-      data: {
-        dateSent: new Date(),
-        sentTo: isActuallyTest ? `[TEST] ${toRecipients.join(', ')}` : toRecipients.join(', '),
-        emailSubject: subject,
-        emailBody: message,
-        status: 'SENT',
-      },
-    })
+    // Only mark invoice as SENT if this is a real (non-test) send AND it succeeded
+    // For test sends, keep invoice in DRAFT state to avoid confusion
+    if (!isActuallyTest) {
+      await prisma.invoice.update({
+        where: { id: resolvedParams.id },
+        data: {
+          dateSent: new Date(),
+          sentTo: toRecipients.join(', '),
+          emailSubject: subject,
+          emailBody: message,
+          status: 'SENT',
+        },
+      })
+    }
 
     return NextResponse.json({
       success: true,
