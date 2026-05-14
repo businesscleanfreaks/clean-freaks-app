@@ -37,57 +37,61 @@ export async function GET(request: Request) {
     const biWeeklyStart = subWeeks(startOfWeek(now), 1)
     const biWeeklyEnd = endOfWeek(now)
 
-    // Get invoices with cursor-based pagination (fetch one extra to detect hasMore)
-    const invoices = await prisma.invoice.findMany({
-      include: {
-        client: true,
-        lineItems: true,
-      },
-      orderBy: {
-        dateCreated: 'desc',
-      },
-      take: limit + 1,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    })
+    // Get billing start date to filter out historical jobs
+    const billingStartDate = await getBillingStartDate()
+
+    const [
+      invoices,
+      draftsCount,
+      waitingCount,
+      paidCount,
+      allUninvoicedJobs,
+    ] = await prisma.$transaction([
+      // Get invoices with cursor-based pagination (fetch one extra to detect hasMore)
+      prisma.invoice.findMany({
+        include: {
+          client: true,
+          lineItems: true,
+        },
+        orderBy: {
+          dateCreated: 'desc',
+        },
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      }),
+      // Get accurate counts from DB (not from the paginated list)
+      prisma.invoice.count({ where: { status: 'DRAFT' } }),
+      prisma.invoice.count({ where: { status: 'SENT' } }),
+      prisma.invoice.count({ where: { status: 'PAID' } }),
+      // Get all uninvoiced, non-cancelled jobs
+      prisma.job.findMany({
+        where: {
+          invoiced: false,
+          status: { not: "CANCELLED" },
+          ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
+        },
+        include: {
+          location: {
+            include: {
+              client: true,
+            },
+          },
+          schedule: {
+            include: {
+              recurringAddOnServices: true,
+            },
+          },
+          addOnServices: true,
+        },
+        orderBy: {
+          date: 'asc',
+        },
+      }),
+    ])
 
     const hasMore = invoices.length > limit
     if (hasMore) invoices.pop()
     const nextCursor = hasMore ? invoices[invoices.length - 1]?.id : null
-
-    // Get accurate counts from DB (not from the paginated list)
-    const [draftsCount, waitingCount, paidCount] = await Promise.all([
-      prisma.invoice.count({ where: { status: 'DRAFT' } }),
-      prisma.invoice.count({ where: { status: 'SENT' } }),
-      prisma.invoice.count({ where: { status: 'PAID' } }),
-    ])
-
-    // Get billing start date to filter out historical jobs
-    const billingStartDate = await getBillingStartDate()
-
-    // Get all uninvoiced, non-cancelled jobs
-    const allUninvoicedJobs = await prisma.job.findMany({
-      where: {
-        invoiced: false,
-        status: { not: "CANCELLED" },
-        ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
-      },
-      include: {
-        location: {
-          include: {
-            client: true,
-          },
-        },
-        schedule: {
-          include: {
-            recurringAddOnServices: true,
-          },
-        },
-        addOnServices: true,
-      },
-      orderBy: {
-        date: 'asc',
-      },
-    })
 
     // Group by client based on their invoiceFrequency setting
     type JobWithRelations = typeof allUninvoicedJobs[0]

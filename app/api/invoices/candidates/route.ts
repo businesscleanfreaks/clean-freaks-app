@@ -40,53 +40,91 @@ export async function GET(request: Request) {
 
     const billingStartDate = await getBillingStartDate()
 
-    // 1. Fetch ALL jobs in the period (including invoiced ones for detection)
-    const allJobs = await prisma.job.findMany({
-      where: {
-        date: { gte: periodStart, lte: periodEnd },
-        ...(billingStartDate ? { date: { gte: billingStartDate, lte: periodEnd } } : {}),
-      },
-      include: {
-        location: {
-          include: { client: true },
+    const [
+      allJobs,
+      existingInvoices,
+      clientsWithSchedules,
+    ] = await prisma.$transaction([
+      // 1. Fetch ALL jobs in the period (including invoiced ones for detection)
+      prisma.job.findMany({
+        where: {
+          date: { gte: periodStart, lte: periodEnd },
+          ...(billingStartDate ? { date: { gte: billingStartDate, lte: periodEnd } } : {}),
         },
-        schedule: {
-          include: { recurringAddOnServices: true },
-        },
-        addOnServices: true,
-        invoiceLineItems: {
-          include: {
-            invoice: {
-              select: { id: true, invoiceNumber: true, status: true, billingPeriodStart: true, billingPeriodEnd: true },
+        include: {
+          location: {
+            include: { client: true },
+          },
+          schedule: {
+            include: { recurringAddOnServices: true },
+          },
+          addOnServices: true,
+          invoiceLineItems: {
+            include: {
+              invoice: {
+                select: { id: true, invoiceNumber: true, status: true, billingPeriodStart: true, billingPeriodEnd: true },
+              },
             },
           },
         },
-      },
-      orderBy: { date: 'asc' },
-    })
+        orderBy: { date: 'asc' },
+      }),
 
-    // 2. Fetch existing invoices that overlap the billing period
-    const existingInvoices = await prisma.invoice.findMany({
-      where: {
-        status: { not: 'VOID' },
-        OR: [
-          // Match by billing period fields
-          {
-            billingPeriodStart: { lte: periodEnd },
-            billingPeriodEnd: { gte: periodStart },
+      // 2. Fetch existing invoices that overlap the billing period
+      prisma.invoice.findMany({
+        where: {
+          status: { not: 'VOID' },
+          OR: [
+            // Match by billing period fields
+            {
+              billingPeriodStart: { lte: periodEnd },
+              billingPeriodEnd: { gte: periodStart },
+            },
+            // Fallback: match by creation date if no billing period set
+            {
+              billingPeriodStart: null,
+              dateCreated: { gte: periodStart, lte: periodEnd },
+            },
+          ],
+        },
+        include: {
+          client: true,
+          lineItems: { include: { job: true } },
+        },
+      }),
+
+      // 4. Also find clients with active schedules but NO jobs in the period
+      //    (might be relevant for flat-rate clients)
+      prisma.client.findMany({
+        where: {
+          isActive: true,
+          locations: {
+            some: {
+              schedules: {
+                some: { isActive: true },
+              },
+            },
           },
-          // Fallback: match by creation date if no billing period set
-          {
-            billingPeriodStart: null,
-            dateCreated: { gte: periodStart, lte: periodEnd },
+        },
+        include: {
+          locations: {
+            include: {
+              schedules: {
+                where: { isActive: true },
+                select: {
+                  id: true,
+                  frequency: true,
+                  daysOfWeek: true,
+                  clientPayType: true,
+                  defaultClientRate: true,
+                  recurringAddOnServices: true,
+                },
+              },
+            },
           },
-        ],
-      },
-      include: {
-        client: true,
-        lineItems: { include: { job: true } },
-      },
-    })
+        },
+      }),
+    ])
 
     // Index existing invoices by clientId
     const invoicesByClient = new Map<string, typeof existingInvoices>()
@@ -104,38 +142,6 @@ export async function GET(request: Request) {
       const clientId = job.location.client.id
       if (!jobsByClient.has(clientId)) jobsByClient.set(clientId, [])
       jobsByClient.get(clientId)!.push(job)
-    })
-
-    // 4. Also find clients with active schedules but NO jobs in the period
-    //    (might be relevant for flat-rate clients)
-    const clientsWithSchedules = await prisma.client.findMany({
-      where: {
-        isActive: true,
-        locations: {
-          some: {
-            schedules: {
-              some: { isActive: true },
-            },
-          },
-        },
-      },
-      include: {
-        locations: {
-          include: {
-            schedules: {
-              where: { isActive: true },
-              select: {
-                id: true,
-                frequency: true,
-                daysOfWeek: true,
-                clientPayType: true,
-                defaultClientRate: true,
-                recurringAddOnServices: true,
-              },
-            },
-          },
-        },
-      },
     })
 
     // 5. Build candidates
@@ -446,19 +452,16 @@ export async function GET(request: Request) {
     })
 
     // 6. Check for older uninvoiced work (outside the selected period)
-    const olderUninvoicedCount = await prisma.job.count({
-      where: {
-        invoiced: false,
-        status: { not: 'CANCELLED' },
-        date: { lt: periodStart },
-        ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
-      },
-    })
-
-    // Get the months with older uninvoiced work
-    let olderMonths: string[] = []
-    if (olderUninvoicedCount > 0) {
-      const olderJobs = await prisma.job.findMany({
+    const [olderUninvoicedCount, olderJobs] = await prisma.$transaction([
+      prisma.job.count({
+        where: {
+          invoiced: false,
+          status: { not: 'CANCELLED' },
+          date: { lt: periodStart },
+          ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
+        },
+      }),
+      prisma.job.findMany({
         where: {
           invoiced: false,
           status: { not: 'CANCELLED' },
@@ -468,7 +471,12 @@ export async function GET(request: Request) {
         select: { date: true },
         distinct: ['date'],
         orderBy: { date: 'asc' },
-      })
+      }),
+    ])
+
+    // Get the months with older uninvoiced work
+    let olderMonths: string[] = []
+    if (olderUninvoicedCount > 0) {
       const months = new Set<string>()
       olderJobs.forEach(j => months.add(format(j.date, 'yyyy-MM')))
       olderMonths = Array.from(months)
