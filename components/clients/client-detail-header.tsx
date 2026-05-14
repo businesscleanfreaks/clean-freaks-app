@@ -27,6 +27,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
     locationCount,
     fadeIn,
     isTogglingPause,
+    pauseResumeAction,
     handleTogglePause,
     handleGenerateInvoice,
     setShowAdditionalServiceChoice,
@@ -37,6 +38,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
   } = state
 
   const [showOverflow, setShowOverflow] = useState(false)
+  const isPauseAction = isTogglingPause ? pauseResumeAction === 'pause' : isActive
 
   return (
     <>
@@ -132,9 +134,9 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
             onClick={handleTogglePause}
             disabled={isTogglingPause}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
-            style={{ border: '1px solid #E0E0E0', color: isActive ? '#6B7280' : '#00A896' }}
+            style={{ border: '1px solid #E0E0E0', color: isPauseAction ? '#6B7280' : '#00A896' }}
           >
-            {isActive ? (
+            {isPauseAction ? (
               <>
                 <PauseCircle className="w-4 h-4" />
                 <span className="hidden sm:inline">{isTogglingPause ? 'Pausing…' : 'Pause Client'}</span>

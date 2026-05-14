@@ -411,17 +411,25 @@ export async function regenerateJobsForSchedule(
     let createdCount = 0
     let skippedCount = 0
 
-    if (candidateDates.length > 0) {
-      // Find which dates already have jobs for this LOCATION (not just
-      // this schedule). This prevents duplicates when a location has
-      // multiple schedules covering the same dates.
+    const futureCandidateDates = candidateDates.filter((date) => date >= now)
+
+    if (futureCandidateDates.length > 0) {
+      // Find dates already occupied at this location. Cancelled jobs on other
+      // schedules should not block a future clean, but cancelled/protected jobs
+      // on this schedule still occupy the unique schedule/date slot.
       const existingJobs = await tx.job.findMany({
-        where: { locationId: schedule.locationId, date: { in: candidateDates }, status: { not: 'CANCELLED' } },
+        where: {
+          date: { in: futureCandidateDates },
+          OR: [
+            { scheduleId },
+            { locationId: schedule.locationId, status: { not: 'CANCELLED' } },
+          ],
+        },
         select: { date: true },
       })
       const existingDates = new Set(existingJobs.map((j) => j.date.getTime()))
 
-      const jobsToCreate = candidateDates
+      const jobsToCreate = futureCandidateDates
         .filter((date) => {
           if (existingDates.has(date.getTime())) {
             skippedCount++

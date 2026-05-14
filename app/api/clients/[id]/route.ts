@@ -6,81 +6,85 @@ import { logger } from '@/lib/logger'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { startOfDay } from 'date-fns'
 
+async function getClientWithDetails(id: string) {
+  return prisma.client.findUnique({
+    where: { id },
+    include: {
+      locations: {
+        include: {
+          schedules: {
+            include: {
+              subcontractor: true,
+              recurringAddOnServices: {
+                where: { isRecurring: true },
+                orderBy: { createdAt: 'desc' },
+              },
+            },
+          },
+          jobs: {
+            select: {
+              id: true,
+              date: true,
+              startTime: true,
+              startWindowBegin: true,
+              startWindowEnd: true,
+              status: true,
+              invoiced: true,
+              scheduleId: true,
+              clientRate: true,
+              subcontractorRate: true,
+              subcontractor: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              schedule: {
+                select: {
+                  id: true,
+                  frequency: true,
+                  defaultClientRate: true,
+                  defaultSubcontractorRate: true,
+                  timeType: true,
+                  startTime: true,
+                  startWindowBegin: true,
+                  startWindowEnd: true,
+                },
+              },
+            },
+            orderBy: {
+              date: 'desc',
+            },
+          },
+        },
+      },
+      invoices: {
+        select: {
+          id: true,
+          status: true,
+          totalAmount: true,
+          dateCreated: true,
+        },
+        orderBy: {
+          dateCreated: 'desc',
+        },
+        take: 10,
+      },
+      _count: {
+        select: {
+          locations: true,
+        },
+      },
+    },
+  })
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const client = await prisma.client.findUnique({
-      where: { id: params.id },
-      include: {
-        locations: {
-          include: {
-            schedules: {
-              include: {
-                subcontractor: true,
-                recurringAddOnServices: {
-                  where: { isRecurring: true },
-                  orderBy: { createdAt: 'desc' },
-                },
-              },
-            },
-            jobs: {
-              select: {
-                id: true,
-                date: true,
-                startTime: true,
-                startWindowBegin: true,
-                startWindowEnd: true,
-                status: true,
-                invoiced: true,
-                scheduleId: true,
-                clientRate: true,
-                subcontractorRate: true,
-                subcontractor: {
-                  select: {
-                    id: true,
-                    name: true,
-                  },
-                },
-                schedule: {
-                  select: {
-                    id: true,
-                    frequency: true,
-                    defaultClientRate: true,
-                    defaultSubcontractorRate: true,
-                    timeType: true,
-                    startTime: true,
-                    startWindowBegin: true,
-                    startWindowEnd: true,
-                  },
-                },
-              },
-              orderBy: {
-                date: 'desc',
-              },
-            },
-          },
-        },
-        invoices: {
-          select: {
-            id: true,
-            status: true,
-            totalAmount: true,
-            dateCreated: true,
-          },
-          orderBy: {
-            dateCreated: 'desc',
-          },
-          take: 10,
-        },
-        _count: {
-          select: {
-            locations: true,
-          },
-        },
-      },
-    })
+    const client = await getClientWithDetails(params.id)
 
     if (!client) {
       return NextResponse.json(
@@ -148,6 +152,7 @@ export async function PUT(
 
     const isPausing = isActiveChanging && previousIsActive === true && clientData.isActive === false
     const isResuming = isActiveChanging && previousIsActive === false && clientData.isActive === true
+    let regenerationErrors: Array<{scheduleId: string, error: string}> = []
 
     if (isPausing) {
       // Cancel all future SCHEDULED jobs for this client
@@ -218,31 +223,32 @@ export async function PUT(
 
       // Reactivate all schedules and regenerate jobs
       const allScheduleIds: string[] = []
+
       for (const location of client.locations) {
-        const updated = await prisma.schedule.updateMany({
+        await prisma.schedule.updateMany({
           where: { locationId: location.id },
           data: { isActive: true },
         })
-        if (updated.count > 0) {
-          const schedules = await prisma.schedule.findMany({
-            where: { locationId: location.id },
-            select: { id: true },
-          })
-          allScheduleIds.push(...schedules.map(s => s.id))
-        }
+
+        // Get ALL schedules for this location (not just updated ones)
+        const schedules = await prisma.schedule.findMany({
+          where: { locationId: location.id, isActive: true },
+          select: { id: true },
+        })
+        allScheduleIds.push(...schedules.map(s => s.id))
       }
 
-      let regenerationErrors = 0
       for (const scheduleId of allScheduleIds) {
         try {
           await regenerateJobsForSchedule(scheduleId)
         } catch (regenError) {
-          regenerationErrors++
+          const errorMsg = regenError instanceof Error ? regenError.message : String(regenError)
+          regenerationErrors.push({scheduleId, error: errorMsg})
           logger.error(`[resumeClient] Failed to regenerate schedule ${scheduleId}:`, regenError)
         }
       }
 
-      if (regenerationErrors > 0 && regenerationErrors === allScheduleIds.length) {
+      if (regenerationErrors.length > 0 && regenerationErrors.length === allScheduleIds.length) {
         // CRITICAL: If ALL schedules failed, revert the client back to paused state
         // to avoid leaving the client in an inconsistent state
         await prisma.client.update({
@@ -257,22 +263,33 @@ export async function PUT(
             data: { isActive: false },
           })
         }
-        
+
         logger.error(`[resumeClient] Failed to resume client ${params.id}: all schedule regenerations failed. Client reverted to paused state.`)
         return NextResponse.json(
-          { error: 'Failed to resume client. Schedule regeneration failed. Client remains paused. Please try again.' },
+          {
+            error: 'Failed to resume client. Schedule regeneration failed. Client remains paused. Please try again.',
+            details: {
+              failedSchedules: regenerationErrors,
+              totalSchedules: allScheduleIds.length,
+            }
+          },
           { status: 500 }
         )
       }
 
-      logger.info(`[resumeClient] Resumed client ${params.id}: reactivated ${allScheduleIds.length} schedules (${regenerationErrors} errors)`)
+      logger.info(`[resumeClient] Resumed client ${params.id}: reactivated ${allScheduleIds.length} schedules (${regenerationErrors.length} errors)`)
     }
 
     revalidateClientPages(client.id)
 
     // Return pause/resume summary if applicable
     if (isPausing || isResuming) {
-      return NextResponse.json({ ...client, _pauseResumeApplied: true })
+      const refreshedClient = await getClientWithDetails(params.id)
+      return NextResponse.json({
+        ...(refreshedClient || client),
+        _pauseResumeApplied: true,
+        _scheduleRegenerationErrors: regenerationErrors,
+      })
     }
 
     return NextResponse.json(client)

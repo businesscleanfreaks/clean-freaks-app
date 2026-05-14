@@ -25,6 +25,7 @@ interface Location {
   address: string
   latitude: number | null
   longitude: number | null
+  jobs?: Array<{ status: string }>
 }
 
 interface Client {
@@ -38,6 +39,7 @@ interface Client {
   notes: string | null
   isActive: boolean
   createdAt: string
+  startDate?: string | null
   locations: Location[]
   cleanerDisplay?: string
 }
@@ -117,9 +119,12 @@ function ClientCard({
   const isClientActive = client.isActive !== false
   const status = !isClientActive ? 'inactive' : 'active'
 
-  // Check if client is newly created: created within 7 days AND has never had a completed cleaning
-  const createdDate = new Date(client.createdAt)
-  const daysSinceCreation = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+  // Imported clients can have a recent createdAt even when the relationship is old.
+  // Prefer startDate when present so the NEW badge only marks genuinely new clients.
+  const relationshipDate = new Date(client.startDate || client.createdAt)
+  const daysSinceRelationshipStart = Number.isFinite(relationshipDate.getTime())
+    ? Math.floor((Date.now() - relationshipDate.getTime()) / (1000 * 60 * 60 * 24))
+    : Infinity
   
   // Check if client has any completed jobs
   const hasCompletedJobs = client.locations?.some(loc => 
@@ -127,7 +132,7 @@ function ClientCard({
   ) ?? false
   
   // Show NEW badge only if: created within 7 days AND has NO completed jobs yet
-  const isNew = daysSinceCreation <= 7 && !hasCompletedJobs
+  const isNew = isClientActive && daysSinceRelationshipStart >= 0 && daysSinceRelationshipStart <= 7 && !hasCompletedJobs
 
   const getInitials = (name: string) =>
     name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)

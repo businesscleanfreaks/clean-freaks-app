@@ -53,6 +53,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
   
   const [showOneTimeServiceDialog, setShowOneTimeServiceDialog] = useState(false)
   const [isTogglingPause, setIsTogglingPause] = useState(false)
+  const [pauseResumeAction, setPauseResumeAction] = useState<'pause' | 'resume' | null>(null)
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState<string | null>(null)
   const [showAdditionalServiceChoice, setShowAdditionalServiceChoice] = useState(false)
 
@@ -499,6 +500,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     }
 
     setIsTogglingPause(true)
+    setPauseResumeAction(currentlyActive ? 'pause' : 'resume')
     const prevClient = client
     const now = new Date()
     try {
@@ -537,7 +539,14 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       }
       const updated = await response.json()
       setClient(updated)
-      showSuccess(currentlyActive ? 'Client paused — upcoming jobs cancelled' : 'Client resumed — schedules reactivated')
+      const regenerationErrors = Array.isArray(updated._scheduleRegenerationErrors)
+        ? updated._scheduleRegenerationErrors
+        : []
+      if (!currentlyActive && regenerationErrors.length > 0) {
+        showError('Client resumed, but some future schedule regeneration failed. Please regenerate schedule manually.')
+      } else {
+        showSuccess(currentlyActive ? 'Client paused — upcoming jobs cancelled' : 'Client resumed — schedules reactivated')
+      }
       // Ensure any server-only changes (e.g. regenerated jobs on resume)
       // are pulled in.
       onDataChange?.()
@@ -547,6 +556,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       setClient(prevClient)
     } finally {
       setIsTogglingPause(false)
+      setPauseResumeAction(null)
     }
   }
 
@@ -959,6 +969,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     
     // Pause state
     isTogglingPause,
+    pauseResumeAction,
     
     // Handlers
     handleUpdate,

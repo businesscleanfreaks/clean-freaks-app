@@ -24,6 +24,9 @@ export async function GET() {
                 },
               },
             },
+            jobs: {
+              select: { status: true },
+            },
           },
         },
       },
