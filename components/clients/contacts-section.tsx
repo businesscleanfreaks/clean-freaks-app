@@ -471,7 +471,15 @@ function AddContactSheet({
   )
 }
 
-export function ContactsSection({ clientId }: { clientId: string }) {
+export function ContactsSection({
+  clientId,
+  title = "Contacts",
+  emptyText = "No contacts yet - add one",
+}: {
+  clientId: string
+  title?: string
+  emptyText?: string
+}) {
   const { data, mutate, isLoading } = useSWR(`/api/clients/${clientId}/contacts`, fetcher)
   const contacts: ClientContact[] = data?.contacts || []
   const [showAdd, setShowAdd] = useState(false)
@@ -479,7 +487,7 @@ export function ContactsSection({ clientId }: { clientId: string }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Contacts</h3>
+        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">{title}</h3>
         <button
           onClick={() => setShowAdd(true)}
           className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold border transition-all hover:shadow-sm"
@@ -500,7 +508,7 @@ export function ContactsSection({ clientId }: { clientId: string }) {
           onClick={() => setShowAdd(true)}
         >
           <Plus className="w-5 h-5 text-gray-300 mb-1" />
-          <p className="text-xs text-gray-400">No contacts yet — add one</p>
+          <p className="text-xs text-gray-400">{emptyText}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

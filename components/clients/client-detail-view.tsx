@@ -3,7 +3,7 @@
 import { useClientDetail } from "./use-client-detail"
 import { ClientDetailHeader } from "./client-detail-header"
 import { ClientDetailLocations } from "./client-detail-locations"
-import { ClientDetailSidebar, ClientDetailJobFeed } from "./client-detail-sidebar"
+import { ClientDetailContactSummary, ClientDetailSidebar, ClientDetailJobFeed } from "./client-detail-sidebar"
 import { ClientDetailModals } from "./client-detail-modals"
 import type { ClientWithDetails } from "@/lib/types"
 
@@ -71,7 +71,8 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
         <div className="mx-auto w-full max-w-[1180px] px-4 sm:px-6 py-5">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-5">
             {/* LEFT COLUMN: Locations → Contact → Delete */}
-            <div className="space-y-5 order-2 lg:order-1">
+            <div className="space-y-4 order-2 lg:order-1">
+              <ClientDetailContactSummary state={state} />
               <ClientDetailLocations state={state} />
               <ClientDetailSidebar state={state} />
             </div>

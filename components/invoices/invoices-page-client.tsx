@@ -3,34 +3,27 @@
 import { useState, useMemo } from "react"
 import { formatCurrency } from "@/lib/utils"
 import {
-  FileText,
   CheckCircle2,
   Clock,
   ChevronRight,
-  RotateCcw,
   Zap,
   Search,
   AlertCircle,
   CheckCheck,
   X,
   Download,
-  Info,
 } from "lucide-react"
 import Link from "next/link"
-import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
+import { addMonths, format, startOfMonth, endOfMonth } from "date-fns"
 import { QuickInvoiceModal } from "./quick-invoice-modal"
 import { CandidateCard, type InvoiceCandidate } from "./candidate-card"
 import { useConfirm } from "@/hooks/use-confirm"
 import { showApiError } from "@/lib/toast"
 
 function getJobSummary(entry: ClientEntry): string {
-  const parts: string[] = []
-  if (entry.completedJobs > 0 && entry.scheduledJobs > 0) {
-    parts.push(`${entry.completedJobs} done, ${entry.scheduledJobs} upcoming`)
-  } else {
-    parts.push(`${entry.jobs.length} job${entry.jobs.length !== 1 ? 's' : ''}`)
-  }
-  return parts.join(' · ')
+  const scheduled = Math.max(entry.scheduledJobs, 0)
+  const cleanLabel = `${entry.jobs.length} clean${entry.jobs.length !== 1 ? 's' : ''}`
+  return `${cleanLabel} · ${entry.completedJobs} done, ${scheduled} scheduled`
 }
 
 interface ReadyToBillJob {
@@ -144,7 +137,7 @@ interface InvoicesPageClientProps {
   displayMonth?: string
   onDisplayMonthChange?: (month: string) => void
   candidates?: InvoiceCandidate[]
-  candidateStats?: { readyCount: number; attentionCount: number; readyTotal: number } | null
+  candidateStats?: { readyCount: number; attentionCount: number; draftCount?: number; readyTotal: number } | null
   candidatesLoading?: boolean
   olderUninvoiced?: { count: number; months: string[] } | null
 }
@@ -169,7 +162,7 @@ export function InvoicesPageClient({
   candidatesLoading,
   olderUninvoiced,
 }: InvoicesPageClientProps) {
-  const [activeTab, setActiveTab] = useState<'ready' | 'drafts' | 'waiting' | 'paid'>('ready')
+  const [activeTab, setActiveTab] = useState<'ready' | 'waiting' | 'paid'>('ready')
   const [searchQuery, setSearchQuery] = useState('')
   const [quickInvoiceOpen, setQuickInvoiceOpen] = useState(false)
   const [selectedClient, setSelectedClient] = useState<ClientEntry | null>(null)
@@ -179,15 +172,15 @@ export function InvoicesPageClient({
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set())
   const [markingInvoiced, setMarkingInvoiced] = useState(false)
-  const [uninvoicingId, setUninvoicingId] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
-  const [exportMonth, setExportMonth] = useState('all')
+  const [exportMonth, setExportMonth] = useState(format(new Date(), 'yyyy-MM'))
+  const [candidateSelectionMode, setCandidateSelectionMode] = useState(false)
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
 
   const handleBulkExport = async () => {
     setIsExporting(true)
     try {
-      const statusMap: Record<string, string> = { drafts: 'DRAFT', waiting: 'SENT', paid: 'PAID' }
+      const statusMap: Record<string, string> = { waiting: 'SENT', paid: 'PAID' }
       const statusParam = statusMap[activeTab] || 'all'
 
       // Determine date range from month filter
@@ -219,18 +212,6 @@ export function InvoicesPageClient({
       setIsExporting(false)
     }
   }
-
-  const monthOptions = useMemo(() => {
-    const options = [{ value: 'all', label: 'All' }]
-    for (let i = 0; i < 6; i++) {
-      const d = subMonths(new Date(), i)
-      options.push({
-        value: format(startOfMonth(d), 'yyyy-MM'),
-        label: format(d, 'MMM yyyy'),
-      })
-    }
-    return options
-  }, [])
 
   // All clients from API (unfiltered)
   const allReadyClients = useMemo(
@@ -274,7 +255,6 @@ export function InvoicesPageClient({
 
   const filteredInvoices = useMemo(() => {
     let inv = invoices.filter((i) => {
-      if (activeTab === 'drafts') return i.status === 'DRAFT'
       if (activeTab === 'waiting') return i.status === 'SENT'
       if (activeTab === 'paid') return i.status === 'PAID'
       return false
@@ -327,53 +307,6 @@ export function InvoicesPageClient({
 
   const handleQuickInvoiceSuccess = () => {
     onDataChange()
-  }
-
-  const handleBatchInvoice = () => {
-    if (monthFilteredClients.length === 0) return
-    // Pass the full (all-months) entry so modal can switch months
-    const firstFiltered = monthFilteredClients[0]
-    const fullEntry = allReadyClients.find(c => c.client.id === firstFiltered.client.id) || firstFiltered
-    setSelectedClient(fullEntry)
-    setSelectedClientIndex(0)
-    setBatchMode(true)
-    setQuickInvoiceOpen(true)
-  }
-
-  const handleReturnToReady = async (invoiceId: string, invoiceNumber: string, clientName: string) => {
-    const confirmed = await confirm({
-      title: "Return to Ready?",
-      description: `Return this draft invoice to ready-to-bill?\n\nInvoice: ${invoiceNumber}\nClient: ${clientName}\n\nJobs will return to the ready-to-bill list.`,
-      confirmText: "Return to Ready",
-      cancelText: "Cancel",
-      variant: "destructive",
-    })
-
-    if (!confirmed) return
-
-    setUninvoicingId(invoiceId)
-    try {
-      const response = await fetch(`/api/invoices/${invoiceId}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        await showApiError(response, 'Failed to return invoice to ready')
-        setUninvoicingId(null)
-        return
-      }
-
-      const { showSuccess } = await import('@/lib/toast')
-      showSuccess('Jobs returned to ready-to-bill list')
-      onDataChange()
-    } catch (error) {
-      const { logger } = await import('@/lib/logger')
-      logger.error('Error returning invoice to ready:', error)
-      const { showError } = await import('@/lib/toast')
-      showError('Failed to return invoice to ready. Please try again.')
-    } finally {
-      setUninvoicingId(null)
-    }
   }
 
   const handleMarkAsInvoiced = async () => {
@@ -442,7 +375,7 @@ export function InvoicesPageClient({
 
   // Use candidate counts when available, fallback to legacy counts
   const reviewQueueCount = candidateStats
-    ? candidateStats.readyCount + candidateStats.attentionCount
+    ? candidateStats.readyCount + candidateStats.attentionCount + (candidateStats.draftCount || 0)
     : filteredReadyCount
   const reviewQueueTotal = candidateStats
     ? candidateStats.readyTotal
@@ -483,10 +416,16 @@ export function InvoicesPageClient({
   }
 
   const selectCleanFlatRateCandidates = () => {
+    setCandidateSelectionMode(true)
     setSelectedCandidateIds(new Set(cleanFlatRateCandidates.map(c => c.clientId)))
   }
 
   const clearCandidateSelection = () => {
+    setSelectedCandidateIds(new Set())
+  }
+
+  const exitCandidateSelectionMode = () => {
+    setCandidateSelectionMode(false)
     setSelectedCandidateIds(new Set())
   }
 
@@ -514,11 +453,24 @@ export function InvoicesPageClient({
   }
 
   const tabs = [
-    { key: 'ready' as const,   label: 'Review Queue',   count: reviewQueueCount },
-    { key: 'drafts' as const,  label: 'Drafts',  count: draftsCount       },
+    { key: 'ready' as const,   label: 'Review',   count: reviewQueueCount },
     { key: 'waiting' as const, label: 'Sent', count: waitingCount      },
     { key: 'paid' as const,    label: 'Paid',    count: paidCount         },
   ]
+
+  const activeMonth = activeTab === 'ready' ? (displayMonth || format(new Date(), 'yyyy-MM')) : exportMonth
+  const activeMonthLabel = activeMonth === 'all'
+    ? 'All'
+    : format(new Date(`${activeMonth}-01T00:00:00`), 'MMM yyyy')
+  const shiftActiveMonth = (delta: number) => {
+    const base = activeMonth === 'all' ? new Date() : new Date(`${activeMonth}-01T00:00:00`)
+    const next = format(addMonths(base, delta), 'yyyy-MM')
+    if (activeTab === 'ready') {
+      onDisplayMonthChange?.(next)
+    } else {
+      setExportMonth(next)
+    }
+  }
 
   return (
     <div className="w-full px-4 sm:px-6 py-6" style={{ maxWidth: '940px', margin: '0 auto' }}>
@@ -610,7 +562,62 @@ export function InvoicesPageClient({
 
         {activeTab === 'ready' && (
           <div className="flex items-center gap-2 flex-shrink-0">
-            {selectionMode ? (
+            {candidates.length > 0 && !candidatesLoading ? (
+              candidateSelectionMode ? (
+                <>
+                  {selectedCandidateIds.size > 0 && (
+                    <button
+                      onClick={handleBatchReviewSelected}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        padding: '8px 14px',
+                        fontSize: '13px', fontWeight: 600,
+                        color: 'white',
+                        backgroundColor: '#00A896',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Zap style={{ width: '14px', height: '14px' }} />
+                      Review {selectedCandidateIds.size}
+                    </button>
+                  )}
+                  <button
+                    onClick={exitCandidateSelectionMode}
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: '13px', fontWeight: 500,
+                      color: '#00A896',
+                      backgroundColor: 'transparent',
+                      border: '1px solid #00A896',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Done
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setCandidateSelectionMode(true)}
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: '13px', fontWeight: 500,
+                    color: '#888888',
+                    backgroundColor: 'transparent',
+                    border: '1px solid #DDDDDD',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'border-color 150ms',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#BBBBBB' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#DDDDDD' }}
+                >
+                  Select
+                </button>
+              )
+            ) : selectionMode ? (
               <>
                 {selectedJobCount > 0 && (
                   <button
@@ -669,27 +676,6 @@ export function InvoicesPageClient({
                     Select
                   </button>
                 )}
-                {filteredReadyCount > 1 && (
-                  <button
-                    onClick={handleBatchInvoice}
-                    className="flex items-center gap-1.5"
-                    style={{
-                      padding: '8px 14px',
-                      fontSize: '13px', fontWeight: 600,
-                      color: 'white',
-                      backgroundColor: '#00A896',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'background-color 150ms',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#008F7E' }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#00A896' }}
-                  >
-                    <Zap style={{ width: '14px', height: '14px' }} />
-                    Batch All
-                  </button>
-                )}
               </>
             )}
           </div>
@@ -719,71 +705,38 @@ export function InvoicesPageClient({
         )}
       </div>
 
-      {/* Month filter for non-ready tabs */}
-      {activeTab !== 'ready' && (
-        <div
-          className="flex items-center gap-1.5"
-          style={{ marginBottom: '12px', overflowX: 'auto', paddingBottom: '2px' }}
+      <div className="flex items-center justify-center gap-2" style={{ marginBottom: '12px' }}>
+        <button
+          onClick={() => shiftActiveMonth(-1)}
+          aria-label="Previous month"
+          style={{
+            width: '32px', height: '32px', borderRadius: '8px',
+            border: '1px solid #E5E7EB', backgroundColor: 'white',
+            color: '#64748B', fontSize: '18px', cursor: 'pointer',
+          }}
         >
-          {monthOptions.map(opt => {
-            const isActive = exportMonth === opt.value
-            return (
-              <button
-                key={opt.value}
-                onClick={() => setExportMonth(opt.value)}
-                style={{
-                  padding: '6px 14px',
-                  fontSize: '13px',
-                  fontWeight: isActive ? 600 : 500,
-                  color: isActive ? '#00A896' : '#555555',
-                  backgroundColor: isActive ? 'rgba(0,168,150,0.12)' : '#F5F5F5',
-                  border: isActive ? '1px solid rgba(0,168,150,0.3)' : '1px solid transparent',
-                  borderRadius: '20px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 120ms',
-                  flexShrink: 0,
-                }}
-              >
-                {opt.label}
-              </button>
-            )
-          })}
+          ‹
+        </button>
+        <div style={{
+          minWidth: '140px', height: '32px', borderRadius: '8px',
+          border: '1px solid #E5E7EB', backgroundColor: 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '14px', fontWeight: 600, color: '#111827',
+        }}>
+          {activeMonthLabel}
         </div>
-      )}
-
-      {/* Month Pills */}
-      {activeTab === 'ready' && onDisplayMonthChange && (
-        <div
-          className="flex items-center gap-1.5"
-          style={{ marginBottom: '12px', overflowX: 'auto', paddingBottom: '2px' }}
+        <button
+          onClick={() => shiftActiveMonth(1)}
+          aria-label="Next month"
+          style={{
+            width: '32px', height: '32px', borderRadius: '8px',
+            border: '1px solid #E5E7EB', backgroundColor: 'white',
+            color: '#64748B', fontSize: '18px', cursor: 'pointer',
+          }}
         >
-          {monthOptions.map(opt => {
-            const isActive = (displayMonth || 'all') === opt.value
-            return (
-              <button
-                key={opt.value}
-                onClick={() => onDisplayMonthChange(opt.value)}
-                style={{
-                  padding: '6px 14px',
-                  fontSize: '13px',
-                  fontWeight: isActive ? 600 : 500,
-                  color: isActive ? '#00A896' : '#555555',
-                  backgroundColor: isActive ? 'rgba(0,168,150,0.12)' : '#F5F5F5',
-                  border: isActive ? '1px solid rgba(0,168,150,0.3)' : '1px solid transparent',
-                  borderRadius: '20px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 120ms',
-                  flexShrink: 0,
-                }}
-              >
-                {opt.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
+          ›
+        </button>
+      </div>
 
       {/* Ready Tab: Summary */}
       {activeTab === 'ready' && reviewQueueTotal > 0 && (
@@ -800,63 +753,11 @@ export function InvoicesPageClient({
             <span style={{ fontSize: '13px', color: '#888888' }}>
               {reviewQueueCount} client{reviewQueueCount !== 1 ? 's' : ''}
             </span>
-            {candidateStats && candidateStats.attentionCount > 0 && (
-              <>
-                <span style={{ color: '#DDDDDD', fontSize: '13px' }}>·</span>
-                <span style={{
-                  fontSize: '12px', fontWeight: 600, color: '#92400E',
-                  backgroundColor: '#FEF3C7', padding: '2px 8px', borderRadius: '10px',
-                }}>
-                  {candidateStats.attentionCount} need attention
-                </span>
-              </>
-            )}
-            {displayMonth && displayMonth !== 'all' && (
-              <>
-                <span style={{ color: '#DDDDDD', fontSize: '13px' }}>·</span>
-                <span style={{ fontSize: '13px', color: '#888888' }}>
-                  {monthOptions.find(o => o.value === displayMonth)?.label}
-                </span>
-              </>
-            )}
           </div>
         </div>
       )}
 
-      {/* Older uninvoiced work alert */}
-      {activeTab === 'ready' && olderUninvoiced && olderUninvoiced.count > 0 && onDisplayMonthChange && (
-        <div
-          style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '10px 14px', marginBottom: '12px',
-            backgroundColor: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px',
-          }}
-        >
-          <Info style={{ width: '16px', height: '16px', color: '#EA580C', flexShrink: 0 }} />
-          <span style={{ fontSize: '13px', color: '#9A3412', flex: 1 }}>
-            Older uninvoiced work exists:{' '}
-            {olderUninvoiced.months.map((m, i) => {
-              const [y, mo] = m.split('-').map(Number)
-              const label = format(new Date(y, mo - 1), 'MMM yyyy')
-              return (
-                <button
-                  key={m}
-                  onClick={() => onDisplayMonthChange(m)}
-                  style={{
-                    color: '#EA580C', fontWeight: 600, background: 'none',
-                    border: 'none', cursor: 'pointer', textDecoration: 'underline',
-                    padding: 0, fontSize: '13px',
-                  }}
-                >
-                  {label}{i < olderUninvoiced.months.length - 1 ? ', ' : ''}
-                </button>
-              )
-            })}
-          </span>
-        </div>
-      )}
-
-      {/* ───── READY TAB: Review Queue ───── */}
+      {/* READY TAB: Review Queue */}
       {activeTab === 'ready' && (
         <>
           {/* Candidate-based Review Queue (when candidates are loaded) */}
@@ -903,12 +804,12 @@ export function InvoicesPageClient({
                             cursor: 'pointer',
                           }}
                         >
-                          Select unchanged
+                          Select all unchanged
                         </button>
                       )}
                     </div>
                     <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748B' }}>
-                      Stable monthly invoices are grouped here. Review only the ones with warnings, then batch the unchanged set.
+                      Stable monthly invoices are grouped here. Use No changes to quickly approve the predictable ones.
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -917,7 +818,7 @@ export function InvoicesPageClient({
                         key={c.clientId}
                         candidate={c}
                         onReview={handleCandidateReview}
-                        selectable={selectedCandidateIds.size > 0 || undefined}
+                        selectable={candidateSelectionMode || selectedCandidateIds.size > 0 || undefined}
                         selected={selectedCandidateIds.has(c.clientId)}
                         onToggleSelect={toggleCandidateSelection}
                       />
@@ -955,7 +856,7 @@ export function InvoicesPageClient({
                         key={c.clientId}
                         candidate={c}
                         onReview={handleCandidateReview}
-                        selectable={selectedCandidateIds.size > 0 || undefined}
+                        selectable={candidateSelectionMode || selectedCandidateIds.size > 0 || undefined}
                         selected={selectedCandidateIds.has(c.clientId)}
                         onToggleSelect={toggleCandidateSelection}
                       />
@@ -996,18 +897,18 @@ export function InvoicesPageClient({
                   <CheckCircle2 style={{ width: '40px', height: '40px', color: '#00A896', marginBottom: '12px' }} />
                   <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>All invoiced!</p>
                   <p style={{ fontSize: '14px', color: '#888888' }}>
-                    No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${monthOptions.find(o => o.value === displayMonth)?.label}` : ''}.
+                    No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${activeMonthLabel}` : ''}.
                   </p>
                   {draftsCount > 0 && (
                     <p style={{ fontSize: '13px', color: '#00A896', marginTop: '8px', fontWeight: 500 }}>
-                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} ready to send →
+                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} in Review
                     </p>
                   )}
                 </div>
               )}
 
               {/* ── Sticky Batch Selection Bar ── */}
-              {selectedCandidateIds.size > 0 && (
+              {(candidateSelectionMode || selectedCandidateIds.size > 0) && (
                 <div
                   style={{
                     position: 'sticky',
@@ -1052,14 +953,41 @@ export function InvoicesPageClient({
                   >
                     {selectedCandidateIds.size === actionableCandidates.length ? 'Clear All' : 'Select All'}
                   </button>
+                  {cleanFlatRateCandidates.length > 0 && (
+                    <button
+                      onClick={selectCleanFlatRateCandidates}
+                      style={{
+                        padding: '7px 14px', fontSize: '13px', fontWeight: 500,
+                        color: '#4F46E5', backgroundColor: '#EEF2FF',
+                        border: '1px solid #C7D2FE', borderRadius: '8px',
+                        cursor: 'pointer', transition: 'background-color 120ms',
+                      }}
+                    >
+                      Select unchanged
+                    </button>
+                  )}
+                  <button
+                    onClick={exitCandidateSelectionMode}
+                    style={{
+                      padding: '7px 14px', fontSize: '13px', fontWeight: 500,
+                      color: '#555555', backgroundColor: '#F5F5F5',
+                      border: '1px solid #E5E7EB', borderRadius: '8px',
+                      cursor: 'pointer', transition: 'background-color 120ms',
+                    }}
+                  >
+                    Done
+                  </button>
                   <button
                     onClick={handleBatchReviewSelected}
+                    disabled={selectedCandidateIds.size === 0}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '6px',
                       padding: '8px 18px', fontSize: '13px', fontWeight: 600,
                       color: 'white', backgroundColor: '#00A896',
                       border: 'none', borderRadius: '8px',
-                      cursor: 'pointer', transition: 'background-color 150ms',
+                      cursor: selectedCandidateIds.size === 0 ? 'not-allowed' : 'pointer',
+                      opacity: selectedCandidateIds.size === 0 ? 0.5 : 1,
+                      transition: 'background-color 150ms',
                     }}
                     onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#008F7E' }}
                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#00A896' }}
@@ -1094,10 +1022,10 @@ export function InvoicesPageClient({
                 >
                   <CheckCircle2 style={{ width: '40px', height: '40px', color: '#00A896', marginBottom: '12px' }} />
                   <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>All invoiced!</p>
-                  <p style={{ fontSize: '14px', color: '#888888' }}>No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${monthOptions.find(o => o.value === displayMonth)?.label}` : ''}.</p>
+                  <p style={{ fontSize: '14px', color: '#888888' }}>No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${activeMonthLabel}` : ''}.</p>
                   {draftsCount > 0 && (
                     <p style={{ fontSize: '13px', color: '#00A896', marginTop: '8px', fontWeight: 500 }}>
-                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} ready to send →
+                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} in Review
                     </p>
                   )}
                 </div>
@@ -1205,23 +1133,11 @@ export function InvoicesPageClient({
           )}
         </>
       )}
-
-      {/* ───── DRAFTS / WAITING / PAID TABS ───── */}
+      {/* Sent / Paid tabs */}
       {activeTab !== 'ready' && (
         <div style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px', overflow: 'hidden' }}>
           {filteredInvoices.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
-              {activeTab === 'drafts' && (
-                <>
-                  <FileText style={{ width: '40px', height: '40px', color: '#DDDDDD', marginBottom: '12px' }} />
-                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>
-                    {searchQuery ? 'No results' : 'No draft invoices'}
-                  </p>
-                  <p style={{ fontSize: '14px', color: '#888888' }}>
-                    {searchQuery ? `No drafts match "${searchQuery}"` : 'Create invoices from the Ready tab'}
-                  </p>
-                </>
-              )}
               {activeTab === 'waiting' && (
                 <>
                   <Clock style={{ width: '40px', height: '40px', color: '#DDDDDD', marginBottom: '12px' }} />
@@ -1251,9 +1167,7 @@ export function InvoicesPageClient({
               <div
                 className="hidden sm:grid gap-4 items-center"
                 style={{
-                  gridTemplateColumns: activeTab === 'drafts'
-                    ? 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) auto 28px'
-                    : 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) 28px',
+                  gridTemplateColumns: 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) 28px',
                   padding: '8px 16px',
                   backgroundColor: '#FAFAFA',
                   borderBottom: '1px solid #EEEEEE',
@@ -1266,7 +1180,6 @@ export function InvoicesPageClient({
                 <div>Client</div>
                 <div style={{ textAlign: 'right' }}>Date</div>
                 <div style={{ textAlign: 'right' }}>Amount</div>
-                {activeTab === 'drafts' && <div></div>}
                 <div></div>
               </div>
 
@@ -1278,9 +1191,7 @@ export function InvoicesPageClient({
                     key={invoice.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: activeTab === 'drafts'
-                        ? 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) auto 28px'
-                        : 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) 28px',
+                      gridTemplateColumns: 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) 28px',
                       gap: '16px',
                       alignItems: 'center',
                       padding: '10px 16px',
@@ -1312,53 +1223,10 @@ export function InvoicesPageClient({
                           {formatCurrency(invoice.totalAmount)}
                         </span>
                       </div>
-                      {activeTab !== 'drafts' && (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                          <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC' }} />
-                        </div>
-                      )}
-                    </Link>
-                    {activeTab === 'drafts' && (
-                      <div
-                        className="flex items-center"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() => handleReturnToReady(invoice.id, invoice.invoiceNumber, invoice.client?.name || 'Unknown')}
-                          disabled={uninvoicingId === invoice.id}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '4px',
-                            padding: '5px 10px',
-                            fontSize: '12px', fontWeight: 500,
-                            color: '#F59E0B',
-                            backgroundColor: 'transparent',
-                            border: '1px solid #F59E0B',
-                            borderRadius: '6px',
-                            cursor: uninvoicingId === invoice.id ? 'not-allowed' : 'pointer',
-                            opacity: uninvoicingId === invoice.id ? 0.5 : 1,
-                            whiteSpace: 'nowrap' as const,
-                            transition: 'background-color 150ms',
-                          }}
-                        >
-                          {uninvoicingId === invoice.id ? (
-                            <>
-                              <Clock style={{ width: '12px', height: '12px' }} className="animate-spin" />
-                              Returning...
-                            </>
-                          ) : (
-                            <>
-                              <RotateCcw style={{ width: '12px', height: '12px' }} />
-                              Return
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                    {activeTab === 'drafts' && (
-                      <Link href={`/invoices/${invoice.id}`} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                         <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC' }} />
-                      </Link>
-                    )}
+                      </div>
+                    </Link>
                   </div>
                 )
               })}

@@ -118,6 +118,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
   const [reassignEffectiveDate, setReassignEffectiveDate] = useState(() =>
     new Date().toISOString().split('T')[0]
   )
+  const [locationMenuOpen, setLocationMenuOpen] = useState<string | null>(null)
   const {
     client,
     subcontractors,
@@ -151,7 +152,6 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     setOneTimeJobTime,
     creatingOneTimeJob,
     togglingScheduleId,
-    reassigningScheduleId,
     handleDeleteLocation,
     handleDeleteSchedule,
     handleToggleSchedulePause,
@@ -163,7 +163,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
   // Click-outside dismiss for schedule menu and reassign dropdown
   const dropdownRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!scheduleMenuOpen && !reassigningSchedule) return
+    if (!scheduleMenuOpen && !reassigningSchedule && !locationMenuOpen) return
     const handler = (e: MouseEvent) => {
       // Don't close if clicking inside a dropdown
       const target = e.target as Node
@@ -173,10 +173,11 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       }
       if (scheduleMenuOpen) setScheduleMenuOpen(null)
       if (reassigningSchedule) setReassigningSchedule(null)
+      if (locationMenuOpen) setLocationMenuOpen(null)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [scheduleMenuOpen, reassigningSchedule, setScheduleMenuOpen, setReassigningSchedule])
+  }, [scheduleMenuOpen, reassigningSchedule, locationMenuOpen, setScheduleMenuOpen, setReassigningSchedule])
 
   const allActiveScheduleIds = useMemo(
     () =>
@@ -245,24 +246,37 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                     <p className="text-[11px] text-slate-500 mt-1">{scheduleHistoryOverview}</p>
                   )}
                 </div>
-                <div className="flex items-center gap-1 ml-3 flex-shrink-0">
+                <div className="relative ml-3 flex-shrink-0">
                   <button
-                    onClick={() => {
-                      setExpandedLocation(location.id)
-                      setAddingScheduleToLocation(location.id)
-                    }}
-                    className="text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-gray-50"
-                    style={{ color: '#00A896' }}
+                    onClick={() => setLocationMenuOpen(locationMenuOpen === location.id ? null : location.id)}
+                    className="rounded-lg p-1.5 transition-colors hover:bg-gray-50"
+                    aria-label="Location options"
                   >
-                    + Add Recurring Job
+                    <MoreVertical className="h-4 w-4 text-slate-400" />
                   </button>
-                  <button
-                    onClick={() => setExpandedLocation(isExpanded ? null : location.id)}
-                    className="text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-gray-50"
-                    style={{ color: '#00A896' }}
-                  >
-                    {isExpanded ? 'Done' : 'Edit'}
-                  </button>
+                  {locationMenuOpen === location.id && (
+                    <div data-dropdown-menu className="absolute right-0 top-full z-50 mt-1 w-44 rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+                      <button
+                        onClick={() => {
+                          setLocationMenuOpen(null)
+                          setExpandedLocation(isExpanded ? null : location.id)
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        {isExpanded ? 'Done Editing' : 'Edit Location'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLocationMenuOpen(null)
+                          setExpandedLocation(location.id)
+                          setAddingScheduleToLocation(location.id)
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Add Recurring Job
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -351,11 +365,13 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                             : sch.isActive !== false ? 'Pause' : 'Resume'}
                         </button>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[11px] font-medium text-slate-500 bg-white px-1.5 py-0.5 rounded">{formatCurrency(rev)}/mo</span>
-                        <span className="text-[11px] font-medium text-slate-400">→</span>
-                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${profit >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>
-                          {profit >= 0 ? '+' : ''}{formatCurrency(profit)}
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                        <span className="font-medium text-slate-500">Client: {formatCurrency(rev)}/mo</span>
+                        <span className="text-slate-300">/</span>
+                        <span className="font-medium text-slate-500">Cleaner: {formatCurrency(cost)}/mo</span>
+                        <span className="text-slate-300">/</span>
+                        <span className={`font-semibold ${profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          Margin: {formatCurrency(profit)}/mo
                         </span>
                       </div>
                     </div>

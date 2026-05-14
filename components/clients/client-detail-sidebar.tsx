@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { formatCurrency, formatTime } from "@/lib/utils"
+import { formatTime } from "@/lib/utils"
 import { format } from "date-fns"
 import { ContactsSection } from "@/components/clients/contacts-section"
 import type { JobWithLocation } from "./client-detail-types"
@@ -11,145 +11,75 @@ interface ClientDetailSidebarProps {
   state: ClientDetailState
 }
 
-export function ClientDetailSidebar({ state }: ClientDetailSidebarProps) {
+export function ClientDetailContactSummary({ state }: ClientDetailSidebarProps) {
   const {
     client,
     stats,
-    isActive,
     hasDifferentInvoicingEmail,
     setEditingContact,
   } = state
 
+  const communicationName = client.communicationContactName || client.invoicingContactName || "No contact name"
+  const communicationEmail = client.communicationEmail || "No email"
+  const invoiceEmail = client.invoicingEmail || client.communicationEmail || "No invoice email"
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
+        <span className="font-semibold text-slate-900">{communicationName}</span>
+        <span className="text-slate-300">·</span>
+        <a href={client.phone ? `tel:${client.phone}` : undefined} className="hover:text-teal-700">{client.phone || "No phone"}</a>
+        <span className="text-slate-300">·</span>
+        <a href={client.communicationEmail ? `mailto:${client.communicationEmail}` : undefined} className="hover:text-teal-700">{communicationEmail}</a>
+        <span className="text-slate-300">·</span>
+        <span>
+          Invoice to: <a href={invoiceEmail !== "No invoice email" ? `mailto:${invoiceEmail}` : undefined} className="hover:text-teal-700">{invoiceEmail}</a>
+        </span>
+        {hasDifferentInvoicingEmail && (
+          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">Different</span>
+        )}
+        <span className="text-slate-300">·</span>
+        <span>Cleaner: {stats.primaryWorker}</span>
+        <button onClick={() => setEditingContact(true)} className="ml-auto text-sm font-semibold text-teal-700 hover:text-teal-800">
+          Edit
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function ClientDetailSidebar({ state }: ClientDetailSidebarProps) {
+  const { client, isActive } = state
+
   return (
     <>
-      {/* CONTACT INFORMATION — iOS-style rows */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-[0.16em]">Contact Information</h2>
-          <button onClick={() => setEditingContact(true)} className="text-sm font-medium transition-colors" style={{ color: '#00A896' }}>Edit</button>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-          {/* Phone */}
-          <a
-            href={client.phone ? `tel:${client.phone}` : undefined}
-            className="flex items-center px-4 py-3 hover:bg-gray-50 transition-colors group"
-          >
-            <span className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0 mr-3">
-              <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider">Phone</p>
-              <p className="text-sm font-medium text-gray-900 truncate">{client.phone || '—'}</p>
-            </div>
-            <svg className="w-4 h-4 text-slate-300 group-hover:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-          </a>
+      <ContactsSection clientId={client.id} title="Additional Contacts" emptyText="No additional contacts yet" />
 
-          {/* Communication Contact */}
-          <a
-            href={client.communicationEmail ? `mailto:${client.communicationEmail}` : undefined}
-            className="flex items-center px-4 py-3 hover:bg-gray-50 transition-colors group"
-          >
-            <span className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 mr-3">
-              <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider">Communication</p>
-              {client.communicationContactName && <p className="text-sm font-medium text-gray-900">{client.communicationContactName}</p>}
-              <p className="text-sm text-slate-700 truncate">{client.communicationEmail || '—'}</p>
-              {client.communicationPhone && <p className="text-xs text-slate-500 mt-0.5">{client.communicationPhone}</p>}
-            </div>
-            <svg className="w-4 h-4 text-slate-300 group-hover:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-          </a>
-
-          {/* Invoicing Contact */}
-          <a
-            href={`mailto:${client.invoicingEmail || client.communicationEmail || ''}`}
-            className="flex items-center px-4 py-3 hover:bg-gray-50 transition-colors group"
-          >
-            <span className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0 mr-3">
-              <svg className="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" /></svg>
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Invoicing
-                {hasDifferentInvoicingEmail && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-semibold normal-case tracking-normal">Different</span>}
-              </p>
-              {(client.invoicingContactName || client.communicationContactName) && (
-                <p className="text-sm font-medium text-gray-900">{client.invoicingContactName || client.communicationContactName}</p>
-              )}
-              <p className="text-sm text-slate-700 truncate">{client.invoicingEmail || client.communicationEmail || '—'}</p>
-            </div>
-            <svg className="w-4 h-4 text-slate-300 group-hover:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-          </a>
-
-          {/* Primary Cleaner */}
-          <div className="flex items-center px-4 py-3">
-            <span className="w-7 h-7 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0 mr-3">
-              <svg className="w-3.5 h-3.5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider">Primary Cleaner</p>
-              <p className="text-sm font-medium text-gray-900">{stats.primaryWorker}</p>
-            </div>
-          </div>
-
-          {/* Payment Method */}
-          {client.preferredPaymentMethod && (
-            <div className="flex items-center px-4 py-3">
-              <span className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0 mr-3">
-                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] text-slate-400 uppercase tracking-wider">Payment Method</p>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold mt-0.5" style={{
-                  background: client.preferredPaymentMethod === 'ZELLE' ? '#EFF6FF' :
-                    client.preferredPaymentMethod === 'DIRECT_DEPOSIT' ? '#F0FDF4' :
-                    client.preferredPaymentMethod === 'CHECK' ? '#FEF3C7' : '#F3F4F6',
-                  color: client.preferredPaymentMethod === 'ZELLE' ? '#2563EB' :
-                    client.preferredPaymentMethod === 'DIRECT_DEPOSIT' ? '#059669' :
-                    client.preferredPaymentMethod === 'CHECK' ? '#D97706' : '#6B7280',
-                }}>
-                  {client.preferredPaymentMethod === 'ZELLE' ? 'Zelle' :
-                   client.preferredPaymentMethod === 'DIRECT_DEPOSIT' ? 'Direct Deposit' :
-                   client.preferredPaymentMethod === 'CHECK' ? 'Check' : 'Other'}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* CONTACTS */}
-      <ContactsSection clientId={client.id} />
-
-      {/* NOTES */}
       {client.notes && (
-        <div className="rounded-xl p-4" style={{ background: '#FFFBEF', border: '1px solid #FDE68A' }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#92400E' }}>Notes</p>
-          <p className="text-sm italic" style={{ color: '#78350F' }}>&quot;{client.notes}&quot;</p>
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">Notes</p>
+          <p className="text-sm italic text-amber-950">&quot;{client.notes}&quot;</p>
         </div>
       )}
 
-      {/* ARCHIVE / DELETE CLIENT */}
       <div id="client-remove-section" className="pt-1 flex flex-col gap-2 scroll-mt-28">
         {state.clientHasHistory ? (
           <button
             onClick={state.handleArchiveClient}
             disabled={!isActive || state.isArchivingClient}
-            className="flex items-center gap-2 text-sm text-amber-600 hover:text-amber-700 transition-colors"
-            style={!isActive || state.isArchivingClient ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+            className="flex items-center gap-2 text-sm text-amber-600 hover:text-amber-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-            {state.isArchivingClient ? 'Archiving...' : 'Archive Client'}
+            {state.isArchivingClient ? "Archiving..." : "Archive Client"}
           </button>
         ) : (
           <button
             onClick={state.handleDeleteClient}
             disabled={state.isDeletingClient}
-            className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-            {state.isDeletingClient ? 'Deleting...' : 'Delete Permanently'}
+            {state.isDeletingClient ? "Deleting..." : "Delete Permanently"}
           </button>
         )}
       </div>
@@ -161,6 +91,21 @@ interface ClientDetailJobFeedProps {
   state: ClientDetailState
 }
 
+function getJobTimeLabel(job: JobWithLocation) {
+  if (job.startTime) return formatTime(job.startTime)
+  if (job.startWindowBegin || job.startWindowEnd) {
+    const begin = job.startWindowBegin ? formatTime(job.startWindowBegin) : ""
+    const end = job.startWindowEnd ? formatTime(job.startWindowEnd) : ""
+    return `${begin}${begin && end ? "-" : ""}${end}`
+  }
+  return "No time"
+}
+
+function getFirstName(name: string | null | undefined) {
+  if (!name) return "Unassigned"
+  return name.trim().split(/\s+/)[0] || name
+}
+
 export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
   const {
     router,
@@ -170,18 +115,18 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
     setJobTab,
     client,
   } = state
-  const [locationFilter, setLocationFilter] = useState('all')
+  const [locationFilter, setLocationFilter] = useState("all")
 
   const locationOptions = useMemo(() => {
     return (client.locations || []).map((location) => ({
       id: location.id,
-      name: location.name || 'Location',
+      name: location.name || "Location",
     }))
   }, [client.locations])
 
   const displayJobs = useMemo(() => {
-    const jobs = jobTab === 'upcoming' ? upcomingJobs : recentJobs
-    if (locationFilter === 'all') return jobs
+    const jobs = jobTab === "upcoming" ? upcomingJobs : recentJobs
+    if (locationFilter === "all") return jobs
     return jobs.filter((job) => job.location.id === locationFilter)
   }, [jobTab, upcomingJobs, recentJobs, locationFilter])
 
@@ -191,93 +136,59 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    let lastKey = ''
+    let lastKey = ""
     const groups: Array<
-      | { type: 'date'; key: string; label: string }
-      | { type: 'job'; key: string; job: JobWithLocation }
+      | { type: "date"; key: string; label: string }
+      | { type: "job"; key: string; job: JobWithLocation }
     > = []
 
     displayJobs.forEach((job) => {
       const jobDate = new Date(job.date)
       const day = new Date(jobDate)
       day.setHours(0, 0, 0, 0)
-      const dayKey = format(day, 'yyyy-MM-dd')
+      const dayKey = format(day, "yyyy-MM-dd")
       const label =
         day.getTime() === today.getTime()
-          ? 'Today'
+          ? "Today"
           : day.getTime() === tomorrow.getTime()
-            ? 'Tomorrow'
-            : format(jobDate, 'EEE, MMM d')
+            ? "Tomorrow"
+            : format(jobDate, "EEE, MMM d")
 
       if (dayKey !== lastKey) {
-        groups.push({ type: 'date', key: dayKey, label })
+        groups.push({ type: "date", key: dayKey, label })
         lastKey = dayKey
       }
-      groups.push({ type: 'job', key: job.id, job })
+      groups.push({ type: "job", key: job.id, job })
     })
 
     return groups
   }, [displayJobs])
 
-  const jobRateOverrideNotes = useMemo(() => {
-    const scheduleById = new Map<string, { defaultClientRate: number }>()
-    client.locations?.forEach((loc) => {
-      loc.schedules?.forEach((s) => {
-        scheduleById.set(s.id, { defaultClientRate: s.defaultClientRate ?? 0 })
-      })
-    })
-    const lines: string[] = []
-    client.locations?.forEach((loc) => {
-      loc.jobs?.forEach((job) => {
-        if (!job.scheduleId || job.status === 'CANCELLED' || job.invoiced) return
-        const def = scheduleById.get(job.scheduleId)
-        if (!def) return
-        if (Math.abs((job.clientRate || 0) - def.defaultClientRate) > 0.009) {
-          lines.push(
-            `${format(new Date(job.date), 'MMM d')}: ${formatCurrency(job.clientRate)} billed vs schedule ${formatCurrency(def.defaultClientRate)}`
-          )
-        }
-      })
-    })
-    return [...new Set(lines)].slice(0, 10)
-  }, [client])
-
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {jobRateOverrideNotes.length > 0 && (
-        <div className="px-4 py-3 border-b border-amber-100 bg-amber-50/80">
-          <p className="text-[11px] font-semibold text-amber-900 uppercase tracking-wide mb-1.5">Billing notes</p>
-          <ul className="text-xs text-amber-950 space-y-1 list-disc pl-4">
-            {jobRateOverrideNotes.map((line) => (
-              <li key={line}>Per-clean rate override — {line}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {/* Tabs */}
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="border-b border-gray-100">
         <div className="flex">
           <button
-            onClick={() => setJobTab('upcoming')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${jobTab === 'upcoming' ? 'text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            style={jobTab === 'upcoming' ? { borderBottomColor: '#00A896' } : {}}
+            onClick={() => setJobTab("upcoming")}
+            className={`flex-1 border-b-2 py-2.5 text-sm font-medium transition-colors ${jobTab === "upcoming" ? "text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+            style={jobTab === "upcoming" ? { borderBottomColor: "#00A896" } : {}}
           >
             Upcoming ({upcomingJobs.length})
           </button>
           <button
-            onClick={() => setJobTab('recent')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${jobTab === 'recent' ? 'text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            style={jobTab === 'recent' ? { borderBottomColor: '#00A896' } : {}}
+            onClick={() => setJobTab("recent")}
+            className={`flex-1 border-b-2 py-2.5 text-sm font-medium transition-colors ${jobTab === "recent" ? "text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+            style={jobTab === "recent" ? { borderBottomColor: "#00A896" } : {}}
           >
             Recent ({recentJobs.length})
           </button>
         </div>
         {locationOptions.length > 1 && (
-          <div className="px-4 pb-3">
+          <div className="px-3 pb-3">
             <select
               value={locationFilter}
               onChange={(event) => setLocationFilter(event.target.value)}
-              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-teal-500 focus:bg-white"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-teal-500 focus:bg-white"
             >
               <option value="all">All locations</option>
               {locationOptions.map((location) => (
@@ -290,31 +201,29 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
         )}
       </div>
 
-      {/* Job rows — compact single-line */}
       {displayJobs.length > 0 ? (
-        <div className="divide-y divide-gray-50 max-h-[640px] overflow-y-auto">
+        <div className="max-h-[640px] divide-y divide-gray-50 overflow-y-auto">
           {groupedJobs.map((item) => {
-            if (item.type === 'date') {
+            if (item.type === "date") {
               return (
-                <div key={item.key} className="bg-gray-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div key={item.key} className="bg-gray-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                   {item.label}
                 </div>
               )
             }
 
             const job = item.job
-            const timeStr = job.startTime ? formatTime(job.startTime) : null
-            const isCancelled = job.status === 'CANCELLED'
+            const isCancelled = job.status === "CANCELLED"
             return (
               <div
                 key={job.id}
                 onClick={() => router.push(`/calendar?jobId=${job.id}`)}
-                className="flex items-center px-4 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors gap-3"
+                className="flex cursor-pointer items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-gray-50"
                 style={isCancelled ? { opacity: 0.45 } : {}}
               >
-                <span className="text-sm text-slate-500 flex-shrink-0" style={{ width: 60 }}>{timeStr || 'Anytime'}</span>
-                <span className="text-sm text-gray-800 flex-1 truncate">{job.location.name}</span>
-                <span className="text-sm text-slate-500 flex-shrink-0 truncate" style={{ maxWidth: 88 }}>{job.subcontractor?.name || 'Unassigned'}</span>
+                <span className="w-[74px] flex-shrink-0 text-slate-500">{getJobTimeLabel(job)}</span>
+                <span className="min-w-0 flex-1 text-gray-800">{job.location.name}</span>
+                <span className="flex-shrink-0 text-slate-500">{getFirstName(job.subcontractor?.name)}</span>
               </div>
             )
           })}
@@ -322,9 +231,9 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
       ) : (
         <div className="py-12 text-center">
           <p className="text-sm text-slate-500">
-            {locationFilter === 'all'
-              ? jobTab === 'upcoming' ? 'No upcoming jobs' : 'No recent activity'
-              : `No ${jobTab === 'upcoming' ? 'upcoming jobs' : 'recent activity'} for this location`}
+            {locationFilter === "all"
+              ? jobTab === "upcoming" ? "No upcoming jobs" : "No recent activity"
+              : `No ${jobTab === "upcoming" ? "upcoming jobs" : "recent activity"} for this location`}
           </p>
         </div>
       )}

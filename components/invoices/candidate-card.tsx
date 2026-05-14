@@ -4,15 +4,12 @@ import { formatCurrency } from "@/lib/utils"
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
   Clock,
   FileText,
-  Mail,
   MailX,
   ArrowRight,
 } from "lucide-react"
-import { useState } from "react"
 import Link from "next/link"
 
 export interface InvoiceCandidate {
@@ -53,51 +50,36 @@ const statusConfig: Record<InvoiceCandidate['status'], {
   dot: string
   bg: string
   border: string
-  label: string
 }> = {
-  READY: {
-    dot: '#00A896',
-    bg: 'rgba(0,168,150,0.04)',
-    border: '#E8F5F3',
-    label: 'Ready to Review',
-  },
-  NEEDS_ATTENTION: {
-    dot: '#F59E0B',
-    bg: 'rgba(245,158,11,0.04)',
-    border: '#FEF3C7',
-    label: 'Needs Attention',
-  },
-  DRAFT_EXISTS: {
-    dot: '#6B7280',
-    bg: 'rgba(107,114,128,0.03)',
-    border: '#E5E7EB',
-    label: 'Draft',
-  },
-  SENT: {
-    dot: '#3B82F6',
-    bg: 'rgba(59,130,246,0.03)',
-    border: '#DBEAFE',
-    label: 'Sent',
-  },
-  PAID: {
-    dot: '#10B981',
-    bg: 'rgba(16,185,129,0.03)',
-    border: '#D1FAE5',
-    label: 'Paid',
-  },
+  READY: { dot: '#00A896', bg: 'rgba(0,168,150,0.04)', border: '#E8F5F3' },
+  NEEDS_ATTENTION: { dot: '#F59E0B', bg: 'rgba(245,158,11,0.04)', border: '#FEF3C7' },
+  DRAFT_EXISTS: { dot: '#6B7280', bg: 'rgba(107,114,128,0.03)', border: '#E5E7EB' },
+  SENT: { dot: '#3B82F6', bg: 'rgba(59,130,246,0.03)', border: '#DBEAFE' },
+  PAID: { dot: '#10B981', bg: 'rgba(16,185,129,0.03)', border: '#D1FAE5' },
+}
+
+function getCleanSummary(candidate: InvoiceCandidate) {
+  if (candidate.jobCount === 0) return ''
+  const scheduled = Math.max(candidate.jobCount - candidate.completedCount, 0)
+  const cleanLabel = `${candidate.jobCount} clean${candidate.jobCount !== 1 ? 's' : ''}`
+  return `${cleanLabel} · ${candidate.completedCount} done, ${scheduled} scheduled`
+}
+
+function getExceptionLabel(exception: InvoiceCandidate['exceptions'][number]) {
+  if (exception.type === 'SKIPPED') return exception.message.replace('clean was skipped', 'skipped clean')
+  if (exception.type === 'MISSING_EMAIL') return 'No email on file'
+  return exception.message
 }
 
 export function CandidateCard({ candidate, onReview, selectable, selected, onToggleSelect }: CandidateCardProps) {
-  const [showExceptions, setShowExceptions] = useState(false)
   const config = statusConfig[candidate.status]
   const hasExceptions = candidate.exceptions.length > 0
   const isActionable = candidate.status === 'READY' || candidate.status === 'NEEDS_ATTENTION'
   const hasExisting = !!candidate.existingInvoiceId
   const isFlatRate = candidate.billingType === 'FLAT_RATE'
-
-  // Per-clean completion info
-  const allCompleted = candidate.completedCount > 0 && candidate.completedCount >= candidate.jobCount
-  const remaining = candidate.jobCount - candidate.completedCount
+  const showNoChanges = isFlatRate && isActionable && !hasExceptions
+  const cleanSummary = getCleanSummary(candidate)
+  const visibleExceptions = candidate.exceptions.slice(0, 2)
 
   return (
     <div
@@ -115,7 +97,6 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
         e.currentTarget.style.boxShadow = 'none'
       }}
     >
-      {/* Main row */}
       <div
         style={{
           display: 'flex',
@@ -126,7 +107,6 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
         }}
         onClick={() => isActionable && onReview(candidate)}
       >
-        {/* Checkbox (when selectable) */}
         {selectable && (
           <div
             onClick={(e) => {
@@ -146,7 +126,6 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           </div>
         )}
 
-        {/* Status dot */}
         <div
           style={{
             width: '8px',
@@ -157,7 +136,6 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           }}
         />
 
-        {/* Client info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
             <span style={{
@@ -177,7 +155,6 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
             fontSize: '12px', color: '#777777',
             display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
           }}>
-            {/* Billing type badge */}
             <span style={{
               padding: '1px 6px',
               borderRadius: '4px',
@@ -194,83 +171,69 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
                 <span>{candidate.scheduleSummary}</span>
               </>
             )}
-            {/* For flat-rate: suppress job count (predictable amount). For per-clean: show inline summary */}
-            {!isFlatRate && candidate.jobCount > 0 && (
+            {cleanSummary && (
               <>
                 <span style={{ color: '#DDDDDD' }}>·</span>
-                <span>{candidate.completedCount}/{candidate.jobCount} completed</span>
+                <span>{cleanSummary}</span>
+              </>
+            )}
+            {showNoChanges && (
+              <>
+                <span style={{ color: '#DDDDDD' }}>·</span>
+                <span style={{ color: '#047857', fontWeight: 600 }}>No changes ✓</span>
               </>
             )}
           </div>
+
+          {hasExceptions && isActionable && (
+            <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {visibleExceptions.map((ex, idx) => (
+                <span
+                  key={`${ex.type}-${idx}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 7px',
+                    borderRadius: '999px',
+                    backgroundColor: '#FEF3C7',
+                    color: '#92400E',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                  }}
+                >
+                  <AlertTriangle style={{ width: '11px', height: '11px' }} />
+                  {getExceptionLabel(ex)}
+                </span>
+              ))}
+              {candidate.exceptions.length > visibleExceptions.length && (
+                <span style={{ fontSize: '11px', fontWeight: 600, color: '#92400E' }}>
+                  +{candidate.exceptions.length - visibleExceptions.length} more
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Per-clean: Prominent completion badge */}
-        {!isFlatRate && isActionable && candidate.jobCount > 0 && (
-          <div style={{ flexShrink: 0 }}>
-            {allCompleted ? (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '4px',
-                padding: '4px 10px', borderRadius: '16px',
-                backgroundColor: '#D1FAE5',
-                fontSize: '12px', fontWeight: 600, color: '#047857',
-              }}>
-                <CheckCircle2 style={{ width: '12px', height: '12px' }} />
-                All done
-              </div>
-            ) : remaining > 0 ? (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '4px',
-                padding: '4px 10px', borderRadius: '16px',
-                backgroundColor: '#FEF3C7',
-                fontSize: '12px', fontWeight: 600, color: '#92400E',
-              }}>
-                <Clock style={{ width: '12px', height: '12px' }} />
-                {remaining} upcoming
-              </div>
-            ) : null}
+        {showNoChanges && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            padding: '4px 10px', borderRadius: '16px',
+            backgroundColor: '#D1FAE5',
+            fontSize: '12px', fontWeight: 600, color: '#047857',
+            flexShrink: 0,
+          }}>
+            <CheckCircle2 style={{ width: '12px', height: '12px' }} />
+            No changes
           </div>
         )}
 
-        {/* Exception badge */}
-        {hasExceptions && isActionable && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowExceptions(!showExceptions)
-            }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '4px',
-              padding: '4px 10px',
-              fontSize: '12px', fontWeight: 600,
-              color: '#92400E',
-              backgroundColor: '#FEF3C7',
-              border: '1px solid #FDE68A',
-              borderRadius: '16px',
-              cursor: 'pointer',
-              flexShrink: 0,
-              transition: 'background-color 120ms',
-            }}
-          >
-            <AlertTriangle style={{ width: '12px', height: '12px' }} />
-            {candidate.exceptions.length}
-            <ChevronDown
-              style={{
-                width: '12px', height: '12px',
-                transform: showExceptions ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 150ms',
-              }}
-            />
-          </button>
-        )}
-
-        {/* Amount */}
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <span style={{ fontSize: '15px', fontWeight: 700, color: '#111111' }}>
             {formatCurrency(candidate.total)}
           </span>
         </div>
 
-        {/* Action / link — flat-rate gets inline "Invoice →" button, per-clean gets chevron */}
         {isActionable ? (
           isFlatRate ? (
             <div
@@ -313,41 +276,6 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           </Link>
         ) : null}
       </div>
-
-      {/* Exception details (expanded) */}
-      {showExceptions && hasExceptions && (
-        <div style={{
-          padding: '0 16px 12px 38px',
-          borderTop: '1px solid rgba(0,0,0,0.05)',
-        }}>
-          <div style={{
-            marginTop: '10px',
-            padding: '10px 12px',
-            backgroundColor: '#FFFBEB',
-            borderRadius: '8px',
-            border: '1px solid #FEF3C7',
-          }}>
-            <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', marginBottom: '6px' }}>
-              {candidate.exceptions.length} exception{candidate.exceptions.length !== 1 ? 's' : ''}:
-            </p>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-              {candidate.exceptions.map((ex, idx) => (
-                <li
-                  key={idx}
-                  style={{
-                    display: 'flex', alignItems: 'flex-start', gap: '6px',
-                    fontSize: '12px', color: '#78350F',
-                    padding: '2px 0',
-                  }}
-                >
-                  <span style={{ color: '#D97706', flexShrink: 0 }}>•</span>
-                  <span>{ex.message}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

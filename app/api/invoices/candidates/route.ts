@@ -39,6 +39,8 @@ export async function GET(request: Request) {
     }
 
     const billingStartDate = await getBillingStartDate()
+    const currentMonthStart = startOfMonth(new Date())
+    const olderWorkCutoff = periodStart < currentMonthStart ? periodStart : currentMonthStart
 
     const [
       allJobs,
@@ -457,7 +459,7 @@ export async function GET(request: Request) {
         where: {
           invoiced: false,
           status: { not: 'CANCELLED' },
-          date: { lt: periodStart },
+          date: { lt: olderWorkCutoff },
           ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
         },
       }),
@@ -465,7 +467,7 @@ export async function GET(request: Request) {
         where: {
           invoiced: false,
           status: { not: 'CANCELLED' },
-          date: { lt: periodStart },
+          date: { lt: olderWorkCutoff },
           ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
         },
         select: { date: true },

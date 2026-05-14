@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
 import { format } from "date-fns"
 import {
-  Plus, Edit, Calendar, Receipt, ArrowLeft,
+  Plus, Edit, Calendar, ArrowLeft,
   PauseCircle, PlayCircle, MoreHorizontal, Archive, Trash2,
 } from "lucide-react"
 import { getInitials } from "./client-detail-helpers"
@@ -29,7 +29,6 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
     isTogglingPause,
     pauseResumeAction,
     handleTogglePause,
-    handleGenerateInvoice,
     setShowAdditionalServiceChoice,
     setEditing,
     clientHasHistory,
@@ -108,15 +107,6 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
       {/* Action Buttons */}
       <div className="bg-white border-b border-gray-100 px-4 sm:px-6 py-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleGenerateInvoice}
-            disabled={creatingInvoice}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
-            style={{ background: '#00A896', color: '#FFFFFF' }}
-          >
-            <Receipt className="w-4 h-4" />
-            {creatingInvoice ? 'Generating...' : 'Generate Invoice'}
-          </button>
           <button
             onClick={() => setShowAdditionalServiceChoice(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-white hover:bg-gray-50 transition-colors"
