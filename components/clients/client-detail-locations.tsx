@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -37,6 +38,80 @@ function scheduleTimeSuffix(sch: ClientSchedule) {
   }
   if (sch.startTime) return ` · ${formatTime(sch.startTime)}`
   return ''
+}
+
+function scheduleSummary(sch: ClientSchedule) {
+  const days = parseScheduleDays(sch.daysOfWeek)
+  const dayText = days.length > 0 ? days.map((d: number) => DAY_NAMES[d]).join(', ') : 'No days set'
+  return `${getScheduleFrequencyLabel(sch.frequency)} · ${dayText}${scheduleTimeSuffix(sch)}`
+}
+
+function payLabel(amount: number | null | undefined, payType: string | null | undefined) {
+  return `${formatCurrency(amount || 0)}${payType === 'FLAT_RATE' ? '/mo' : '/clean'}`
+}
+
+function getNextJobLabel(location: ClientLocation) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const jobs = ((location as { jobs?: Array<{ date: string | Date; status?: string; startTime?: string | null; startWindowBegin?: string | null; startWindowEnd?: string | null }> }).jobs || [])
+    .filter((job) => job.status !== 'CANCELLED' && new Date(job.date) >= today)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+  const next = jobs[0]
+  if (!next) return null
+  const date = new Date(next.date)
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const day = new Date(date)
+  day.setHours(0, 0, 0, 0)
+  const dayLabel = day.getTime() === today.getTime()
+    ? 'Today'
+    : day.getTime() === tomorrow.getTime()
+      ? 'Tomorrow'
+      : format(date, 'EEE, MMM d')
+  const timeLabel = next.startTime
+    ? formatTime(next.startTime)
+    : next.startWindowBegin || next.startWindowEnd
+      ? `${next.startWindowBegin ? formatTime(next.startWindowBegin) : ''}${next.startWindowBegin && next.startWindowEnd ? '–' : ''}${next.startWindowEnd ? formatTime(next.startWindowEnd) : ''}`
+      : 'Anytime'
+  return `${dayLabel}, ${timeLabel}`
+}
+
+function DetailRow({
+  label,
+  value,
+  onClick,
+  muted,
+}: {
+  label: string
+  value: ReactNode
+  onClick?: () => void
+  muted?: boolean
+}) {
+  const content = (
+    <>
+      <span className="w-28 flex-shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</span>
+      <span className={`min-w-0 flex-1 truncate text-sm ${muted ? 'text-slate-400' : 'text-slate-700'}`}>{value}</span>
+    </>
+  )
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-2.5 text-left hover:bg-gray-50 last:border-b-0"
+      >
+        {content}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
+      {content}
+    </div>
+  )
 }
 
 export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
@@ -147,6 +222,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
           const scheduleTiming = schedule ? getScheduleTimingBadge(schedule) : null
           const scheduleHistoryOverview = getScheduleHistoryOverview(sortedSchedules)
           const additionalRuleCount = Math.max(sortedSchedules.length - 1, 0)
+          const nextJobLabel = getNextJobLabel(location)
           return (
             <div key={location.id} className="bg-white rounded-xl border border-gray-200 overflow-visible">
               {/* Location name + address */}
@@ -154,6 +230,9 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-gray-900 text-sm">{location.name}</p>
                   <p className="text-xs text-slate-500 truncate mt-0.5">{location.address}</p>
+                  {nextJobLabel && (
+                    <p className="text-xs font-medium text-teal-700 mt-1">Next: {nextJobLabel}</p>
+                  )}
                   {location.accessInfo && (
                     <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
                       <span className="inline-block w-3 h-3 text-slate-300">🔑</span>
@@ -197,7 +276,114 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                 const profit = rev - cost
                 return (
                   <Fragment key={sch.id}>
-                  <div className={`px-4 py-2.5 border-t border-gray-100 ${sch.isActive === false ? 'opacity-60' : ''}`}>
+                  <div className={`border-t border-gray-100 ${sch.isActive === false ? 'opacity-60' : ''}`}>
+                    <DetailRow
+                      label="Schedule"
+                      value={(
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{scheduleSummary(sch)}</span>
+                          <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${timingBadge.className}`}>{timingBadge.label}</span>
+                          {sch.isActive === false && <span className="shrink-0 text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Paused</span>}
+                        </span>
+                      )}
+                      onClick={() => {
+                        setExpandedLocation(location.id)
+                        setScheduleFormMode('edit')
+                        setEditingSchedule({ ...sch, locationId: location.id })
+                      }}
+                    />
+                    <DetailRow
+                      label="Client Billing"
+                      value={payLabel(sch.defaultClientRate, clientPayType)}
+                      onClick={() => {
+                        setExpandedLocation(location.id)
+                        setScheduleFormMode('edit')
+                        setEditingSchedule({ ...sch, locationId: location.id })
+                      }}
+                    />
+                    <DetailRow
+                      label="Cleaner Pay"
+                      value={payLabel(sch.defaultSubcontractorRate, subPayType)}
+                      onClick={() => {
+                        setExpandedLocation(location.id)
+                        setScheduleFormMode('edit')
+                        setEditingSchedule({ ...sch, locationId: location.id })
+                      }}
+                    />
+                    <DetailRow
+                      label="Cleaner"
+                      value={sch.subcontractor?.name || 'Unassigned'}
+                      muted={!sch.subcontractor?.name}
+                      onClick={() => setExpandedLocation(location.id)}
+                    />
+                    <DetailRow
+                      label="Entry Codes"
+                      value={location.accessInfo || 'Add entry info'}
+                      muted={!location.accessInfo}
+                      onClick={() => setExpandedLocation(location.id)}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-gray-50/70">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setAddingOneTimeJob(addingOneTimeJob === sch.id ? null : sch.id)
+                            if (!oneTimeJobDate) setOneTimeJobDate(new Date().toISOString().split('T')[0])
+                          }}
+                          className="rounded-lg border border-teal-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                        >
+                          + Add Clean
+                        </button>
+                        <button
+                          onClick={() => setAddingAddonToSchedule(sch.id)}
+                          className="rounded-lg border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50"
+                        >
+                          + Add-on
+                        </button>
+                        <button
+                          onClick={() => handleToggleSchedulePause(sch.id, sch.isActive !== false)}
+                          className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-gray-100"
+                        >
+                          {sch.isActive !== false ? 'Pause' : 'Resume'}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-medium text-slate-500 bg-white px-1.5 py-0.5 rounded">{formatCurrency(rev)}/mo</span>
+                        <span className="text-[11px] font-medium text-slate-400">→</span>
+                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${profit >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>
+                          {profit >= 0 ? '+' : ''}{formatCurrency(profit)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {addingOneTimeJob === sch.id && (
+                    <div className="px-4 py-3 bg-teal-50/40 border-t border-teal-100">
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-end">
+                        <div>
+                          <Label className="text-xs text-slate-500 uppercase tracking-[0.14em]">Clean Date</Label>
+                          <Input type="date" value={oneTimeJobDate} onChange={(e) => setOneTimeJobDate(e.target.value)} className="mt-1 h-9" />
+                        </div>
+                        <label className="flex h-9 items-center gap-2 text-sm text-slate-600">
+                          <input type="checkbox" checked={oneTimeJobCustomTime} onChange={(e) => setOneTimeJobCustomTime(e.target.checked)} />
+                          Custom time
+                        </label>
+                        {oneTimeJobCustomTime && (
+                          <Input type="time" value={oneTimeJobTime} onChange={(e) => setOneTimeJobTime(e.target.value)} className="h-9" />
+                        )}
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          onClick={() => handleCreateOneTimeJob(sch, location.id)}
+                          disabled={creatingOneTimeJob}
+                          className="h-9 text-sm text-white"
+                          style={{ background: '#00A896' }}
+                        >
+                          {creatingOneTimeJob ? 'Adding...' : 'Add Clean'}
+                        </Button>
+                        <Button variant="outline" onClick={() => setAddingOneTimeJob(null)} className="h-9 text-sm">Cancel</Button>
+                      </div>
+                    </div>
+                  )}
+                  <div className={`hidden px-4 py-2.5 border-t border-gray-100 ${sch.isActive === false ? 'opacity-60' : ''}`}>
                     <p className="text-sm text-gray-700 mb-1 flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{getScheduleFrequencyLabel(sch.frequency)}</span>
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${timingBadge.className}`}>{timingBadge.label}</span>
