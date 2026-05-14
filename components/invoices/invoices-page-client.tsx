@@ -457,6 +457,14 @@ export function InvoicesPageClient({
   const actionableCandidates = useMemo(() => [...readyCandidates, ...attentionCandidates], [readyCandidates, attentionCandidates])
   const flatRateCandidates = useMemo(() => actionableCandidates.filter(c => c.billingType === 'FLAT_RATE'), [actionableCandidates])
   const perCleanCandidates = useMemo(() => actionableCandidates.filter(c => c.billingType !== 'FLAT_RATE'), [actionableCandidates])
+  const cleanFlatRateCandidates = useMemo(
+    () => flatRateCandidates.filter(c => c.status === 'READY' && c.exceptions.length === 0),
+    [flatRateCandidates]
+  )
+  const flaggedFlatRateCandidates = useMemo(
+    () => flatRateCandidates.filter(c => c.status !== 'READY' || c.exceptions.length > 0),
+    [flatRateCandidates]
+  )
 
   const toggleCandidateSelection = (clientId: string) => {
     setSelectedCandidateIds(prev => {
@@ -472,6 +480,10 @@ export function InvoicesPageClient({
 
   const selectAllCandidates = () => {
     setSelectedCandidateIds(new Set(actionableCandidates.map(c => c.clientId)))
+  }
+
+  const selectCleanFlatRateCandidates = () => {
+    setSelectedCandidateIds(new Set(cleanFlatRateCandidates.map(c => c.clientId)))
   }
 
   const clearCandidateSelection = () => {
@@ -853,23 +865,54 @@ export function InvoicesPageClient({
               {/* ── Flat Rate Section ── */}
               {flatRateCandidates.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2.5 px-1">
-                    <div style={{
-                      padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
-                      backgroundColor: '#EEF2FF', color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.5px',
-                    }}>
-                      Flat Rate
+                  <div className="mb-2.5 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div style={{
+                        padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                        backgroundColor: '#EEF2FF', color: '#4F46E5', textTransform: 'uppercase',
+                      }}>
+                        Flat Rate
+                      </div>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#6B7280' }}>
+                        {flatRateCandidates.length} client{flatRateCandidates.length !== 1 ? 's' : ''}
+                      </span>
+                      <span style={{ color: '#CBD5E1', fontSize: '12px' }}>·</span>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#4F46E5' }}>
+                        {formatCurrency(flatRateCandidates.reduce((s, c) => s + c.total, 0))}
+                      </span>
+                      {flaggedFlatRateCandidates.length > 0 && (
+                        <span style={{
+                          fontSize: '12px', fontWeight: 600, color: '#92400E',
+                          backgroundColor: '#FEF3C7', padding: '2px 8px', borderRadius: '10px',
+                        }}>
+                          {flaggedFlatRateCandidates.length} need review
+                        </span>
+                      )}
+                      {cleanFlatRateCandidates.length > 0 && (
+                        <button
+                          onClick={selectCleanFlatRateCandidates}
+                          style={{
+                            marginLeft: 'auto',
+                            padding: '5px 10px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: '#4F46E5',
+                            backgroundColor: 'white',
+                            border: '1px solid #C7D2FE',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Select unchanged
+                        </button>
+                      )}
                     </div>
-                    <span style={{ fontSize: '12px', fontWeight: 500, color: '#888888' }}>
-                      {flatRateCandidates.length} client{flatRateCandidates.length !== 1 ? 's' : ''}
-                    </span>
-                    <span style={{ color: '#DDDDDD', fontSize: '12px' }}>·</span>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#4F46E5' }}>
-                      {formatCurrency(flatRateCandidates.reduce((s, c) => s + c.total, 0))}
-                    </span>
+                    <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748B' }}>
+                      Stable monthly invoices are grouped here. Review only the ones with warnings, then batch the unchanged set.
+                    </p>
                   </div>
                   <div className="space-y-2">
-                    {flatRateCandidates.map(c => (
+                    {[...flaggedFlatRateCandidates, ...cleanFlatRateCandidates].map(c => (
                       <CandidateCard
                         key={c.clientId}
                         candidate={c}
@@ -886,20 +929,25 @@ export function InvoicesPageClient({
               {/* ── Per Clean Section ── */}
               {perCleanCandidates.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2.5 px-1">
-                    <div style={{
-                      padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
-                      backgroundColor: '#F0FDF4', color: '#15803D', textTransform: 'uppercase', letterSpacing: '0.5px',
-                    }}>
-                      Per Clean
+                  <div className="mb-2.5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div style={{
+                        padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                        backgroundColor: '#F0FDF4', color: '#15803D', textTransform: 'uppercase',
+                      }}>
+                        Per Clean
+                      </div>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#6B7280' }}>
+                        {perCleanCandidates.length} client{perCleanCandidates.length !== 1 ? 's' : ''}
+                      </span>
+                      <span style={{ color: '#CBD5E1', fontSize: '12px' }}>·</span>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#15803D' }}>
+                        {formatCurrency(perCleanCandidates.reduce((s, c) => s + c.total, 0))}
+                      </span>
                     </div>
-                    <span style={{ fontSize: '12px', fontWeight: 500, color: '#888888' }}>
-                      {perCleanCandidates.length} client{perCleanCandidates.length !== 1 ? 's' : ''}
-                    </span>
-                    <span style={{ color: '#DDDDDD', fontSize: '12px' }}>·</span>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#15803D' }}>
-                      {formatCurrency(perCleanCandidates.reduce((s, c) => s + c.total, 0))}
-                    </span>
+                    <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748B' }}>
+                      Variable invoices stay separate so completed, upcoming, skipped, and add-on work is easier to inspect.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     {perCleanCandidates.map(c => (

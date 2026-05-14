@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { formatCurrency, formatTime } from "@/lib/utils"
 import { format } from "date-fns"
 import { ContactsSection } from "@/components/clients/contacts-section"
@@ -13,16 +13,10 @@ interface ClientDetailSidebarProps {
 
 export function ClientDetailSidebar({ state }: ClientDetailSidebarProps) {
   const {
-    router,
     client,
     stats,
     isActive,
     hasDifferentInvoicingEmail,
-    upcomingJobs,
-    recentJobs,
-    displayJobs,
-    jobTab,
-    setJobTab,
     setEditingContact,
   } = state
 
@@ -171,11 +165,58 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
     router,
     upcomingJobs,
     recentJobs,
-    displayJobs,
     jobTab,
     setJobTab,
     client,
   } = state
+  const [locationFilter, setLocationFilter] = useState('all')
+
+  const locationOptions = useMemo(() => {
+    return (client.locations || []).map((location) => ({
+      id: location.id,
+      name: location.name || 'Location',
+    }))
+  }, [client.locations])
+
+  const displayJobs = useMemo(() => {
+    const jobs = jobTab === 'upcoming' ? upcomingJobs : recentJobs
+    if (locationFilter === 'all') return jobs
+    return jobs.filter((job) => job.location.id === locationFilter)
+  }, [jobTab, upcomingJobs, recentJobs, locationFilter])
+
+  const groupedJobs = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+
+    let lastKey = ''
+    const groups: Array<
+      | { type: 'date'; key: string; label: string }
+      | { type: 'job'; key: string; job: JobWithLocation }
+    > = []
+
+    displayJobs.forEach((job) => {
+      const jobDate = new Date(job.date)
+      const day = new Date(jobDate)
+      day.setHours(0, 0, 0, 0)
+      const dayKey = format(day, 'yyyy-MM-dd')
+      const label =
+        day.getTime() === today.getTime()
+          ? 'Today'
+          : day.getTime() === tomorrow.getTime()
+            ? 'Tomorrow'
+            : format(jobDate, 'EEE, MMM d')
+
+      if (dayKey !== lastKey) {
+        groups.push({ type: 'date', key: dayKey, label })
+        lastKey = dayKey
+      }
+      groups.push({ type: 'job', key: job.id, job })
+    })
+
+    return groups
+  }, [displayJobs])
 
   const jobRateOverrideNotes = useMemo(() => {
     const scheduleById = new Map<string, { defaultClientRate: number }>()
@@ -213,29 +254,54 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
         </div>
       )}
       {/* Tabs */}
-      <div className="flex border-b border-gray-100">
-        <button
-          onClick={() => setJobTab('upcoming')}
-          className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${jobTab === 'upcoming' ? 'text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          style={jobTab === 'upcoming' ? { borderBottomColor: '#00A896' } : {}}
-        >
-          Upcoming ({upcomingJobs.length})
-        </button>
-        <button
-          onClick={() => setJobTab('recent')}
-          className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${jobTab === 'recent' ? 'text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          style={jobTab === 'recent' ? { borderBottomColor: '#00A896' } : {}}
-        >
-          Recent ({recentJobs.length})
-        </button>
+      <div className="border-b border-gray-100">
+        <div className="flex">
+          <button
+            onClick={() => setJobTab('upcoming')}
+            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${jobTab === 'upcoming' ? 'text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            style={jobTab === 'upcoming' ? { borderBottomColor: '#00A896' } : {}}
+          >
+            Upcoming ({upcomingJobs.length})
+          </button>
+          <button
+            onClick={() => setJobTab('recent')}
+            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${jobTab === 'recent' ? 'text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            style={jobTab === 'recent' ? { borderBottomColor: '#00A896' } : {}}
+          >
+            Recent ({recentJobs.length})
+          </button>
+        </div>
+        {locationOptions.length > 1 && (
+          <div className="px-4 pb-3">
+            <select
+              value={locationFilter}
+              onChange={(event) => setLocationFilter(event.target.value)}
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-teal-500 focus:bg-white"
+            >
+              <option value="all">All locations</option>
+              {locationOptions.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Job rows — compact single-line */}
       {displayJobs.length > 0 ? (
         <div className="divide-y divide-gray-50 max-h-[640px] overflow-y-auto">
-          {displayJobs.map((job: JobWithLocation) => {
-            const jobDate = new Date(job.date)
-            const dateStr = format(jobDate, 'EEE, MMM d')
+          {groupedJobs.map((item) => {
+            if (item.type === 'date') {
+              return (
+                <div key={item.key} className="bg-gray-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {item.label}
+                </div>
+              )
+            }
+
+            const job = item.job
             const timeStr = job.startTime ? formatTime(job.startTime) : null
             const isCancelled = job.status === 'CANCELLED'
             return (
@@ -245,17 +311,20 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
                 className="flex items-center px-4 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors gap-3"
                 style={isCancelled ? { opacity: 0.45 } : {}}
               >
-                <span className="text-sm text-slate-600 flex-shrink-0" style={{ width: 88 }}>{dateStr}</span>
-                {timeStr && <span className="text-sm text-slate-500 flex-shrink-0" style={{ width: 60 }}>{timeStr}</span>}
+                <span className="text-sm text-slate-500 flex-shrink-0" style={{ width: 60 }}>{timeStr || 'Anytime'}</span>
                 <span className="text-sm text-gray-800 flex-1 truncate">{job.location.name}</span>
-                <span className="text-sm text-slate-500 flex-shrink-0 truncate" style={{ maxWidth: 80 }}>{job.subcontractor?.name || '—'}</span>
+                <span className="text-sm text-slate-500 flex-shrink-0 truncate" style={{ maxWidth: 88 }}>{job.subcontractor?.name || 'Unassigned'}</span>
               </div>
             )
           })}
         </div>
       ) : (
         <div className="py-12 text-center">
-          <p className="text-sm text-slate-500">{jobTab === 'upcoming' ? 'No upcoming jobs' : 'No recent activity'}</p>
+          <p className="text-sm text-slate-500">
+            {locationFilter === 'all'
+              ? jobTab === 'upcoming' ? 'No upcoming jobs' : 'No recent activity'
+              : `No ${jobTab === 'upcoming' ? 'upcoming jobs' : 'recent activity'} for this location`}
+          </p>
         </div>
       )}
     </div>

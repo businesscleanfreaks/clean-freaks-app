@@ -68,8 +68,8 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
         <ClientDetailHeader state={state} />
 
         {/* Main Body */}
-        <div className="px-4 sm:px-6 py-5">
-          <div className="grid grid-cols-1 lg:grid-cols-[60%_1fr] gap-5">
+        <div className="mx-auto w-full max-w-[1180px] px-4 sm:px-6 py-5">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-5">
             {/* LEFT COLUMN: Locations → Contact → Delete */}
             <div className="space-y-5 order-2 lg:order-1">
               <ClientDetailLocations state={state} />
