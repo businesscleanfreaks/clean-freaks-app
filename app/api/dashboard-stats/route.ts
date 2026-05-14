@@ -42,7 +42,7 @@ export async function GET() {
       recurringAddOns,
       sentInvoices,
       todaysJobs,
-    ] = await Promise.all([
+    ] = await prisma.$transaction([
       // Recurring clients (with active schedules)
       prisma.client.count({
         where: {
