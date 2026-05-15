@@ -278,7 +278,8 @@ export async function PUT(
     }
 
     // Trigger cascading updates (fire-and-forget — only does cache revalidation, not critical DB writes)
-    cascadeJobUpdate(job.id, 'update', job.subcontractorId || null, job.location.client.id).catch(() => {})
+    cascadeJobUpdate(job.id, 'update', job.subcontractorId || null, job.location.client.id)
+      .catch((err) => logger.error('[cascadeJobUpdate] Error after job update:', err))
 
     return NextResponse.json(job)
   } catch (error) {
@@ -338,7 +339,8 @@ export async function DELETE(
     revalidateJobPages(deletedClientId)
 
     // Trigger cascading updates (fire-and-forget)
-    cascadeJobUpdate(resolvedParams.id, 'delete', deletedSubcontractorId || null, deletedClientId).catch(() => {})
+    cascadeJobUpdate(resolvedParams.id, 'delete', deletedSubcontractorId || null, deletedClientId)
+      .catch((err) => logger.error('[cascadeJobUpdate] Error after job delete:', err))
 
     return NextResponse.json({ success: true })
   } catch (error) {

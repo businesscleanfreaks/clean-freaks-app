@@ -65,6 +65,7 @@ export async function GET(request: Request) {
     }
 
     const billingStartDate = await getBillingStartDate()
+    const effectivePeriodStart = billingStartDate && billingStartDate > periodStart ? billingStartDate : periodStart
     const currentMonthStart = startOfMonth(new Date())
     const olderWorkCutoff = periodStart < currentMonthStart ? periodStart : currentMonthStart
 
@@ -76,8 +77,7 @@ export async function GET(request: Request) {
       // 1. Fetch ALL jobs in the period (including invoiced ones for detection)
       prisma.job.findMany({
         where: {
-          date: { gte: periodStart, lte: periodEnd },
-          ...(billingStartDate ? { date: { gte: billingStartDate, lte: periodEnd } } : {}),
+          date: { gte: effectivePeriodStart, lte: periodEnd },
         },
         include: {
           location: {
@@ -294,7 +294,7 @@ export async function GET(request: Request) {
         recurringJobs.forEach(job => {
           if (job.scheduleId && !scheduleRates.has(job.scheduleId)) {
             scheduleRates.set(job.scheduleId, {
-              rate: job.clientRate ?? job.schedule?.defaultClientRate ?? 0,
+              rate: job.schedule?.defaultClientRate ?? job.clientRate ?? 0,
               locationName: job.location.name,
               jobCount: 0,
               startDate: job.schedule?.startDate ?? null,
@@ -490,16 +490,20 @@ export async function GET(request: Request) {
         where: {
           invoiced: false,
           status: { not: 'CANCELLED' },
-          date: { lt: olderWorkCutoff },
-          ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
+          date: {
+            lt: olderWorkCutoff,
+            ...(billingStartDate ? { gte: billingStartDate } : {}),
+          },
         },
       }),
       prisma.job.findMany({
         where: {
           invoiced: false,
           status: { not: 'CANCELLED' },
-          date: { lt: olderWorkCutoff },
-          ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
+          date: {
+            lt: olderWorkCutoff,
+            ...(billingStartDate ? { gte: billingStartDate } : {}),
+          },
         },
         select: { date: true },
         distinct: ['date'],

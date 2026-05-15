@@ -126,8 +126,8 @@ export async function DELETE(
 
     logger.debug('[DELETE] Job IDs from line items:', jobIdsFromLineItems.length)
 
-    // For flat rate schedules, we need to find ALL recurring jobs that were invoiced in the same period
-    // One-off jobs are now stored directly in line items, but recurring jobs only have one representative
+    // For flat-rate schedules, recurring invoice line items only store a representative job.
+    // Unmark jobs from the represented schedules/month only, not every recurring job for the client.
     let jobIdsToUnmark = jobIdsFromLineItems
 
     // Determine billing type from the schedule (source of truth)
@@ -144,19 +144,20 @@ export async function DELETE(
       // Find the service date from the first line item
       const serviceDate = invoice.lineItems[0]?.serviceDate
       if (serviceDate) {
-        // Find all RECURRING jobs (with scheduleId) for this client in the same month
-        // One-off jobs are already captured in jobIdsFromLineItems
+        const lineItemJobs = await prisma.job.findMany({
+          where: { id: { in: jobIdsFromLineItems }, scheduleId: { not: null } },
+          select: { scheduleId: true },
+        })
+        const scheduleIds = [...new Set(lineItemJobs.map(job => job.scheduleId).filter(Boolean) as string[])]
+
         const date = new Date(serviceDate)
         const monthStart = new Date(date.getFullYear(), date.getMonth(), 1)
         const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59)
 
         const relatedJobs = await prisma.job.findMany({
           where: {
-            location: {
-              clientId: invoice.clientId,
-            },
             invoiced: true,
-            scheduleId: { not: null }, // Only recurring jobs
+            scheduleId: { in: scheduleIds },
             date: {
               gte: monthStart,
               lte: monthEnd,

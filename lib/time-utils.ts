@@ -33,6 +33,9 @@ export function snapToQuarterHour(time: string): string {
   const hour = parseInt(hourStr)
   const minute = parseInt(minuteStr || '0')
   const snapped = Math.round(minute / 15) * 15
+  if (hour === 23 && snapped === 60) {
+    return '23:45'
+  }
   const finalHour = snapped === 60 ? hour + 1 : hour
   const finalMinute = snapped === 60 ? 0 : snapped
   return `${String(finalHour % 24).padStart(2, '0')}:${String(finalMinute).padStart(2, '0')}`

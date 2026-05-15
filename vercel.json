@@ -1,5 +1,15 @@
 {
   "framework": "nextjs",
   "buildCommand": "prisma generate && next build",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/jobs/auto-complete",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/jobs/auto-generate",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }

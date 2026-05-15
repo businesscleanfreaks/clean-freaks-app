@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { getBillingStartDate } from '@/lib/billing-settings'
-import { endOfDay } from 'date-fns'
+import { endOfDay, format } from 'date-fns'
 
 /**
  * Recalculates the total amount owed to a subcontractor
@@ -44,10 +44,11 @@ export async function recalculateSubcontractorBalance(subcontractorId: string): 
       return 0
     }
 
-    // Group jobs by client and schedule to handle FLAT_RATE vs PER_CLEAN
+    // Group jobs by client, schedule, and month to handle FLAT_RATE vs PER_CLEAN
     const jobsByClientSchedule = new Map<string, typeof unpaidJobs>()
     unpaidJobs.forEach(job => {
-      const key = `${job.location.client.id}-${job.scheduleId || 'one-off'}`
+      const monthKey = format(new Date(job.date), 'yyyy-MM')
+      const key = `${job.location.client.id}-${job.scheduleId || 'one-off'}-${monthKey}`
       if (!jobsByClientSchedule.has(key)) {
         jobsByClientSchedule.set(key, [])
       }
@@ -67,9 +68,11 @@ export async function recalculateSubcontractorBalance(subcontractorId: string): 
         const firstJob = jobsGroup[0]
         totalBalance += firstJob.subcontractorRate
 
-        // Add add-on subcontractor rates for this job
-        firstJob.addOnServices.forEach(addOn => {
-          totalBalance += addOn.subcontractorRate
+        // Add add-on subcontractor rates from every unpaid job in this month
+        jobsGroup.forEach(job => {
+          job.addOnServices.forEach(addOn => {
+            totalBalance += addOn.subcontractorRate
+          })
         })
       } else {
         // For PER_CLEAN or one-off jobs, sum all rates
@@ -91,5 +94,4 @@ export async function recalculateSubcontractorBalance(subcontractorId: string): 
     throw error
   }
 }
-
 

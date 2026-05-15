@@ -117,8 +117,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
 
     // Calculate profit from actual current-month job data (not schedule estimates)
     // This reflects per-job rate overrides (e.g. higher pay for initial deep cleans)
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999))
     const monthLabel = now.toLocaleDateString('en-US', { month: 'short' })
 
     // Collect current-month non-cancelled jobs across all locations
@@ -836,6 +836,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
   const { upcomingJobs, recentJobs } = useMemo(() => {
     const nowDate = new Date()
     nowDate.setHours(0, 0, 0, 0)
+    const recentCutoff = new Date(nowDate)
+    recentCutoff.setDate(recentCutoff.getDate() - 60)
     const weeklyFrequencies = new Set(['WEEKLY', 'BI_WEEKLY', 'EVERY_3_WEEKS', 'EVERY_4_WEEKS', 'EVERY_6_WEEKS'])
     const matchesScheduleDay = (job: JobWithLocation) => {
       if (!job.schedule?.daysOfWeek || !weeklyFrequencies.has(job.schedule.frequency)) return true
@@ -859,6 +861,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       .slice(0, 15)
     const recent = displayableJobs
       .filter((j: JobWithLocation) => new Date(j.date) < nowDate || j.status !== 'SCHEDULED')
+      .filter((j: JobWithLocation) => new Date(j.date) >= recentCutoff)
       .sort((a: JobWithLocation, b: JobWithLocation) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 15)
     return { upcomingJobs: upcoming, recentJobs: recent }

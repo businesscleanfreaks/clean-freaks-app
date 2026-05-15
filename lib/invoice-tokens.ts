@@ -1,12 +1,23 @@
 import crypto from 'crypto'
 
+function getInvoiceTokenSecret() {
+  const secret = process.env.INVOICE_TOKEN_SECRET
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('INVOICE_TOKEN_SECRET must be set in production')
+    }
+    return 'default-secret-change-in-development'
+  }
+  return secret
+}
+
 /**
  * Generate a secure token for public invoice viewing
  * Token format: base64url encoded `invoiceId:timestamp:hash`
  */
 export function generateInvoiceToken(invoiceId: string): string {
   const timestamp = Date.now()
-  const secret = process.env.INVOICE_TOKEN_SECRET || 'default-secret-change-in-production'
+  const secret = getInvoiceTokenSecret()
   const hash = crypto
     .createHash('sha256')
     .update(`${invoiceId}:${timestamp}:${secret}`)
@@ -33,7 +44,7 @@ export function decodeInvoiceToken(token: string): string | null {
     const [invoiceId, timestamp, hash] = parts
     
     // Verify hash
-    const secret = process.env.INVOICE_TOKEN_SECRET || 'default-secret-change-in-production'
+    const secret = getInvoiceTokenSecret()
     const expectedHash = crypto
       .createHash('sha256')
       .update(`${invoiceId}:${timestamp}:${secret}`)
@@ -56,4 +67,3 @@ export function decodeInvoiceToken(token: string): string | null {
     return null
   }
 }
-

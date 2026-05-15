@@ -581,7 +581,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       return
     }
     const base = localDate || new Date(job.date)
-    setDraftDate(base.toISOString().split('T')[0])
+    setDraftDate(format(base, 'yyyy-MM-dd'))
     setActiveInlinePicker('date')
   }
 
@@ -634,7 +634,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     setIsSavingInlineTime(true)
     try {
       const base = localDate || new Date(job.date)
-      const dateStr = base.toISOString().split('T')[0]
+      const dateStr = format(base, 'yyyy-MM-dd')
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -762,7 +762,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const handleQuickFixMove = () => {
     if (!canEditDateTime) return
     const baseDate = localDate || new Date(job.date)
-    setDraftDate(baseDate.toISOString().split('T')[0])
+    setDraftDate(format(baseDate, 'yyyy-MM-dd'))
     setDraftTime(localTime !== null ? localTime : (job.startTime || ''))
     setQuickRescheduleLabel(null)
     setIsSelectingCleaner(false)
@@ -1347,7 +1347,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       }
       const feeValue = chargeFee ? parseFloat(feeAmount) : 0
       if (feeValue > 0) {
-        fetch('/api/jobs/cancellation-fee', {
+        const feeResponse = await fetch('/api/jobs/cancellation-fee', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1356,7 +1356,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
             description: `Cancellation fee — ${reasonLabel} — ${format(new Date(job.date), 'MMM d, yyyy')}`,
             serviceDate: new Date(job.date).toISOString(),
           }),
-        }).catch(() => showError("Failed to create cancellation fee"))
+        })
+        if (!feeResponse.ok) {
+          await showApiError(feeResponse, 'Job cancelled, but the cancellation fee was not created')
+          return
+        }
       }
       setShowCancellationSheet(false)
       refreshCalendarData()

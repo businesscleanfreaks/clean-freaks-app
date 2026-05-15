@@ -4,6 +4,7 @@ import { revalidateSubcontractorPages } from '@/lib/revalidate'
 import { createPaymentSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { getBillingStartDate } from '@/lib/billing-settings'
+import { format } from 'date-fns'
 
 export async function POST(
   request: Request,
@@ -64,10 +65,11 @@ export async function POST(
     }
 
     // Calculate total amount based on billing type
-    // Group jobs by client and schedule to handle FLAT_RATE vs PER_CLEAN
+    // Group jobs by client, schedule, and month to handle FLAT_RATE vs PER_CLEAN
     const jobsByClientSchedule = new Map<string, typeof jobs>()
     jobs.forEach(job => {
-      const key = `${job.location.client.id}-${job.scheduleId || 'one-off'}`
+      const monthKey = format(new Date(job.date), 'yyyy-MM')
+      const key = `${job.location.client.id}-${job.scheduleId || 'one-off'}-${monthKey}`
       if (!jobsByClientSchedule.has(key)) {
         jobsByClientSchedule.set(key, [])
       }
@@ -89,9 +91,11 @@ export async function POST(
         const monthlyRate = firstJob.subcontractorRate
         let jobTotal = monthlyRate
         
-        // Add add-on subcontractor rates for this job
-        firstJob.addOnServices.forEach(addOn => {
-          jobTotal += addOn.subcontractorRate
+        // Add add-on subcontractor rates from every selected job in this month
+        jobsGroup.forEach(job => {
+          job.addOnServices.forEach(addOn => {
+            jobTotal += addOn.subcontractorRate
+          })
         })
         
         totalAmount += jobTotal
@@ -175,4 +179,3 @@ export async function POST(
     )
   }
 }
-

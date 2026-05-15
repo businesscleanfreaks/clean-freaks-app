@@ -32,12 +32,13 @@ export interface PayLedgerResult {
 export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
   const jobsByClient = new Map<string, any[]>()
 
-  // Group jobs safely by scheduleId or one-off
+  // Group jobs safely by scheduleId/month or one-off
   jobs.forEach(job => {
     if (!job.location?.client) return
     const clientId = job.location.client.id
+    const monthKey = format(new Date(job.date), 'yyyy-MM')
     const key = job.scheduleId
-      ? `${clientId}:${job.scheduleId}`
+      ? `${clientId}:${job.scheduleId}:${monthKey}`
       : `${clientId}:${job.location.id}:one-off:${job.id}`
 
     if (!jobsByClient.has(key)) jobsByClient.set(key, [])
@@ -96,37 +97,19 @@ export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
         job.addOnServices?.forEach((a: any) => { addOnTotal += a.subcontractorRate })
       })
 
-      // Grouping for frontend Ledger (split by month)
-      const jobsByMonth = new Map<string, any[]>()
-      groupJobs.forEach((job: any) => {
-        const monthKey = format(new Date(job.date), 'yyyy-MM')
-        if (!jobsByMonth.has(monthKey)) jobsByMonth.set(monthKey, [])
-        jobsByMonth.get(monthKey)!.push(job)
+      const monthDisplay = format(new Date(firstJob.date), 'MMMM yyyy')
+      groups.push({
+        clientId: key,
+        clientName: clientDisplayName,
+        payType: 'FLAT_RATE',
+        jobs: groupJobs.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+        monthlyAmount: monthlyRate,
+        totalAmount: monthlyRate + addOnTotal,
+        owedAmount: groupOwed,
+        paidCount,
+        unpaidCount,
+        month: monthDisplay,
       })
-
-      jobsByMonth.forEach((monthJobs, monthKey) => {
-        const monthDisplay = format(new Date(monthJobs[0].date), 'MMMM yyyy')
-        let monthAddOnTotal = 0
-        monthJobs.forEach((job: any) => {
-          job.addOnServices?.forEach((a: any) => { monthAddOnTotal += a.subcontractorRate })
-        })
-        const monthPaid = monthJobs.filter((j: any) => j.subcontractorPaid).length
-        const monthUnpaid = monthJobs.filter((j: any) => !j.subcontractorPaid).length
-
-        groups.push({
-          clientId: `${key}-${monthKey}`,
-          clientName: clientDisplayName,
-          payType: 'FLAT_RATE',
-          jobs: monthJobs,
-          monthlyAmount: monthlyRate,
-          totalAmount: monthlyRate + monthAddOnTotal,
-          owedAmount: monthUnpaid > 0 ? (monthlyRate + monthAddOnTotal) : 0,
-          paidCount: monthPaid,
-          unpaidCount: monthUnpaid,
-          month: monthDisplay,
-        })
-      })
-
     } else {
       // PER_CLEAN or one-off
       let groupTotalAmount = 0

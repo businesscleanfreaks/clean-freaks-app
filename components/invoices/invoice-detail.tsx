@@ -401,14 +401,21 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
                     to,
                     subject: `Invoice ${invoice.invoiceNumber} from Clean Freaks`,
                     message: `Please find your invoice ${invoice.invoiceNumber} for ${formatCurrency(invoice.totalAmount)}.`,
-                    isTest: true,
+                    isTest: false,
                   }),
                 })
                 if (response.ok) {
-                  const { showSuccess } = await import('@/lib/toast')
-                  showSuccess('Invoice sent successfully!')
-                  setStatus('SENT')
-                  onDataChange?.()
+                  const result = await response.json().catch(() => ({}))
+                  const { showSuccess, showWarning, showInfo } = await import('@/lib/toast')
+                  if (result.safetyMode === 'FORCED_TEST' || result.warning === 'SENDING_DISABLED') {
+                    showWarning('Email was NOT sent to the client. Email safety mode is on; configure production email settings to send real invoices.')
+                  } else if (result.isTest) {
+                    showInfo(`Test email sent to ${result.testEmail || 'your test address'}`)
+                  } else {
+                    showSuccess('Invoice sent successfully!')
+                    setStatus('SENT')
+                    onDataChange?.()
+                  }
                 } else {
                   const { showApiError } = await import('@/lib/toast')
                   await showApiError(response, 'Failed to send invoice email')

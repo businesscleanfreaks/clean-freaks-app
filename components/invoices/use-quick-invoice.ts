@@ -847,8 +847,15 @@ export function useQuickInvoice({
 
       if (emailResponse.ok) {
         setProgress(100)
-        const { showSuccess } = await import('@/lib/toast')
-        showSuccess(`Invoice sent to ${selectedRecipients.join(', ')}`)
+        const emailResult = await emailResponse.json().catch(() => ({}))
+        const { showSuccess, showWarning, showInfo } = await import('@/lib/toast')
+        if (emailResult.safetyMode === 'FORCED_TEST' || emailResult.warning === 'SENDING_DISABLED') {
+          showWarning('Email was NOT sent to the client. Email safety mode is on; configure production email settings to send real invoices.')
+        } else if (emailResult.isTest) {
+          showInfo(`Test email sent to ${emailResult.testEmail || 'your test address'}`)
+        } else {
+          showSuccess(`Invoice sent to ${selectedRecipients.join(', ')}`)
+        }
       } else {
         const { showApiError } = await import('@/lib/toast')
         await showApiError(emailResponse, 'Invoice created but email failed. Check your email settings.')
