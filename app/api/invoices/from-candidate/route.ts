@@ -30,26 +30,26 @@ export async function POST(request: Request) {
     const periodStart = new Date(start + 'T00:00:00')
     const periodEnd = new Date(end + 'T23:59:59.999')
 
-    // 1. Duplicate detection — check by billing period overlap
+    // 1. Duplicate detection. When source jobs are provided, job overlap is
+    // the source of truth so separate-location invoices can share a period.
+    const duplicateChecks = sourceJobIds && sourceJobIds.length > 0
+      ? [{
+          lineItems: {
+            some: {
+              jobId: { in: sourceJobIds },
+            },
+          },
+        }]
+      : [{
+          billingPeriodStart: { lte: periodEnd },
+          billingPeriodEnd: { gte: periodStart },
+        }]
+
     const existingInvoice = await prisma.invoice.findFirst({
       where: {
         clientId,
         status: { not: 'VOID' },
-        OR: [
-          // Exact billing period match
-          {
-            billingPeriodStart: { lte: periodEnd },
-            billingPeriodEnd: { gte: periodStart },
-          },
-          // Fallback: check if any of the source jobs are already invoiced
-          ...(sourceJobIds && sourceJobIds.length > 0 ? [{
-            lineItems: {
-              some: {
-                jobId: { in: sourceJobIds },
-              },
-            },
-          }] : []),
-        ],
+        OR: duplicateChecks,
       },
       select: {
         id: true,

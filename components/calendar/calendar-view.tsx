@@ -1402,6 +1402,59 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       return (h - startHour) * hourHeight + (m / 60) * hourHeight;
     };
 
+    const getMinutes = (timeStr: string | null | undefined) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      if (isNaN(h) || isNaN(m)) return 0;
+      return h * 60 + m;
+    };
+
+    const getPositionedJobs = (jobs: any[]) => {
+      const timedJobs = jobs
+        .map(job => {
+          const start = getMinutes(job.startTime || job.startWindowBegin);
+          const end = job.startWindowEnd ? getMinutes(job.startWindowEnd) : start + 60;
+          return { job, start, end: Math.max(end, start + 15) };
+        })
+        .sort((a, b) => a.start - b.start || b.end - a.end);
+
+      const groups: typeof timedJobs[] = [];
+      timedJobs.forEach(item => {
+        const lastGroup = groups[groups.length - 1];
+        const groupEnd = lastGroup ? Math.max(...lastGroup.map(g => g.end)) : -1;
+        if (!lastGroup || item.start >= groupEnd) {
+          groups.push([item]);
+        } else {
+          lastGroup.push(item);
+        }
+      });
+
+      return groups.flatMap(group => {
+        const columns: number[] = [];
+        return group.map(item => {
+          let column = columns.findIndex(end => end <= item.start);
+          if (column === -1) {
+            column = columns.length;
+            columns.push(item.end);
+          } else {
+            columns[column] = item.end;
+          }
+
+          return {
+            ...item,
+            column,
+            columnCount: Math.max(columns.length, 1),
+          };
+        }).map(item => ({
+          ...item,
+          columnCount: Math.max(...group.map(g => {
+            const overlapping = group.filter(other => other.start < g.end && other.end > g.start);
+            return overlapping.length;
+          }), item.columnCount),
+        }));
+      });
+    };
+
     return (
       <div className="flex-1 min-h-0 flex flex-col bg-white overflow-hidden">
         {/* Header Row */}
@@ -1465,6 +1518,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     scheduledJobs.push(job);
                   }
                 });
+                const positionedJobs = getPositionedJobs(scheduledJobs);
 
                 return (
                   <div key={di} className="relative border-r border-gray-100 last:border-r-0">
@@ -1496,23 +1550,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     )}
 
                     {/* Scheduled Jobs */}
-                    {scheduledJobs.map(job => {
+                    {positionedJobs.map(({ job, start, end, column, columnCount }) => {
                       const tStr = job.startTime || job.startWindowBegin!;
-                      const [hStr, mStr] = tStr.split(':');
-                      const h = parseInt(hStr, 10);
-                      const m = parseInt(mStr, 10);
-                      
-                      let durationMins = 60;
-                      if (job.startWindowEnd) {
-                         const [ehStr, emStr] = job.startWindowEnd.split(':');
-                         const eh = parseInt(ehStr, 10);
-                         const em = parseInt(emStr, 10);
-                         const diff = (eh * 60 + em) - (h * 60 + m);
-                         if (diff > 0) durationMins = diff;
-                      }
-                      
-                      let top = getTopOffset(tStr);
-                      const height = (durationMins / 60) * hourHeight;
+                      const top = ((start / 60) - startHour) * hourHeight;
+                      const height = ((end - start) / 60) * hourHeight;
+                      const widthPct = 100 / columnCount;
+                      const leftPct = column * widthPct;
 
                       const { colorKey } = getCleanerColorInfo(job.subcontractor?.name || null);
                       const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default;
@@ -1527,6 +1570,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           style={{
                             top: `${top}px`,
                             height: `${height}px`,
+                            left: `calc(${leftPct}% + 4px)`,
+                            right: 'auto',
+                            width: `calc(${widthPct}% - 8px)`,
                             background: gradient,
                             opacity: isDimmed ? 0.3 : 1
                           }}

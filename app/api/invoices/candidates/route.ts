@@ -198,6 +198,8 @@ export async function GET(request: Request) {
     interface CandidateException {
       type: 'SKIPPED' | 'RESCHEDULED' | 'ONE_TIME_ADD_ON' | 'MISSING_EMAIL' | 'PRICE_CHANGE' | 'ONE_OFF_JOB'
       message: string
+      scheduleId?: string | null
+      locationId?: string
     }
 
     interface Candidate {
@@ -266,6 +268,8 @@ export async function GET(request: Request) {
         exceptions.push({
           type: 'SKIPPED',
           message: `${format(job.date, 'MMM d')} clean was skipped`,
+          scheduleId: job.scheduleId,
+          locationId: job.locationId,
         })
       })
 
@@ -275,6 +279,8 @@ export async function GET(request: Request) {
           exceptions.push({
             type: 'ONE_OFF_JOB',
             message: `One-off job on ${format(job.date, 'MMM d')} — ${job.location.name}`,
+            scheduleId: job.scheduleId,
+            locationId: job.locationId,
           })
         }
       })
@@ -287,6 +293,8 @@ export async function GET(request: Request) {
             exceptions.push({
               type: 'ONE_TIME_ADD_ON',
               message: `${addOn.description} add-on on ${format(job.date, 'MMM d')}`,
+              scheduleId: job.scheduleId,
+              locationId: job.locationId,
             })
           }
         })
@@ -298,6 +306,8 @@ export async function GET(request: Request) {
           exceptions.push({
             type: 'PRICE_CHANGE',
             message: `${format(job.date, 'MMM d')}: Billed $${job.clientRate} instead of regular $${job.schedule.defaultClientRate}.`,
+            scheduleId: job.scheduleId,
+            locationId: job.locationId,
           })
         }
       })
@@ -498,7 +508,10 @@ export async function GET(request: Request) {
           ? lineItems.filter(item => item.sourceType === 'FLAT_RATE' && item.scheduleId)
           : []
 
-        if (!existingInvoiceId && flatRateScheduleItems.length > 1) {
+        const uniqueFlatRates = new Set(flatRateScheduleItems.map(item => item.price))
+        const shouldSplitFlatRateBySchedule = flatRateScheduleItems.length > 1 && uniqueFlatRates.size > 1
+
+        if (!existingInvoiceId && shouldSplitFlatRateBySchedule) {
           flatRateScheduleItems.forEach((scheduleItem) => {
             const scheduleId = scheduleItem.scheduleId!
             const scheduleJobs = uninvoicedJobs.filter(job => job.scheduleId === scheduleId)
@@ -506,6 +519,9 @@ export async function GET(request: Request) {
             const scopedLineItems = lineItems.filter(item =>
               item.scheduleId === scheduleId ||
               (item.jobId ? scheduleJobIds.has(item.jobId) : false)
+            )
+            const scopedExceptions = dedupedExceptions.filter(exception =>
+              !exception.scheduleId || exception.scheduleId === scheduleId
             )
             const scopedTotal = scopedLineItems.reduce((sum, item) => sum + item.price, 0)
             const locationLabel = scheduleItem.locationName
@@ -517,10 +533,10 @@ export async function GET(request: Request) {
               clientId,
               clientName: `${client.name}${locationLabel}`,
               billingType,
-              status,
+              status: scopedExceptions.length > 0 ? 'NEEDS_ATTENTION' : 'READY',
               scheduleSummary,
               lineItems: scopedLineItems,
-              exceptions: dedupedExceptions,
+              exceptions: scopedExceptions,
               total: scopedTotal,
               existingInvoiceId,
               existingInvoiceNumber,
