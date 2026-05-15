@@ -596,33 +596,35 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                       value={`${formatCurrency(profit)}/mo`}
                       muted={profit < 0}
                     />
-                    <DetailRow
-                      label="Cleaner"
-                      value={sch.subcontractor?.name || 'Unassigned'}
-                      muted={!sch.subcontractor?.name}
-                      onClick={() => setReassigningSchedule(reassigningSchedule === sch.id ? null : sch.id)}
-                    />
-                    {reassigningSchedule === sch.id && (
-                      <div className="border-b border-gray-100 bg-gray-50 px-3.5 py-2">
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            onClick={() => handleQuickReassign(sch.id, null, reassignEffectiveDate)}
-                            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-gray-100"
-                          >
-                            Unassigned
-                          </button>
-                          {subcontractors.filter((sub: SubcontractorRecord) => sub.isActive !== false || sub.id === sch.subcontractorId).map((sub: SubcontractorRecord) => (
+                    <div data-dropdown-menu>
+                      <DetailRow
+                        label="Cleaner"
+                        value={sch.subcontractor?.name || 'Unassigned'}
+                        muted={!sch.subcontractor?.name}
+                        onClick={() => setReassigningSchedule(reassigningSchedule === sch.id ? null : sch.id)}
+                      />
+                      {reassigningSchedule === sch.id && (
+                        <div className="border-b border-gray-100 bg-gray-50 px-3.5 py-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <button
-                              key={sub.id}
-                              onClick={() => handleQuickReassign(sch.id, sub.id, reassignEffectiveDate)}
-                              className={`rounded-md border px-2 py-1 text-xs font-medium ${sch.subcontractorId === sub.id ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-gray-200 bg-white text-slate-600 hover:bg-gray-100'}`}
+                              onClick={() => handleQuickReassign(sch.id, null, reassignEffectiveDate)}
+                              className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-gray-100"
                             >
-                              {sub.name}
+                              Unassigned
                             </button>
-                          ))}
+                            {subcontractors.filter((sub: SubcontractorRecord) => sub.isActive !== false || sub.id === sch.subcontractorId).map((sub: SubcontractorRecord) => (
+                              <button
+                                key={sub.id}
+                                onClick={() => handleQuickReassign(sch.id, sub.id, reassignEffectiveDate)}
+                                className={`rounded-md border px-2 py-1 text-xs font-medium ${sch.subcontractorId === sub.id ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-gray-200 bg-white text-slate-600 hover:bg-gray-100'}`}
+                              >
+                                {sub.name}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                     <DetailRow
                       label="Entry Codes"
                       value={editingAccessInfo ? (

@@ -49,6 +49,7 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
 
   const [generating, setGenerating] = useState(false)
   const [pdfUrl, setPdfUrl] = useState(invoice.pdfUrl)
+  const [previewPdfSrc, setPreviewPdfSrc] = useState<string | null>(invoice.pdfUrl)
   const { confirm, ConfirmDialog } = useConfirm()
   const revisionInfo = getInvoiceRevisionInfo(invoice)
 
@@ -68,6 +69,32 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- only trigger PDF generation when preview opens, not when generating/pdfUrl state changes
   }, [previewOpen])
+
+  useEffect(() => {
+    if (!pdfUrl) {
+      setPreviewPdfSrc(null)
+      return
+    }
+
+    if (!pdfUrl.startsWith('data:application/pdf')) {
+      setPreviewPdfSrc(pdfUrl)
+      return
+    }
+
+    try {
+      const base64 = pdfUrl.split(',')[1]
+      const binary = atob(base64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i)
+      }
+      const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+      setPreviewPdfSrc(objectUrl)
+      return () => URL.revokeObjectURL(objectUrl)
+    } catch {
+      setPreviewPdfSrc(pdfUrl)
+    }
+  }, [pdfUrl])
 
   const handleStatusChange = async (newStatus: string) => {
     // Confirmation for marking as PAID
@@ -725,10 +752,10 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
                   <p className="text-sm text-slate-500 mt-2">This usually takes 2-3 seconds</p>
                 </div>
               </div>
-            ) : pdfUrl ? (
+            ) : previewPdfSrc ? (
               <div className="h-full w-full max-w-3xl mx-auto">
                 <iframe
-                  src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+                  src={`${previewPdfSrc}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
                   className="w-full h-full rounded-lg shadow-xl bg-white"
                   style={{ border: 'none' }}
                   title="Invoice Preview"

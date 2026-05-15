@@ -23,6 +23,15 @@ function jobMatchesScheduleDay(job: {
   }
 }
 
+function formatUtcCalendarDate(date: Date, includeYear = false) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    ...(includeYear ? { year: 'numeric' } : {}),
+  }).format(date)
+}
+
 /**
  * GET /api/invoices/candidates?start=YYYY-MM-DD&end=YYYY-MM-DD
  *
@@ -134,6 +143,7 @@ export async function GET(request: Request) {
                   id: true,
                   frequency: true,
                   daysOfWeek: true,
+                  startDate: true,
                   clientPayType: true,
                   defaultClientRate: true,
                   recurringAddOnServices: true,
@@ -278,7 +288,7 @@ export async function GET(request: Request) {
 
       if (billingType === 'FLAT_RATE') {
         // Group by schedule to get monthly rate per location
-        const scheduleRates = new Map<string, { rate: number; locationName: string; jobCount: number }>()
+        const scheduleRates = new Map<string, { rate: number; locationName: string; jobCount: number; startDate: Date | null }>()
         const scheduleAddOns = new Map<string, Array<{ description: string; rate: number; id: string }>>()
 
         recurringJobs.forEach(job => {
@@ -287,6 +297,7 @@ export async function GET(request: Request) {
               rate: job.clientRate ?? job.schedule?.defaultClientRate ?? 0,
               locationName: job.location.name,
               jobCount: 0,
+              startDate: job.schedule?.startDate ?? null,
             })
             // Recurring add-ons (once per schedule per month)
             const recurring = job.schedule?.recurringAddOnServices || []
@@ -303,9 +314,12 @@ export async function GET(request: Request) {
           }
         })
 
-        const periodLabel = `${format(periodStart, 'MMM d')} – ${format(periodEnd, 'MMM d, yyyy')}`
-
         scheduleRates.forEach((info, scheduleId) => {
+          const effectiveStart = info.startDate && info.startDate > periodStart ? info.startDate : periodStart
+          const startLabel = info.startDate && info.startDate > periodStart
+            ? formatUtcCalendarDate(effectiveStart)
+            : format(periodStart, 'MMM d')
+          const periodLabel = `${startLabel} – ${format(periodEnd, 'MMM d, yyyy')}`
           lineItems.push({
             description: `Monthly Cleaning — ${info.locationName} — ${periodLabel}`,
             quantity: 1,

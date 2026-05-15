@@ -194,7 +194,7 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
           </button>
         </div>
         {locationOptions.length > 1 && (
-          <div className="px-3 pb-3">
+          <div className="px-3 pb-3 pt-3">
             <select
               value={locationFilter}
               onChange={(event) => setLocationFilter(event.target.value)}

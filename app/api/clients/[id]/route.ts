@@ -43,6 +43,7 @@ async function getClientWithDetails(id: string) {
                 select: {
                   id: true,
                   frequency: true,
+                  daysOfWeek: true,
                   defaultClientRate: true,
                   defaultSubcontractorRate: true,
                   timeType: true,

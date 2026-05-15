@@ -836,14 +836,28 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
   const { upcomingJobs, recentJobs } = useMemo(() => {
     const nowDate = new Date()
     nowDate.setHours(0, 0, 0, 0)
+    const weeklyFrequencies = new Set(['WEEKLY', 'BI_WEEKLY', 'EVERY_3_WEEKS', 'EVERY_4_WEEKS', 'EVERY_6_WEEKS'])
+    const matchesScheduleDay = (job: JobWithLocation) => {
+      if (!job.schedule?.daysOfWeek || !weeklyFrequencies.has(job.schedule.frequency)) return true
+      try {
+        const scheduleDays = JSON.parse(job.schedule.daysOfWeek) as number[]
+        return scheduleDays.includes(new Date(job.date).getUTCDay())
+      } catch {
+        return true
+      }
+    }
+
     const allJobs: JobWithLocation[] = client.locations?.flatMap((loc: ClientLocation) =>
       loc.jobs?.map((job: ClientJobSummary) => ({ ...job, location: { id: loc.id, name: loc.name } })) || []
     ) || []
+    const displayableJobs = allJobs.filter(matchesScheduleDay)
+
     const upcoming = allJobs
+      .filter(matchesScheduleDay)
       .filter((j: JobWithLocation) => new Date(j.date) >= nowDate && j.status === 'SCHEDULED')
       .sort((a: JobWithLocation, b: JobWithLocation) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 15)
-    const recent = allJobs
+    const recent = displayableJobs
       .filter((j: JobWithLocation) => new Date(j.date) < nowDate || j.status !== 'SCHEDULED')
       .sort((a: JobWithLocation, b: JobWithLocation) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 15)

@@ -101,6 +101,7 @@ export interface ClientJobSummary {
   schedule: {
     id: string
     frequency: string
+    daysOfWeek?: string | null
     defaultClientRate?: number | null
     defaultSubcontractorRate?: number | null
     timeType?: string | null
