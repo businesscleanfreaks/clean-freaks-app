@@ -59,6 +59,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     trialNotesDraft, setTrialNotesDraft,
     addOns, setAddOns,
     isAddingAddOn, setIsAddingAddOn,
+    isSavingAddOn,
     deletingAddOnId,
     editingAddOnId, setEditingAddOnId,
     newAddOn, setNewAddOn,
@@ -1292,7 +1293,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       addon: 'add-on',
     }[scopeDialogAction]
 
-    const isBusy = isSavingInlineDate || isSavingSubcontractor || isSavingRates
+    const isBusy = isSavingInlineDate || isSavingSubcontractor || isSavingRates || isSavingAddOn
 
     return (
       <Dialog open={!!scopeDialogAction} onOpenChange={(nextOpen) => { if (!nextOpen) setScopeDialogAction(null) }}>

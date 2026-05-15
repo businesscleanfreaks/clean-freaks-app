@@ -34,6 +34,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     const { clientId, jobIds, dateDue, notes, showPaymentOptions, status, previewOnly } = body
+    const customLineItems = Array.isArray(body.lineItems) ? body.lineItems : null
 
     if (!clientId || !jobIds || jobIds.length === 0) {
       return NextResponse.json(
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Calculate total based on billing type
+    // Calculate total based on billing type, unless the caller supplied reviewed line items.
     let totalAmount: number
     let lineItems: Array<{
       jobId: string | null
@@ -88,6 +89,23 @@ export async function POST(request: Request) {
       amount: number
       serviceDate: Date
     }>
+
+    if (customLineItems && customLineItems.length > 0) {
+      lineItems = customLineItems.map((item: {
+        jobId?: string | null
+        addOnServiceId?: string | null
+        description?: string
+        amount?: number
+        serviceDate?: string | Date | null
+      }) => ({
+        jobId: item.jobId || null,
+        addOnServiceId: item.addOnServiceId || null,
+        description: item.description || 'Invoice item',
+        amount: Number(item.amount || 0),
+        serviceDate: item.serviceDate ? new Date(item.serviceDate) : new Date(),
+      }))
+      totalAmount = lineItems.reduce((sum, item) => sum + item.amount, 0)
+    } else {
 
     // Helper to format month name
     const formatMonth = (date: Date) => {
@@ -228,6 +246,7 @@ export async function POST(request: Request) {
           totalAmount += addOn.clientRate
         })
       })
+    }
     }
 
     // Generate invoice number

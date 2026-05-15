@@ -13,7 +13,17 @@ export async function POST(
     const invoice = await prisma.invoice.findUnique({
       where: { id },
       include: {
-        lineItems: true,
+        lineItems: {
+          include: {
+            job: {
+              select: {
+                id: true,
+                scheduleId: true,
+                date: true,
+              },
+            },
+          },
+        },
         client: true,
       },
     })
@@ -22,10 +32,37 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    // Get all job IDs from line items
-    const jobIds = invoice.lineItems
+    const directJobIds = invoice.lineItems
       .map(item => item.jobId)
-      .filter((id): id is string => id !== null)
+      .filter((jobId): jobId is string => jobId !== null)
+    const scheduleMonthKeys = new Map<string, { scheduleId: string; monthStart: Date; monthEnd: Date }>()
+
+    invoice.lineItems.forEach((item) => {
+      if (!item.job?.scheduleId) return
+      const date = new Date(item.job.date)
+      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1)
+      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
+      scheduleMonthKeys.set(`${item.job.scheduleId}:${monthStart.toISOString()}`, {
+        scheduleId: item.job.scheduleId,
+        monthStart,
+        monthEnd,
+      })
+    })
+
+    const relatedRecurringJobs = scheduleMonthKeys.size > 0
+      ? await prisma.job.findMany({
+          where: {
+            status: { not: 'CANCELLED' },
+            OR: Array.from(scheduleMonthKeys.values()).map((entry) => ({
+              scheduleId: entry.scheduleId,
+              date: { gte: entry.monthStart, lte: entry.monthEnd },
+            })),
+          },
+          select: { id: true },
+        })
+      : []
+
+    const jobIds = [...new Set([...directJobIds, ...relatedRecurringJobs.map(job => job.id)])]
 
     if (jobIds.length > 0) {
       // Mark jobs as invoiced

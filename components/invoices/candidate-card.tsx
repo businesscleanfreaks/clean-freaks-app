@@ -207,6 +207,15 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
             {candidate.existingInvoiceStatus === 'DRAFT' && <FileText style={{ width: '12px', height: '12px' }} />}
             {candidate.existingInvoiceStatus === 'SENT' && <Clock style={{ width: '12px', height: '12px' }} />}
             {candidate.existingInvoiceStatus === 'PAID' && <CheckCircle2 style={{ width: '12px', height: '12px' }} />}
+            <span style={{ color: '#64748B' }}>
+              {candidate.existingInvoiceStatus === 'DRAFT'
+                ? 'Draft'
+                : candidate.existingInvoiceStatus === 'SENT'
+                  ? 'Sent'
+                  : candidate.existingInvoiceStatus === 'PAID'
+                    ? 'Paid'
+                    : ''}
+            </span>
             {candidate.existingInvoiceNumber ? `#${candidate.existingInvoiceNumber}` : 'View'}
             <ChevronRight style={{ width: '12px', height: '12px' }} />
           </Link>

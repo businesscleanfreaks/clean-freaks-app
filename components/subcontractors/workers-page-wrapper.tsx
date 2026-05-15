@@ -316,7 +316,7 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <h1 className="text-lg font-bold text-gray-900">Cleaners</h1>
           <div className="flex items-center gap-2">
-            {subcontractorsWithBalance.length > 1 && (
+        {subcontractorsWithBalance.length > 1 && (
               <Button
                 onClick={startBatchPay}
                 className="bg-teal-600 hover:bg-teal-700 text-white h-9 px-3 sm:px-4 text-sm rounded-lg"
@@ -742,7 +742,12 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
         jobs={payingSubcontractor?.jobs || []}
         open={!!payingSubcontractor}
         onOpenChange={(open) => !open && setPayingSubcontractor(null)}
-        onPaymentComplete={() => { setPayingSubcontractor(null); onDataChange(); globalMutate('/api/dashboard-stats') }}
+        onPaymentComplete={() => {
+          setPayingSubcontractor(null)
+          onDataChange()
+          globalMutate('/api/subcontractors/data')
+          globalMutate('/api/dashboard-stats')
+        }}
       />
 
       {/* EDIT CLEANER DIALOG */}

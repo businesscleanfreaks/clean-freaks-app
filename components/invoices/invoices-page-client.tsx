@@ -739,7 +739,20 @@ export function InvoicesPageClient({
       </div>
 
       {/* Ready Tab: Summary */}
-      {activeTab === 'ready' && reviewQueueTotal > 0 && (
+      {activeTab === 'ready' && candidatesLoading && (
+        <div
+          className="flex items-center justify-between"
+          style={{ padding: '0 4px', marginBottom: '12px' }}
+        >
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: '18px', fontWeight: 600, color: '#64748B' }}>
+              Loading invoices...
+            </span>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'ready' && !candidatesLoading && reviewQueueTotal > 0 && (
         <div
           className="flex items-center justify-between"
           style={{ padding: '0 4px', marginBottom: '12px' }}
@@ -874,7 +887,7 @@ export function InvoicesPageClient({
                   </div>
                   <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden' }}>
                     {existingCandidates.map(c => (
-                      <CandidateCard key={c.clientId} candidate={c} onReview={handleCandidateReview} />
+                      <CandidateCard key={c.existingInvoiceId || c.clientId} candidate={c} onReview={handleCandidateReview} />
                     ))}
                   </div>
                 </div>

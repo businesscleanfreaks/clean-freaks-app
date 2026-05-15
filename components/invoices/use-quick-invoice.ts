@@ -56,6 +56,7 @@ export type QuickInvoiceJob = {
   }>
   schedule?: {
     defaultClientRate?: number | null
+    startDate?: string | Date | null
     recurringAddOnServices?: Array<{
       id: string
       description: string
@@ -193,6 +194,33 @@ export function useQuickInvoice({
     }
     return filtered
   }, [jobs, dateFrom, dateTo])
+
+  const getMonthJobs = useCallback((month: string) => {
+    if (month === 'all') return jobs.filter(j => j.status !== 'CANCELLED')
+    const [year, mo] = month.split('-').map(Number)
+    const monthStart = startOfMonth(new Date(year, mo - 1))
+    const monthEnd = endOfMonth(new Date(year, mo - 1))
+    return jobs.filter(j => {
+      if (j.status === 'CANCELLED') return false
+      const time = new Date(j.date).getTime()
+      return time >= monthStart.getTime() && time <= monthEnd.getTime()
+    })
+  }, [jobs])
+
+  const getFlatRatePeriodStart = useCallback((scheduleJobs: QuickInvoiceJob[]) => {
+    const firstJob = scheduleJobs[0]
+    const firstJobDate = firstJob ? new Date(firstJob.date) : new Date()
+    const scheduleStart = firstJob?.schedule?.startDate ? new Date(firstJob.schedule.startDate) : null
+    const periodStart = dateFrom ? new Date(dateFrom + 'T00:00:00') : startOfMonth(firstJobDate)
+    return scheduleStart && scheduleStart > periodStart ? scheduleStart : periodStart
+  }, [dateFrom])
+
+  const getFlatRatePeriodLabel = useCallback((scheduleJobs: QuickInvoiceJob[]) => {
+    const periodStart = getFlatRatePeriodStart(scheduleJobs)
+    const firstJob = scheduleJobs[0]
+    const endDate = dateTo ? new Date(dateTo + 'T23:59:59') : endOfMonth(firstJob ? new Date(firstJob.date) : periodStart)
+    return `${format(periodStart, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`
+  }, [dateTo, getFlatRatePeriodStart])
 
   // Computed data for flat-rate clients
   const flatRateData = useMemo(() => {
@@ -373,16 +401,16 @@ export function useQuickInvoice({
         jobsByScheduleMonth.forEach((scheduleJobs) => {
           if (scheduleJobs.length > 0) {
             const firstJob = scheduleJobs[0]
-            const jobDate = new Date(firstJob.date)
+            const jobDate = getFlatRatePeriodStart(scheduleJobs)
             const monthKey = format(jobDate, 'yyyy-MM')
-            const monthName = jobDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+            const periodLabel = getFlatRatePeriodLabel(scheduleJobs)
             const locationName = firstJob.location?.name || 'Unknown Location'
             const monthlyRate = firstJob.schedule?.defaultClientRate ?? firstJob.clientRate
 
             items.push({
               id: `recurring-${firstJob.scheduleId || 'no-schedule'}-${monthKey}-${Date.now()}`,
               jobId: firstJob.id,
-              description: `Monthly Cleaning - ${locationName} - ${monthName}`,
+              description: `Monthly Cleaning - ${locationName} - ${periodLabel}`,
               amount: monthlyRate,
               serviceDate: jobDate,
             })
@@ -392,7 +420,7 @@ export function useQuickInvoice({
               items.push({
                 id: `schedule-addon-${addOn.id}-${monthKey}-${Date.now()}`,
                 jobId: firstJob.id,
-                description: `${addOn.description} (recurring) - ${monthName}`,
+                description: `${addOn.description} (recurring) - ${periodLabel}`,
                 amount: addOn.clientRate,
                 serviceDate: jobDate,
               })
@@ -475,6 +503,7 @@ export function useQuickInvoice({
       }
       setActiveMonth(month)
       setShowCustomDates(false)
+      const initialJobs = getMonthJobs(month)
       if (month !== 'all') {
         const [year, mo] = month.split('-').map(Number)
         const monthStart = startOfMonth(new Date(year, mo - 1))
@@ -485,10 +514,11 @@ export function useQuickInvoice({
         setDateFrom('')
         setDateTo('')
       }
+      setSelectedJobIds(new Set(initialJobs.map(j => j.id)))
       const dueDate = new Date()
       dueDate.setDate(dueDate.getDate() + 7)
       setDateDue(format(dueDate, 'yyyy-MM-dd'))
-      const generatedItems = generateLineItems()
+      const generatedItems = generateLineItems(initialJobs)
       setLineItems(generatedItems)
       setCreatedInvoiceId(null)
       const basePool = mergeUniqueEmails(client.invoicingEmail, client.communicationEmail)
@@ -503,7 +533,7 @@ export function useQuickInvoice({
       setEmailMessage(getDefaultEmailMessage({ totalAmount: totalAmountStr, dueDate: dueDateStr }))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, jobs, client.billingType, client.invoicingEmail, client.communicationEmail, client.id, initialMonth])
+  }, [open, jobs, client.billingType, client.invoicingEmail, client.communicationEmail, client.id, initialMonth, getMonthJobs])
 
   // Merge saved client contacts into recipient suggestions when the modal opens
   useEffect(() => {
@@ -606,6 +636,39 @@ export function useQuickInvoice({
     setLineItems(prev => [...prev, newItem])
   }
 
+  const getInvoiceJobIds = useCallback(() => {
+    const sourceIds = new Set<string>()
+    lineItems.forEach((item) => {
+      if (!item.jobId) return
+      const linkedJob = jobs.find(j => j.id === item.jobId)
+      if (client.billingType === 'FLAT_RATE' && linkedJob?.scheduleId) {
+        const monthKey = format(new Date(linkedJob.date), 'yyyy-MM')
+        jobs.forEach((job) => {
+          if (
+            job.status !== 'CANCELLED' &&
+            selectedJobIds.has(job.id) &&
+            job.scheduleId === linkedJob.scheduleId &&
+            format(new Date(job.date), 'yyyy-MM') === monthKey
+          ) {
+            sourceIds.add(job.id)
+          }
+        })
+      } else {
+        sourceIds.add(item.jobId)
+      }
+    })
+    return Array.from(sourceIds)
+  }, [client.billingType, jobs, lineItems, selectedJobIds])
+
+  const serializeLineItemsForApi = useCallback(() => (
+    lineItems.map(item => ({
+      description: item.description,
+      amount: item.amount,
+      jobId: item.jobId,
+      serviceDate: item.serviceDate ? item.serviceDate.toISOString() : new Date().toISOString(),
+    }))
+  ), [lineItems])
+
   const toggleRecipient = useCallback((email: string) => {
     const low = email.toLowerCase()
     setSelectedRecipients((prev) => {
@@ -659,7 +722,8 @@ export function useQuickInvoice({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientId: client.id,
-            jobIds: Array.from(selectedJobIds),
+            jobIds: getInvoiceJobIds(),
+            lineItems: serializeLineItemsForApi(),
             dateDue: dateDue || null,
             notes: notes || null,
             showPaymentOptions: showPaymentOptions,
@@ -792,7 +856,8 @@ export function useQuickInvoice({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientId: client.id,
-            jobIds: Array.from(selectedJobIds),
+            jobIds: getInvoiceJobIds(),
+            lineItems: serializeLineItemsForApi(),
             dateDue: dateDue || null,
             notes: notes || null,
             showPaymentOptions: showPaymentOptions,
@@ -883,7 +948,8 @@ export function useQuickInvoice({
       showError('Please add at least one line item')
       return
     }
-    if (selectedJobIds.size === 0) {
+    const invoiceJobIds = getInvoiceJobIds()
+    if (invoiceJobIds.length === 0) {
       const { showError } = await import('@/lib/toast')
       showError('No jobs selected for this invoice')
       return
@@ -899,7 +965,8 @@ export function useQuickInvoice({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientId: client.id,
-          jobIds: Array.from(selectedJobIds),
+          jobIds: invoiceJobIds,
+          lineItems: serializeLineItemsForApi(),
           dateDue: dateDue || null,
           notes: notes || null,
           status: 'DRAFT',
@@ -953,7 +1020,8 @@ export function useQuickInvoice({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientId: client.id,
-          jobIds: Array.from(selectedJobIds),
+          jobIds: getInvoiceJobIds(),
+          lineItems: serializeLineItemsForApi(),
           dateDue: dateDue || null,
           notes: notes || null,
           showPaymentOptions: showPaymentOptions,

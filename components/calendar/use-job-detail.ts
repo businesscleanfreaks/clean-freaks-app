@@ -50,6 +50,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   const [addOns, setAddOns] = useState<AddOnService[]>(job?.addOnServices || [])
   const [isAddingAddOn, setIsAddingAddOn] = useState(false)
+  const [isSavingAddOn, setIsSavingAddOn] = useState(false)
   const [deletingAddOnId, setDeletingAddOnId] = useState<string | null>(null)
   const [editingAddOnId, setEditingAddOnId] = useState<string | null>(null)
   const [newAddOn, setNewAddOn] = useState({ description: '', clientRate: '', subcontractorRate: '' })
@@ -123,6 +124,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setIsSavingTrial(false)
       setIsSavingRates(false)
       setIsSavingOutcome(false)
+      setIsSavingAddOn(false)
       setIsSavingInlineDate(false)
       setIsSavingInlineTime(false)
       setMobileConfirmAction(null)
@@ -1018,7 +1020,8 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }
 
   const handleSaveAddOnSingle = async () => {
-    if (!newAddOn.description || !newAddOn.clientRate) return
+    if (!newAddOn.description || !newAddOn.clientRate || isSavingAddOn) return
+    setIsSavingAddOn(true)
     try {
       const response = await fetch('/api/add-on-services', {
         method: 'POST',
@@ -1042,15 +1045,18 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setActiveQuickFixPanel(null)
     } catch (error) {
       showError(getErrorMessage(error))
+    } finally {
+      setIsSavingAddOn(false)
     }
   }
 
   const handleSaveAddOnFuture = async () => {
-    if (!newAddOn.description || !newAddOn.clientRate) return
+    if (!newAddOn.description || !newAddOn.clientRate || isSavingAddOn) return
     if (!job.scheduleId || !job.schedule) {
       await handleSaveAddOnSingle()
       return
     }
+    setIsSavingAddOn(true)
     try {
       const clientRate = parseFloat(newAddOn.clientRate)
       const subcontractorRate = parseFloat(newAddOn.subcontractorRate || '0')
@@ -1094,6 +1100,8 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       refreshCalendarData()
     } catch (error) {
       showError(getErrorMessage(error))
+    } finally {
+      setIsSavingAddOn(false)
     }
   }
 
@@ -1175,22 +1183,27 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     const applyFuture = scopeChoice === 'future' || scopeChoice === 'all'
     if (scopeDialogAction === 'move') {
       applyFuture ? await handleSaveQuickMoveFuture() : await handleSaveQuickMoveSingle()
+      setScopeDialogAction(null)
       return
     }
     if (scopeDialogAction === 'cleaner') {
       applyFuture ? await handleSaveCleanerFuture() : await handleSaveCleanerSingle()
+      setScopeDialogAction(null)
       return
     }
     if (scopeDialogAction === 'client-rate') {
       applyFuture ? await handleSaveClientRateFuture() : await handleSaveClientRateSingle()
+      setScopeDialogAction(null)
       return
     }
     if (scopeDialogAction === 'cleaner-pay') {
       applyFuture ? await handleSaveCleanerPayFuture() : await handleSaveCleanerPaySingle()
+      setScopeDialogAction(null)
       return
     }
     if (scopeDialogAction === 'addon') {
       applyFuture ? await handleSaveAddOnFuture() : await handleSaveAddOnSingle()
+      setScopeDialogAction(null)
     }
   }
 
@@ -1389,6 +1402,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     trialNotesDraft, setTrialNotesDraft,
     addOns, setAddOns,
     isAddingAddOn, setIsAddingAddOn,
+    isSavingAddOn,
     deletingAddOnId,
     editingAddOnId, setEditingAddOnId,
     newAddOn, setNewAddOn,

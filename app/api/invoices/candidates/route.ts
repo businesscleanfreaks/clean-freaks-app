@@ -205,11 +205,10 @@ export async function GET(request: Request) {
     }
 
     const candidates: Candidate[] = []
-    const processedClientIds = new Set<string>()
+    const representedInvoiceIds = new Set<string>()
 
     // Process each client with jobs
     for (const [clientId, jobs] of jobsByClient) {
-      processedClientIds.add(clientId)
       const client = jobs[0].location.client
       const clientInvoices = invoicesByClient.get(clientId) || []
 
@@ -223,9 +222,23 @@ export async function GET(request: Request) {
       const existingDraft = clientInvoices.find(i => i.status === 'DRAFT')
       const existingSent = clientInvoices.find(i => i.status === 'SENT')
       const existingPaid = clientInvoices.find(i => i.status === 'PAID')
+      const reservedJobIds = new Set<string>()
+      const reservedScheduleMonths = new Set<string>()
+      clientInvoices.forEach(invoice => {
+        invoice.lineItems.forEach(item => {
+          if (item.jobId) reservedJobIds.add(item.jobId)
+          if (billingType === 'FLAT_RATE' && item.job?.scheduleId) {
+            reservedScheduleMonths.add(`${item.job.scheduleId}:${format(item.job.date, 'yyyy-MM')}`)
+          }
+        })
+      })
+      const isReservedByInvoice = (job: JobWithRelations) => (
+        reservedJobIds.has(job.id) ||
+        (job.scheduleId ? reservedScheduleMonths.has(`${job.scheduleId}:${format(job.date, 'yyyy-MM')}`) : false)
+      )
 
       // Separate jobs by type
-      const uninvoicedJobs = jobs.filter(j => !j.invoiced && j.status !== 'CANCELLED')
+      const uninvoicedJobs = jobs.filter(j => !j.invoiced && !isReservedByInvoice(j) && j.status !== 'CANCELLED')
       const skippedJobs = jobs.filter(j => j.status === 'CANCELLED' && jobMatchesScheduleDay(j))
       const recurringJobs = uninvoicedJobs.filter(j => j.scheduleId)
       const oneOffJobs = uninvoicedJobs.filter(j => !j.scheduleId)
@@ -281,6 +294,14 @@ export async function GET(request: Request) {
           message: 'No email address on file — cannot send invoice',
         })
       }
+
+      const seenExceptions = new Set<string>()
+      const dedupedExceptions = exceptions.filter((exception) => {
+        const key = `${exception.type}:${exception.message}`
+        if (seenExceptions.has(key)) return false
+        seenExceptions.add(key)
+        return true
+      })
 
       // Build line items
       const lineItems: CandidateLineItem[] = []
@@ -416,8 +437,12 @@ export async function GET(request: Request) {
       let existingInvoiceId: string | undefined
       let existingInvoiceNumber: string | undefined
       let existingInvoiceStatus: string | undefined
+      const existingInvoice = existingPaid || existingSent || existingDraft
+      const hasRemainingWork = lineItems.length > 0
 
-      if (existingPaid) {
+      if (hasRemainingWork) {
+        status = dedupedExceptions.length > 0 ? 'NEEDS_ATTENTION' : 'READY'
+      } else if (existingPaid) {
         status = 'PAID'
         existingInvoiceId = existingPaid.id
         existingInvoiceNumber = existingPaid.invoiceNumber
@@ -432,12 +457,13 @@ export async function GET(request: Request) {
         existingInvoiceId = existingDraft.id
         existingInvoiceNumber = existingDraft.invoiceNumber
         existingInvoiceStatus = 'DRAFT'
-      } else if (exceptions.length > 0) {
+      } else if (dedupedExceptions.length > 0) {
         status = 'NEEDS_ATTENTION'
       }
 
       // Only include if there's something to invoice (line items or existing invoice)
       if (lineItems.length > 0 || existingInvoiceId) {
+        if (existingInvoiceId) representedInvoiceIds.add(existingInvoiceId)
         candidates.push({
           clientId,
           clientName: client.name,
@@ -445,8 +471,8 @@ export async function GET(request: Request) {
           status,
           scheduleSummary,
           lineItems,
-          exceptions,
-          total,
+          exceptions: dedupedExceptions,
+          total: existingInvoiceId ? Number(existingInvoice?.totalAmount || total) : total,
           existingInvoiceId,
           existingInvoiceNumber,
           existingInvoiceStatus,
@@ -457,10 +483,11 @@ export async function GET(request: Request) {
       }
     }
 
-    // Also add clients with existing invoices but no jobs in jobsByClient
+    // Also add existing invoices that are not already represented above. This
+    // lets partial invoices and remaining uninvoiced work show side by side.
     existingInvoices.forEach(inv => {
-      if (processedClientIds.has(inv.clientId)) return
-      processedClientIds.add(inv.clientId)
+      if (representedInvoiceIds.has(inv.id)) return
+      representedInvoiceIds.add(inv.id)
 
       let status: Candidate['status'] = 'DRAFT_EXISTS'
       if (inv.status === 'PAID') status = 'PAID'
