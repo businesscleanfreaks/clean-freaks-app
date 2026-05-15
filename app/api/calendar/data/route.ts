@@ -204,25 +204,23 @@ export async function GET() {
       createdAt: sub.createdAt.toISOString(),
     }))
 
-    // Deduplicate: if the same location has multiple jobs on the same date,
-    // keep only the best one (prefer COMPLETED > SCHEDULED, then oldest).
-    // This is a display-level safety net — the regeneration logic should
-    // prevent duplicates, but this catches edge cases.
-    const jobsByLocationDate = new Map<string, typeof serializedJobs>()
+    // Deduplicate only true recurring duplicates. Different schedules at the
+    // same location may legitimately create separate jobs on the same day.
+    const jobsByScheduleDate = new Map<string, typeof serializedJobs>()
     for (const job of serializedJobs) {
       const dateStr = job.date.split('T')[0]
-      const key = `${job.locationId}-${dateStr}`
-      const existing = jobsByLocationDate.get(key)
+      const key = job.scheduleId ? `${job.scheduleId}-${dateStr}` : `job-${job.id}`
+      const existing = jobsByScheduleDate.get(key)
       if (existing) {
         existing.push(job)
       } else {
-        jobsByLocationDate.set(key, [job])
+        jobsByScheduleDate.set(key, [job])
       }
     }
 
     const dedupedJobs: typeof serializedJobs = []
     let duplicatesFound = 0
-    for (const [, group] of jobsByLocationDate) {
+    for (const [, group] of jobsByScheduleDate) {
       if (group.length > 1) {
         duplicatesFound += group.length - 1
         // Sort: prefer COMPLETED, then invoiced/paid, then oldest
@@ -238,7 +236,7 @@ export async function GET() {
     }
 
     if (duplicatesFound > 0) {
-      logger.warn(`[calendar] Found ${duplicatesFound} duplicate jobs (same location + date). Showing only one per date.`)
+      logger.warn(`[calendar] Found ${duplicatesFound} duplicate jobs (same schedule + date). Showing only one per date.`)
     }
 
     return NextResponse.json({
