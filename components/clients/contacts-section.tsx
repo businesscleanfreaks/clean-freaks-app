@@ -6,7 +6,7 @@ import { Plus, Pencil, Trash2, Star, Loader2, X, Mail, Phone, Check } from "luci
 import { showError, showSuccess } from "@/lib/toast"
 import { fetcher } from "@/lib/fetcher"
 
-interface ClientContact {
+export interface ClientContact {
   id: string
   name: string
   email: string | null
@@ -306,7 +306,7 @@ function ContactCard({
   )
 }
 
-function AddContactSheet({
+export function AddContactSheet({
   clientId,
   onSave,
   onClose,

@@ -3,15 +3,13 @@
 import { formatCurrency } from "@/lib/utils"
 import {
   AlertTriangle,
-  CheckCircle2,
   ChevronRight,
-  Clock,
-  FileText,
   MailX,
 } from "lucide-react"
 import Link from "next/link"
 
 export interface InvoiceCandidate {
+  candidateId: string
   clientId: string
   clientName: string
   billingType: string
@@ -23,6 +21,9 @@ export interface InvoiceCandidate {
     price: number
     sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON'
     sourceId?: string
+    jobId?: string
+    scheduleId?: string
+    locationName?: string
   }>
   exceptions: Array<{
     type: string
@@ -35,6 +36,7 @@ export interface InvoiceCandidate {
   jobCount: number
   completedCount: number
   hasEmail: boolean
+  jobIds: string[]
 }
 
 interface CandidateCardProps {
@@ -42,7 +44,7 @@ interface CandidateCardProps {
   onReview: (candidate: InvoiceCandidate) => void
   selectable?: boolean
   selected?: boolean
-  onToggleSelect?: (clientId: string) => void
+  onToggleSelect?: (candidateId: string) => void
 }
 
 function getExceptionLabel(exception: InvoiceCandidate['exceptions'][number]) {
@@ -83,8 +85,8 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
-          padding: '10px 14px',
+          gap: '10px',
+          padding: '8px 12px',
           cursor: isActionable ? 'pointer' : 'default',
         }}
         onClick={() => isActionable && onReview(candidate)}
@@ -93,7 +95,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           <div
             onClick={(e) => {
               e.stopPropagation()
-              onToggleSelect?.(candidate.clientId)
+              onToggleSelect?.(candidate.candidateId)
             }}
             style={{
               width: '20px',
@@ -118,7 +120,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
             <span
               style={{
                 fontSize: '15px',
-                fontWeight: 700,
+                fontWeight: 800,
                 color: '#111111',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -136,8 +138,8 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
 
           <div
             style={{
-              fontSize: '12px',
-              color: '#64748B',
+              fontSize: '11px',
+              color: '#7C8798',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
@@ -154,7 +156,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           </div>
 
           {hasExceptions && isActionable && (
-            <div style={{ marginTop: '5px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '7px' }}>
               {visibleExceptions.map((ex, idx) => (
                 <span
                   key={`${ex.type}-${idx}`}
@@ -163,7 +165,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
                     alignItems: 'center',
                     gap: '4px',
                     color: '#92400E',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: 600,
                   }}
                 >
@@ -172,7 +174,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
                 </span>
               ))}
               {candidate.exceptions.length > visibleExceptions.length && (
-                <span style={{ fontSize: '12px', fontWeight: 600, color: '#92400E' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: '#92400E' }}>
                   +{candidate.exceptions.length - visibleExceptions.length} more
                 </span>
               )}
@@ -181,7 +183,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
         </div>
 
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <span style={{ fontSize: '15px', fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: '16px', fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(candidate.total)}
           </span>
         </div>
@@ -196,17 +198,14 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
-              padding: '4px 10px',
+              padding: '4px 6px',
               fontSize: '12px',
               fontWeight: 500,
-              color: '#00A896',
+              color: '#94A3B8',
               textDecoration: 'none',
               flexShrink: 0,
             }}
           >
-            {candidate.existingInvoiceStatus === 'DRAFT' && <FileText style={{ width: '12px', height: '12px' }} />}
-            {candidate.existingInvoiceStatus === 'SENT' && <Clock style={{ width: '12px', height: '12px' }} />}
-            {candidate.existingInvoiceStatus === 'PAID' && <CheckCircle2 style={{ width: '12px', height: '12px' }} />}
             <span style={{ color: '#64748B' }}>
               {candidate.existingInvoiceStatus === 'DRAFT'
                 ? 'Draft'
@@ -216,7 +215,6 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
                     ? 'Paid'
                     : ''}
             </span>
-            {candidate.existingInvoiceNumber ? `#${candidate.existingInvoiceNumber}` : 'View'}
             <ChevronRight style={{ width: '12px', height: '12px' }} />
           </Link>
         ) : null}

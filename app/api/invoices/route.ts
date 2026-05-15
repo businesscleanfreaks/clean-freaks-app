@@ -254,6 +254,25 @@ export async function POST(request: Request) {
 
     // Use transaction to ensure invoice creation and job updates happen atomically
     const invoice = await prisma.$transaction(async (tx) => {
+      // Double-billing prevention: do not create another invoice for jobs
+      // already represented by an active draft/sent/paid invoice.
+      const existingLineItems = await tx.invoiceLineItem.findMany({
+        where: {
+          jobId: { in: jobIds },
+          invoice: { status: { not: 'VOID' } },
+        },
+        select: {
+          invoice: {
+            select: { invoiceNumber: true, status: true },
+          },
+        },
+        take: 1,
+      })
+      if (existingLineItems.length > 0) {
+        const existingInvoice = existingLineItems[0].invoice
+        throw new Error(`These jobs are already on ${existingInvoice.status.toLowerCase()} invoice ${existingInvoice.invoiceNumber}.`)
+      }
+
       // Double-billing prevention: re-check no jobs are already invoiced
       if (!previewOnly) {
         const alreadyInvoiced = await tx.job.findMany({

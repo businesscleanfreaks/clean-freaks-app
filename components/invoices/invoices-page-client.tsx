@@ -412,12 +412,12 @@ export function InvoicesPageClient({
   }
 
   const selectAllCandidates = () => {
-    setSelectedCandidateIds(new Set(actionableCandidates.map(c => c.clientId)))
+    setSelectedCandidateIds(new Set(actionableCandidates.map(c => c.candidateId)))
   }
 
   const selectCleanFlatRateCandidates = () => {
     setCandidateSelectionMode(true)
-    setSelectedCandidateIds(new Set(cleanFlatRateCandidates.map(c => c.clientId)))
+    setSelectedCandidateIds(new Set(cleanFlatRateCandidates.map(c => c.candidateId)))
   }
 
   const clearCandidateSelection = () => {
@@ -431,7 +431,7 @@ export function InvoicesPageClient({
 
   const handleBatchReviewSelected = () => {
     // Start batch mode with the first selected candidate
-    const selectedList = actionableCandidates.filter(c => selectedCandidateIds.has(c.clientId))
+    const selectedList = actionableCandidates.filter(c => selectedCandidateIds.has(c.candidateId))
     if (selectedList.length === 0) return
     const firstCandidate = selectedList[0]
     const matchingClient = allReadyClients.find(c => c.client.id === firstCandidate.clientId)
@@ -448,7 +448,22 @@ export function InvoicesPageClient({
     // Find matching client in the legacy data to open QuickInvoice modal
     const matchingClient = allReadyClients.find(c => c.client.id === candidate.clientId)
     if (matchingClient) {
-      handleQuickInvoice(matchingClient)
+      const candidateJobIds = new Set(candidate.jobIds || [])
+      const candidateScheduleIds = new Set(
+        candidate.lineItems.map(item => item.scheduleId).filter(Boolean) as string[]
+      )
+      const scopedJobs = matchingClient.jobs.filter(job =>
+        candidateJobIds.has(job.id) ||
+        (job.scheduleId ? candidateScheduleIds.has(job.scheduleId) : false)
+      )
+      handleQuickInvoice({
+        ...matchingClient,
+        client: {
+          ...matchingClient.client,
+          name: candidate.clientName,
+        },
+        jobs: scopedJobs.length > 0 ? scopedJobs : matchingClient.jobs,
+      })
     }
   }
 
@@ -775,11 +790,11 @@ export function InvoicesPageClient({
         <>
           {/* Candidate-based Review Queue (when candidates are loaded) */}
           {candidates.length > 0 && !candidatesLoading ? (
-            <div className="space-y-5">
+            <div className="space-y-4">
               {/* ── Flat Rate Section ── */}
               {flatRateCandidates.length > 0 && (
                 <div>
-                  <div className="mb-2.5 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5">
+                  <div className="mb-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <div style={{
                         padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
@@ -817,14 +832,14 @@ export function InvoicesPageClient({
                       Same every month unless something changed
                     </p>
                   </div>
-                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
                     {[...flaggedFlatRateCandidates, ...cleanFlatRateCandidates].map(c => (
                       <CandidateCard
-                        key={c.clientId}
+                        key={c.candidateId}
                         candidate={c}
                         onReview={handleCandidateReview}
                         selectable={candidateSelectionMode || selectedCandidateIds.size > 0 || undefined}
-                        selected={selectedCandidateIds.has(c.clientId)}
+                        selected={selectedCandidateIds.has(c.candidateId)}
                         onToggleSelect={toggleCandidateSelection}
                       />
                     ))}
@@ -835,7 +850,7 @@ export function InvoicesPageClient({
               {/* ── Per Clean Section ── */}
               {perCleanCandidates.length > 0 && (
                 <div>
-                  <div className="mb-2.5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                  <div className="mb-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <div style={{
                         padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
@@ -855,14 +870,14 @@ export function InvoicesPageClient({
                       Amount varies - verify before sending
                     </p>
                   </div>
-                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
                     {perCleanCandidates.map(c => (
                       <CandidateCard
-                        key={c.clientId}
+                        key={c.candidateId}
                         candidate={c}
                         onReview={handleCandidateReview}
                         selectable={candidateSelectionMode || selectedCandidateIds.size > 0 || undefined}
-                        selected={selectedCandidateIds.has(c.clientId)}
+                        selected={selectedCandidateIds.has(c.candidateId)}
                         onToggleSelect={toggleCandidateSelection}
                       />
                     ))}
@@ -874,7 +889,6 @@ export function InvoicesPageClient({
               {existingCandidates.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2 px-1">
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#9CA3AF' }} />
                     <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Already Invoiced
                     </h3>
@@ -885,7 +899,7 @@ export function InvoicesPageClient({
                       {existingCandidates.length}
                     </span>
                   </div>
-                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
                     {existingCandidates.map(c => (
                       <CandidateCard key={c.existingInvoiceId || c.clientId} candidate={c} onReview={handleCandidateReview} />
                     ))}
@@ -938,7 +952,7 @@ export function InvoicesPageClient({
                     </span>
                     <span style={{ color: '#DDDDDD' }}>·</span>
                     <span style={{ fontSize: '14px', fontWeight: 600, color: '#00A896' }}>
-                      {formatCurrency(actionableCandidates.filter(c => selectedCandidateIds.has(c.clientId)).reduce((s, c) => s + c.total, 0))}
+                      {formatCurrency(actionableCandidates.filter(c => selectedCandidateIds.has(c.candidateId)).reduce((s, c) => s + c.total, 0))}
                     </span>
                   </div>
                   <button

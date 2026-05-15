@@ -32,6 +32,16 @@ function formatUtcCalendarDate(date: Date, includeYear = false) {
   }).format(date)
 }
 
+function compactLocationName(clientName: string, locationName: string) {
+  let compact = locationName.trim()
+  const escapedClient = clientName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  compact = compact
+    .replace(new RegExp(`^${escapedClient}\\s*\\(([^)]+)\\)\\s*$`, 'i'), '$1')
+    .replace(new RegExp(`^${escapedClient}\\s*[-–—:]?\\s*`, 'i'), '')
+    .trim()
+  return compact || locationName
+}
+
 /**
  * GET /api/invoices/candidates?start=YYYY-MM-DD&end=YYYY-MM-DD
  *
@@ -180,6 +190,9 @@ export async function GET(request: Request) {
       price: number
       sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON'
       sourceId?: string
+      jobId?: string
+      scheduleId?: string
+      locationName?: string
     }
 
     interface CandidateException {
@@ -188,6 +201,7 @@ export async function GET(request: Request) {
     }
 
     interface Candidate {
+      candidateId: string
       clientId: string
       clientName: string
       billingType: string
@@ -202,6 +216,7 @@ export async function GET(request: Request) {
       jobCount: number
       completedCount: number
       hasEmail: boolean
+      jobIds: string[]
     }
 
     const candidates: Candidate[] = []
@@ -346,6 +361,9 @@ export async function GET(request: Request) {
             quantity: 1,
             price: info.rate,
             sourceType: 'FLAT_RATE',
+            sourceId: scheduleId,
+            scheduleId,
+            locationName: info.locationName,
           })
           total += info.rate
 
@@ -358,6 +376,8 @@ export async function GET(request: Request) {
               price: addOn.rate,
               sourceType: 'RECURRING_ADD_ON',
               sourceId: addOn.id,
+              scheduleId,
+              locationName: info.locationName,
             })
             total += addOn.rate
           })
@@ -372,6 +392,8 @@ export async function GET(request: Request) {
               price: job.clientRate,
               sourceType: 'JOB',
               sourceId: job.id,
+              jobId: job.id,
+              locationName: job.location.name,
             })
             total += job.clientRate
           }
@@ -387,6 +409,8 @@ export async function GET(request: Request) {
                 price: addOn.clientRate,
                 sourceType: 'ADD_ON',
                 sourceId: addOn.id,
+                jobId: job.id,
+                locationName: job.location.name,
               })
               total += addOn.clientRate
             }
@@ -401,6 +425,9 @@ export async function GET(request: Request) {
             price: job.clientRate,
             sourceType: 'JOB',
             sourceId: job.id,
+            jobId: job.id,
+            scheduleId: job.scheduleId || undefined,
+            locationName: job.location.name,
           })
           total += job.clientRate
 
@@ -412,6 +439,9 @@ export async function GET(request: Request) {
               price: addOn.clientRate,
               sourceType: 'ADD_ON',
               sourceId: addOn.id,
+              jobId: job.id,
+              scheduleId: job.scheduleId || undefined,
+              locationName: job.location.name,
             })
             total += addOn.clientRate
           })
@@ -464,22 +494,63 @@ export async function GET(request: Request) {
       // Only include if there's something to invoice (line items or existing invoice)
       if (lineItems.length > 0 || existingInvoiceId) {
         if (existingInvoiceId) representedInvoiceIds.add(existingInvoiceId)
-        candidates.push({
-          clientId,
-          clientName: client.name,
-          billingType,
-          status,
-          scheduleSummary,
-          lineItems,
-          exceptions: dedupedExceptions,
-          total: existingInvoiceId ? Number(existingInvoice?.totalAmount || total) : total,
-          existingInvoiceId,
-          existingInvoiceNumber,
-          existingInvoiceStatus,
-          jobCount: uninvoicedJobs.length,
-          completedCount: uninvoicedJobs.filter(j => j.status === 'COMPLETED').length,
-          hasEmail,
-        })
+        const flatRateScheduleItems = billingType === 'FLAT_RATE'
+          ? lineItems.filter(item => item.sourceType === 'FLAT_RATE' && item.scheduleId)
+          : []
+
+        if (!existingInvoiceId && flatRateScheduleItems.length > 1) {
+          flatRateScheduleItems.forEach((scheduleItem) => {
+            const scheduleId = scheduleItem.scheduleId!
+            const scheduleJobs = uninvoicedJobs.filter(job => job.scheduleId === scheduleId)
+            const scheduleJobIds = new Set(scheduleJobs.map(job => job.id))
+            const scopedLineItems = lineItems.filter(item =>
+              item.scheduleId === scheduleId ||
+              (item.jobId ? scheduleJobIds.has(item.jobId) : false)
+            )
+            const scopedTotal = scopedLineItems.reduce((sum, item) => sum + item.price, 0)
+            const locationLabel = scheduleItem.locationName
+              ? ` - ${compactLocationName(client.name, scheduleItem.locationName)}`
+              : ''
+
+            candidates.push({
+              candidateId: `${clientId}:${scheduleId}`,
+              clientId,
+              clientName: `${client.name}${locationLabel}`,
+              billingType,
+              status,
+              scheduleSummary,
+              lineItems: scopedLineItems,
+              exceptions: dedupedExceptions,
+              total: scopedTotal,
+              existingInvoiceId,
+              existingInvoiceNumber,
+              existingInvoiceStatus,
+              jobCount: scheduleJobs.length,
+              completedCount: scheduleJobs.filter(j => j.status === 'COMPLETED').length,
+              hasEmail,
+              jobIds: scheduleJobs.map(job => job.id),
+            })
+          })
+        } else {
+          candidates.push({
+            candidateId: existingInvoiceId || clientId,
+            clientId,
+            clientName: client.name,
+            billingType,
+            status,
+            scheduleSummary,
+            lineItems,
+            exceptions: dedupedExceptions,
+            total: existingInvoiceId ? Number(existingInvoice?.totalAmount || total) : total,
+            existingInvoiceId,
+            existingInvoiceNumber,
+            existingInvoiceStatus,
+            jobCount: uninvoicedJobs.length,
+            completedCount: uninvoicedJobs.filter(j => j.status === 'COMPLETED').length,
+            hasEmail,
+            jobIds: uninvoicedJobs.map(job => job.id),
+          })
+        }
       }
     }
 
@@ -494,6 +565,7 @@ export async function GET(request: Request) {
       else if (inv.status === 'SENT') status = 'SENT'
 
       candidates.push({
+        candidateId: inv.id,
         clientId: inv.clientId,
         clientName: inv.client.name,
         billingType: inv.client.billingType || 'PER_CLEAN',
@@ -508,6 +580,7 @@ export async function GET(request: Request) {
         jobCount: 0,
         completedCount: 0,
         hasEmail: !!(inv.client.invoicingEmail || inv.client.communicationEmail),
+        jobIds: inv.lineItems.map(item => item.jobId).filter(Boolean) as string[],
       })
     })
 

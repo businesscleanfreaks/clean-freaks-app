@@ -51,6 +51,11 @@ function payLabel(amount: number | null | undefined, payType: string | null | un
   return `${formatCurrency(amount || 0)}${payType === 'FLAT_RATE' ? '/mo' : '/clean'}`
 }
 
+function dateInputValue(date: string | Date | null | undefined) {
+  if (!date) return ''
+  return new Date(date).toISOString().slice(0, 10)
+}
+
 const INLINE_FREQUENCIES = [
   { value: 'WEEKLY', label: 'Weekly' },
   { value: 'BI_WEEKLY', label: 'Bi-weekly' },
@@ -102,17 +107,19 @@ function DetailRow({
   onClick,
   muted,
   children,
+  wrapValue,
 }: {
   label: string
   value: ReactNode
   onClick?: () => void
   muted?: boolean
   children?: ReactNode
+  wrapValue?: boolean
 }) {
   const content = (
     <>
       <span className="w-24 flex-shrink-0 text-xs font-normal lowercase text-slate-400">{label}</span>
-      <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${muted ? 'text-slate-400' : 'text-slate-800'}`}>{value}</span>
+      <span className={`min-w-0 flex-1 text-sm font-semibold ${wrapValue ? 'whitespace-normal break-words leading-snug' : 'truncate'} ${muted ? 'text-slate-400' : 'text-slate-800'}`}>{value}</span>
       {children}
     </>
   )
@@ -146,6 +153,11 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     | { type: 'location'; locationId: string; field: 'accessInfo' }
     | null
   >(null)
+  const [locationHeaderEdit, setLocationHeaderEdit] = useState<{
+    locationId: string
+    name: string
+    address: string
+  } | null>(null)
   const [inlineValue, setInlineValue] = useState('')
   const [scheduleInlineEdit, setScheduleInlineEdit] = useState<{
     scheduleId: string
@@ -155,6 +167,8 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     startTime: string
     startWindowBegin: string
     startWindowEnd: string
+    startDate: string
+    endDate: string
   } | null>(null)
   const [savingInline, setSavingInline] = useState(false)
   const {
@@ -248,6 +262,16 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       startTime: schedule.startTime || '',
       startWindowBegin: schedule.startWindowBegin || '',
       startWindowEnd: schedule.startWindowEnd || '',
+      startDate: dateInputValue(schedule.startDate),
+      endDate: dateInputValue(schedule.endDate),
+    })
+  }
+
+  const startLocationHeaderEdit = (location: ClientLocation) => {
+    setLocationHeaderEdit({
+      locationId: location.id,
+      name: location.name || '',
+      address: location.address || '',
     })
   }
 
@@ -325,6 +349,8 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
           startTime: scheduleInlineEdit.timeType === 'SPECIFIC' ? scheduleInlineEdit.startTime : null,
           startWindowBegin: scheduleInlineEdit.timeType === 'WINDOW' ? scheduleInlineEdit.startWindowBegin || null : null,
           startWindowEnd: scheduleInlineEdit.timeType === 'WINDOW' ? scheduleInlineEdit.startWindowEnd || null : null,
+          startDate: scheduleInlineEdit.startDate ? new Date(`${scheduleInlineEdit.startDate}T12:00:00Z`).toISOString() : undefined,
+          endDate: scheduleInlineEdit.endDate ? new Date(`${scheduleInlineEdit.endDate}T12:00:00Z`).toISOString() : null,
         }),
       })
 
@@ -338,6 +364,39 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       onDataChange?.()
     } catch {
       showError('Failed to save schedule')
+    } finally {
+      setSavingInline(false)
+    }
+  }
+
+  const saveLocationHeaderEdit = async () => {
+    if (!locationHeaderEdit || savingInline) return
+    if (!locationHeaderEdit.name.trim()) {
+      showError('Location name is required')
+      return
+    }
+
+    setSavingInline(true)
+    try {
+      const response = await fetch(`/api/locations/${locationHeaderEdit.locationId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: locationHeaderEdit.name.trim(),
+          address: locationHeaderEdit.address.trim() || null,
+        }),
+      })
+
+      if (!response.ok) {
+        await showApiError(response, 'Failed to save location')
+        return
+      }
+
+      showSuccess('Location saved')
+      setLocationHeaderEdit(null)
+      onDataChange?.()
+    } catch {
+      showError('Failed to save location')
     } finally {
       setSavingInline(false)
     }
@@ -396,49 +455,56 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
           return (
             <div key={location.id} className="bg-white rounded-lg border border-gray-200 overflow-visible">
               {/* Location name + address */}
-              <div className="px-3.5 py-2 flex items-start justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">{compactLocationName(location.name, client.name)}</p>
-                  <p className="text-xs text-slate-500 truncate mt-0.5">{location.address}</p>
-                  {nextJobLabel && (
-                    <p className="text-xs font-medium text-teal-700 mt-1">Next: {nextJobLabel}</p>
-                  )}
-                  {scheduleHistoryOverview && (
-                    <p className="text-[11px] text-slate-500 mt-1">{scheduleHistoryOverview}</p>
-                  )}
-                </div>
-                <div className="relative ml-3 flex-shrink-0">
-                  <button
-                    onClick={() => setLocationMenuOpen(locationMenuOpen === location.id ? null : location.id)}
-                    className="rounded-lg p-1.5 transition-colors hover:bg-gray-50"
-                    aria-label="Location options"
-                  >
-                    <MoreVertical className="h-4 w-4 text-slate-400" />
-                  </button>
-                  {locationMenuOpen === location.id && (
-                    <div data-dropdown-menu className="absolute right-0 top-full z-50 mt-1 w-44 rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+              <div className="border-b border-gray-100">
+                {locationHeaderEdit?.locationId === location.id ? (
+                  <div className="px-3.5 py-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_1fr_auto_auto]">
+                      <Input
+                        autoFocus
+                        value={locationHeaderEdit.name}
+                        onChange={(event) => setLocationHeaderEdit((prev) => prev ? { ...prev, name: event.target.value } : prev)}
+                        className="h-8 text-sm font-semibold"
+                        placeholder="Location name"
+                      />
+                      <Input
+                        value={locationHeaderEdit.address}
+                        onChange={(event) => setLocationHeaderEdit((prev) => prev ? { ...prev, address: event.target.value } : prev)}
+                        className="h-8 text-sm"
+                        placeholder="Address"
+                      />
                       <button
-                        onClick={() => {
-                          setLocationMenuOpen(null)
-                          setExpandedLocation(isExpanded ? null : location.id)
-                        }}
-                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        type="button"
+                        onClick={saveLocationHeaderEdit}
+                        disabled={savingInline}
+                        className="h-8 rounded-md bg-teal-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {isExpanded ? 'Done Editing' : 'Edit Location'}
+                        {savingInline ? 'Saving...' : 'Save'}
                       </button>
                       <button
-                        onClick={() => {
-                          setLocationMenuOpen(null)
-                          setExpandedLocation(location.id)
-                          setAddingScheduleToLocation(location.id)
-                        }}
-                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        type="button"
+                        onClick={() => setLocationHeaderEdit(null)}
+                        className="h-8 rounded-md border border-gray-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-gray-100"
                       >
-                        Add Recurring Job
+                        Cancel
                       </button>
                     </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startLocationHeaderEdit(location)}
+                    className="block w-full px-3.5 py-1.5 text-left hover:bg-gray-50"
+                  >
+                    <p className="text-sm font-semibold text-gray-900">{compactLocationName(location.name, client.name)}</p>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">{location.address}</p>
+                    {nextJobLabel && (
+                      <p className="mt-0.5 text-xs font-medium text-teal-700">Next: {nextJobLabel}</p>
+                    )}
+                    {scheduleHistoryOverview && (
+                      <p className="mt-0.5 text-[11px] text-slate-500">{scheduleHistoryOverview}</p>
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Schedules — always flat visible */}
@@ -447,13 +513,15 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                 const timingBadge = getScheduleTimingBadge(sch)
                 const clientPayType = sch.clientPayType || client.billingType || 'PER_CLEAN'
                 const avgOcc = getAverageMonthlyScheduleOccurrences(sch)
-                const rev = clientPayType === 'FLAT_RATE' ? (sch.defaultClientRate || 0) : ((sch.defaultClientRate || 0) * avgOcc)
                 const subPayType = sch.subcontractorPayType || client.cleanerPayType || 'PER_CLEAN'
-                const cost = subPayType === 'FLAT_RATE' ? (sch.defaultSubcontractorRate || 0) : ((sch.defaultSubcontractorRate || 0) * avgOcc)
-                const profit = rev - cost
                 const editingClientRate = inlineEdit?.type === 'schedule' && inlineEdit.scheduleId === sch.id && inlineEdit.field === 'defaultClientRate'
                 const editingCleanerRate = inlineEdit?.type === 'schedule' && inlineEdit.scheduleId === sch.id && inlineEdit.field === 'defaultSubcontractorRate'
                 const editingAccessInfo = inlineEdit?.type === 'location' && inlineEdit.locationId === location.id && inlineEdit.field === 'accessInfo'
+                const effectiveClientRate = editingClientRate && Number.isFinite(Number(inlineValue)) ? Number(inlineValue) : (sch.defaultClientRate || 0)
+                const effectiveCleanerRate = editingCleanerRate && Number.isFinite(Number(inlineValue)) ? Number(inlineValue) : (sch.defaultSubcontractorRate || 0)
+                const rev = clientPayType === 'FLAT_RATE' ? effectiveClientRate : (effectiveClientRate * avgOcc)
+                const cost = subPayType === 'FLAT_RATE' ? effectiveCleanerRate : (effectiveCleanerRate * avgOcc)
+                const profit = rev - cost
                 return (
                   <Fragment key={sch.id}>
                   <div className={`border-t border-gray-100 ${sch.isActive === false ? 'opacity-60' : ''}`}>
@@ -537,6 +605,24 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                               />
                             </>
                           )}
+                          <label className="flex items-center gap-1 text-xs text-slate-500">
+                            Start
+                            <Input
+                              type="date"
+                              value={scheduleInlineEdit.startDate}
+                              onChange={(event) => setScheduleInlineEdit((prev) => prev ? { ...prev, startDate: event.target.value } : prev)}
+                              className="h-8 w-36"
+                            />
+                          </label>
+                          <label className="flex items-center gap-1 text-xs text-slate-500">
+                            End
+                            <Input
+                              type="date"
+                              value={scheduleInlineEdit.endDate}
+                              onChange={(event) => setScheduleInlineEdit((prev) => prev ? { ...prev, endDate: event.target.value } : prev)}
+                              className="h-8 w-36"
+                            />
+                          </label>
                           <button
                             type="button"
                             onClick={saveScheduleInlineEdit}
@@ -640,9 +726,10 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                       ) : location.accessInfo || 'Add entry info'}
                       muted={!location.accessInfo}
                       onClick={editingAccessInfo ? undefined : () => startLocationEdit(location.id, 'accessInfo', location.accessInfo)}
+                      wrapValue={!editingAccessInfo}
                     />
-                    <div className="flex flex-wrap items-center gap-2 px-3.5 py-2 bg-gray-50/70">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-1.5 bg-gray-50/70">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           onClick={() => {
                             setAddingOneTimeJob(addingOneTimeJob === sch.id ? null : sch.id)
@@ -667,6 +754,55 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                             ? sch.isActive !== false ? 'Pausing...' : 'Resuming...'
                             : sch.isActive !== false ? 'Pause' : 'Resume'}
                         </button>
+                      </div>
+                      <div className="relative">
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setLocationMenuOpen(locationMenuOpen === `${location.id}:${sch.id}` ? null : `${location.id}:${sch.id}`)
+                          }}
+                          className="rounded-lg border border-gray-200 bg-white p-1.5 text-slate-500 hover:bg-gray-100"
+                          aria-label="Location options"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                        {locationMenuOpen === `${location.id}:${sch.id}` && (
+                          <div data-dropdown-menu className="absolute right-0 top-full z-50 mt-1 w-48 rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+                            <button
+                              onClick={() => {
+                                setLocationMenuOpen(null)
+                                setExpandedLocation(location.id)
+                                setAddingScheduleToLocation(location.id)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              <CalendarPlus className="h-3.5 w-3.5 text-gray-400" />
+                              Add Recurring Job
+                            </button>
+                            <button
+                              onClick={() => {
+                                setLocationMenuOpen(null)
+                                setScheduleFormMode('edit')
+                                setEditingSchedule({ ...sch, locationId: location.id })
+                                setExpandedLocation(location.id)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              <Edit className="h-3.5 w-3.5 text-gray-400" />
+                              Change Schedule
+                            </button>
+                            <button
+                              onClick={() => {
+                                setLocationMenuOpen(null)
+                                handleDeleteLocation(location.id)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Delete Location
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -871,21 +1007,6 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
               {/* Expanded edit area */}
               {isExpanded && (
                 <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
-                  <div className="flex gap-4 mb-3">
-                    <button
-                      onClick={() => setAddingScheduleToLocation(location.id)}
-                      className="text-sm font-medium transition-colors"
-                      style={{ color: '#00A896' }}
-                    >
-                      + Add Recurring Job
-                    </button>
-                    <button
-                      onClick={() => handleDeleteLocation(location.id)}
-                      className="text-sm font-medium text-red-500 hover:text-red-600 transition-colors"
-                    >
-                      Delete Location
-                    </button>
-                  </div>
                   {addingScheduleToLocation === location.id && (
                     <div className="mb-3 p-4 bg-white rounded-xl border border-gray-200">
                       <ScheduleForm
@@ -910,25 +1031,6 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                       />
                     </div>
                   )}
-                  {sortedSchedules.map((sch: ClientSchedule) => {
-                    if (editingSchedule?.id === sch.id) return null
-                    const timingBadge = getScheduleTimingBadge(sch)
-                    return (
-                      <div key={sch.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm text-gray-700">{getScheduleFrequencyLabel(sch.frequency)}</span>
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${timingBadge.className}`}>
-                            {timingBadge.label}
-                          </span>
-                        </div>
-                        <div className="flex gap-1">
-                          <button onClick={() => { setScheduleFormMode('edit'); setEditingSchedule(sch) }} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Edit schedule"><Edit className="w-3.5 h-3.5 text-gray-400" /></button>
-                          <button onClick={() => { setScheduleFormMode('future'); setEditingSchedule(sch) }} className="p-1.5 hover:bg-blue-50 rounded-lg" title="Change going forward"><CalendarPlus className="w-3.5 h-3.5 text-blue-500" /></button>
-                          <button onClick={() => handleDeleteSchedule(sch.id)} className="p-1.5 hover:bg-gray-100 rounded-lg"><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
-                        </div>
-                      </div>
-                    )
-                  })}
                   {sortedSchedules.map((sch: ClientSchedule) => {
                     if (editingSchedule?.id === sch.id) return null
                     const recurring = (sch as { recurringAddOnServices?: Array<{
