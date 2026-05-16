@@ -1432,7 +1432,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
     const getPositionedJobs = (jobs: any[]) => {
       const minReadableWidth = 118;
-      const maxVisibleStackCards = 3;
       const timedJobs = jobs
         .map(job => {
           const start = getMinutes(job.startTime || job.startWindowBegin);
@@ -1472,12 +1471,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
         const totalColumns = Math.max(columns.length, 1);
         const splitWidth = weekColumnWidth > 0 ? weekColumnWidth / totalColumns : Number.POSITIVE_INFINITY;
-        const useStack = totalColumns >= 3 || splitWidth < minReadableWidth;
+        const useStack = group.length > 1 || splitWidth < minReadableWidth;
         const byColumn = Array.from({ length: totalColumns }, (_, column) =>
           assigned.filter(item => item.column === column)
         );
 
-        const positioned = assigned.flatMap((item, groupIndex) => {
+        return assigned.map((item, groupIndex) => {
           let span = 1;
           for (let nextColumn = item.column + 1; !useStack && nextColumn < totalColumns; nextColumn++) {
             const blocked = byColumn[nextColumn].some(other =>
@@ -1485,10 +1484,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             );
             if (blocked) break;
             span++;
-          }
-
-          if (useStack && groupIndex >= maxVisibleStackCards) {
-            return [];
           }
 
           return {
@@ -1499,28 +1494,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             columnSpan: useStack ? 1 : span,
             clusterIndex,
             layoutMode: useStack ? 'stack' : 'lanes',
-            stackIndex: useStack ? Math.min(groupIndex, maxVisibleStackCards - 1) : 0,
+            stackIndex: useStack ? groupIndex : 0,
           };
         });
-
-        if (useStack && group.length > maxVisibleStackCards) {
-          const hiddenItems = assigned.slice(maxVisibleStackCards);
-          const clusterStart = Math.min(...group.map(item => item.start));
-          return [
-            ...positioned,
-            {
-              type: 'more',
-              clusterIndex,
-              start: clusterStart,
-              end: clusterStart + 30,
-              hiddenCount: hiddenItems.length,
-              hiddenJobs: hiddenItems.map(item => item.job),
-              stackIndex: maxVisibleStackCards,
-            },
-          ];
-        }
-
-        return positioned;
       });
     };
 
@@ -1625,37 +1601,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   <div key={di} className="relative border-r border-gray-100 last:border-r-0">
                     {/* Scheduled Jobs */}
                     {positionedJobs.map((positioned: any) => {
-                      if (positioned.type === 'more') {
-                        const top = ((positioned.start / 60) - startHour) * hourHeight + 4;
-                        const hiddenJobs = positioned.hiddenJobs as JobWithFullRelations[];
-                        const title = hiddenJobs
-                          .map(job => `${getCompactTime(job.startTime || job.startWindowBegin || '')} ${job.location.client.name}`)
-                          .join('\n');
-
-                        return (
-                          <button
-                            key={`more-${di}-${positioned.clusterIndex}`}
-                            type="button"
-                            title={title}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDayPopoverDate(day);
-                              setDayPopoverJobs(hiddenJobs);
-                            }}
-                            className="absolute right-1 z-[75] rounded-full bg-white/95 px-2 py-1 text-[11px] font-semibold leading-none text-gray-800 shadow-md ring-1 ring-gray-200 hover:bg-gray-50 focus:bg-gray-50"
-                            style={{ top: `${top}px` }}
-                          >
-                            +{positioned.hiddenCount}
-                          </button>
-                        );
-                      }
-
                       const { job, start, end, column, columnCount, columnSpan = 1, layoutMode, stackIndex = 0 } = positioned;
                       const tStr = job.startTime || job.startWindowBegin!;
                       const naturalTop = ((start / 60) - startHour) * hourHeight;
                       const naturalHeight = ((end - start) / 60) * hourHeight;
                       const useOverlay = layoutMode === 'stack';
-                      const overlayOffset = Math.min(stackIndex, 3) * 16;
+                      const overlayOffset = Math.min(stackIndex, 6) * 10;
                       const top = naturalTop;
                       const height = naturalHeight;
                       const columnWidthPct = 100 / columnCount;
@@ -1679,22 +1630,22 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             height: `${height}px`,
                             left: useOverlay ? `${4 + overlayOffset}px` : `calc(${leftPct}% + 4px)`,
                             right: 'auto',
-                            width: useOverlay ? '78%' : `calc(${widthPct}% - 8px)`,
+                            width: useOverlay ? `calc(96% - ${overlayOffset}px)` : `calc(${widthPct}% - 8px)`,
                             background: gradient,
                             opacity: isDimmed ? 0.3 : 1,
-                            zIndex: useOverlay ? 60 - stackIndex : 10 + column,
+                            zIndex: useOverlay ? 20 + stackIndex : 10 + column,
                           }}
                           onMouseEnter={(e) => {
                             if (useOverlay) e.currentTarget.style.zIndex = '80';
                           }}
                           onMouseLeave={(e) => {
-                            if (useOverlay) e.currentTarget.style.zIndex = String(60 - stackIndex);
+                            if (useOverlay) e.currentTarget.style.zIndex = String(20 + stackIndex);
                           }}
                           onFocus={(e) => {
                             if (useOverlay) e.currentTarget.style.zIndex = '80';
                           }}
                           onBlur={(e) => {
-                            if (useOverlay) e.currentTarget.style.zIndex = String(60 - stackIndex);
+                            if (useOverlay) e.currentTarget.style.zIndex = String(20 + stackIndex);
                           }}
                         >
                           {(() => {
@@ -1710,8 +1661,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               ? rawLocationName
                               : ''
                             const narrowSideBySide = !useOverlay && columnCount > 1 && columnSpan === 1
-                            const compactOverlay = useOverlay && stackIndex > 0
-                            const showOneLine = height < 38 || narrowSideBySide || compactOverlay
+                            const showOneLine = height < 38 || narrowSideBySide
                             const showTwoLines = !showOneLine && height < 68
                             const trialBadge = (job as any).isTrial && (
                               <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>

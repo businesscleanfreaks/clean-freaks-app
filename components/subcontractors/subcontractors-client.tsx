@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import useSWR, { mutate as globalMutate } from "swr"
 import { WorkersPageWrapper } from "./workers-page-wrapper"
 import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
@@ -55,8 +56,12 @@ function CleanersLoadingSkeleton() {
 }
 
 export function SubcontractorsClient() {
+  const [period, setPeriod] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const { data: subcontractors, error, isLoading, mutate } = useSWR(
-    '/api/subcontractors/data',
+    `/api/subcontractors/data?period=${period}`,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -85,5 +90,15 @@ export function SubcontractorsClient() {
     )
   }
 
-  return <WorkersPageWrapper subcontractors={subcontractors || []} onDataChange={() => { mutate(); globalMutate('/api/dashboard-stats') }} />
+  return (
+    <WorkersPageWrapper
+      subcontractors={subcontractors || []}
+      period={period}
+      onPeriodChange={setPeriod}
+      onDataChange={() => {
+        mutate()
+        globalMutate('/api/dashboard-stats')
+      }}
+    />
+  )
 }

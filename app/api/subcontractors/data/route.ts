@@ -9,8 +9,20 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // Subcontractors data API for instant page loads
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url)
+    const periodParam = url.searchParams.get('period')
+    const periodQuery = (() => {
+      if (!periodParam) return null
+      const [year, month] = periodParam.split('-').map(Number)
+      if (!year || !month || month < 1 || month > 12) return null
+      return {
+        start: new Date(year, month - 1, 1),
+        end: new Date(year, month, 0, 23, 59, 59, 999),
+      }
+    })()
+
     const subcontractors = await prisma.subcontractor.findMany({
       orderBy: {
         name: 'asc',
@@ -56,6 +68,34 @@ export async function GET() {
       },
     })
 
+    const allPeriodJobs = periodQuery
+      ? await prisma.job.findMany({
+          where: {
+            subcontractorId: { in: subcontractorIds },
+            date: { gte: periodQuery.start, lte: periodQuery.end },
+            status: { in: ['COMPLETED', 'SCHEDULED'] },
+          },
+          include: {
+            location: {
+              include: {
+                client: true,
+              },
+            },
+            addOnServices: true,
+            schedule: true,
+            paymentLineItems: {
+              include: {
+                payment: { select: { datePaid: true } },
+              },
+              take: 1,
+            },
+          },
+          orderBy: {
+            date: 'asc',
+          },
+        })
+      : []
+
     // Fetch all payments in one query
     const allPayments = await prisma.subcontractorPayment.findMany({
       where: {
@@ -83,6 +123,7 @@ export async function GET() {
 
     // Group jobs and payments by subcontractor
     const jobsBySubcontractor = new Map<string, typeof allUnpaidJobs>()
+    const periodJobsBySubcontractor = new Map<string, typeof allPeriodJobs>()
     const paymentsBySubcontractor = new Map<string, typeof allPayments>()
 
     allUnpaidJobs.forEach(job => {
@@ -91,6 +132,15 @@ export async function GET() {
           jobsBySubcontractor.set(job.subcontractorId, [])
         }
         jobsBySubcontractor.get(job.subcontractorId)!.push(job)
+      }
+    })
+
+    allPeriodJobs.forEach(job => {
+      if (job.subcontractorId) {
+        if (!periodJobsBySubcontractor.has(job.subcontractorId)) {
+          periodJobsBySubcontractor.set(job.subcontractorId, [])
+        }
+        periodJobsBySubcontractor.get(job.subcontractorId)!.push(job)
       }
     })
 
@@ -104,6 +154,7 @@ export async function GET() {
     // Map subcontractors with their jobs and payments
     const result = subcontractors.map(sub => {
       const allJobs = jobsBySubcontractor.get(sub.id) || []
+      const periodJobs = periodJobsBySubcontractor.get(sub.id) || []
       const payments = paymentsBySubcontractor.get(sub.id) || []
 
       // Build schedule map for cadence lookups
@@ -173,12 +224,45 @@ export async function GET() {
         })),
       }))
 
+      const serializedPeriodJobs = periodJobs
+        .filter(job => job.location && job.location.client)
+        .map(job => ({
+          id: job.id,
+          date: job.date.toISOString(),
+          subcontractorRate: job.subcontractorRate,
+          subcontractorPaid: job.subcontractorPaid,
+          scheduleId: job.scheduleId,
+          paidDate: job.paymentLineItems?.[0]?.payment?.datePaid
+            ? job.paymentLineItems[0].payment.datePaid.toISOString()
+            : null,
+          schedule: job.schedule ? {
+            subcontractorPayType: job.schedule.subcontractorPayType,
+            defaultSubcontractorRate: job.schedule.defaultSubcontractorRate,
+          } : null,
+          addOnServices: (job.addOnServices || []).map(addOn => ({
+            id: addOn.id,
+            subcontractorRate: addOn.subcontractorRate,
+          })),
+          location: {
+            id: job.location.id,
+            name: job.location.name,
+            address: job.location.address,
+            client: {
+              id: job.location.client.id,
+              name: job.location.client.name,
+              billingType: job.location.client.billingType,
+              cleanerPayType: job.location.client.cleanerPayType,
+            },
+          },
+        }))
+
       return {
         ...sub,
         createdAt: sub.createdAt.toISOString(),
         owedAmount,
         jobs: serializedJobs,
         payments: serializedPayments,
+        ...(periodQuery ? { periodJobs: serializedPeriodJobs } : {}),
       }
     })
 

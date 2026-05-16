@@ -942,7 +942,7 @@ export function useQuickInvoice({
     }
   }
 
-  const handleGeneratePreview = async () => {
+  const handleGeneratePreview = async (options?: { silent?: boolean }) => {
     if (lineItems.length === 0) {
       const { showError } = await import('@/lib/toast')
       showError('Please add at least one line item')
@@ -998,8 +998,10 @@ export function useQuickInvoice({
       }
       const pdfData = await pdfResponse.json()
       setPreviewPdfUrl(pdfData.pdfDataUrl || pdfData.pdfUrl)
-      const { showSuccess } = await import('@/lib/toast')
-      showSuccess('Preview generated!')
+      if (!options?.silent) {
+        const { showSuccess } = await import('@/lib/toast')
+        showSuccess('Preview generated!')
+      }
     } catch (error) {
       logger.error('Error generating preview:', error)
       const { showError } = await import('@/lib/toast')
@@ -1009,6 +1011,28 @@ export function useQuickInvoice({
       setIsGeneratingPreview(false)
     }
   }
+
+  const autoPreviewSignature = useRef<string | null>(null)
+  useEffect(() => {
+    if (!open || lineItems.length === 0 || previewPdfUrl || isGeneratingPreview) return
+
+    const signature = [
+      client.id,
+      dateDue,
+      selectedJobIds.size,
+      lineItems.map(item => `${item.jobId || 'custom'}:${item.description}:${item.amount}`).join('|'),
+    ].join('::')
+
+    if (autoPreviewSignature.current === signature) return
+    autoPreviewSignature.current = signature
+
+    const timeout = window.setTimeout(() => {
+      handleGeneratePreview({ silent: true })
+    }, 150)
+
+    return () => window.clearTimeout(timeout)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lineItems, previewPdfUrl, isGeneratingPreview, client.id, dateDue, selectedJobIds.size])
 
   const handleBatchApprove = async () => {
     setIsCreating(true)

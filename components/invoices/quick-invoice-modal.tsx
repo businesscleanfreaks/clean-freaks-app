@@ -904,7 +904,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                 </p>
               </div>
               <Button
-                onClick={handleGeneratePreview}
+                onClick={() => handleGeneratePreview()}
                 disabled={isGeneratingPreview || lineItems.length === 0}
                 className="bg-teal-600 hover:bg-teal-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all"
                 size="sm"
@@ -960,7 +960,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
         {/* Mobile Preview Button */}
         <div className="md:hidden px-4 py-3 border-t bg-slate-50">
           <Button
-            onClick={handleGeneratePreview}
+            onClick={() => handleGeneratePreview()}
             disabled={isGeneratingPreview || lineItems.length === 0}
             className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold"
             size="sm"

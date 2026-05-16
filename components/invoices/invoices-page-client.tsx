@@ -279,8 +279,12 @@ export function InvoicesPageClient({
   const handleQuickInvoice = (entry: ClientEntry) => {
     // Pass ALL jobs for this client (from unfiltered list) so modal can switch months
     const fullEntry = allReadyClients.find(c => c.client.id === entry.client.id) || entry
+    const isScopedCandidate =
+      entry.jobs.length !== fullEntry.jobs.length ||
+      entry.client.name !== fullEntry.client.name
+    const entryForModal = isScopedCandidate ? entry : fullEntry
     const idx = monthFilteredClients.findIndex(c => c.client.id === entry.client.id)
-    setSelectedClient(fullEntry)
+    setSelectedClient(entryForModal)
     setSelectedClientIndex(idx >= 0 ? idx : 0)
     setQuickInvoiceOpen(true)
   }

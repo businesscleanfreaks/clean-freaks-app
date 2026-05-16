@@ -185,6 +185,16 @@ export async function PUT(
             await tx.subcontractorPayment.delete({
               where: { id: lineItem.payment.id },
             })
+          } else {
+            await tx.subcontractorPaymentLineItem.delete({
+              where: { id: lineItem.id },
+            })
+            await tx.subcontractorPayment.update({
+              where: { id: lineItem.payment.id },
+              data: {
+                totalAmount: Math.max(0, lineItem.payment.totalAmount - lineItem.amount),
+              },
+            })
           }
         }
       }

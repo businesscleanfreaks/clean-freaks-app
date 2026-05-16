@@ -1,12 +1,24 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { mutate as globalMutate } from "swr"
+import { format } from "date-fns"
+import {
+  Archive,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Edit2,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -14,150 +26,120 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, DollarSign, CheckCircle2, Users, ChevronLeft, ChevronRight, CalendarDays, ArrowRight, Archive, RotateCcw, Trash2, Edit2 } from "lucide-react"
 import { ActionSpinner } from "@/components/ui/action-spinner"
-import { PaymentBreakdownModal } from "@/components/subcontractors/payment-breakdown-modal"
-import { CleanerListRow, getCorrectOwedAmount } from "@/components/subcontractors/cleaner-list-row"
-import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
-import { format } from "date-fns"
-import { logger } from "@/lib/logger"
-import { showError, showSuccess } from "@/lib/toast"
 import { EmptyState } from "@/components/ui/empty-state"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
-import type { CleanerData } from "@/types"
+import { buildSubcontractorPayLedger, type PayLedgerGroup } from "@/lib/payout-calculator"
+import { cn, formatCurrency } from "@/lib/utils"
+import { showError, showSuccess } from "@/lib/toast"
+import type { CleanerData, CleanerJob } from "@/types"
 
 interface SubcontractorsPageWrapperProps {
   subcontractors: CleanerData[]
+  period: string
+  onPeriodChange: (period: string) => void
   onDataChange: () => void
 }
 
-function getSummaryText(sub: CleanerData): string {
-  const groups = getPaymentGroups(sub)
-  const flatRateCount = groups.filter(g => g.type === 'FLAT_RATE').length
-  const totalJobs = groups.filter(g => g.type === 'PER_CLEAN').reduce((sum, g) => sum + (g.jobCount || 0), 0)
-  const parts: string[] = []
-  if (flatRateCount > 0) parts.push(`${flatRateCount} month${flatRateCount !== 1 ? 's' : ''}`)
-  if (totalJobs > 0) parts.push(`${totalJobs} clean${totalJobs !== 1 ? 's' : ''}`)
-  return parts.join(' · ') || 'No jobs'
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
 }
 
-interface PaymentGroup {
-  id: string
-  type: 'FLAT_RATE' | 'PER_CLEAN'
-  clientName: string
-  amount: number
-  jobIds: string[]
-  jobCount?: number
+function sendsInvoices(name: string) {
+  return /celeste|ana lina|ricardo/i.test(name)
 }
 
-function getPaymentGroups(sub: CleanerData): PaymentGroup[] {
-  const groups: PaymentGroup[] = []
-  const jobsByClient = new Map<string, CleanerData['jobs']>()
+function getJobsForDisplay(sub: CleanerData) {
+  return (Array.isArray(sub.periodJobs) ? sub.periodJobs : sub.jobs || []) as CleanerJob[]
+}
 
-  ;(sub.jobs || []).forEach(job => {
-    if (!job.location?.client) return
-    const clientId = job.location.client.id
-    if (!jobsByClient.has(clientId)) jobsByClient.set(clientId, [])
-    jobsByClient.get(clientId)!.push(job)
-  })
+function getGroups(sub: CleanerData) {
+  return buildSubcontractorPayLedger(getJobsForDisplay(sub)).groups
+}
 
-  const allPerCleanJobs: CleanerData['jobs'] = []
-  const perCleanClientNames: string[] = []
+function getCleanerTotals(sub: CleanerData) {
+  const groups = getGroups(sub)
+  const total = groups.reduce((sum, group) => sum + group.totalAmount, 0)
+  const unpaid = groups.reduce((sum, group) => sum + group.owedAmount, 0)
+  return { groups, total, unpaid, paid: Math.max(0, total - unpaid) }
+}
 
-  jobsByClient.forEach((jobs) => {
-    const client = jobs[0].location.client
-    const payType = (client.cleanerPayType || 'PER_CLEAN') as 'FLAT_RATE' | 'PER_CLEAN'
+function shortClientName(name: string) {
+  return name
+    .replace(/\bCorporation\b/gi, "")
+    .replace(/\bCondominiums\b/gi, "Condos")
+    .replace(/\s+/g, " ")
+    .trim()
+}
 
-    if (payType === 'FLAT_RATE') {
-      const jobsByMonth = new Map<string, CleanerData['jobs']>()
-      jobs.forEach(job => {
-        const monthKey = format(new Date(job.date), 'yyyy-MM')
-        if (!jobsByMonth.has(monthKey)) jobsByMonth.set(monthKey, [])
-        jobsByMonth.get(monthKey)!.push(job)
-      })
-      jobsByMonth.forEach((monthJobs, monthKey) => {
-        groups.push({
-          id: `${client.id}-${monthKey}`,
-          type: 'FLAT_RATE',
-          clientName: client.name,
-          amount: monthJobs[0].subcontractorRate,
-          jobIds: monthJobs.map(j => j.id),
-        })
-      })
-    } else {
-      allPerCleanJobs.push(...jobs)
-      if (!perCleanClientNames.includes(client.name)) perCleanClientNames.push(client.name)
-    }
-  })
+function accountName(group: PayLedgerGroup) {
+  const firstJob = group.jobs[0]
+  const clientName = firstJob?.location?.client?.name || group.clientName
+  const locationName = firstJob?.location?.name || ""
+  const shortClient = shortClientName(clientName)
 
-  if (allPerCleanJobs.length > 0) {
-    const perCleanByMonth = new Map<string, CleanerData['jobs']>()
-    allPerCleanJobs.forEach(job => {
-      const monthKey = format(new Date(job.date), 'yyyy-MM')
-      if (!perCleanByMonth.has(monthKey)) perCleanByMonth.set(monthKey, [])
-      perCleanByMonth.get(monthKey)!.push(job)
-    })
-    perCleanByMonth.forEach((monthJobs, monthKey) => {
-      groups.push({
-        id: `perclean-${monthKey}`,
-        type: 'PER_CLEAN',
-        clientName: perCleanClientNames.join(', '),
-        amount: monthJobs.reduce((sum, j) => sum + j.subcontractorRate, 0),
-        jobIds: monthJobs.map(j => j.id),
-        jobCount: monthJobs.length,
-      })
-    })
+  if (!locationName || locationName.toLowerCase() === clientName.toLowerCase()) {
+    return shortClient
   }
 
-  return groups
+  const stripped = locationName
+    .replace(new RegExp(clientName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "")
+    .replace(new RegExp(shortClient.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "")
+    .replace(/[()\-–—]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  if (stripped) return `${shortClient} (${stripped})`
+  return shortClient
 }
 
-export function WorkersPageWrapper({ subcontractors, onDataChange }: SubcontractorsPageWrapperProps) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [payingSubcontractor, setPayingSubcontractor] = useState<CleanerData | null>(null)
-  const [datePaid, setDatePaid] = useState(() => format(new Date(), 'yyyy-MM-dd'))
-  const [paymentNotes, setPaymentNotes] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+function periodLabel(period: string) {
+  const [year, month] = period.split("-").map(Number)
+  return format(new Date(year, month - 1, 1), "MMMM yyyy")
+}
 
-  // Period selector state — controls which month's jobs are visible in stats
-  const [period, setPeriod] = useState(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
+function shiftPeriod(period: string, delta: number) {
+  const [year, month] = period.split("-").map(Number)
+  const date = new Date(year, month - 1 + delta, 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
 
-  const periodLabel = useMemo(() => {
-    const [y, m] = period.split('-')
-    const date = new Date(parseInt(y), parseInt(m) - 1, 1)
-    return format(date, 'MMMM yyyy')
-  }, [period])
+function cleanDateLabel(job: CleanerJob) {
+  return format(new Date(job.date), "EEE, MMM d")
+}
 
-  const shiftPeriod = (delta: number) => {
-    setPeriod(prev => {
-      const [y, m] = prev.split('-').map(Number)
-      const d = new Date(y, m - 1 + delta, 1)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    })
-  }
+function jobTotal(job: CleanerJob) {
+  return (job.subcontractorRate || 0) + (job.addOnServices || []).reduce((sum, addOn) => sum + (addOn.subcontractorRate || 0), 0)
+}
 
-
-  // Batch Pay state
-  const [batchPayMode, setBatchPayMode] = useState(false)
-  const [batchSelectedSubs, setBatchSelectedSubs] = useState<Set<string>>(new Set())
+export function WorkersPageWrapper({
+  subcontractors,
+  period,
+  onPeriodChange,
+  onDataChange,
+}: SubcontractorsPageWrapperProps) {
+  const [searchQuery, setSearchQuery] = useState("")
+  const [expandedCleaner, setExpandedCleaner] = useState<string | null>(null)
+  const [expandedAccount, setExpandedAccount] = useState<string | null>(null)
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-
-  // Edit Cleaner state
   const [editingCleaner, setEditingCleaner] = useState<CleanerData | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', notes: '' })
+  const [editForm, setEditForm] = useState({ name: "", phone: "", email: "", notes: "" })
   const [isSavingEdit, setIsSavingEdit] = useState(false)
 
   const openEditCleaner = (sub: CleanerData) => {
     setEditForm({
-      name: sub.name || '',
-      phone: sub.phone || '',
-      email: sub.email || '',
-      notes: sub.notes || '',
+      name: sub.name || "",
+      phone: sub.phone || "",
+      email: sub.email || "",
+      notes: sub.notes || "",
     })
     setEditingCleaner(sub)
   }
@@ -167,18 +149,88 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     setIsSavingEdit(true)
     try {
       const res = await fetch(`/api/subcontractors/${editingCleaner.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editForm),
       })
-      if (!res.ok) throw new Error('Failed to update')
+      if (!res.ok) throw new Error("Failed to update")
       showSuccess(`${editForm.name} updated`)
       setEditingCleaner(null)
       onDataChange()
     } catch {
-      showError('Failed to update cleaner')
+      showError("Failed to update cleaner")
     } finally {
       setIsSavingEdit(false)
+    }
+  }
+
+  const refreshAfterPaymentChange = () => {
+    onDataChange()
+    globalMutate("/dashboard-stats")
+    globalMutate("/api/dashboard-stats")
+  }
+
+  const markJobsPaid = async (subId: string, jobIds: string[], key: string) => {
+    if (jobIds.length === 0) return
+    setPendingKey(key)
+    try {
+      const res = await fetch(`/api/subcontractors/${subId}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobIds,
+          datePaid: format(new Date(), "yyyy-MM-dd"),
+          notes: null,
+        }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to mark paid")
+      showSuccess("Payment tracked")
+      refreshAfterPaymentChange()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to mark paid")
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  const unmarkJobsPaid = async (jobIds: string[], key: string) => {
+    if (jobIds.length === 0) return
+    setPendingKey(key)
+    try {
+      await Promise.all(jobIds.map(async (jobId) => {
+        const res = await fetch(`/api/jobs/${jobId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subcontractorPaid: false }),
+        })
+        if (!res.ok) throw new Error("Failed to unmark paid")
+      }))
+      showSuccess("Payment unchecked")
+      refreshAfterPaymentChange()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to unmark paid")
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  const toggleGroupPaid = (sub: CleanerData, group: PayLedgerGroup) => {
+    const key = `${sub.id}:${group.clientId}`
+    const paidJobs = group.jobs.filter(job => job.subcontractorPaid).map(job => job.id)
+    const unpaidJobs = group.jobs.filter(job => !job.subcontractorPaid).map(job => job.id)
+    if (group.unpaidCount > 0) {
+      markJobsPaid(sub.id, unpaidJobs, key)
+    } else {
+      unmarkJobsPaid(paidJobs, key)
+    }
+  }
+
+  const toggleJobPaid = (sub: CleanerData, job: CleanerJob) => {
+    const key = `${sub.id}:${job.id}`
+    if (job.subcontractorPaid) {
+      unmarkJobsPaid([job.id], key)
+    } else {
+      markJobsPaid(sub.id, [job.id], key)
     }
   }
 
@@ -186,616 +238,440 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
     if (!confirm(`Archive ${sub.name}? They will be hidden from the active list but all history will be preserved.`)) return
     try {
       const res = await fetch(`/api/subcontractors/${sub.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: false }),
       })
-      if (!res.ok) throw new Error('Failed to archive')
+      if (!res.ok) throw new Error("Failed to archive")
       showSuccess(`${sub.name} archived`)
       onDataChange()
     } catch {
-      showError('Failed to archive cleaner')
+      showError("Failed to archive cleaner")
     }
   }
 
-  const { totalOwed, subcontractorsWithBalance, paidUpSubcontractors, archivedSubcontractors } = useMemo(() => {
-    let total = 0
-    const withBalance: CleanerData[] = []
-    const paidUp: CleanerData[] = []
-    const archived: CleanerData[] = []
+  const rows = useMemo(() => {
+    return subcontractors
+      .filter(sub => sub.isActive !== false)
+      .map(sub => ({ sub, ...getCleanerTotals(sub) }))
+      .filter(row => {
+        if (!searchQuery.trim()) return true
+        const query = searchQuery.toLowerCase()
+        return row.sub.name.toLowerCase().includes(query)
+          || row.sub.email?.toLowerCase().includes(query)
+          || row.sub.phone?.toLowerCase().includes(query)
+          || row.groups.some(group => accountName(group).toLowerCase().includes(query))
+      })
+      .sort((a, b) => b.unpaid - a.unpaid || a.sub.name.localeCompare(b.sub.name))
+  }, [subcontractors, searchQuery])
 
-    subcontractors.forEach(sub => {
-      if (sub.isActive === false) {
-        archived.push(sub)
-        return
-      }
-      const owed = getCorrectOwedAmount(sub)
-      if (owed > 0) {
-        withBalance.push(sub)
-        total += owed
-      } else {
-        paidUp.push(sub)
-      }
-    })
+  const archivedSubcontractors = useMemo(
+    () => subcontractors.filter(sub => sub.isActive === false),
+    [subcontractors]
+  )
 
-    withBalance.sort((a, b) => getCorrectOwedAmount(b) - getCorrectOwedAmount(a))
-    return { totalOwed: total, subcontractorsWithBalance: withBalance, paidUpSubcontractors: paidUp, archivedSubcontractors: archived }
-  }, [subcontractors])
-
-  const filteredSubcontractors = useMemo(() => {
-    const allSubs = [...subcontractorsWithBalance, ...paidUpSubcontractors]
-    if (!searchQuery) return allSubs
-    const query = searchQuery.toLowerCase()
-    return allSubs.filter(s =>
-      s.name.toLowerCase().includes(query) ||
-      s.email?.toLowerCase().includes(query) ||
-      s.phone?.includes(query)
-    )
-  }, [subcontractorsWithBalance, paidUpSubcontractors, searchQuery])
-
-  const owedFiltered = filteredSubcontractors.filter(s => getCorrectOwedAmount(s) > 0)
-  const paidFiltered = filteredSubcontractors.filter(s => getCorrectOwedAmount(s) === 0)
-
-  // Batch Pay
-  const startBatchPay = () => {
-    setBatchPayMode(true)
-    setBatchSelectedSubs(new Set(subcontractorsWithBalance.map(s => s.id)))
-    setDatePaid(format(new Date(), 'yyyy-MM-dd'))
-    setPaymentNotes('')
-  }
-
-  const closeBatchPay = () => {
-    setBatchPayMode(false)
-    setBatchSelectedSubs(new Set())
-  }
-
-  const toggleBatchSub = (subId: string) => {
-    setBatchSelectedSubs(prev => {
-      const next = new Set(prev)
-      if (next.has(subId)) next.delete(subId)
-      else next.add(subId)
-      return next
-    })
-  }
-
-  const batchTotal = useMemo(() => {
-    return subcontractorsWithBalance
-      .filter(s => batchSelectedSubs.has(s.id))
-      .reduce((sum, s) => sum + getCorrectOwedAmount(s), 0)
-  }, [batchSelectedSubs, subcontractorsWithBalance])
-
-  const handleBatchPayment = async () => {
-    if (batchSelectedSubs.size === 0) {
-      showError('Please select at least one cleaner')
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      for (const subId of batchSelectedSubs) {
-        const sub = subcontractorsWithBalance.find(s => s.id === subId)
-        if (!sub) continue
-
-        const groups = getPaymentGroups(sub)
-        const allJobIds = groups.flatMap(g => g.jobIds)
-        if (allJobIds.length === 0) continue
-
-        const response = await fetch(`/api/subcontractors/${subId}/payments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jobIds: allJobIds,
-            datePaid,
-            notes: paymentNotes || null,
-          }),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(`Failed for ${sub.name}: ${errorData.error}`)
-        }
-      }
-
-      showSuccess(`Recorded ${batchSelectedSubs.size} payment${batchSelectedSubs.size !== 1 ? 's' : ''} totaling ${formatCurrency(batchTotal)}!`)
-      closeBatchPay()
-      onDataChange()
-      // Invalidate dashboard stats so payout totals update
-      globalMutate('/api/dashboard-stats')
-    } catch (error) {
-      logger.error('Error recording batch payments:', error)
-      showError(error instanceof Error ? error.message : 'Failed to record payments')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
+  const totalUnpaid = rows.reduce((sum, row) => sum + row.unpaid, 0)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top bar */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-bold text-gray-900">Cleaners</h1>
-          <div className="flex items-center gap-2">
-        {subcontractorsWithBalance.length > 1 && (
-              <Button
-                onClick={startBatchPay}
-                className="bg-teal-600 hover:bg-teal-700 text-white h-9 px-3 sm:px-4 text-sm rounded-lg"
-              >
-                <DollarSign className="w-4 h-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">Pay All</span>
-              </Button>
-            )}
+    <div className="min-h-screen bg-gray-50 text-gray-950">
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+        <header className="mb-4 border-b-2 border-gray-950 pb-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Cleaners</h1>
+              <p className="text-sm text-gray-500">Manual Zelle tracking for cleaner payouts</p>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                {periodLabel(period)} · Unpaid
+              </div>
+              <div className={cn("font-mono text-2xl font-bold tracking-tight", totalUnpaid > 0 ? "text-red-600" : "text-emerald-600")}>
+                {formatCurrency(totalUnpaid)}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
+            <button
+              className="border-r border-gray-200 px-3 py-2 text-gray-500 hover:bg-gray-50"
+              onClick={() => onPeriodChange(shiftPeriod(period, -1))}
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="flex min-w-[150px] items-center justify-center gap-2 px-4 py-2 text-sm font-semibold">
+              <CalendarDays className="h-4 w-4 text-teal-700" />
+              {periodLabel(period)}
+            </span>
+            <button
+              className="border-l border-gray-200 px-3 py-2 text-gray-500 hover:bg-gray-50"
+              onClick={() => onPeriodChange(shiftPeriod(period, 1))}
+              aria-label="Next month"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+            <div className="relative min-w-[180px] flex-1 sm:w-56 sm:flex-none">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search..."
+                className="h-10 rounded-md bg-white pl-9"
+              />
+            </div>
             <Link href="/subcontractors/new">
-              <Button variant="outline" className="h-9 px-3 sm:px-4 text-sm rounded-lg">
-                <Plus className="w-4 h-4 sm:mr-1.5" />
+              <Button variant="outline" className="h-10 gap-2 rounded-md">
+                <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">Add Cleaner</span>
               </Button>
             </Link>
           </div>
         </div>
-      </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        {/* Cleaner cards — quick view of contact + assigned clients */}
-        {filteredSubcontractors.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 px-1">Directory</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {filteredSubcontractors.map((sub) => {
-                const { hex } = getCleanerColorInfo(sub.name)
-                const initials = sub.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
-                const clientNames = new Map<string, string>()
-                ;(sub.jobs || []).forEach((job) => {
-                  const c = job.location?.client
-                  if (c?.id && c.name) clientNames.set(c.id, c.name)
-                })
-                const clients = Array.from(clientNames.values()).slice(0, 8)
-                return (
-                  <Link
-                    key={sub.id}
-                    href={`/subcontractors/${sub.id}`}
-                    className="block bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:border-teal-300 hover:shadow-md transition-all no-underline text-inherit"
-                  >
-                    <div className="flex items-start gap-3 mb-3">
-                      <div
-                        className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-                        style={{ backgroundColor: hex }}
-                      >
-                        {initials}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-gray-900 truncate">{sub.name}</p>
-                        {sub.phone && (
-                          <p className="text-xs text-gray-500 truncate mt-0.5">{sub.phone}</p>
-                        )}
-                        {sub.email && (
-                          <p className="text-xs text-gray-500 truncate">{sub.email}</p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Clients</p>
-                    {clients.length === 0 ? (
-                      <p className="text-xs text-gray-400">No client-linked jobs in current data</p>
-                    ) : (
-                      <ul className="text-xs text-gray-700 space-y-0.5">
-                        {clients.map((name) => (
-                          <li key={name} className="truncate border-l-2 border-teal-200 pl-2">{name}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Period Selector */}
-        <div className="flex items-center justify-center gap-3 mb-4">
-          <button
-            onClick={() => shiftPeriod(-1)}
-            className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
-            aria-label="Previous month"
-          >
-            <ChevronLeft className="w-4 h-4 text-gray-500" />
-          </button>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-gray-200 min-w-[160px] justify-center">
-            <CalendarDays className="w-4 h-4 text-teal-600" />
-            <span className="text-sm font-semibold text-gray-700">{periodLabel}</span>
-          </div>
-          <button
-            onClick={() => shiftPeriod(1)}
-            className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
-            aria-label="Next month"
-          >
-            <ChevronRight className="w-4 h-4 text-gray-500" />
-          </button>
-        </div>
-
-        {/* Summary Strip */}
-        {subcontractors.length > 0 && (
-          <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-5">
-            <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 flex flex-col justify-center">
-              <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Outstanding</span>
-              <span className="text-xl sm:text-2xl font-bold text-gray-900 leading-none truncate">{formatCurrency(totalOwed)}</span>
-            </div>
-            <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 flex flex-col justify-center">
-              <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Unpaid</span>
-              <span className="text-xl sm:text-2xl font-bold text-gray-900 leading-none">{subcontractorsWithBalance.length}</span>
-            </div>
-            <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 flex flex-col justify-center">
-              <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Paid Up</span>
-              <span className="text-xl sm:text-2xl font-bold text-gray-900 leading-none">{paidUpSubcontractors.length}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Search */}
-        {subcontractors.length > 0 && (
-          <div className="mb-5">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search cleaners..."
-                className="pl-10 h-10 bg-white text-sm rounded-lg"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {subcontractors.length === 0 && (
+        {subcontractors.length === 0 ? (
           <EmptyState
-            icon={Users}
+            icon={Search}
             title="No cleaners yet"
             description="Add your first cleaner to start tracking payments and assignments."
             actionLabel="Add Cleaner"
             actionHref="/subcontractors/new"
             helpTooltip="empty-subcontractors"
           />
-        )}
-
-        {/* Owed Money Section */}
-        {owedFiltered.length > 0 && (
-          <div className="mb-6">
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Unpaid</h2>
-              <span className="text-xs font-medium text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">
-                {owedFiltered.length}
-              </span>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <div className="flex items-center justify-between border-b border-gray-950 px-4 py-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Cleaner</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Owed</span>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-              {owedFiltered.map(sub => (
-                <CleanerListRow
-                  key={sub.id}
-                  sub={sub}
-                  owed={getCorrectOwedAmount(sub)}
-                  onPay={setPayingSubcontractor}
-                  onEdit={openEditCleaner}
-                  onArchive={handleArchiveCleaner}
-                />
-              ))}
+
+            {rows.map(({ sub, groups, total, unpaid, paid }, rowIndex) => {
+              const isExpanded = expandedCleaner === sub.id
+              const initials = getInitials(sub.name)
+              const { hex } = getCleanerColorInfo(sub.name)
+
+              return (
+                <div key={sub.id} className={cn(rowIndex < rows.length - 1 && "border-b border-gray-100")}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={cn(
+                      "flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-gray-50",
+                      isExpanded && "bg-gray-50"
+                    )}
+                    onClick={() => setExpandedCleaner(isExpanded ? null : sub.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") setExpandedCleaner(isExpanded ? null : sub.id)
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                        style={{ backgroundColor: hex }}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <Link
+                            href={`/subcontractors/${sub.id}`}
+                            className="truncate text-[15px] font-semibold text-gray-950 hover:text-teal-700"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {sub.name}
+                          </Link>
+                          {sendsInvoices(sub.name) && (
+                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">
+                              Sends invoices
+                            </span>
+                          )}
+                          <ChevronDown className={cn("h-3 w-3 text-gray-400 transition-transform", isExpanded && "rotate-180")} />
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {groups.length} account{groups.length === 1 ? "" : "s"} · {unpaid === 0 ? "Paid up" : `${formatCurrency(paid)} of ${formatCurrency(total)} paid`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className={cn("font-mono text-base font-bold tracking-tight", unpaid === 0 && "text-emerald-600")}>
+                      {unpaid > 0 ? formatCurrency(unpaid) : "✓"}
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="bg-gray-50 px-4 pb-3 pl-16">
+                      <div className="flex items-center justify-between px-3 pb-1 pt-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Account</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Amount</span>
+                      </div>
+
+                      {groups.length === 0 ? (
+                        <div className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm text-gray-500">
+                          No payable jobs for {periodLabel(period)}.
+                        </div>
+                      ) : groups.map(group => {
+                        const key = `${sub.id}:${group.clientId}`
+                        const isAccountExpanded = expandedAccount === key
+                        const isPaid = group.unpaidCount === 0
+                        const isBusy = pendingKey === key
+                        const perClean = group.payType === "PER_CLEAN"
+
+                        return (
+                          <div
+                            key={group.clientId}
+                            className={cn(
+                              "mb-1.5 overflow-hidden rounded-md border border-gray-200 bg-white transition-opacity",
+                              isPaid && "opacity-45"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-3 px-3 py-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isPaid}
+                                  disabled={!!pendingKey}
+                                  onChange={() => toggleGroupPaid(sub, group)}
+                                  className="h-4 w-4 rounded border-gray-300 accent-gray-950"
+                                />
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 items-center gap-2 text-left"
+                                  onClick={() => perClean && setExpandedAccount(isAccountExpanded ? null : key)}
+                                >
+                                  <span className="truncate text-sm font-semibold text-gray-950">{accountName(group)}</span>
+                                  <span className="shrink-0 text-xs text-gray-400">
+                                    {perClean ? `Per clean · ${group.jobs.length} clean${group.jobs.length === 1 ? "" : "s"}` : "Flat monthly"}
+                                  </span>
+                                  {perClean && <ChevronDown className={cn("h-3 w-3 text-gray-400 transition-transform", isAccountExpanded && "rotate-180")} />}
+                                </button>
+                              </div>
+                              <span className={cn("shrink-0 font-mono text-sm font-semibold", isPaid && "text-gray-400 line-through")}>
+                                {isBusy ? <ActionSpinner size={14} /> : formatCurrency(group.totalAmount)}
+                              </span>
+                            </div>
+
+                            {perClean && isAccountExpanded && (
+                              <div className="border-t border-gray-100">
+                                {group.jobs.map((job, jobIndex) => {
+                                  const jobKey = `${sub.id}:${job.id}`
+                                  const paidJob = job.subcontractorPaid
+                                  return (
+                                    <div
+                                      key={job.id}
+                                      className={cn(
+                                        "flex items-center justify-between gap-3 px-5 py-1.5",
+                                        jobIndex < group.jobs.length - 1 && "border-b border-gray-100",
+                                        paidJob && "opacity-45"
+                                      )}
+                                    >
+                                      <label className="flex min-w-0 items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={paidJob}
+                                          disabled={!!pendingKey}
+                                          onChange={() => toggleJobPaid(sub, job)}
+                                          className="h-4 w-4 rounded border-gray-300 accent-gray-950"
+                                        />
+                                        <span className={cn("truncate text-xs text-gray-600", paidJob && "line-through")}>
+                                          {cleanDateLabel(job)}
+                                        </span>
+                                      </label>
+                                      <span className={cn("font-mono text-xs text-gray-600", paidJob && "line-through")}>
+                                        {pendingKey === jobKey ? <ActionSpinner size={12} /> : formatCurrency(jobTotal(job))}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      <div className="mt-2 flex items-center justify-between">
+                        <Link href={`/subcontractors/${sub.id}`} className="text-xs font-medium text-teal-700 hover:underline">
+                          View profile →
+                        </Link>
+                        <div className="flex items-center gap-3">
+                          <button className="text-xs font-medium text-gray-500 hover:text-teal-700" onClick={() => openEditCleaner(sub)}>
+                            Edit
+                          </button>
+                          <button className="text-xs font-medium text-orange-700 hover:text-orange-800" onClick={() => handleArchiveCleaner(sub)}>
+                            Archive
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            <div className="flex items-center justify-between border-t-2 border-gray-950 bg-gray-50 px-4 py-3">
+              <span className="text-sm font-semibold">Total unpaid</span>
+              <span className={cn("font-mono text-lg font-bold", totalUnpaid > 0 ? "text-red-600" : "text-emerald-600")}>
+                {formatCurrency(totalUnpaid)}
+              </span>
             </div>
           </div>
         )}
 
-        {/* All Paid Up Section */}
-        {paidFiltered.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">All Paid Up</h2>
-              <span className="text-xs font-medium text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">
-                {paidFiltered.length}
-              </span>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-              {paidFiltered.map(sub => (
-                <CleanerListRow
-                  key={sub.id}
-                  sub={sub}
-                  owed={0}
-                  onPay={setPayingSubcontractor}
-                  onEdit={openEditCleaner}
-                  onArchive={handleArchiveCleaner}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Archived Section */}
         {archivedSubcontractors.length > 0 && (
           <div className="mt-6">
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <Archive className="w-3.5 h-3.5 text-gray-400" />
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Archived</h2>
-              <span className="text-xs font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+            <div className="mb-2 flex items-center gap-2 px-1">
+              <Archive className="h-3.5 w-3.5 text-gray-400" />
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Archived</h2>
+              <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">
                 {archivedSubcontractors.length}
               </span>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden opacity-60">
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white opacity-70">
               {archivedSubcontractors.map(sub => {
                 const hasHistory = (sub.jobs?.length || 0) > 0 || (sub.payments?.length || 0) > 0
                 return (
-                <div key={sub.id} className="flex items-center gap-3 px-4 py-3">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-                    style={{ backgroundColor: getCleanerColorInfo(sub.name).hex, filter: 'grayscale(50%)' }}
-                  >
-                    {sub.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-gray-500 truncate text-[15px]">{sub.name}</span>
-                    <p className="text-sm text-gray-400">
-                      {hasHistory ? 'Archived · Has job/payment history' : 'Archived · No history'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div key={sub.id} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0">
+                    <div
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      style={{ backgroundColor: getCleanerColorInfo(sub.name).hex, filter: "grayscale(50%)" }}
+                    >
+                      {getInitials(sub.name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-gray-600">{sub.name}</p>
+                      <p className="text-xs text-gray-400">{hasHistory ? "Archived · Has job/payment history" : "Archived · No history"}</p>
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 px-3 text-sm gap-1.5"
+                      className="h-8 gap-1.5 px-3 text-xs"
                       onClick={async () => {
                         try {
                           const res = await fetch(`/api/subcontractors/${sub.id}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ isActive: true }),
                           })
-                          if (!res.ok) throw new Error('Failed to restore')
+                          if (!res.ok) throw new Error("Failed to restore")
                           showSuccess(`${sub.name} restored`)
                           onDataChange()
                         } catch {
-                          showError('Failed to restore cleaner')
+                          showError("Failed to restore cleaner")
                         }
                       }}
                     >
-                      <RotateCcw className="w-3.5 h-3.5" /> Restore
+                      <RotateCcw className="h-3.5 w-3.5" /> Restore
                     </Button>
                     {!hasHistory && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-8 px-3 text-sm gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                        className="h-8 gap-1.5 border-red-200 px-3 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
                         onClick={() => setConfirmDeleteId(sub.id)}
                       >
-                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
                       </Button>
                     )}
                   </div>
-                </div>
-              )})}
-            </div>
-          </div>
-        )}
-
-        {/* Confirm Delete Dialog */}
-        <Dialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <Trash2 className="w-5 h-5 text-red-500" />
-                Delete permanently?
-              </DialogTitle>
-            </DialogHeader>
-            <p className="text-sm text-gray-600">
-              This will permanently remove <strong>{archivedSubcontractors.find(s => s.id === confirmDeleteId)?.name}</strong>. This cannot be undone.
-            </p>
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="outline" onClick={() => setConfirmDeleteId(null)} disabled={isDeleting}>
-                Cancel
-              </Button>
-              <Button
-                className="bg-red-600 hover:bg-red-700 text-white"
-                disabled={isDeleting}
-                onClick={async () => {
-                  if (!confirmDeleteId) return
-                  setIsDeleting(true)
-                  try {
-                    const res = await fetch(`/api/subcontractors/${confirmDeleteId}`, { method: 'DELETE' })
-                    if (res.status === 409) {
-                      showError('Cannot delete: this cleaner has job/payment history. Use Archive instead.')
-                      setConfirmDeleteId(null)
-                      return
-                    }
-                    if (!res.ok) throw new Error('Failed to delete')
-                    showSuccess('Cleaner permanently deleted')
-                    setConfirmDeleteId(null)
-                    onDataChange()
-                  } catch {
-                    showError('Failed to delete cleaner')
-                  } finally {
-                    setIsDeleting(false)
-                  }
-                }}
-              >
-                {isDeleting ? 'Deleting…' : 'Delete Permanently'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* BATCH PAY MODAL */}
-      <Dialog open={batchPayMode} onOpenChange={(open) => !open && closeBatchPay()}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-teal-600 flex items-center justify-center">
-                <DollarSign className="w-4 h-4 text-white" />
-              </div>
-              Pay All Cleaners
-            </DialogTitle>
-          </DialogHeader>
-
-          {/* Scrollable cleaner list */}
-          <div className="flex-1 min-h-0 overflow-y-auto py-2">
-            <p className="text-gray-500 text-sm mb-3">
-              Select which cleaners you&apos;re paying today.
-            </p>
-
-            <div className="space-y-1.5">
-              {subcontractorsWithBalance.map(sub => {
-                const isSelected = batchSelectedSubs.has(sub.id)
-                const owed = getCorrectOwedAmount(sub)
-                const { hex } = getCleanerColorInfo(sub.name)
-                const initials = sub.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-
-                return (
-                  <label
-                    key={sub.id}
-                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                      isSelected ? 'border-teal-400 bg-teal-50/50' : 'bg-white border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => toggleBatchSub(sub.id)}
-                      className="data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
-                    />
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs flex-shrink-0"
-                      style={{ backgroundColor: hex }}
-                    >
-                      {initials}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 text-sm">{sub.name}</p>
-                      <p className="text-xs text-gray-400">{getSummaryText(sub)}</p>
-                    </div>
-                    <p className={`font-bold text-sm ${isSelected ? 'text-teal-700' : 'text-gray-900'}`}>
-                      {formatCurrency(owed)}
-                    </p>
-                  </label>
                 )
               })}
             </div>
           </div>
+        )}
+      </div>
 
-          {/* Fixed footer — always visible */}
-          <div className="flex-shrink-0 space-y-3 pt-3 border-t border-gray-200">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="batchDatePaid" className="text-xs text-gray-500 font-medium">
-                  Payment Date
-                </Label>
-                <Input
-                  id="batchDatePaid"
-                  type="date"
-                  value={datePaid}
-                  onChange={(e) => setDatePaid(e.target.value)}
-                  className="mt-1 h-9 text-sm rounded-lg"
-                />
-              </div>
-              <div>
-                <Label htmlFor="batchNotes" className="text-xs text-gray-500 font-medium">
-                  Notes <span className="text-gray-300">(optional)</span>
-                </Label>
-                <Input
-                  id="batchNotes"
-                  value={paymentNotes}
-                  onChange={(e) => setPaymentNotes(e.target.value)}
-                  placeholder="Venmo, Zelle..."
-                  className="mt-1 h-9 text-sm rounded-lg"
-                />
-              </div>
-            </div>
-
-            <div className="rounded-xl p-3 bg-teal-50 border-l-[3px] border-l-teal-600">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-teal-700 text-sm">Total</span>
-                <span className="text-xl font-bold text-gray-900">{formatCurrency(batchTotal)}</span>
-              </div>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {batchSelectedSubs.size} cleaner{batchSelectedSubs.size !== 1 ? 's' : ''} selected
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 flex-shrink-0">
-            <Button
-              variant="outline"
-              onClick={closeBatchPay}
-              disabled={isSubmitting}
-              className="flex-1 rounded-lg"
-            >
+      <Dialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-gray-900">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              Delete permanently?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            This will permanently remove <strong>{archivedSubcontractors.find(s => s.id === confirmDeleteId)?.name}</strong>. This cannot be undone.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)} disabled={isDeleting}>
               Cancel
             </Button>
             <Button
-              onClick={handleBatchPayment}
-              disabled={isSubmitting || batchSelectedSubs.size === 0}
-              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg"
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={isDeleting}
+              onClick={async () => {
+                if (!confirmDeleteId) return
+                setIsDeleting(true)
+                try {
+                  const res = await fetch(`/api/subcontractors/${confirmDeleteId}`, { method: "DELETE" })
+                  if (res.status === 409) {
+                    showError("Cannot delete: this cleaner has job/payment history. Use Archive instead.")
+                    setConfirmDeleteId(null)
+                    return
+                  }
+                  if (!res.ok) throw new Error("Failed to delete")
+                  showSuccess("Cleaner permanently deleted")
+                  setConfirmDeleteId(null)
+                  onDataChange()
+                } catch {
+                  showError("Failed to delete cleaner")
+                } finally {
+                  setIsDeleting(false)
+                }
+              }}
             >
-              {isSubmitting ? (
-                <>Recording... <ActionSpinner size={16} color="white" className="ml-1.5" /></>
-              ) : `Pay ${formatCurrency(batchTotal)}`}
+              {isDeleting ? "Deleting..." : "Delete Permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* QUICK PAY MODAL */}
-      <PaymentBreakdownModal
-        subcontractor={payingSubcontractor}
-        jobs={payingSubcontractor?.jobs || []}
-        open={!!payingSubcontractor}
-        onOpenChange={(open) => !open && setPayingSubcontractor(null)}
-        onPaymentComplete={() => {
-          setPayingSubcontractor(null)
-          onDataChange()
-          globalMutate('/api/subcontractors/data')
-          globalMutate('/api/dashboard-stats')
-        }}
-      />
-
-      {/* EDIT CLEANER DIALOG */}
       <Dialog open={!!editingCleaner} onOpenChange={(open) => !open && setEditingCleaner(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center">
-                <Edit2 className="w-4 h-4 text-teal-700" />
+            <DialogTitle className="flex items-center gap-3 text-lg font-bold text-gray-900">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-100">
+                <Edit2 className="h-4 w-4 text-teal-700" />
               </div>
               Edit Cleaner
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label className="text-xs text-gray-500 font-medium">Name *</Label>
+              <Label className="text-xs font-medium text-gray-500">Name *</Label>
               <Input
                 value={editForm.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
                 placeholder="Cleaner name"
                 className="mt-1"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs text-gray-500 font-medium">Phone</Label>
+                <Label className="text-xs font-medium text-gray-500">Phone</Label>
                 <Input
                   value={editForm.phone}
-                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  onChange={(event) => setEditForm({ ...editForm, phone: event.target.value })}
                   placeholder="(555) 123-4567"
                   className="mt-1"
                 />
               </div>
               <div>
-                <Label className="text-xs text-gray-500 font-medium">Email</Label>
+                <Label className="text-xs font-medium text-gray-500">Email</Label>
                 <Input
                   value={editForm.email}
-                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  onChange={(event) => setEditForm({ ...editForm, email: event.target.value })}
                   placeholder="cleaner@email.com"
                   className="mt-1"
                 />
               </div>
             </div>
             <div>
-              <Label className="text-xs text-gray-500 font-medium">Notes</Label>
+              <Label className="text-xs font-medium text-gray-500">Notes</Label>
               <Input
                 value={editForm.notes}
-                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })}
                 placeholder="Optional notes"
                 className="mt-1"
               />
@@ -808,9 +684,9 @@ export function WorkersPageWrapper({ subcontractors, onDataChange }: Subcontract
             <Button
               onClick={handleSaveEdit}
               disabled={isSavingEdit || !editForm.name.trim()}
-              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg"
+              className="flex-1 rounded-lg bg-teal-600 text-white hover:bg-teal-700"
             >
-              {isSavingEdit ? 'Saving...' : 'Save Changes'}
+              {isSavingEdit ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
