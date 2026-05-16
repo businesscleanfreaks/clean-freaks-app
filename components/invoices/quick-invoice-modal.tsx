@@ -398,7 +398,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-stone-200 bg-white px-5 py-3">
+        <div className="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5">
           {(isCreating || isSendingTest) && progress > 0 && (
             <ProgressBar
               value={progress}
@@ -429,26 +429,41 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isCreating || isSendingTest} className="order-last sm:order-first">
+            <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isCreating || isSendingTest}
+                className="order-last h-10 w-full px-4 sm:order-first sm:w-auto"
+              >
                 Cancel
               </Button>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Button variant="outline" onClick={() => handleCreateInvoice(false)} disabled={!canSubmit}>
-                  {isCreating ? <ActionSpinner size={16} className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save as Draft
+              <div className="grid min-w-0 grid-cols-1 gap-2 min-[520px]:grid-cols-3">
+                <Button
+                  variant="outline"
+                  onClick={() => handleCreateInvoice(false)}
+                  disabled={!canSubmit}
+                  className="h-10 min-w-0 px-3 text-sm"
+                >
+                  {isCreating ? <ActionSpinner size={15} className="mr-1.5" /> : <Save className="mr-1.5 h-4 w-4 shrink-0" />}
+                   Draft
                 </Button>
-                <Button variant="outline" onClick={() => handleCreateInvoice(true)} disabled={!canSubmit}>
-                  {isSendingTest ? <ActionSpinner size={16} className="mr-2" /> : <TestTube className="mr-2 h-4 w-4" />}
-                  Send Test
+                <Button
+                  variant="outline"
+                  onClick={() => handleCreateInvoice(true)}
+                  disabled={!canSubmit}
+                  className="h-10 min-w-0 px-3 text-sm"
+                >
+                  {isSendingTest ? <ActionSpinner size={15} className="mr-1.5" /> : <TestTube className="mr-1.5 h-4 w-4 shrink-0" />}
+                  Test
                 </Button>
                 <Button
                   onClick={handleSendToClient}
                   disabled={!canSubmit}
-                  className="bg-stone-900 text-white hover:bg-stone-800"
+                  className="h-10 min-w-0 bg-stone-900 px-6 text-sm text-white hover:bg-stone-800"
                 >
-                  {isCreating ? <ActionSpinner size={16} color="white" className="mr-2" /> : <Send className="mr-2 h-4 w-4" />}
-                  Send to Client
+                  {isCreating ? <ActionSpinner size={15} color="white" className="mr-1.5" /> : <Send className="mr-1.5 h-3 w-3 shrink-0" />}
+                  Send
                 </Button>
               </div>
             </div>
