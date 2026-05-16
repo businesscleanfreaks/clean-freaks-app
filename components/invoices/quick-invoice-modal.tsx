@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -108,6 +108,10 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
         hideClose
         className="w-[95vw] max-w-[720px] h-[92vh] max-h-[920px] rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
       >
+        <DialogTitle className="sr-only">Invoice review for {client.name}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Review invoice line items, email settings, and generated invoice preview before saving or sending.
+        </DialogDescription>
         <div className="flex items-center justify-between border-b-2 border-stone-900 bg-white px-5 py-3">
           <div className="flex min-w-0 items-center gap-3">
             {onPrevious ? (
