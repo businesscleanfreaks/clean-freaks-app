@@ -105,6 +105,7 @@ export function useQuickInvoice({
   const [createdInvoiceId, setCreatedInvoiceId] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [progressStep, setProgressStep] = useState('')
+  const autoPreviewSignature = useRef<string | null>(null)
   
   // Email fields — "To" supports multiple recipients (invoice API accepts string | string[])
   const [recipientPool, setRecipientPool] = useState<string[]>([])
@@ -521,6 +522,9 @@ export function useQuickInvoice({
       const generatedItems = generateLineItems(initialJobs)
       setLineItems(generatedItems)
       setCreatedInvoiceId(null)
+      setPreviewInvoiceId(null)
+      setPreviewPdfUrl(null)
+      autoPreviewSignature.current = null
       const basePool = mergeUniqueEmails(client.invoicingEmail, client.communicationEmail)
       setRecipientPool(basePool)
       const firstTo = client.invoicingEmail?.trim() || client.communicationEmail?.trim() || basePool[0] || ''
@@ -1012,7 +1016,6 @@ export function useQuickInvoice({
     }
   }
 
-  const autoPreviewSignature = useRef<string | null>(null)
   useEffect(() => {
     if (!open || lineItems.length === 0 || previewPdfUrl || isGeneratingPreview) return
 
