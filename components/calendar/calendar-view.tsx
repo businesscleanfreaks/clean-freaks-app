@@ -58,6 +58,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const searchParams = useSearchParams()
   const [currentDate, setCurrentDate] = useState(new Date())
   const calendarWrapperRef = useRef<HTMLDivElement>(null)
+  const [weekColumnWidth, setWeekColumnWidth] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [mobileView, setMobileView] = useState<MobileViewMode>('3day')
   const [weekDensity, setWeekDensity] = useState<WeekDensity>('Compact')
@@ -213,6 +214,26 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         setWeekDensity(savedDensity)
       }
     } catch {}
+  }, [])
+
+  useEffect(() => {
+    const el = calendarWrapperRef.current
+    if (!el) return
+
+    const updateWeekColumnWidth = () => {
+      const width = el.getBoundingClientRect().width
+      setWeekColumnWidth(Math.max(0, (width - 56) / 7))
+    }
+
+    updateWeekColumnWidth()
+    const resizeObserver = new ResizeObserver(updateWeekColumnWidth)
+    resizeObserver.observe(el)
+    window.addEventListener('resize', updateWeekColumnWidth)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', updateWeekColumnWidth)
+    }
   }, [])
 
   const changeMobileView = (view: MobileViewMode) => {
@@ -1410,6 +1431,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     };
 
     const getPositionedJobs = (jobs: any[]) => {
+      const minReadableWidth = 118;
+      const maxVisibleStackCards = 3;
       const timedJobs = jobs
         .map(job => {
           const start = getMinutes(job.startTime || job.startWindowBegin);
@@ -1429,9 +1452,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         }
       });
 
-      return groups.flatMap(group => {
+      return groups.flatMap((group, clusterIndex) => {
         const columns: number[] = [];
-        return group.map(item => {
+        const assigned = group.map(item => {
           let column = columns.findIndex(end => end <= item.start);
           if (column === -1) {
             column = columns.length;
@@ -1445,15 +1468,66 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             column,
             columnCount: Math.max(columns.length, 1),
           };
-        }).map(item => ({
-          ...item,
-          columnCount: Math.max(...group.map(g => {
-            const overlapping = group.filter(other => other.start < g.end && other.end > g.start);
-            return overlapping.length;
-          }), item.columnCount),
-        }));
+        });
+
+        const totalColumns = Math.max(columns.length, 1);
+        const splitWidth = weekColumnWidth > 0 ? weekColumnWidth / totalColumns : Number.POSITIVE_INFINITY;
+        const useStack = totalColumns >= 3 || splitWidth < minReadableWidth;
+        const byColumn = Array.from({ length: totalColumns }, (_, column) =>
+          assigned.filter(item => item.column === column)
+        );
+
+        const positioned = assigned.flatMap((item, groupIndex) => {
+          let span = 1;
+          for (let nextColumn = item.column + 1; !useStack && nextColumn < totalColumns; nextColumn++) {
+            const blocked = byColumn[nextColumn].some(other =>
+              other.start < item.end && other.end > item.start
+            );
+            if (blocked) break;
+            span++;
+          }
+
+          if (useStack && groupIndex >= maxVisibleStackCards) {
+            return [];
+          }
+
+          return {
+            ...item,
+            groupIndex,
+            groupSize: group.length,
+            columnCount: totalColumns,
+            columnSpan: useStack ? 1 : span,
+            clusterIndex,
+            layoutMode: useStack ? 'stack' : 'lanes',
+            stackIndex: useStack ? Math.min(groupIndex, maxVisibleStackCards - 1) : 0,
+          };
+        });
+
+        if (useStack && group.length > maxVisibleStackCards) {
+          const hiddenItems = assigned.slice(maxVisibleStackCards);
+          const clusterStart = Math.min(...group.map(item => item.start));
+          return [
+            ...positioned,
+            {
+              type: 'more',
+              clusterIndex,
+              start: clusterStart,
+              end: clusterStart + 30,
+              hiddenCount: hiddenItems.length,
+              hiddenJobs: hiddenItems.map(item => item.job),
+              stackIndex: maxVisibleStackCards,
+            },
+          ];
+        }
+
+        return positioned;
       });
     };
+
+    const unscheduledJobsByDay = days.map(day =>
+      getJobsForDate(day).filter(job => !(job.startTime || job.startWindowBegin))
+    );
+    const hasUnscheduledJobs = unscheduledJobsByDay.some(dayJobs => dayJobs.length > 0);
 
     return (
       <div className="flex-1 min-h-0 flex flex-col bg-white overflow-hidden">
@@ -1476,6 +1550,44 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             })}
           </div>
         </div>
+
+        {hasUnscheduledJobs && (
+          <div className="flex shrink-0 border-b border-gray-200 bg-gray-50/95">
+            <div className="w-14 shrink-0 border-r border-gray-200 px-2 py-1.5 text-right text-[10px] font-semibold uppercase text-gray-500">
+              TBD
+            </div>
+            <div className="flex-1 grid grid-cols-7">
+              {days.map((day, di) => (
+                <div key={day.toString()} className="min-h-[34px] border-r border-gray-100 last:border-r-0 p-1">
+                  <div className="flex flex-col gap-1">
+                    {unscheduledJobsByDay[di].map(job => {
+                      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null);
+                      const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id);
+                      const isSelected = selectedJobIds.has(job.id);
+                      const cleanerName = job.subcontractor?.name || '';
+                      const tooltipText = `TBD ${job.location.client.name}${cleanerName ? ` · ${cleanerName}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`;
+
+                      return (
+                        <div
+                          key={job.id}
+                          title={tooltipText}
+                          onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
+                          className={`h-6 cursor-pointer truncate rounded-md bg-white px-2 py-1 text-[11px] font-semibold leading-none text-gray-900 shadow-sm ring-1 ring-gray-200 ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
+                          style={{
+                            borderLeft: `3px solid ${hex}`,
+                            opacity: isDimmed ? 0.3 : 1,
+                          }}
+                        >
+                          TBD · {job.location.client.name}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {/* Scrollable Time Grid */}
         <div className="flex-1 overflow-y-auto relative">
@@ -1506,56 +1618,49 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               {/* Day Columns */}
               {days.map((day, di) => {
                 const dayJobs = getJobsForDate(day);
-                
-                const unscheduledJobs: any[] = [];
-                const scheduledJobs: any[] = [];
-                
-                dayJobs.forEach(job => {
-                  const t = job.startTime || job.startWindowBegin;
-                  if (!t) {
-                    unscheduledJobs.push(job);
-                  } else {
-                    scheduledJobs.push(job);
-                  }
-                });
+                const scheduledJobs = dayJobs.filter(job => job.startTime || job.startWindowBegin);
                 const positionedJobs = getPositionedJobs(scheduledJobs);
 
                 return (
                   <div key={di} className="relative border-r border-gray-100 last:border-r-0">
-                    
-                    {/* Unscheduled Row at top */}
-                    {unscheduledJobs.length > 0 && (
-                      <div className="absolute top-0 left-0 right-0 z-20 flex flex-col gap-1 p-1 bg-gray-50/95 border-b border-gray-200 shadow-sm" style={{ minHeight: '30px' }}>
-                        {unscheduledJobs.map(job => {
-                          const { hex } = getCleanerColorInfo(job.subcontractor?.name || null);
-                          const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id);
-                          const isSelected = selectedJobIds.has(job.id);
-                          return (
-                            <div
-                              key={job.id}
-                              onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
-                              className={`text-[10px] leading-tight px-1.5 py-1 rounded cursor-pointer truncate ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
-                              style={{
-                                backgroundColor: isSelected ? '#F0FDFA' : 'white',
-                                borderLeft: `3px solid ${hex}`,
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                                opacity: isDimmed ? 0.3 : 1
-                              }}
-                            >
-                              TBD · {job.location.client.name}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
                     {/* Scheduled Jobs */}
-                    {positionedJobs.map(({ job, start, end, column, columnCount }) => {
+                    {positionedJobs.map((positioned: any) => {
+                      if (positioned.type === 'more') {
+                        const top = ((positioned.start / 60) - startHour) * hourHeight + 4;
+                        const hiddenJobs = positioned.hiddenJobs as JobWithFullRelations[];
+                        const title = hiddenJobs
+                          .map(job => `${getCompactTime(job.startTime || job.startWindowBegin || '')} ${job.location.client.name}`)
+                          .join('\n');
+
+                        return (
+                          <button
+                            key={`more-${di}-${positioned.clusterIndex}`}
+                            type="button"
+                            title={title}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDayPopoverDate(day);
+                              setDayPopoverJobs(hiddenJobs);
+                            }}
+                            className="absolute right-1 z-[75] rounded-full bg-white/95 px-2 py-1 text-[11px] font-semibold leading-none text-gray-800 shadow-md ring-1 ring-gray-200 hover:bg-gray-50 focus:bg-gray-50"
+                            style={{ top: `${top}px` }}
+                          >
+                            +{positioned.hiddenCount}
+                          </button>
+                        );
+                      }
+
+                      const { job, start, end, column, columnCount, columnSpan = 1, layoutMode, stackIndex = 0 } = positioned;
                       const tStr = job.startTime || job.startWindowBegin!;
-                      const top = ((start / 60) - startHour) * hourHeight;
-                      const height = ((end - start) / 60) * hourHeight;
-                      const widthPct = 100 / columnCount;
-                      const leftPct = column * widthPct;
+                      const naturalTop = ((start / 60) - startHour) * hourHeight;
+                      const naturalHeight = ((end - start) / 60) * hourHeight;
+                      const useOverlay = layoutMode === 'stack';
+                      const overlayOffset = Math.min(stackIndex, 3) * 16;
+                      const top = naturalTop;
+                      const height = naturalHeight;
+                      const columnWidthPct = 100 / columnCount;
+                      const widthPct = columnWidthPct * columnSpan;
+                      const leftPct = column * columnWidthPct;
 
                       const { colorKey } = getCleanerColorInfo(job.subcontractor?.name || null);
                       const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default;
@@ -1565,47 +1670,71 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       return (
                         <div
                           key={job.id}
+                          title={`${getCompactTime(tStr)} ${job.location.client.name}${job.subcontractor?.name ? ` · ${job.subcontractor.name}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`}
                           onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
-                          className={`absolute left-1 right-1 rounded-md overflow-hidden cursor-pointer shadow-sm border border-black/5 hover:shadow-md transition-shadow z-10 ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
+                          className={`absolute rounded-md overflow-hidden cursor-pointer shadow-sm border border-black/5 hover:shadow-md focus:shadow-md transition-shadow ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
+                          tabIndex={0}
                           style={{
                             top: `${top}px`,
                             height: `${height}px`,
-                            left: `calc(${leftPct}% + 4px)`,
+                            left: useOverlay ? `${4 + overlayOffset}px` : `calc(${leftPct}% + 4px)`,
                             right: 'auto',
-                            width: `calc(${widthPct}% - 8px)`,
+                            width: useOverlay ? '78%' : `calc(${widthPct}% - 8px)`,
                             background: gradient,
-                            opacity: isDimmed ? 0.3 : 1
+                            opacity: isDimmed ? 0.3 : 1,
+                            zIndex: useOverlay ? 60 - stackIndex : 10 + column,
+                          }}
+                          onMouseEnter={(e) => {
+                            if (useOverlay) e.currentTarget.style.zIndex = '80';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (useOverlay) e.currentTarget.style.zIndex = String(60 - stackIndex);
+                          }}
+                          onFocus={(e) => {
+                            if (useOverlay) e.currentTarget.style.zIndex = '80';
+                          }}
+                          onBlur={(e) => {
+                            if (useOverlay) e.currentTarget.style.zIndex = String(60 - stackIndex);
                           }}
                         >
                           {(() => {
-                            // Height-aware text: show more info only if the card has room
                             const compactTime = getCompactTime(tStr)
                             const clientName = job.location.client.name
                             const cleanerName = job.subcontractor?.name || ''
-                            const cleanerShort = cleanerName ? cleanerName.split(' ')[0] + (cleanerName.split(' ')[1] ? ` ${cleanerName.split(' ')[1][0]}.` : '') : ''
-                            const locationName = job.location.name
-                            const tooltipText = `${compactTime} ${clientName}${cleanerName ? ` · ${cleanerName}` : ''}${locationName ? ` · ${locationName}` : ''}`
+                            const cleanerParts = cleanerName.split(' ').filter(Boolean)
+                            const cleanerShort = cleanerParts.length
+                              ? `${cleanerParts[0]}${cleanerParts[1] ? ` ${cleanerParts[1][0]}.` : ''}`
+                              : ''
+                            const rawLocationName = job.location.name || ''
+                            const locationName = rawLocationName && rawLocationName !== clientName && !rawLocationName.includes(clientName)
+                              ? rawLocationName
+                              : ''
+                            const narrowSideBySide = !useOverlay && columnCount > 1 && columnSpan === 1
+                            const compactOverlay = useOverlay && stackIndex > 0
+                            const showOneLine = height < 38 || narrowSideBySide || compactOverlay
+                            const showTwoLines = !showOneLine && height < 68
+                            const trialBadge = (job as any).isTrial && (
+                              <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>
+                            )
 
-                            if (height < 38) {
-                              // Very small: single line — time + client
+                            if (showOneLine) {
                               return (
-                                <div className="absolute inset-0 px-1.5 py-0.5 overflow-hidden" title={tooltipText}>
-                                  <div className="text-[10px] font-semibold text-white truncate leading-[1.4]">
-                                    {(job as any).isTrial && <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{compactTime} {clientName}
+                                <div className="absolute inset-0 overflow-hidden px-1.5 py-1">
+                                  <div className="truncate text-[11px] font-semibold leading-tight text-white">
+                                    {trialBadge}{compactTime} {clientName}
                                   </div>
                                 </div>
                               )
                             }
 
-                            if (height < 54) {
-                              // Medium: two lines — time+client, cleaner
+                            if (showTwoLines) {
                               return (
-                                <div className="absolute inset-0 px-1.5 py-1 overflow-hidden" title={tooltipText}>
-                                  <div className="text-[10px] font-semibold text-white truncate leading-[1.3]">
-                                    {(job as any).isTrial && <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{compactTime} {clientName}
+                                <div className="absolute inset-0 overflow-hidden px-1.5 py-1">
+                                  <div className="truncate text-[11px] font-semibold leading-tight text-white">
+                                    {trialBadge}{compactTime} {clientName}
                                   </div>
                                   {cleanerShort && (
-                                    <div className="text-[10px] text-white/80 truncate leading-[1.3]">
+                                    <div className="truncate text-[10px] leading-tight text-white/85">
                                       {cleanerShort}
                                     </div>
                                   )}
@@ -1613,19 +1742,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               )
                             }
 
-                            // Large: three lines — time+client, cleaner, location
                             return (
-                              <div className="absolute inset-0 px-1.5 py-1 overflow-hidden" title={tooltipText}>
-                                <div className="text-[10px] font-semibold text-white truncate leading-[1.3]">
-                                  {(job as any).isTrial && <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{compactTime} {clientName}
+                              <div className="absolute inset-0 overflow-hidden px-1.5 py-1">
+                                <div className="truncate text-[11px] font-semibold leading-tight text-white">
+                                  {trialBadge}{compactTime} {clientName}
                                 </div>
                                 {cleanerShort && (
-                                  <div className="text-[10px] text-white/80 truncate leading-[1.3]">
+                                  <div className="truncate text-[10px] leading-tight text-white/85">
                                     {cleanerShort}
                                   </div>
                                 )}
-                                {height >= 68 && locationName && (
-                                  <div className="text-[9px] text-white/70 truncate leading-[1.3]">
+                                {locationName && (
+                                  <div className="truncate text-[10px] leading-tight text-white/75">
                                     {locationName}
                                   </div>
                                 )}
