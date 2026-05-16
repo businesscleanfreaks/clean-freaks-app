@@ -4,6 +4,9 @@ import { revalidateInvoicePages } from '@/lib/revalidate'
 import { createInvoiceSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 // Generate invoice number (format: INV-YYYYMMDD-XXXX)
 async function generateInvoiceNumber(): Promise<string> {
   const now = new Date()
@@ -31,10 +34,23 @@ async function generateInvoiceNumber(): Promise<string> {
 }
 
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID()
+  let isPreviewRequest = false
   try {
     const body = await request.json()
     const { clientId, jobIds, dateDue, notes, showPaymentOptions, status, previewOnly } = body
+    isPreviewRequest = Boolean(previewOnly)
     const customLineItems = Array.isArray(body.lineItems) ? body.lineItems : null
+
+    if (isPreviewRequest) {
+      console.info('[invoice:create-preview] start', {
+        requestId,
+        clientId,
+        jobCount: Array.isArray(jobIds) ? jobIds.length : 0,
+        customLineItemCount: customLineItems?.length || 0,
+        dateDue: dateDue || null,
+      })
+    }
 
     if (!clientId || !jobIds || jobIds.length === 0) {
       return NextResponse.json(
@@ -74,6 +90,13 @@ export async function POST(request: Request) {
 
     // If no valid jobs found, the jobs may have already been invoiced (double-click prevention)
     if (jobs.length === 0) {
+      if (isPreviewRequest) {
+        console.warn('[invoice:create-preview] no-valid-jobs', {
+          requestId,
+          clientId,
+          requestedJobCount: jobIds.length,
+        })
+      }
       return NextResponse.json(
         { error: 'No jobs available to invoice. They may have already been invoiced.' },
         { status: 400 }
@@ -334,9 +357,28 @@ export async function POST(request: Request) {
     // Revalidate all invoice-related pages
     revalidateInvoicePages(invoice.client.id)
 
+    if (isPreviewRequest) {
+      console.info('[invoice:create-preview] success', {
+        requestId,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+        sourceJobCount: jobIds.length,
+        lineItemCount: invoice.lineItems.length,
+        totalAmount: invoice.totalAmount,
+      })
+    }
+
     return NextResponse.json(invoice)
   } catch (error) {
     logger.error('Error creating invoice:', error)
+    if (isPreviewRequest) {
+      console.error('[invoice:create-preview] failed', {
+        requestId,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      })
+    }
     let errorMessage = 'Failed to create invoice'
     
     if (error instanceof Error) {

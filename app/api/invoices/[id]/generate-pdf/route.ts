@@ -8,13 +8,21 @@ import { logger } from '@/lib/logger'
 import { getBaseUrl } from '@/lib/url'
 import type { InvoiceWithRelations } from '@/types'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
+  const requestId = crypto.randomUUID()
   let resolvedParams: { id: string } | undefined = undefined
   try {
     resolvedParams = await Promise.resolve(params)
+    console.info('[invoice:generate-pdf] start', {
+      requestId,
+      invoiceId: resolvedParams!.id,
+    })
 
     // Get invoice with all necessary data
     const invoice = await prisma.invoice.findUnique({
@@ -38,6 +46,10 @@ export async function POST(
     })
 
     if (!invoice) {
+      console.warn('[invoice:generate-pdf] not-found', {
+        requestId,
+        invoiceId: resolvedParams!.id,
+      })
       return NextResponse.json(
         { error: 'Invoice not found' },
         { status: 404 }
@@ -83,6 +95,15 @@ export async function POST(
       data: { pdfUrl: hostedPdfUrl },
     })
 
+    console.info('[invoice:generate-pdf] success', {
+      requestId,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      lineItemCount: invoice.lineItems.length,
+      totalAmount: invoice.totalAmount,
+      hostedPdfUrl,
+    })
+
     return NextResponse.json({
       success: true,
       pdfDataUrl: dataUrl,
@@ -100,6 +121,12 @@ export async function POST(
       message: errorMessage,
       stack: errorStack,
       invoiceId: resolvedParams?.id || 'unknown',
+    })
+    console.error('[invoice:generate-pdf] failed', {
+      requestId,
+      invoiceId: resolvedParams?.id || 'unknown',
+      message: errorMessage,
+      stack: errorStack,
     })
     
     return NextResponse.json(

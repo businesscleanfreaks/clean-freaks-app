@@ -946,17 +946,17 @@ export function useQuickInvoice({
     }
   }
 
-  const handleGeneratePreview = async (options?: { silent?: boolean }) => {
+  const handleGeneratePreview = async (options?: { silent?: boolean }): Promise<boolean> => {
     if (lineItems.length === 0) {
       const { showError } = await import('@/lib/toast')
       showError('Please add at least one line item')
-      return
+      return false
     }
     const invoiceJobIds = getInvoiceJobIds()
     if (invoiceJobIds.length === 0) {
       const { showError } = await import('@/lib/toast')
       showError('No jobs selected for this invoice')
-      return
+      return false
     }
     setIsGeneratingPreview(true)
     try {
@@ -1006,11 +1006,13 @@ export function useQuickInvoice({
         const { showSuccess } = await import('@/lib/toast')
         showSuccess('Preview generated!')
       }
+      return true
     } catch (error) {
       logger.error('Error generating preview:', error)
       const { showError } = await import('@/lib/toast')
       const errorMessage = error instanceof Error ? error.message : 'Failed to generate preview'
       showError(errorMessage)
+      return false
     } finally {
       setIsGeneratingPreview(false)
     }
@@ -1029,11 +1031,18 @@ export function useQuickInvoice({
     if (autoPreviewSignature.current === signature) return
     autoPreviewSignature.current = signature
 
-    const timeout = window.setTimeout(() => {
-      handleGeneratePreview({ silent: true })
-    }, 150)
+    let cancelled = false
+    const timeout = window.setTimeout(async () => {
+      const generated = await handleGeneratePreview({ silent: true })
+      if (!generated && !cancelled) {
+        autoPreviewSignature.current = null
+      }
+    }, 50)
 
-    return () => window.clearTimeout(timeout)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, lineItems, previewPdfUrl, isGeneratingPreview, client.id, dateDue, selectedJobIds.size])
 

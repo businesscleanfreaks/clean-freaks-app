@@ -1400,7 +1400,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           const [h] = t.split(':').map(Number);
           if (!isNaN(h) && h < minHour) minHour = h;
           
-          const e = job.startWindowEnd;
+          const e = job.startWindowBegin ? job.startWindowEnd : null;
           if (e) {
             const [eh] = e.split(':').map(Number);
             if (!isNaN(eh) && eh + 1 > maxHour) maxHour = Math.min(24, eh + 1);
@@ -1430,71 +1430,107 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       return h * 60 + m;
     };
 
-    const getPositionedJobs = (jobs: any[]) => {
-      const minReadableWidth = 118;
-      const timedJobs = jobs
-        .map(job => {
-          const start = getMinutes(job.startTime || job.startWindowBegin);
-          const end = job.startWindowEnd ? getMinutes(job.startWindowEnd) : start + 60;
-          return { job, start, end: Math.max(end, start + 15) };
-        })
-        .sort((a, b) => a.start - b.start || b.end - a.end);
+    const getJobInterval = (job: any) => {
+      const startRaw = job.startTime || job.startWindowBegin;
+      if (!startRaw) return null;
 
-      const groups: typeof timedJobs[] = [];
+      const start = getMinutes(startRaw);
+      const explicitWindowEnd = job.startWindowBegin ? job.startWindowEnd : null;
+      let end = explicitWindowEnd ? getMinutes(explicitWindowEnd) : start + 60;
+
+      if (end <= start) end = start + 60;
+      return { job, start, end: Math.max(end, start + 15) };
+    };
+
+    const eventsOverlap = (
+      a: { start: number; end: number },
+      b: { start: number; end: number }
+    ) => a.start < b.end && b.start < a.end;
+
+    const getPositionedJobs = (jobs: any[]) => {
+      const minReadableWidth = 120;
+      const stackWidthRatio = 0.82;
+      const stackOffset = 16;
+      const maxVisibleStackCards = 2;
+      const timedJobs = jobs
+        .map(getJobInterval)
+        .filter((item): item is NonNullable<ReturnType<typeof getJobInterval>> => item !== null)
+        .sort((a, b) => a.start - b.start || a.end - b.end);
+
+      const clusters: typeof timedJobs[] = [];
+      let activeCluster: typeof timedJobs | null = null;
+      let activeClusterEnd = -1;
+
       timedJobs.forEach(item => {
-        const lastGroup = groups[groups.length - 1];
-        const groupEnd = lastGroup ? Math.max(...lastGroup.map(g => g.end)) : -1;
-        if (!lastGroup || item.start >= groupEnd) {
-          groups.push([item]);
-        } else {
-          lastGroup.push(item);
+        if (!activeCluster || item.start >= activeClusterEnd) {
+          activeCluster = [item];
+          clusters.push(activeCluster);
+          activeClusterEnd = item.end;
+          return;
         }
+
+        activeCluster.push(item);
+        activeClusterEnd = Math.max(activeClusterEnd, item.end);
       });
 
-      return groups.flatMap((group, clusterIndex) => {
-        const columns: number[] = [];
-        const assigned = group.map(item => {
-          let column = columns.findIndex(end => end <= item.start);
-          if (column === -1) {
-            column = columns.length;
-            columns.push(item.end);
+      return clusters.flatMap((cluster, clusterIndex) => {
+        const laneEnds: number[] = [];
+        const assigned = cluster.map(item => {
+          let lane = laneEnds.findIndex(end => end <= item.start);
+          if (lane === -1) {
+            lane = laneEnds.length;
+            laneEnds.push(item.end);
           } else {
-            columns[column] = item.end;
+            laneEnds[lane] = item.end;
           }
 
-          return {
-            ...item,
-            column,
-            columnCount: Math.max(columns.length, 1),
-          };
+          return { ...item, column: lane };
         });
 
-        const totalColumns = Math.max(columns.length, 1);
-        const splitWidth = weekColumnWidth > 0 ? weekColumnWidth / totalColumns : Number.POSITIVE_INFINITY;
-        const useStack = group.length >= 3 || splitWidth < minReadableWidth;
-        const byColumn = Array.from({ length: totalColumns }, (_, column) =>
+        const laneCount = Math.max(laneEnds.length, 1);
+        const splitWidth = weekColumnWidth > 0 ? weekColumnWidth / laneCount : Number.POSITIVE_INFINITY;
+        const useStack = cluster.length >= 3 || splitWidth < minReadableWidth;
+        const byColumn = Array.from({ length: laneCount }, (_, column) =>
           assigned.filter(item => item.column === column)
         );
 
         return assigned.map((item, groupIndex) => {
           let span = 1;
-          for (let nextColumn = item.column + 1; !useStack && nextColumn < totalColumns; nextColumn++) {
-            const blocked = byColumn[nextColumn].some(other =>
-              other.start < item.end && other.end > item.start
-            );
+          for (let nextColumn = item.column + 1; !useStack && nextColumn < laneCount; nextColumn++) {
+            const blocked = byColumn[nextColumn].some(other => eventsOverlap(item, other));
             if (blocked) break;
             span++;
           }
 
+          const stackIndex = useStack ? groupIndex : 0;
+          const overlayDepth = Math.min(stackIndex, 5);
+          const overlayLeft = 4 + overlayDepth * stackOffset;
+          const availableOverlayWidth = Math.max(0, weekColumnWidth - overlayLeft - 6);
+          const targetOverlayWidth = Math.min(availableOverlayWidth, weekColumnWidth * stackWidthRatio);
+          const overlayWidth = weekColumnWidth > 0
+            ? availableOverlayWidth >= minReadableWidth
+              ? Math.max(minReadableWidth, targetOverlayWidth)
+              : availableOverlayWidth
+            : 0;
+
           return {
             ...item,
             groupIndex,
-            groupSize: group.length,
-            columnCount: totalColumns,
+            groupSize: cluster.length,
+            hiddenInStack: useStack && groupIndex >= maxVisibleStackCards,
+            stackOverflowCount: useStack && groupIndex === maxVisibleStackCards - 1
+              ? Math.max(0, cluster.length - maxVisibleStackCards)
+              : 0,
+            stackOverflowJobs: useStack && groupIndex === maxVisibleStackCards - 1
+              ? cluster.slice(maxVisibleStackCards).map(({ job }) => job)
+              : [],
+            columnCount: laneCount,
             columnSpan: useStack ? 1 : span,
             clusterIndex,
             layoutMode: useStack ? 'stack' : 'lanes',
-            stackIndex: useStack ? groupIndex : 0,
+            stackIndex,
+            overlayLeft,
+            overlayWidth,
           };
         });
       });
@@ -1601,18 +1637,37 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   <div key={di} className="relative border-r border-gray-100 last:border-r-0">
                     {/* Scheduled Jobs */}
                     {positionedJobs.map((positioned: any) => {
-                      const { job, start, end, column, columnCount, columnSpan = 1, layoutMode, stackIndex = 0 } = positioned;
+                      const {
+                        job,
+                        start,
+                        end,
+                        column,
+                        columnCount,
+                        columnSpan = 1,
+                        layoutMode,
+                        stackIndex = 0,
+                        overlayLeft = 4,
+                        overlayWidth = 0,
+                        hiddenInStack = false,
+                        stackOverflowCount = 0,
+                        stackOverflowJobs = [],
+                      } = positioned;
+                      if (hiddenInStack) return null;
+
                       const tStr = job.startTime || job.startWindowBegin!;
                       const naturalTop = ((start / 60) - startHour) * hourHeight;
                       const naturalHeight = ((end - start) / 60) * hourHeight;
                       const useOverlay = layoutMode === 'stack';
-                      const overlayDepth = Math.min(stackIndex, 4);
-                      const overlayOffset = overlayDepth * 14;
                       const top = naturalTop;
                       const height = naturalHeight;
                       const columnWidthPct = 100 / columnCount;
                       const widthPct = columnWidthPct * columnSpan;
                       const leftPct = column * columnWidthPct;
+                      const estimatedWidth = useOverlay
+                        ? (overlayWidth || Math.max(120, weekColumnWidth * 0.78))
+                        : weekColumnWidth > 0
+                          ? (weekColumnWidth * widthPct) / 100 - 8
+                          : 160;
 
                       const { colorKey } = getCleanerColorInfo(job.subcontractor?.name || null);
                       const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default;
@@ -1629,9 +1684,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           style={{
                             top: `${top}px`,
                             height: `${height}px`,
-                            left: useOverlay ? `${4 + overlayOffset}px` : `calc(${leftPct}% + 4px)`,
+                            left: useOverlay ? `${overlayLeft}px` : `calc(${leftPct}% + 4px)`,
                             right: 'auto',
-                            width: useOverlay ? `calc(88% - ${overlayDepth * 2}px)` : `calc(${widthPct}% - 8px)`,
+                            width: useOverlay
+                              ? (overlayWidth > 0 ? `${overlayWidth}px` : '82%')
+                              : `calc(${widthPct}% - 8px)`,
                             background: gradient,
                             opacity: isDimmed ? 0.3 : 1,
                             zIndex: useOverlay ? 20 + stackIndex : 10 + column,
@@ -1649,6 +1706,20 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             if (useOverlay) e.currentTarget.style.zIndex = String(20 + stackIndex);
                           }}
                         >
+                          {stackOverflowCount > 0 && (
+                            <button
+                              type="button"
+                              title={`${stackOverflowCount} more overlapping job${stackOverflowCount === 1 ? '' : 's'}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDayPopoverDate(day);
+                                setDayPopoverJobs([job, ...stackOverflowJobs]);
+                              }}
+                              className="absolute bottom-1 right-1 z-10 rounded bg-white/95 px-1.5 py-0.5 text-[10px] font-bold leading-none text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-white"
+                            >
+                              +{stackOverflowCount} more
+                            </button>
+                          )}
                           {(() => {
                             const compactTime = getCompactTime(tStr)
                             const clientName = job.location.client.name
@@ -1661,9 +1732,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             const locationName = rawLocationName && rawLocationName !== clientName && !rawLocationName.includes(clientName)
                               ? rawLocationName
                               : ''
-                            const narrowSideBySide = !useOverlay && columnCount > 1 && columnSpan === 1
-                            const showOneLine = height < 38 || narrowSideBySide
-                            const showTwoLines = !showOneLine && height < 68
+                            const showOneLine = height < 34 || estimatedWidth < 140
+                            const showTwoLines = !showOneLine && (height < 66 || estimatedWidth < 190)
                             const trialBadge = (job as any).isTrial && (
                               <span style={{ fontSize: '7px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 2px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>
                             )
