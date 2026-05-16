@@ -1471,7 +1471,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
         const totalColumns = Math.max(columns.length, 1);
         const splitWidth = weekColumnWidth > 0 ? weekColumnWidth / totalColumns : Number.POSITIVE_INFINITY;
-        const useStack = group.length > 1 || splitWidth < minReadableWidth;
+        const useStack = group.length >= 3 || splitWidth < minReadableWidth;
         const byColumn = Array.from({ length: totalColumns }, (_, column) =>
           assigned.filter(item => item.column === column)
         );
@@ -1606,7 +1606,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       const naturalTop = ((start / 60) - startHour) * hourHeight;
                       const naturalHeight = ((end - start) / 60) * hourHeight;
                       const useOverlay = layoutMode === 'stack';
-                      const overlayOffset = Math.min(stackIndex, 6) * 10;
+                      const overlayDepth = Math.min(stackIndex, 4);
+                      const overlayOffset = overlayDepth * 14;
                       const top = naturalTop;
                       const height = naturalHeight;
                       const columnWidthPct = 100 / columnCount;
@@ -1623,14 +1624,14 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           key={job.id}
                           title={`${getCompactTime(tStr)} ${job.location.client.name}${job.subcontractor?.name ? ` · ${job.subcontractor.name}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`}
                           onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
-                          className={`absolute rounded-md overflow-hidden cursor-pointer shadow-sm border border-black/5 hover:shadow-md focus:shadow-md transition-shadow ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
+                          className={`absolute rounded-md overflow-hidden cursor-pointer shadow-sm border border-white/60 hover:shadow-md focus:shadow-md transition-shadow ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
                           tabIndex={0}
                           style={{
                             top: `${top}px`,
                             height: `${height}px`,
                             left: useOverlay ? `${4 + overlayOffset}px` : `calc(${leftPct}% + 4px)`,
                             right: 'auto',
-                            width: useOverlay ? `calc(96% - ${overlayOffset}px)` : `calc(${widthPct}% - 8px)`,
+                            width: useOverlay ? `calc(88% - ${overlayDepth * 2}px)` : `calc(${widthPct}% - 8px)`,
                             background: gradient,
                             opacity: isDimmed ? 0.3 : 1,
                             zIndex: useOverlay ? 20 + stackIndex : 10 + column,

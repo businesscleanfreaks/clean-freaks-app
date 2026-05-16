@@ -76,6 +76,13 @@ export async function POST(
       })
     }
 
+    if (invoice.status === 'VOID') {
+      await prisma.invoice.update({
+        where: { id },
+        data: { status: 'DRAFT' },
+      })
+    }
+
     return NextResponse.json({ 
       success: true, 
       message: 'Invoice finalized and jobs marked as invoiced',

@@ -49,6 +49,9 @@ export async function GET(request: Request) {
     ] = await prisma.$transaction([
       // Get invoices with cursor-based pagination (fetch one extra to detect hasMore)
       prisma.invoice.findMany({
+        where: {
+          status: { not: 'VOID' },
+        },
         include: {
           client: true,
           lineItems: true,

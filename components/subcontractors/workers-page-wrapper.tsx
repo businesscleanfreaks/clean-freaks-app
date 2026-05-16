@@ -55,10 +55,6 @@ function sendsInvoices(name: string) {
   return /celeste|ana lina|ricardo/i.test(name)
 }
 
-function contactLine(sub: CleanerData) {
-  return [sub.phone, sub.email].filter(Boolean).join(" · ")
-}
-
 function getJobsForDisplay(sub: CleanerData) {
   return (Array.isArray(sub.periodJobs) ? sub.periodJobs : sub.jobs || []) as CleanerJob[]
 }
@@ -357,7 +353,6 @@ export function WorkersPageWrapper({
               const isExpanded = expandedCleaner === sub.id
               const initials = getInitials(sub.name)
               const { hex } = getCleanerColorInfo(sub.name)
-              const contact = contactLine(sub)
 
               return (
                 <div key={sub.id} className={cn(rowIndex < rows.length - 1 && "border-b border-gray-100")}>
@@ -399,11 +394,6 @@ export function WorkersPageWrapper({
                         <p className="text-xs text-gray-500">
                           {groups.length} account{groups.length === 1 ? "" : "s"} · {unpaid === 0 ? "Paid up" : `${formatCurrency(paid)} of ${formatCurrency(total)} paid`}
                         </p>
-                        {contact && (
-                          <p className="mt-0.5 truncate text-xs text-gray-400">
-                            {contact}
-                          </p>
-                        )}
                       </div>
                     </div>
                     <div className={cn("font-mono text-base font-bold tracking-tight", unpaid === 0 && "text-emerald-600")}>
