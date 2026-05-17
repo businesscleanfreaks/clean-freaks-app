@@ -9,6 +9,9 @@ import { logger } from '@/lib/logger'
 import { generateInvoiceToken } from '@/lib/invoice-tokens'
 import { getBaseUrl } from '@/lib/url'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } }
@@ -112,6 +115,16 @@ export async function POST(
         result = { success: true, messageId: 'simulated-' + Date.now(), warning: 'SENDING_DISABLED' }
       }
     } else {
+      if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+        logger.error('[EMAIL] Missing Gmail credentials for real invoice send', {
+          hasGmailUser: Boolean(process.env.GMAIL_USER),
+          hasGmailAppPassword: Boolean(process.env.GMAIL_APP_PASSWORD),
+        })
+        return NextResponse.json(
+          { error: 'Email was not sent because Gmail/SMTP credentials are not configured. Invoice remains a draft.' },
+          { status: 500 }
+        )
+      }
       result = await sendEmail({
         to: toRecipients,
         subject,
@@ -152,8 +165,9 @@ export async function POST(
     })
   } catch (error) {
     logger.error('Error sending invoice email:', error)
+    const message = error instanceof Error ? error.message : 'Failed to send invoice email'
     return NextResponse.json(
-      { error: 'Failed to send invoice email' },
+      { error: `Email was not sent. Invoice remains a draft. ${message}` },
       { status: 500 }
     )
   }

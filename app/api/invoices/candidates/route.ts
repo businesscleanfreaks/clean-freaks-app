@@ -3,8 +3,10 @@ import { prisma } from "@/lib/db"
 import { startOfMonth, endOfMonth, format } from "date-fns"
 import { getBillingStartDate } from "@/lib/billing-settings"
 import { logger } from "@/lib/logger"
+import { ensureJobsForDateRange } from "@/lib/regenerate-schedule-jobs"
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 function jobMatchesScheduleDay(job: {
   date: Date
@@ -78,6 +80,8 @@ export async function GET(request: Request) {
     const effectivePeriodStart = billingStartDate && billingStartDate > periodStart ? billingStartDate : periodStart
     const currentMonthStart = startOfMonth(new Date())
     const olderWorkCutoff = periodStart < currentMonthStart ? periodStart : currentMonthStart
+
+    await ensureJobsForDateRange({ startDate: effectivePeriodStart, endDate: periodEnd })
 
     const [
       allJobs,

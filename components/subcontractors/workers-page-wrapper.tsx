@@ -203,7 +203,10 @@ export function WorkersPageWrapper({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subcontractorPaid: false }),
         })
-        if (!res.ok) throw new Error("Failed to unmark paid")
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}))
+          throw new Error(errorData.error || "Failed to unmark paid")
+        }
       }))
       showSuccess("Payment unchecked")
       refreshAfterPaymentChange()

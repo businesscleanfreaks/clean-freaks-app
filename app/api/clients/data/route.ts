@@ -70,6 +70,7 @@ export async function GET() {
       return {
         ...client,
         createdAt: client.createdAt.toISOString(),
+        startDate: client.startDate?.toISOString() ?? null,
         locations: locationsClean,
         cleanerDisplay,
       }

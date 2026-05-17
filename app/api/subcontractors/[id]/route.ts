@@ -6,6 +6,10 @@ import { getBillingStartDate } from "@/lib/billing-settings"
 import { isJobPayable } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo } from "@/lib/payment-cadence"
 import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
+import { ensureJobsForDateRange } from "@/lib/regenerate-schedule-jobs"
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET(
   request: Request,
@@ -40,6 +44,12 @@ export async function GET(
       const end = new Date(y, m, 0, 23, 59, 59, 999)
       return { start, end }
     })()
+
+    const generationRange = periodQuery ?? {
+      start: new Date(today.getFullYear(), today.getMonth(), 1),
+      end: new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999),
+    }
+    await ensureJobsForDateRange({ startDate: generationRange.start, endDate: generationRange.end })
 
     // Parallelize DB queries for speed
     const queries: [any, any, any, any?] = [

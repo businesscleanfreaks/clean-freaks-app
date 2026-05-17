@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidateSchedulePages } from '@/lib/revalidate'
+import { hasFinalInvoice } from '@/lib/invoice-status'
 
 /**
  * PATCH /api/jobs/[id]/override
@@ -31,6 +32,9 @@ export async function PATCH(
         location: {
           include: { client: true },
         },
+        invoiceLineItems: {
+          include: { invoice: { select: { id: true, status: true } } },
+        },
       },
     })
 
@@ -39,9 +43,9 @@ export async function PATCH(
     }
 
     // Guard: invoiced
-    if (job.invoiced) {
+    if (hasFinalInvoice(job.invoiceLineItems)) {
       return NextResponse.json(
-        { error: 'This job has already been invoiced. Changes are locked.' },
+        { error: 'This job is on a sent or paid invoice. Changes are locked.' },
         { status: 409 }
       )
     }

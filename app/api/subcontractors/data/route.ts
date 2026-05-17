@@ -4,6 +4,7 @@ import { getBillingStartDate } from "@/lib/billing-settings"
 import { isJobPayable } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo } from "@/lib/payment-cadence"
 import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
+import { ensureJobsForDateRange } from "@/lib/regenerate-schedule-jobs"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -30,6 +31,12 @@ export async function GET(request: Request) {
     })
 
     const subcontractorIds = subcontractors.map(sub => sub.id)
+
+    const generationRange = periodQuery ?? {
+      start: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+      end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999),
+    }
+    await ensureJobsForDateRange({ startDate: generationRange.start, endDate: generationRange.end })
 
     // Get billing start date to filter out historical jobs
     const billingStartDate = await getBillingStartDate()

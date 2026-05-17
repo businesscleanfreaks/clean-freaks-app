@@ -180,7 +180,10 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subcontractorPaid: false }),
         })
-        if (!response.ok) throw new Error("Failed to unmark paid")
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || "Failed to unmark paid")
+        }
       }))
       showSuccess("Payment unchecked")
       refreshAfterPaymentChange()

@@ -5,6 +5,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { JobWithFullRelations } from '@/types'
 import { formatTime } from '@/lib/utils'
 import { getJobOutcomeDisplay } from '@/lib/job-outcomes'
+import { hasFinalInvoice } from '@/lib/invoice-status'
 
 interface DraggableJobItemProps {
   job: JobWithFullRelations & { notes?: string | null }
@@ -35,7 +36,7 @@ export function DraggableJobItem({
       job,
       date: new Date(job.date),
     },
-    disabled: job.invoiced || job.subcontractorPaid || job.status === 'CANCELLED',
+    disabled: hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || job.status === 'CANCELLED',
   })
 
   const style = {
@@ -46,8 +47,9 @@ export function DraggableJobItem({
   }
 
   const outcome = getJobOutcomeDisplay(job.notes)
-  const isLocked = job.invoiced || job.subcontractorPaid
-  const lockLabel = job.invoiced ? 'Invoiced' : job.subcontractorPaid ? 'Paid' : null
+  const invoiceLocked = hasFinalInvoice(job.invoiceLineItems)
+  const isLocked = invoiceLocked || job.subcontractorPaid
+  const lockLabel = invoiceLocked ? 'Invoiced' : job.subcontractorPaid ? 'Paid' : null
   const timeLabel = job.startTime ? formatTime(job.startTime) : null
   const shortClientName = job.location.client.name.split(' ')[0]
 
@@ -99,7 +101,7 @@ export function DraggableJobItem({
       {lockLabel && (
         <span
           className="flex-shrink-0 rounded-full border border-slate-300/80 bg-slate-100/95 px-1.5 py-[1px] text-[8px] font-semibold leading-none text-slate-700 shadow-sm"
-          title={job.invoiced ? 'This job is already on an invoice' : 'Cleaner has already been paid for this job'}
+          title={invoiceLocked ? 'This job is on a sent or paid invoice' : 'Cleaner has already been paid for this job'}
         >
           {lockLabel}
         </span>

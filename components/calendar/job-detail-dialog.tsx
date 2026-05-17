@@ -96,7 +96,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     showMoreActions, setShowMoreActions,
     desktopSection, setDesktopSection,
     // Computed
-    hasPaidInvoice,
+    hasPaidInvoice, hasFinalInvoice,
     canEditDateTime, canUseQuickFixes, canShowFutureScope,
     canEditRates, canApplyOutcome,
     displayDate, displayTime,
@@ -159,7 +159,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       key: 'cleaner',
       label: 'Change Cleaner',
       icon: User,
-      disabled: job.subcontractorPaid || isSavingSubcontractor,
+      disabled: hasFinalInvoice || job.subcontractorPaid || isSavingSubcontractor,
       onClick: handleQuickFixCleaner,
     },
     {
@@ -180,7 +180,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       key: 'addon',
       label: 'Add Add-on',
       icon: Plus,
-      disabled: hasPaidInvoice,
+      disabled: hasFinalInvoice,
       onClick: handleQuickFixAddOn,
     },
   ]
@@ -1072,9 +1072,9 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         {!job.scheduleId && (
           <button
             onClick={isMobile ? () => setMobileConfirmAction('delete') : handleDelete}
-            disabled={isDeleting || job.invoiced}
+            disabled={isDeleting || hasFinalInvoice}
             className="w-full rounded-[12px] px-4 py-3 text-left disabled:opacity-50"
-            style={{ backgroundColor: '#FFFFFF', border: '1px solid #E7E7E1', fontSize: '13px', fontWeight: 500, color: job.invoiced ? '#9CA3AF' : '#9CA3AF' }}
+            style={{ backgroundColor: '#FFFFFF', border: '1px solid #E7E7E1', fontSize: '13px', fontWeight: 500, color: '#9CA3AF' }}
           >
             {isDeleting ? 'Deleting…' : 'Delete Job'}
             <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#BBBBBB', marginTop: '2px' }}>
@@ -1780,13 +1780,13 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
               {!isQuickFixMode && (
                 <>
-                  {job.invoiced && (
+                  {hasFinalInvoice && (
                     <div className="rounded-[12px] p-3 flex items-start gap-2" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
                       <FileText className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-blue-900">This clean is already invoiced. Big changes here should be rare.</p>
+                      <p className="text-sm text-blue-900">This clean is on a sent or paid invoice. Big changes here should be handled by resetting or voiding that invoice.</p>
                     </div>
                   )}
-                  {job.subcontractorPaid && !job.invoiced && (
+                  {job.subcontractorPaid && !hasFinalInvoice && (
                     <div className="rounded-[12px] p-3 flex items-start gap-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
                       <DollarSign className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
                       <p className="text-sm text-green-900">The cleaner is already paid, so money changes should be handled carefully.</p>
@@ -2031,13 +2031,13 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-6 py-5 space-y-4" : "flex-1 px-6 py-5"}>
 
               {/* Invoiced / Paid warnings */}
-              {job.invoiced && (
+              {hasFinalInvoice && (
                 <div className="rounded-[10px] p-3 flex items-start gap-2" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
                   <FileText className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-blue-900">This job has been invoiced and cannot be rescheduled.</p>
+                  <p className="text-sm text-blue-900">This job is on a sent or paid invoice and cannot be rescheduled.</p>
                 </div>
               )}
-              {job.subcontractorPaid && !job.invoiced && (
+              {job.subcontractorPaid && !hasFinalInvoice && (
                 <div className="rounded-[10px] p-3 flex items-start gap-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
                   <DollarSign className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-green-900">Subcontractor has been paid — rates and schedule are locked.</p>

@@ -257,6 +257,16 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       })
     })
     const primaryWorker = Object.entries(workerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unassigned'
+    const parseValidDate = (value: string | Date | null | undefined) => {
+      if (!value) return null
+      const parsed = new Date(value)
+      return Number.isFinite(parsed.getTime()) ? parsed : null
+    }
+    const canonicalClientStart =
+      parseValidDate(client.startDate) ||
+      earliestScheduleDate ||
+      earliestJobDate ||
+      parseValidDate((client as { createdAt?: string | Date }).createdAt)
 
     let upcomingJobsCount = 0
     client.locations?.forEach((loc: ClientLocation) => {
@@ -301,7 +311,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       primaryWorker,
       upcomingJobsCount,
       activities: activities.slice(0, 5),
-      clientSince: earliestJobDate || (client.startDate ? new Date(client.startDate) : earliestScheduleDate),
+      clientSince: canonicalClientStart,
     }
   }, [client])
 

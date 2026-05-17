@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { logger } from '@/lib/logger'
 import { cascadeAddOnUpdate } from '@/lib/cascading-updates'
 import { requireAuth } from '@/lib/auth'
+import { hasFinalInvoice } from '@/lib/invoice-status'
 
 const createAddOnServiceSchema = z.object({
   jobId: z.string().uuid('Invalid job ID').optional().nullable(),
@@ -69,10 +70,10 @@ export async function POST(request: Request) {
         )
       }
 
-      const hasPaidInvoice = job.invoiceLineItems.some(item => item.invoice.status === 'PAID')
-      if (hasPaidInvoice) {
+      const finalInvoice = hasFinalInvoice(job.invoiceLineItems)
+      if (finalInvoice) {
         return NextResponse.json(
-          { error: 'Cannot add add-on service: job has a paid invoice' },
+          { error: 'Cannot add add-on service: job has a sent or paid invoice' },
           { status: 400 }
         )
       }

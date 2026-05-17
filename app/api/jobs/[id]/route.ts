@@ -3,9 +3,21 @@ import { prisma } from '@/lib/db'
 import { revalidateJobPages, revalidateInvoicePages } from '@/lib/revalidate'
 import { updateJobSchema } from '@/lib/validations'
 import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
-import { recalculateInvoiceTotal } from '@/lib/invoice-utils'
 import { logger } from '@/lib/logger'
 import { cascadeJobUpdate } from '@/lib/cascading-updates'
+import { hasFinalInvoice } from '@/lib/invoice-status'
+
+async function recalculateDraftInvoiceTotal(invoiceId: string, tx: any) {
+  const lineItems = await tx.invoiceLineItem.findMany({
+    where: { invoiceId },
+    select: { amount: true },
+  })
+  const totalAmount = lineItems.reduce((sum: number, item: { amount: number }) => sum + item.amount, 0)
+  await tx.invoice.update({
+    where: { id: invoiceId },
+    data: { totalAmount },
+  })
+}
 
 export async function PUT(
   request: Request,
@@ -58,6 +70,13 @@ export async function PUT(
               client: true,
             },
           },
+          invoiceLineItems: {
+            include: {
+              invoice: {
+                select: { id: true, status: true },
+              },
+            },
+          },
         },
       })
 
@@ -67,9 +86,9 @@ export async function PUT(
 
       // Validate rescheduling: prevent changing date, rates, or location for invoiced/paid jobs
       if (date !== undefined || clientRate !== undefined || subcontractorRate !== undefined || locationId !== undefined) {
-        if (currentJob.invoiced) {
+        if (hasFinalInvoice(currentJob.invoiceLineItems)) {
           return {
-            error: 'Cannot reschedule or modify a job that has been invoiced. Please delete the invoice first.' as const,
+            error: 'Cannot reschedule or modify a job that is on a sent or paid invoice. Void or reset the invoice first.' as const,
             status: 400 as const,
           }
         }
@@ -267,6 +286,35 @@ export async function PUT(
         },
       })
 
+      if (clientRate !== undefined || date !== undefined || startTime !== undefined || startWindowBegin !== undefined || startWindowEnd !== undefined) {
+        const draftLineItems = await tx.invoiceLineItem.findMany({
+          where: {
+            jobId: resolvedParams.id,
+            invoice: { status: 'DRAFT' },
+          },
+          include: {
+            invoice: {
+              select: { id: true },
+            },
+          },
+        })
+
+        const invoiceIds = Array.from(new Set(draftLineItems.map(item => item.invoice.id)))
+        for (const item of draftLineItems) {
+          await tx.invoiceLineItem.update({
+            where: { id: item.id },
+            data: {
+              amount: updatedJob.clientRate ?? item.amount,
+              description: `Cleaning - ${updatedJob.location.client.name} - ${updatedJob.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+            },
+          })
+        }
+
+        for (const invoiceId of invoiceIds) {
+          await recalculateDraftInvoiceTotal(invoiceId, tx)
+        }
+      }
+
       return { job: updatedJob, isBeingCancelled }
     }, {
       maxWait: 10000, // 10 seconds max wait for transaction slot
@@ -304,16 +352,6 @@ export async function DELETE(
   try {
     const resolvedParams = await Promise.resolve(params)
 
-    // Check if job is already invoiced
-    const job = await prisma.job.findUnique({
-      where: { id: resolvedParams.id },
-      select: { invoiced: true },
-    })
-
-    if (!job) {
-      return createErrorResponse('Job not found', 404, 'NOT_FOUND')
-    }
-
     // Get job with location info before deleting (for revalidation)
     const jobToDelete = await prisma.job.findUnique({
       where: { id: resolvedParams.id },
@@ -323,6 +361,13 @@ export async function DELETE(
             client: true,
           },
         },
+        invoiceLineItems: {
+          include: {
+            invoice: {
+              select: { id: true, status: true },
+            },
+          },
+        },
       },
     })
 
@@ -330,9 +375,9 @@ export async function DELETE(
       return createErrorResponse('Job not found', 404, 'NOT_FOUND')
     }
 
-    if (jobToDelete.invoiced) {
+    if (hasFinalInvoice(jobToDelete.invoiceLineItems)) {
       return createErrorResponse(
-        'Cannot delete a job that has been invoiced. Please delete the invoice first.',
+        'Cannot delete a job that is on a sent or paid invoice. Void or reset the invoice first.',
         400,
         'CONSTRAINT_ERROR'
       )
@@ -341,8 +386,29 @@ export async function DELETE(
     const deletedSubcontractorId = jobToDelete.subcontractorId
     const deletedClientId = jobToDelete.location.client.id
 
-    await prisma.job.delete({
-      where: { id: resolvedParams.id },
+    await prisma.$transaction(async (tx) => {
+      const draftInvoiceIds = Array.from(new Set(
+        jobToDelete.invoiceLineItems
+          .filter(item => item.invoice?.status === 'DRAFT')
+          .map(item => item.invoice!.id)
+      ))
+
+      if (draftInvoiceIds.length > 0) {
+        await tx.invoiceLineItem.deleteMany({
+          where: {
+            jobId: resolvedParams.id,
+            invoiceId: { in: draftInvoiceIds },
+          },
+        })
+
+        for (const invoiceId of draftInvoiceIds) {
+          await recalculateDraftInvoiceTotal(invoiceId, tx)
+        }
+      }
+
+      await tx.job.delete({
+        where: { id: resolvedParams.id },
+      })
     })
 
     // Revalidate all job-related pages

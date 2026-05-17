@@ -3,8 +3,11 @@ import { prisma } from '@/lib/db'
 import { revalidateClientPages } from '@/lib/revalidate'
 import { updateClientSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
-import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
+import { ensureJobsForDateRange, regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { startOfDay } from 'date-fns'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 async function getClientWithDetails(id: string) {
   return prisma.client.findUnique({
@@ -85,6 +88,11 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const today = new Date()
+    await ensureJobsForDateRange({
+      startDate: new Date(today.getFullYear(), today.getMonth() - 1, 1),
+      endDate: new Date(today.getFullYear(), today.getMonth() + 2, 0, 23, 59, 59, 999),
+    })
     const client = await getClientWithDetails(params.id)
 
     if (!client) {

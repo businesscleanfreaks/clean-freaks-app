@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { handleApiError } from '@/lib/api-error-handler'
+import { ensureJobsForDateRange } from '@/lib/regenerate-schedule-jobs'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 /**
  * Fetches jobs for a specific date range (for lazy loading calendar)
@@ -38,6 +42,8 @@ export async function GET(request: Request) {
         { status: 400 }
       )
     }
+
+    await ensureJobsForDateRange({ startDate, endDate })
 
     const jobs = await prisma.job.findMany({
       where: {

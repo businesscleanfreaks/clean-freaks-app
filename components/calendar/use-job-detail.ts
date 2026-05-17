@@ -8,6 +8,7 @@ import { getErrorMessage } from '@/lib/logger'
 import { showApiError, showError, showSuccess, showUndoToast } from "@/lib/toast"
 import { refreshCalendarData } from "./calendar-client"
 import type { JobWithFullRelations, Subcontractor, AddOnService } from "@/types"
+import { hasFinalInvoice as jobHasFinalInvoice, hasPaidInvoice as jobHasPaidInvoice } from "@/lib/invoice-status"
 
 /**
  * The calendar API returns jobs with all Prisma fields. The `notes` field and
@@ -157,8 +158,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }, [open])
 
   const hasPaidInvoice = useMemo(() => {
-    if (!job?.invoiceLineItems) return false
-    return (job.invoiceLineItems || []).some((item) => item.invoice?.status === 'PAID')
+    return jobHasPaidInvoice(job?.invoiceLineItems)
+  }, [job])
+
+  const hasFinalInvoice = useMemo(() => {
+    return jobHasFinalInvoice(job?.invoiceLineItems)
   }, [job])
 
   // ─── Desktop helpers ────────────────────────────────────────────────────────
@@ -465,7 +469,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   // ─── Inline picker handlers ───────────────────────────────────────────────────
 
-  const canEditDateTime = !job.invoiced && !job.subcontractorPaid
+  const canEditDateTime = !hasFinalInvoice && !job.subcontractorPaid
   const canUseQuickFixes = job.status !== 'CANCELLED'
   const canShowFutureScope = Boolean(job.scheduleId && job.schedule)
 
@@ -564,7 +568,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }
 
   const openAddOnEditor = () => {
-    if (hasPaidInvoice) return
+    if (hasFinalInvoice) return
     setActiveQuickFixPanel(null)
     setActiveInlinePicker(null)
     setIsSelectingCleaner(false)
@@ -745,7 +749,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   // ─── Inline rate editor handlers ─────────────────────────────────────────────
 
-  const canEditRates = !job.invoiced && !job.subcontractorPaid && job.status !== 'CANCELLED'
+  const canEditRates = !hasFinalInvoice && !job.subcontractorPaid && job.status !== 'CANCELLED'
 
   const handleOpenRateEditor = (forceOpen = false) => {
     if (!canEditRates) return
@@ -809,7 +813,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }
 
   const handleQuickFixAddOn = () => {
-    if (hasPaidInvoice) return
+    if (hasFinalInvoice) return
     setNewAddOn({ description: '', clientRate: '', subcontractorRate: '' })
     setActiveInlinePicker(null)
     setIsSelectingCleaner(false)
@@ -1221,7 +1225,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     setShowCancellationSheet(true)
   }
 
-  const canApplyOutcome = !job.invoiced && !job.subcontractorPaid && job.status !== 'CANCELLED'
+  const canApplyOutcome = !hasFinalInvoice && !job.subcontractorPaid && job.status !== 'CANCELLED'
 
   const handleOutcomeTypeChange = (nextOutcome: OutcomeType) => {
     setOutcomeType(nextOutcome)
@@ -1441,7 +1445,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     desktopSection, setDesktopSection,
 
     // Computed
-    hasPaidInvoice,
+    hasPaidInvoice, hasFinalInvoice,
     canEditDateTime, canUseQuickFixes, canShowFutureScope,
     canEditRates, canApplyOutcome,
     displayDate, displayTime,

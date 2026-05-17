@@ -25,6 +25,7 @@ import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, u
 import { getCleanerColorInfo, JOB_GRADIENTS, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
 import { useCalendarFilters } from '@/lib/calendar-filter-context'
 import { CalendarFilterDrawer } from './calendar-filter-drawer'
+import { hasFinalInvoice } from '@/lib/invoice-status'
 
 interface CalendarViewProps {
   jobs: JobWithFullRelations[]
@@ -415,9 +416,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const job = jobs.find(j => j.id === jobId)
     if (!job) return
 
-    if (job.invoiced) {
+    if (hasFinalInvoice(job.invoiceLineItems)) {
       const { showError } = await import('@/lib/toast')
-      showError('This job is already invoiced and cannot be moved')
+      showError('This job is on a sent or paid invoice and cannot be moved')
       return
     }
 
@@ -1449,9 +1450,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
     const getPositionedJobs = (jobs: any[]) => {
       const minReadableWidth = 120;
-      const stackWidthRatio = 0.82;
-      const stackOffset = 16;
-      const maxVisibleStackCards = 2;
+      const stackWidthRatio = 0.84;
+      const stackOffset = 14;
+      const maxVisibleStackCards = 8;
       const timedJobs = jobs
         .map(getJobInterval)
         .filter((item): item is NonNullable<ReturnType<typeof getJobInterval>> => item !== null)
@@ -1503,14 +1504,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           }
 
           const stackIndex = useStack ? groupIndex : 0;
-          const overlayDepth = Math.min(stackIndex, 5);
+          const overlayDepth = Math.min(stackIndex, maxVisibleStackCards - 1);
           const overlayLeft = 4 + overlayDepth * stackOffset;
-          const availableOverlayWidth = Math.max(0, weekColumnWidth - overlayLeft - 6);
-          const targetOverlayWidth = Math.min(availableOverlayWidth, weekColumnWidth * stackWidthRatio);
+          const targetOverlayWidth = Math.min(Math.max(minReadableWidth, weekColumnWidth * stackWidthRatio), Math.max(minReadableWidth, weekColumnWidth - 12));
           const overlayWidth = weekColumnWidth > 0
-            ? availableOverlayWidth >= minReadableWidth
-              ? Math.max(minReadableWidth, targetOverlayWidth)
-              : availableOverlayWidth
+            ? targetOverlayWidth
             : 0;
 
           return {
@@ -1634,7 +1632,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 const positionedJobs = getPositionedJobs(scheduledJobs);
 
                 return (
-                  <div key={di} className="relative border-r border-gray-100 last:border-r-0">
+                  <div key={di} className="relative overflow-visible border-r border-gray-100 last:border-r-0">
                     {/* Scheduled Jobs */}
                     {positionedJobs.map((positioned: any) => {
                       const {

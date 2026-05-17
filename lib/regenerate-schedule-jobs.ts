@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { addDays, addMonths, startOfDay, startOfMonth, endOfMonth, getDay, setDate } from 'date-fns'
 import { logger } from '@/lib/logger'
+import { hasFinalInvoice } from '@/lib/invoice-status'
 
 export interface RegenerationSummary {
   deletedCount: number
@@ -20,6 +21,13 @@ export interface ScheduleDateParams {
   monthlyPattern: string | null
   customDates: string | null
   excludedDates: string | null
+}
+
+export interface EnsureJobsForDateRangeSummary {
+  schedulesChecked: number
+  createdCount: number
+  repairedCount: number
+  skippedCount: number
 }
 
 const WEEK_INTERVALS: Record<string, number> = {
@@ -194,6 +202,220 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
       return !excludedDates.includes(dateStr)
     })
     .map((date) => utcDateOnly(date))
+}
+
+function getScheduleJobTimeFields(schedule: {
+  timeType?: string | null
+  startTime?: string | null
+  startWindowBegin?: string | null
+  startWindowEnd?: string | null
+}) {
+  if (schedule.timeType === 'WINDOW' && schedule.startWindowBegin) {
+    return {
+      startTime: null,
+      startWindowBegin: schedule.startWindowBegin,
+      startWindowEnd: schedule.startWindowEnd ?? null,
+    }
+  }
+
+  if (schedule.timeType === 'SPECIFIC' && schedule.startTime) {
+    return {
+      startTime: schedule.startTime,
+      startWindowBegin: null,
+      startWindowEnd: null,
+    }
+  }
+
+  return {
+    startTime: null,
+    startWindowBegin: null,
+    startWindowEnd: null,
+  }
+}
+
+function hasJobTime(job: { startTime?: string | null; startWindowBegin?: string | null }) {
+  return Boolean(job.startTime || job.startWindowBegin)
+}
+
+function hasScheduleTime(schedule: {
+  timeType?: string | null
+  startTime?: string | null
+  startWindowBegin?: string | null
+}) {
+  return Boolean(
+    (schedule.timeType === 'SPECIFIC' && schedule.startTime) ||
+    (schedule.timeType === 'WINDOW' && schedule.startWindowBegin)
+  )
+}
+
+function dateMatchesSchedulePatternIgnoringStart(schedule: {
+  frequency: string
+  daysOfWeek?: string | null
+}, date: Date) {
+  const weeklyFrequencies = new Set(['WEEKLY', 'BI_WEEKLY', 'EVERY_3_WEEKS', 'EVERY_4_WEEKS', 'EVERY_6_WEEKS'])
+  if (!weeklyFrequencies.has(schedule.frequency)) return false
+  if (!schedule.daysOfWeek) return false
+  try {
+    const daysOfWeek = JSON.parse(schedule.daysOfWeek) as number[]
+    return daysOfWeek.includes(date.getUTCDay())
+  } catch {
+    return false
+  }
+}
+
+export async function ensureJobsForDateRange({
+  startDate,
+  endDate,
+}: {
+  startDate: Date
+  endDate: Date
+}): Promise<EnsureJobsForDateRangeSummary> {
+  const rangeStart = utcDateOnly(startDate)
+  const rangeEnd = utcDateOnly(endDate)
+
+  const schedules = await prisma.schedule.findMany({
+    where: {
+      isActive: true,
+      startDate: { lte: rangeEnd },
+      OR: [
+        { endDate: null },
+        { endDate: { gte: rangeStart } },
+      ],
+    },
+    include: {
+      location: {
+        select: {
+          id: true,
+          clientId: true,
+        },
+      },
+    },
+  })
+
+  let createdCount = 0
+  let repairedCount = 0
+  let skippedCount = 0
+
+  for (const schedule of schedules) {
+    const candidateDates = calculateScheduleDates({
+      frequency: schedule.frequency,
+      startDate: new Date(schedule.startDate),
+      daysOfWeek: schedule.daysOfWeek,
+      monthlyPattern: schedule.monthlyPattern,
+      customDates: schedule.customDates,
+      excludedDates: schedule.excludedDates,
+      endDate: schedule.endDate,
+    }, rangeEnd).filter(date => date >= rangeStart && date <= rangeEnd)
+
+    if (candidateDates.length === 0) continue
+
+    const existingJobs = await prisma.job.findMany({
+      where: {
+        scheduleId: schedule.id,
+        date: { gte: rangeStart, lte: rangeEnd },
+      },
+      include: {
+        invoiceLineItems: {
+          include: { invoice: { select: { id: true, status: true } } },
+        },
+      },
+    })
+
+    const existingByTime = new Map(existingJobs.map(job => [job.date.getTime(), job]))
+    const timeFields = getScheduleJobTimeFields(schedule)
+
+    for (const job of existingJobs) {
+      if (!hasScheduleTime(schedule) || hasJobTime(job) || hasFinalInvoice(job.invoiceLineItems)) continue
+
+      await prisma.job.update({
+        where: { id: job.id },
+        data: {
+          ...timeFields,
+          subcontractorId: job.subcontractorId ?? schedule.subcontractorId,
+          clientRate: job.clientRate ?? schedule.defaultClientRate,
+          subcontractorRate: job.subcontractorRate ?? schedule.defaultSubcontractorRate,
+        },
+      })
+      repairedCount++
+    }
+
+    if (hasScheduleTime(schedule)) {
+      const orphanJobs = await prisma.job.findMany({
+        where: {
+          locationId: schedule.locationId,
+          scheduleId: null,
+          date: { gte: rangeStart, lte: rangeEnd },
+          startTime: null,
+          startWindowBegin: null,
+        },
+        include: {
+          invoiceLineItems: {
+            include: { invoice: { select: { id: true, status: true } } },
+          },
+        },
+      })
+
+      for (const job of orphanJobs) {
+        if (hasFinalInvoice(job.invoiceLineItems)) continue
+        if (!dateMatchesSchedulePatternIgnoringStart(schedule, job.date)) continue
+
+        await prisma.job.update({
+          where: { id: job.id },
+          data: {
+            scheduleId: schedule.id,
+            ...timeFields,
+            subcontractorId: job.subcontractorId ?? schedule.subcontractorId,
+            clientRate: job.clientRate ?? schedule.defaultClientRate,
+            subcontractorRate: job.subcontractorRate ?? schedule.defaultSubcontractorRate,
+          },
+        })
+        repairedCount++
+      }
+    }
+
+    const jobsToCreate = candidateDates
+      .filter(date => {
+        const exists = existingByTime.has(date.getTime())
+        if (exists) skippedCount++
+        return !exists
+      })
+      .map(date => ({
+        locationId: schedule.locationId,
+        subcontractorId: schedule.subcontractorId,
+        scheduleId: schedule.id,
+        date,
+        ...timeFields,
+        clientRate: schedule.defaultClientRate,
+        subcontractorRate: schedule.defaultSubcontractorRate,
+      }))
+
+    if (jobsToCreate.length > 0) {
+      const result = await prisma.job.createMany({
+        data: jobsToCreate,
+        skipDuplicates: true,
+      })
+      createdCount += result.count
+      skippedCount += jobsToCreate.length - result.count
+    }
+  }
+
+  if (createdCount || repairedCount) {
+    logger.info('[ensureJobsForDateRange] Ensured jobs', {
+      rangeStart: rangeStart.toISOString().split('T')[0],
+      rangeEnd: rangeEnd.toISOString().split('T')[0],
+      schedulesChecked: schedules.length,
+      createdCount,
+      repairedCount,
+      skippedCount,
+    })
+  }
+
+  return {
+    schedulesChecked: schedules.length,
+    createdCount,
+    repairedCount,
+    skippedCount,
+  }
 }
 
 /**

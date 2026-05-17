@@ -2,8 +2,10 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { logger } from "@/lib/logger"
+import { ensureJobsForDateRange } from "@/lib/regenerate-schedule-jobs"
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 // Calendar data API for instant page loads
 export async function GET() {
@@ -13,6 +15,8 @@ export async function GET() {
     const today = new Date()
     const startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1)
     const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0, 23, 59, 59)
+
+    await ensureJobsForDateRange({ startDate, endDate })
 
     const [jobs, clients, subcontractors] = await Promise.all([
       prisma.job.findMany({

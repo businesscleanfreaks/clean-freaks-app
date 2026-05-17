@@ -6,6 +6,7 @@ import { logger } from '@/lib/logger'
 import { recalculateInvoiceTotal } from '@/lib/invoice-utils'
 import { cascadeAddOnUpdate } from '@/lib/cascading-updates'
 import { requireAuth } from '@/lib/auth'
+import { hasFinalInvoice } from '@/lib/invoice-status'
 
 const updateAddOnServiceSchema = z.object({
   description: z.string().min(1, 'Description is required').optional(),
@@ -59,11 +60,10 @@ export async function PUT(
       )
     }
 
-    // Option C: Check if any invoice is PAID - if so, block editing
-    const hasPaidInvoice = addOnService.job?.invoiceLineItems.some(item => item.invoice?.status === 'PAID')
-    if (hasPaidInvoice) {
+    const finalInvoice = hasFinalInvoice(addOnService.job?.invoiceLineItems)
+    if (finalInvoice) {
       return NextResponse.json(
-        { error: 'Cannot edit add-on service: job has a paid invoice' },
+        { error: 'Cannot edit add-on service: job has a sent or paid invoice' },
         { status: 400 }
       )
     }
@@ -140,11 +140,10 @@ export async function DELETE(
       )
     }
 
-    // Option C: Check if any invoice is PAID - if so, block deletion
-    const hasPaidInvoice = addOnService.job?.invoiceLineItems.some(item => item.invoice?.status === 'PAID')
-    if (hasPaidInvoice) {
+    const finalInvoice = hasFinalInvoice(addOnService.job?.invoiceLineItems)
+    if (finalInvoice) {
       return NextResponse.json(
-        { error: 'Cannot delete add-on service: job has a paid invoice' },
+        { error: 'Cannot delete add-on service: job has a sent or paid invoice' },
         { status: 400 }
       )
     }

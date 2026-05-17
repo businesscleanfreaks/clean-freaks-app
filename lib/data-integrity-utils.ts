@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { hasFinalInvoice } from '@/lib/invoice-status'
 
 /**
  * Validates if a job can be rescheduled
@@ -17,6 +18,11 @@ export async function validateJobForReschedule(jobId: string): Promise<{
         invoiced: true,
         subcontractorPaid: true,
         status: true,
+        invoiceLineItems: {
+          include: {
+            invoice: { select: { id: true, status: true } },
+          },
+        },
       },
     })
 
@@ -27,10 +33,10 @@ export async function validateJobForReschedule(jobId: string): Promise<{
       }
     }
 
-    if (job.invoiced) {
+    if (hasFinalInvoice(job.invoiceLineItems)) {
       return {
         isValid: false,
-        error: 'Cannot reschedule a job that has been invoiced. Please delete the invoice first.',
+        error: 'Cannot reschedule a job that is on a sent or paid invoice. Void or reset the invoice first.',
       }
     }
 
@@ -106,17 +112,17 @@ export async function validateAddOnForDeletion(addOnId: string): Promise<{
       }
     }
 
-    // Check if add-on is in any paid invoices
+    // Check if add-on is in any final invoices
     const hasPaidInvoice = addOn.job?.invoiceLineItems.some(
-      item => item.invoice?.status === 'PAID'
+      item => item.invoice?.status === 'PAID' || item.invoice?.status === 'SENT'
     ) || addOn.invoiceLineItems.some(
-      item => item.invoice?.status === 'PAID'
+      item => item.invoice?.status === 'PAID' || item.invoice?.status === 'SENT'
     )
 
     if (hasPaidInvoice) {
       return {
         isValid: false,
-        error: 'Cannot delete add-on service: job has a paid invoice',
+        error: 'Cannot delete add-on service: job has a sent or paid invoice',
         hasPaidInvoice: true,
       }
     }
@@ -191,5 +197,3 @@ export async function cleanupCancelledJob(jobId: string): Promise<{
     }
   }
 }
-
-

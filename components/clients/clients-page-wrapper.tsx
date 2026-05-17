@@ -129,6 +129,10 @@ function ClientCard({
   const daysSinceCreated = Number.isFinite(createdDate.getTime())
     ? Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
     : Infinity
+  const relationshipStart = client.startDate ? new Date(client.startDate) : null
+  const daysSinceRelationshipStart = relationshipStart && Number.isFinite(relationshipStart.getTime())
+    ? Math.floor((Date.now() - relationshipStart.getTime()) / (1000 * 60 * 60 * 24))
+    : daysSinceCreated
   
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
@@ -141,8 +145,14 @@ function ClientCard({
     })
   ) ?? false
   
-  // Show NEW badge only if: added recently and has no service activity dated today or earlier.
-  const isNew = isClientActive && daysSinceCreated >= 0 && daysSinceCreated <= 7 && !hasHistoricalJobs
+  // Show NEW only for genuinely new relationships. Imported/backfilled clients may
+  // have a recent createdAt but an older startDate, so startDate wins when present.
+  const isNew = isClientActive
+    && daysSinceCreated >= 0
+    && daysSinceCreated <= 7
+    && daysSinceRelationshipStart >= 0
+    && daysSinceRelationshipStart <= 14
+    && !hasHistoricalJobs
 
   const getInitials = (name: string) =>
     name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
