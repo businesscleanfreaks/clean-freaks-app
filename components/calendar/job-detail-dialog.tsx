@@ -851,68 +851,75 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     </div>
   )
 
-  const renderDesktopOverviewSection = () => (
-    <div
-      className="rounded-[18px] bg-white p-4"
-      style={{
-        border: '1px solid #E7E7E1',
-        boxShadow: '0 10px 28px rgba(15, 23, 42, 0.04)',
-      }}
-    >
-      <div className="space-y-3">
-        <div
-          className="grid grid-cols-2 gap-2 rounded-[14px] bg-[#FAFCFB] p-3"
-          style={{ border: '1px solid #E7E7E1' }}
-        >
-          <div>
-            <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-              Date
-            </p>
-            <p style={{ fontSize: '16px', fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>
-              {format(displayDate, 'EEE, MMM d, yyyy')}
-            </p>
-          </div>
-          <div>
-            <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-              Time
-            </p>
-            <p style={{ fontSize: '16px', fontWeight: 700, color: '#111827', lineHeight: 1.25 }}>
-              {jobTimeDisplay}
-            </p>
-          </div>
-        </div>
-
-        <div
-          className="rounded-[14px] bg-white px-4 py-3"
-          style={{ border: '1px solid #E7E7E1' }}
-        >
-          <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-            Cleaner
-          </p>
-          <p style={{ fontSize: '16px', fontWeight: 700, color: job.subcontractor ? '#111827' : '#6B7280', lineHeight: 1.25 }}>
-            {job.subcontractor?.name || 'Unassigned'}
-          </p>
-        </div>
-
-        <div
-          className="grid grid-cols-3 gap-2 rounded-[14px] bg-[#FAFCFB] p-2"
-          style={{ border: '1px solid #E7E7E1' }}
-        >
-          {renderSummaryCard('Client', formatCurrency(job.clientRate ?? 0), false)}
-          {renderSummaryCard('Cleaner', formatCurrency(job.subcontractorRate ?? 0), false)}
-          {renderSummaryCard('Margin', formatCurrency((job.clientRate ?? 0) - (job.subcontractorRate ?? 0)), false)}
-        </div>
-
-        <div
-          className="grid grid-cols-2 gap-2 rounded-[14px] bg-[#FAFCFB] p-2"
-          style={{ border: '1px solid #E7E7E1' }}
-        >
-          {renderBillingBadgeCard('Client Billing', clientBillingType, 'blue', false)}
-          {renderBillingBadgeCard('Cleaner Pay Type', clientCleanerPayType, 'purple', false)}
-        </div>
-      </div>
+  const renderCompactFact = (label: string, value: ReactNode, tone: 'default' | 'muted' | 'profit' = 'default') => (
+    <div className="min-w-0">
+      <p style={{ fontSize: '11px', fontWeight: 700, color: '#8A95A3', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+        {label}
+      </p>
+      <p
+        className="truncate"
+        style={{
+          fontSize: '15px',
+          fontWeight: 700,
+          color: tone === 'muted' ? '#6B7280' : tone === 'profit' ? '#0D9488' : '#111827',
+          lineHeight: 1.25,
+        }}
+      >
+        {value}
+      </p>
     </div>
   )
+
+  const renderDesktopOverviewSection = () => {
+    const margin = (job.clientRate ?? 0) - (job.subcontractorRate ?? 0)
+
+    return (
+      <div className="space-y-0 overflow-hidden rounded-[10px] bg-white" style={{ border: '1px solid #E4E7EC' }}>
+        <div className="grid grid-cols-2 gap-0 border-b border-[#EEF0F3]">
+          <div className="border-r border-[#EEF0F3] px-4 py-3">
+            {renderCompactFact('Date', format(displayDate, 'EEE, MMM d, yyyy'))}
+          </div>
+          <div className="px-4 py-3">
+            {renderCompactFact('Time', jobTimeDisplay)}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-0 border-b border-[#EEF0F3]">
+          <div className="border-r border-[#EEF0F3] px-4 py-3">
+            {renderCompactFact('Client', formatCurrency(job.clientRate ?? 0))}
+          </div>
+          <div className="border-r border-[#EEF0F3] px-4 py-3">
+            {renderCompactFact('Cleaner', formatCurrency(job.subcontractorRate ?? 0))}
+          </div>
+          <div className="px-4 py-3">
+            {renderCompactFact('Margin', formatCurrency(margin), margin >= 0 ? 'profit' : 'default')}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[110px_1fr] gap-0 border-b border-[#EEF0F3]">
+          <div className="border-r border-[#EEF0F3] px-4 py-3">
+            {renderCompactFact('Cleaner', job.subcontractor?.name || 'Unassigned', job.subcontractor ? 'default' : 'muted')}
+          </div>
+          <div className="px-4 py-3">
+            {renderCompactFact('Location', job.location.name || job.location.address)}
+          </div>
+        </div>
+
+        {job.location.accessInfo && (
+          <div className="grid grid-cols-[110px_1fr] gap-0">
+            <div className="border-r border-[#EEF0F3] px-4 py-3">
+              {renderCompactFact('Access', 'Entry')}
+            </div>
+            <div className="px-4 py-3">
+              <p className="whitespace-pre-wrap" style={{ fontSize: '14px', fontWeight: 600, color: '#111827', lineHeight: 1.35 }}>
+                {job.location.accessInfo}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const renderDesktopSectionTabs = () => (
     <div
@@ -1449,7 +1456,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             "!rounded-t-[20px] !rounded-b-none",
             // Desktop (md+): restore centered dialog
             "md:!left-1/2 md:!top-1/2 md:!bottom-auto md:!right-auto",
-            "md:!w-[min(92vw,920px)] md:!max-w-[920px] md:!max-h-[90vh]",
+            "md:!w-[min(92vw,560px)] md:!max-w-[560px] md:!max-h-[90vh]",
             "md:!-translate-x-1/2 md:!-translate-y-1/2",
             "md:!rounded-[12px]",
           ].join(" ")}
@@ -2048,46 +2055,28 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
               {!isQuickFixMode && (
                 <div className="space-y-4">
-                  {renderTrialCard()}
-                  <div className={`grid items-start gap-4 ${canUseQuickFixes ? 'xl:grid-cols-[320px_minmax(0,1fr)]' : 'grid-cols-1'}`}>
-                    <div>
-                      {renderDesktopOverviewSection()}
+                  {isTrial && (
+                    <div className="rounded-[10px] px-3 py-2" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                      <p style={{ fontSize: '12px', fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        Trial clean
+                      </p>
+                      {job.trialNotes && (
+                        <p className="mt-1 whitespace-pre-wrap" style={{ fontSize: '13px', color: '#78350F' }}>{job.trialNotes}</p>
+                      )}
                     </div>
+                  )}
 
-                    {canUseQuickFixes ? (
-                      <div
-                        className="flex h-[540px] flex-col rounded-[18px] bg-[#FCFCFB] p-4"
-                        style={{
-                          border: '1px solid #E7E7E1',
-                          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
-                        }}
-                      >
-                        <div className="flex items-center justify-start">
-                          {renderDesktopSectionTabs()}
-                        </div>
+                  {renderDesktopOverviewSection()}
 
-                        <div className="mt-4 min-h-0 flex-1 pr-1">
-                          {desktopSection === 'actions' && renderQuickFixSection(false, true)}
-                          {desktopSection === 'details' && renderDetailsSection(false, true)}
-                          {desktopSection === 'more' && renderMoreActionsSection(false, true)}
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className="flex h-[540px] flex-col rounded-[18px] bg-[#FCFCFB] p-4"
-                        style={{
-                          border: '1px solid #E7E7E1',
-                          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
-                        }}
-                      >
-                        <div className="flex items-center justify-start">
-                          {renderDesktopSectionTabs()}
-                        </div>
-                        <div className="mt-4 min-h-0 flex-1 pr-1">
-                          {desktopSection === 'details' ? renderDetailsSection(false, true) : renderMoreActionsSection(false, true)}
-                        </div>
-                      </div>
-                    )}
+                  {canUseQuickFixes ? (
+                    <div>
+                      {renderQuickFixSection(false, true)}
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 gap-3">
+                    {renderDetailsSection(false, true)}
+                    {renderMoreActionsSection(false, true)}
                   </div>
                 </div>
               )}

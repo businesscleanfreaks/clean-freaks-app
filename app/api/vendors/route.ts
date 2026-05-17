@@ -21,12 +21,22 @@ export async function GET() {
       orderBy: { name: 'asc' },
       include: {
         addOnServices: {
-          where: { vendorPaid: false },
           select: {
             id: true,
             subcontractorRate: true,
             description: true,
+            vendorPaid: true,
             createdAt: true,
+            vendorPaymentLineItems: {
+              select: {
+                payment: {
+                  select: {
+                    id: true,
+                    datePaid: true,
+                  },
+                },
+              },
+            },
             job: {
               select: {
                 id: true,
@@ -57,18 +67,21 @@ export async function GET() {
         },
         payments: {
           orderBy: { datePaid: 'desc' },
-          take: 1,
           select: {
             id: true,
             datePaid: true,
             totalAmount: true,
+            lineItems: {
+              select: { id: true },
+            },
           },
         },
       },
     })
 
     const result = vendors.map(vendor => {
-      const owedAmount = vendor.addOnServices.reduce(
+      const unpaidAddOns = vendor.addOnServices.filter(addon => !addon.vendorPaid)
+      const owedAmount = unpaidAddOns.reduce(
         (sum, addon) => sum + addon.subcontractorRate,
         0
       )
@@ -79,13 +92,31 @@ export async function GET() {
         createdAt: vendor.createdAt.toISOString(),
         updatedAt: vendor.updatedAt.toISOString(),
         owedAmount,
-        unpaidAddOns: vendor.addOnServices.length,
+        unpaidAddOns: unpaidAddOns.length,
         lastPayment: lastPayment
           ? {
               ...lastPayment,
               datePaid: lastPayment.datePaid.toISOString(),
             }
           : null,
+        payments: vendor.payments.map(payment => ({
+          ...payment,
+          datePaid: payment.datePaid.toISOString(),
+        })),
+        addOnServices: vendor.addOnServices.map(addon => ({
+          ...addon,
+          createdAt: addon.createdAt.toISOString(),
+          job: addon.job
+            ? {
+                ...addon.job,
+                date: addon.job.date.toISOString(),
+              }
+            : null,
+          paidDate: addon.vendorPaymentLineItems[0]?.payment?.datePaid
+            ? addon.vendorPaymentLineItems[0].payment.datePaid.toISOString()
+            : null,
+          vendorPaymentLineItems: undefined,
+        })),
       }
     })
 

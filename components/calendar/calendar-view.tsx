@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect, useRef } from "react"
+import { Fragment, useState, useMemo, useEffect, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { 
   ChevronLeft, ChevronRight,
@@ -1387,9 +1387,233 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     return `${hour}${min}${isPM ? 'p' : 'a'}`;
   };
 
+  const renderCompactWeekTable = (days: Date[]) => {
+    const getMinutes = (timeStr: string | null | undefined) => {
+      if (!timeStr) return 0
+      const [h, m] = timeStr.split(':').map(Number)
+      if (isNaN(h) || isNaN(m)) return 0
+      return h * 60 + m
+    }
+
+    const getJobStart = (job: JobWithFullRelations) => job.startTime || job.startWindowBegin || null
+
+    const getJobEnd = (job: JobWithFullRelations) => {
+      const start = getJobStart(job)
+      if (!start) return null
+      if (job.startWindowBegin && job.startWindowEnd) return job.startWindowEnd
+      const endMinutes = getMinutes(start) + 60
+      const hours = Math.floor(endMinutes / 60)
+      const minutes = endMinutes % 60
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+    }
+
+    const getHourLabel = (hour: number) => {
+      if (hour === 0) return '12a'
+      if (hour < 12) return `${hour}a`
+      if (hour === 12) return '12p'
+      return `${hour - 12}p`
+    }
+
+    const getCleanerShort = (name: string | null | undefined) => {
+      if (!name) return 'Unassigned'
+      const parts = name.split(' ').filter(Boolean)
+      if (parts.length <= 1) return parts[0] || name
+      return `${parts[0]} ${parts[1][0]}.`
+    }
+
+    const getCompactLocationName = (job: JobWithFullRelations) => {
+      const clientName = job.location.client.name
+      const locationName = job.location.name
+      if (!locationName || locationName === clientName) return ''
+      return locationName.replace(clientName, '').replace(/[()]/g, '').trim()
+    }
+
+    const getJobTimeRange = (job: JobWithFullRelations) => {
+      const start = getJobStart(job)
+      if (!start) return 'TBD'
+      const end = getJobEnd(job)
+      return end ? `${getCompactTime(start)}-${getCompactTime(end)}` : getCompactTime(start)
+    }
+
+    const timedJobsByDay = days.map(day =>
+      getJobsForDate(day)
+        .filter(job => !!getJobStart(job))
+        .sort((a, b) => getMinutes(getJobStart(a)) - getMinutes(getJobStart(b)))
+    )
+
+    const timeSlots = Array.from(new Set(
+      timedJobsByDay.flatMap(dayJobs =>
+        dayJobs.map(job => Math.floor(getMinutes(getJobStart(job)) / 60))
+      )
+    )).sort((a, b) => a - b)
+    const visibleTimeSlots = timeSlots.length > 0 ? timeSlots : [9]
+    const unscheduledJobsByDay = days.map(day => getJobsForDate(day).filter(job => !getJobStart(job)))
+    const hasUnscheduledJobs = unscheduledJobsByDay.some(dayJobs => dayJobs.length > 0)
+
+    const getJobsForHour = (dayIndex: number, hour: number) =>
+      timedJobsByDay[dayIndex].filter(job => Math.floor(getMinutes(getJobStart(job)) / 60) === hour)
+
+    const renderCompactJobCard = (job: JobWithFullRelations, compact = false) => {
+      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+      const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
+      const isSelected = selectedJobIds.has(job.id)
+      const timeRange = getJobTimeRange(job)
+      const cleanerShort = getCleanerShort(job.subcontractor?.name)
+      const locationName = getCompactLocationName(job)
+      const title = `${timeRange} ${job.location.client.name}${job.subcontractor?.name ? ` · ${job.subcontractor.name}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`
+
+      return (
+        <button
+          key={job.id}
+          type="button"
+          title={title}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (isSelectionMode) toggleJobSelection(job.id)
+            else handleJobClick(job)
+          }}
+          className={[
+            "group block w-full cursor-pointer overflow-hidden rounded-[5px] text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-500",
+            isSelected ? "ring-2 ring-teal-500" : "",
+          ].join(" ")}
+          style={{
+            border: `1px solid ${hex}33`,
+            borderLeft: `4px solid ${hex}`,
+            backgroundColor: `${hex}1A`,
+            opacity: isDimmed ? 0.3 : 1,
+            padding: compact ? '5px 7px' : '7px 9px',
+            minHeight: compact ? '44px' : '58px',
+          }}
+        >
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <span className="shrink-0 font-mono text-[10px] font-semibold text-gray-500">
+              {timeRange}
+            </span>
+            <span className="min-w-0 truncate text-[13px] font-bold leading-tight text-gray-950">
+              {job.location.client.name}
+            </span>
+          </div>
+          <div className="mt-0.5 truncate text-[11px] font-medium leading-tight text-gray-600">
+            {cleanerShort}
+          </div>
+          {!compact && locationName && (
+            <div className="mt-0.5 truncate text-[11px] leading-tight text-gray-500">
+              {locationName}
+            </div>
+          )}
+        </button>
+      )
+    }
+
+    return (
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#F8F7F4]">
+        <div className="flex shrink-0 border-b-2 border-gray-900 bg-white">
+          <div className="w-12 shrink-0 border-r border-gray-200" />
+          <div className="grid flex-1 grid-cols-7">
+            {days.map(day => {
+              const isTodayDate = isToday(day)
+              return (
+                <div key={day.toString()} className={`border-r border-gray-200 py-2 text-center last:border-r-0 ${isTodayDate ? 'bg-gray-950' : ''}`}>
+                  <div className={`text-[10px] font-bold uppercase tracking-[0.08em] ${isTodayDate ? 'text-white/55' : 'text-gray-400'}`}>
+                    {format(day, 'EEE')}
+                  </div>
+                  <div className={`mt-0.5 text-lg font-bold ${isTodayDate ? 'text-white' : 'text-gray-950'}`}>
+                    {format(day, 'd')}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {hasUnscheduledJobs && (
+          <div className="flex shrink-0 border-b border-gray-200 bg-white">
+            <div className="w-12 shrink-0 border-r border-gray-200 px-2 py-2 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">
+              TBD
+            </div>
+            <div className="grid flex-1 grid-cols-7">
+              {days.map((day, dayIndex) => (
+                <div key={day.toString()} className="min-h-[34px] border-r border-gray-100 p-1.5 last:border-r-0">
+                  <div className="flex flex-col gap-1">
+                    {unscheduledJobsByDay[dayIndex].map(job => {
+                      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+                      const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
+                      const isSelected = selectedJobIds.has(job.id)
+                      return (
+                        <button
+                          key={job.id}
+                          type="button"
+                          title={`TBD ${job.location.client.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (isSelectionMode) toggleJobSelection(job.id)
+                            else handleJobClick(job)
+                          }}
+                          className={`h-7 cursor-pointer truncate rounded-md bg-white px-2 py-1.5 text-left text-[11px] font-bold leading-none text-gray-900 shadow-sm ring-1 ring-gray-200 ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
+                          style={{ borderLeft: `3px solid ${hex}`, opacity: isDimmed ? 0.3 : 1 }}
+                        >
+                          TBD · {job.location.client.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-auto bg-[#F8F7F4]">
+          <table className="w-full table-fixed border-collapse bg-white">
+            <tbody>
+              {visibleTimeSlots.map((hour, rowIndex) => {
+                const nextHour = visibleTimeSlots[rowIndex + 1]
+                const hasLargeGap = nextHour ? nextHour - hour >= 3 : false
+
+                return (
+                  <Fragment key={`slot-${hour}`}>
+                    <tr className="align-top">
+                      <td className="w-12 border-b border-gray-200 pr-2 pt-3 text-right align-top">
+                        <span className="font-mono text-[10px] font-bold text-gray-400">
+                          {getHourLabel(hour)}
+                        </span>
+                      </td>
+                      {days.map((day, dayIndex) => {
+                        const jobsForHour = getJobsForHour(dayIndex, hour)
+                        return (
+                          <td
+                            key={`${day.toISOString()}-${hour}`}
+                            className="min-h-[62px] border-b border-l border-gray-200 p-1.5 align-top last:border-r"
+                            onClick={() => handleTimeSlotClick(day, `${String(hour).padStart(2, '0')}:00`)}
+                          >
+                            <div className="flex flex-col gap-1.5">
+                              {jobsForHour.map(job => renderCompactJobCard(job, jobsForHour.length > 2))}
+                            </div>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                    {hasLargeGap && (
+                      <tr>
+                        <td colSpan={8} className="h-3 border-b border-gray-100 bg-[#F8F7F4]">
+                          <div className="mx-auto h-px w-12 border-t border-dashed border-gray-300 opacity-60" />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
   const renderWeekView = () => {
     const weekStart = startOfWeek(currentDate)
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+    return renderCompactWeekTable(days)
     
     let minHour = 5;
     let maxHour = 23; // 11 PM
