@@ -54,6 +54,21 @@ const formatCurrency = (value: number) =>
 
 type SortKey = 'periodRevenue' | 'periodProfit' | 'avgRevenue' | 'avgProfit'
 
+function shortenName(name: string) {
+  if (!name || name === 'Unassigned') return name || 'Unassigned'
+  const companyMap: Record<string, string> = {
+    'Celeste Cleaning Co.': 'Celeste C.',
+    'Rose Cleaning Co': 'Rose C.',
+    'Amy\'s Angels': 'Amy\'s A.',
+  }
+  if (companyMap[name]) return companyMap[name]
+
+  const cleaned = name.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim()
+  const parts = cleaned.split(' ').filter(Boolean)
+  if (parts.length === 1) return parts[0]
+  return `${parts[0]} ${parts[1][0]}.`
+}
+
 function MetricCard({
   label,
   value,
@@ -142,7 +157,7 @@ export function DashboardClient() {
 
   return (
     <div className="min-h-full bg-[#F8F7F4] px-5 py-7 text-stone-950 sm:px-8">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-[1200px]">
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             <strong>Error loading dashboard:</strong> {error.message}
@@ -244,7 +259,7 @@ export function DashboardClient() {
 
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">All Clients · {rows.length}</div>
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
-          <div className="grid grid-cols-[minmax(0,1fr)_110px_110px_120px_80px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
+          <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_100px_86px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
             <span>Client</span>
             <SortHeader label="Revenue" active={sortBy === 'periodRevenue'} dir={sortDir} onClick={() => toggleSort('periodRevenue')} />
             <SortHeader label="Profit" active={sortBy === 'periodProfit'} dir={sortDir} onClick={() => toggleSort('periodProfit')} />
@@ -260,24 +275,24 @@ export function DashboardClient() {
               {sortedRows.map((row, index) => (
                 <div
                   key={row.id}
-                  className="grid grid-cols-[minmax(0,1fr)_110px_110px_120px_80px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
+                  className="grid grid-cols-[minmax(260px,1fr)_120px_120px_100px_86px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
                 >
                   <div className="min-w-0">
-                    <div className="truncate font-semibold">{row.name}</div>
+                    <div className="font-semibold leading-tight">{row.name}</div>
                     <div className="truncate text-xs text-stone-400">{row.frequency || `${row.periodJobCount} jobs`}</div>
                   </div>
                   <div className="text-right font-mono font-semibold">{formatCurrency(row.periodRevenue)}</div>
-                  <div className={`text-right font-mono font-semibold ${row.periodProfit > 0 ? 'text-emerald-600' : 'text-stone-400'}`}>
+                  <div className={`text-right font-mono font-semibold ${row.periodProfit > 0 ? 'text-emerald-600' : row.periodProfit < 0 ? 'text-red-600' : 'text-stone-400'}`}>
                     {formatCurrency(row.periodProfit)}
                   </div>
-                  <div className="truncate text-right text-xs text-stone-500">{row.cleanerAssigned}</div>
+                  <div className="text-right text-xs text-stone-500">{shortenName(row.cleanerAssigned)}</div>
                   <div className="text-right text-xs text-stone-400">{row.clientPayType.replace('Flat Rate', 'Flat')}</div>
                 </div>
               ))}
             </div>
           )}
           {!isLoading && (
-            <div className="grid grid-cols-[minmax(0,1fr)_110px_110px_120px_80px] border-t-2 border-stone-950 bg-stone-50 px-4 py-2 text-sm font-bold">
+            <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_100px_86px] border-t-2 border-stone-950 bg-stone-50 px-4 py-2 text-sm font-bold">
               <span>Total</span>
               <span className="text-right font-mono">{formatCurrency(totals.periodRevenue)}</span>
               <span className="text-right font-mono text-emerald-600">{formatCurrency(totals.periodProfit)}</span>

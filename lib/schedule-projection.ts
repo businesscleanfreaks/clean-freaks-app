@@ -1,4 +1,4 @@
-import { startOfMonth, endOfMonth } from 'date-fns'
+import { differenceInCalendarDays, startOfMonth, endOfMonth } from 'date-fns'
 import { calculateScheduleDates, type ScheduleDateParams } from '@/lib/regenerate-schedule-jobs'
 import { getAvgOccurrencesPerMonth } from '@/lib/frequency-utils'
 
@@ -34,6 +34,19 @@ export interface MonthlyProjection {
   addOnRevenue: number
   addOnWorkerPayments: number
   jobCount: number
+}
+
+function getActiveMonthRatio(schedule: ProjectableSchedule, monthStart: Date, monthEnd: Date): number {
+  const scheduleStart = new Date(schedule.startDate)
+  const scheduleEnd = schedule.endDate ? new Date(schedule.endDate) : monthEnd
+  const activeStart = scheduleStart > monthStart ? scheduleStart : monthStart
+  const activeEnd = scheduleEnd < monthEnd ? scheduleEnd : monthEnd
+
+  if (activeEnd < activeStart) return 0
+
+  const activeDays = differenceInCalendarDays(activeEnd, activeStart) + 1
+  const totalDays = differenceInCalendarDays(monthEnd, monthStart) + 1
+  return Math.max(0, Math.min(1, activeDays / totalDays))
 }
 
 /**
@@ -92,7 +105,7 @@ export function projectSchedulesForMonth(
     // Worker payments
     const subPayType = schedule.subcontractorPayType || 'PER_CLEAN'
     if (subPayType === 'FLAT_RATE') {
-      workerPayments += schedule.defaultSubcontractorRate
+      workerPayments += schedule.defaultSubcontractorRate * getActiveMonthRatio(schedule, monthStart, monthEnd)
     } else {
       workerPayments += schedule.defaultSubcontractorRate * jobCount
     }

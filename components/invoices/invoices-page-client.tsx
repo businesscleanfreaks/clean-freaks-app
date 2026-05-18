@@ -492,15 +492,56 @@ export function InvoicesPageClient({
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 py-6" style={{ maxWidth: '940px', margin: '0 auto' }}>
+    <div className="w-full px-4 sm:px-6 py-6" style={{ maxWidth: '1080px', margin: '0 auto' }}>
       {/* Page Header */}
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111111', lineHeight: '1.2', marginBottom: '4px' }}>
+      <div className="flex flex-wrap items-start justify-between gap-4" style={{ marginBottom: '18px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111111', lineHeight: '1.2' }}>
           Invoices
         </h1>
-        <p style={{ fontSize: '14px', color: '#888888' }}>
-          Manage and send invoices to your clients
-        </p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => shiftActiveMonth(-1)}
+              aria-label="Previous month"
+              style={{
+                width: '30px', height: '30px', borderRadius: '7px',
+                border: '1px solid #E5E7EB', backgroundColor: 'white',
+                color: '#64748B', fontSize: '17px', cursor: 'pointer',
+              }}
+            >
+              ‹
+            </button>
+            <div style={{
+              minWidth: '128px', height: '30px', borderRadius: '7px',
+              border: '1px solid #E5E7EB', backgroundColor: 'white',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '13px', fontWeight: 700, color: '#111827',
+            }}>
+              {activeMonthLabel}
+            </div>
+            <button
+              onClick={() => shiftActiveMonth(1)}
+              aria-label="Next month"
+              style={{
+                width: '30px', height: '30px', borderRadius: '7px',
+                border: '1px solid #E5E7EB', backgroundColor: 'white',
+                color: '#64748B', fontSize: '17px', cursor: 'pointer',
+              }}
+            >
+              ›
+            </button>
+          </div>
+          {activeTab === 'ready' && !candidatesLoading && (
+            <div style={{ textAlign: 'right', minWidth: '120px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', color: '#94A3B8', textTransform: 'uppercase' }}>
+                To invoice
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
+                {formatCurrency(reviewQueueTotal)}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -577,65 +618,43 @@ export function InvoicesPageClient({
           )}
         </div>
 
-        {/* Month pills are rendered below the search bar */}
-
         {activeTab === 'ready' && (
           <div className="flex items-center gap-2 flex-shrink-0">
             {candidates.length > 0 && !candidatesLoading ? (
-              candidateSelectionMode ? (
+              selectedCandidateIds.size > 0 ? (
                 <>
-                  {selectedCandidateIds.size > 0 && (
-                    <button
-                      onClick={handleBatchReviewSelected}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '6px',
-                        padding: '8px 14px',
-                        fontSize: '13px', fontWeight: 600,
-                        color: 'white',
-                        backgroundColor: '#00A896',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Zap style={{ width: '14px', height: '14px' }} />
-                      Review {selectedCandidateIds.size}
-                    </button>
-                  )}
                   <button
-                    onClick={exitCandidateSelectionMode}
+                    onClick={clearCandidateSelection}
                     style={{
-                      padding: '8px 14px',
+                      padding: '8px 12px',
                       fontSize: '13px', fontWeight: 500,
-                      color: '#00A896',
+                      color: '#64748B',
                       backgroundColor: 'transparent',
-                      border: '1px solid #00A896',
+                      border: '1px solid #E5E7EB',
                       borderRadius: '8px',
                       cursor: 'pointer',
                     }}
                   >
-                    Done
+                    Clear
+                  </button>
+                  <button
+                    onClick={handleBatchReviewSelected}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '8px 14px',
+                      fontSize: '13px', fontWeight: 600,
+                      color: 'white',
+                      backgroundColor: '#00A896',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Zap style={{ width: '14px', height: '14px' }} />
+                    Review {selectedCandidateIds.size}
                   </button>
                 </>
-              ) : (
-                <button
-                  onClick={() => setCandidateSelectionMode(true)}
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: '13px', fontWeight: 500,
-                    color: '#888888',
-                    backgroundColor: 'transparent',
-                    border: '1px solid #DDDDDD',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'border-color 150ms',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#BBBBBB' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#DDDDDD' }}
-                >
-                  Select
-                </button>
-              )
+              ) : null
             ) : selectionMode ? (
               <>
                 {selectedJobCount > 0 && (
@@ -724,39 +743,6 @@ export function InvoicesPageClient({
         )}
       </div>
 
-      <div className="flex items-center justify-center gap-2" style={{ marginBottom: '12px' }}>
-        <button
-          onClick={() => shiftActiveMonth(-1)}
-          aria-label="Previous month"
-          style={{
-            width: '32px', height: '32px', borderRadius: '8px',
-            border: '1px solid #E5E7EB', backgroundColor: 'white',
-            color: '#64748B', fontSize: '18px', cursor: 'pointer',
-          }}
-        >
-          ‹
-        </button>
-        <div style={{
-          minWidth: '140px', height: '32px', borderRadius: '8px',
-          border: '1px solid #E5E7EB', backgroundColor: 'white',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '14px', fontWeight: 600, color: '#111827',
-        }}>
-          {activeMonthLabel}
-        </div>
-        <button
-          onClick={() => shiftActiveMonth(1)}
-          aria-label="Next month"
-          style={{
-            width: '32px', height: '32px', borderRadius: '8px',
-            border: '1px solid #E5E7EB', backgroundColor: 'white',
-            color: '#64748B', fontSize: '18px', cursor: 'pointer',
-          }}
-        >
-          ›
-        </button>
-      </div>
-
       {/* Ready Tab: Summary */}
       {activeTab === 'ready' && candidatesLoading && (
         <div
@@ -771,24 +757,6 @@ export function InvoicesPageClient({
         </div>
       )}
 
-      {activeTab === 'ready' && !candidatesLoading && reviewQueueTotal > 0 && (
-        <div
-          className="flex items-center justify-between"
-          style={{ padding: '0 4px', marginBottom: '12px' }}
-        >
-          <div className="flex items-center gap-2">
-            <span style={{ fontSize: '22px', fontWeight: 700, color: '#111111' }}>
-              {formatCurrency(reviewQueueTotal)}
-            </span>
-            <span style={{ fontSize: '13px', color: '#00A896', fontWeight: 500 }}>to invoice</span>
-            <span style={{ color: '#DDDDDD', fontSize: '13px' }}>·</span>
-            <span style={{ fontSize: '13px', color: '#888888' }}>
-              {reviewQueueCount} client{reviewQueueCount !== 1 ? 's' : ''}
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* READY TAB: Review Queue */}
       {activeTab === 'ready' && (
         <>
@@ -798,11 +766,11 @@ export function InvoicesPageClient({
               {/* ── Flat Rate Section ── */}
               {flatRateCandidates.length > 0 && (
                 <div>
-                  <div className="mb-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+                  <div className="mb-2 px-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <div style={{
-                        padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
-                        backgroundColor: '#EEF2FF', color: '#4F46E5', textTransform: 'uppercase',
+                        fontSize: '12px', fontWeight: 800,
+                        color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.06em',
                       }}>
                         Flat Rate
                       </div>
@@ -832,7 +800,7 @@ export function InvoicesPageClient({
                         </button>
                       )}
                     </div>
-                    <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748B' }}>
+                    <p style={{ marginTop: '4px', fontSize: '12px', color: '#64748B' }}>
                       Same every month unless something changed
                     </p>
                   </div>
@@ -842,7 +810,7 @@ export function InvoicesPageClient({
                         key={c.candidateId}
                         candidate={c}
                         onReview={handleCandidateReview}
-                        selectable={candidateSelectionMode || selectedCandidateIds.size > 0 || undefined}
+                        selectable={true}
                         selected={selectedCandidateIds.has(c.candidateId)}
                         onToggleSelect={toggleCandidateSelection}
                       />
@@ -854,11 +822,11 @@ export function InvoicesPageClient({
               {/* ── Per Clean Section ── */}
               {perCleanCandidates.length > 0 && (
                 <div>
-                  <div className="mb-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2">
+                  <div className="mb-2 px-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <div style={{
-                        padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
-                        backgroundColor: '#F0FDF4', color: '#15803D', textTransform: 'uppercase',
+                        fontSize: '12px', fontWeight: 800,
+                        color: '#15803D', textTransform: 'uppercase', letterSpacing: '0.06em',
                       }}>
                         Per Clean
                       </div>
@@ -870,7 +838,7 @@ export function InvoicesPageClient({
                         {formatCurrency(perCleanCandidates.reduce((s, c) => s + c.total, 0))}
                       </span>
                     </div>
-                    <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748B' }}>
+                    <p style={{ marginTop: '4px', fontSize: '12px', color: '#64748B' }}>
                       Amount varies - verify before sending
                     </p>
                   </div>
@@ -880,7 +848,7 @@ export function InvoicesPageClient({
                         key={c.candidateId}
                         candidate={c}
                         onReview={handleCandidateReview}
-                        selectable={candidateSelectionMode || selectedCandidateIds.size > 0 || undefined}
+                        selectable={true}
                         selected={selectedCandidateIds.has(c.candidateId)}
                         onToggleSelect={toggleCandidateSelection}
                       />

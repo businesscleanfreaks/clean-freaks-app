@@ -213,6 +213,48 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
   const renderQuickFixSection = (isMobile: boolean, compact = false) => {
     if (!canUseQuickFixes) return null
 
+    if (compact && !isMobile) {
+      const rowActions = [
+        ...quickActionButtons,
+        {
+          ...recurringPlanButton,
+          label: 'Change Schedule',
+        },
+        ...specialSituationButtons,
+      ]
+
+      return (
+        <div className="overflow-hidden rounded-[10px]" style={{ border: '1px solid #E7E7E1', backgroundColor: '#FFFFFF' }}>
+          {rowActions.map((action, index) => {
+            const Icon = action.icon
+            return (
+              <button
+                key={action.key}
+                onClick={action.onClick}
+                disabled={action.disabled}
+                className="w-full text-left transition-colors hover:bg-[#FAFAF8] disabled:cursor-default disabled:opacity-45"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  minHeight: '38px',
+                  padding: '8px 12px',
+                  border: 'none',
+                  borderBottom: index === rowActions.length - 1 ? 'none' : '1px solid #F1F1EC',
+                  backgroundColor: 'transparent',
+                }}
+              >
+                <Icon className="h-4 w-4 flex-shrink-0" style={{ color: action.disabled ? '#94A3B8' : '#0F766E' }} />
+                <span style={{ fontSize: '13px', fontWeight: 650, color: '#111111' }}>
+                  {action.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )
+    }
+
     const content = (
       <>
         <div className="grid grid-cols-2 gap-2">
