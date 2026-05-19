@@ -263,6 +263,22 @@ function dateMatchesSchedulePatternIgnoringStart(schedule: {
   }
 }
 
+function getHistoricalScheduleStartDate(schedule: {
+  startDate: Date
+  location?: {
+    client?: {
+      startDate?: Date | null
+    } | null
+  } | null
+}) {
+  const scheduleStart = utcDateOnly(new Date(schedule.startDate))
+  const clientStartValue = schedule.location?.client?.startDate
+  if (!clientStartValue) return scheduleStart
+
+  const clientStart = utcDateOnly(new Date(clientStartValue))
+  return clientStart < scheduleStart ? clientStart : scheduleStart
+}
+
 export async function ensureJobsForDateRange({
   startDate,
   endDate,
@@ -276,10 +292,19 @@ export async function ensureJobsForDateRange({
   const schedules = await prisma.schedule.findMany({
     where: {
       isActive: true,
-      startDate: { lte: rangeEnd },
-      OR: [
-        { endDate: null },
-        { endDate: { gte: rangeStart } },
+      AND: [
+        {
+          OR: [
+            { startDate: { lte: rangeEnd } },
+            { location: { client: { startDate: { lte: rangeEnd } } } },
+          ],
+        },
+        {
+          OR: [
+            { endDate: null },
+            { endDate: { gte: rangeStart } },
+          ],
+        },
       ],
     },
     include: {
@@ -287,6 +312,11 @@ export async function ensureJobsForDateRange({
         select: {
           id: true,
           clientId: true,
+          client: {
+            select: {
+              startDate: true,
+            },
+          },
         },
       },
     },
@@ -297,9 +327,10 @@ export async function ensureJobsForDateRange({
   let skippedCount = 0
 
   for (const schedule of schedules) {
+    const effectiveStartDate = getHistoricalScheduleStartDate(schedule)
     const candidateDates = calculateScheduleDates({
       frequency: schedule.frequency,
-      startDate: new Date(schedule.startDate),
+      startDate: effectiveStartDate,
       daysOfWeek: schedule.daysOfWeek,
       monthlyPattern: schedule.monthlyPattern,
       customDates: schedule.customDates,
