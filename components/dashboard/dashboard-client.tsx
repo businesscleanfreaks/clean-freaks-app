@@ -52,7 +52,7 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value || 0)
 
-type SortKey = 'periodRevenue' | 'periodProfit' | 'avgRevenue' | 'avgProfit'
+type SortKey = 'periodRevenue' | 'periodCleanerCost' | 'periodProfit' | 'avgRevenue' | 'avgProfit'
 
 function shortenName(name: string) {
   if (!name || name === 'Unassigned') return name || 'Unassigned'
@@ -108,7 +108,7 @@ export function DashboardClient() {
   const { data, error, isLoading } = useSWR<ClientOverviewData>(
     `/api/dashboard/client-overview?year=${year}&month=${month}`,
     fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 30000 }
+    { revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true }
   )
 
   const rows = data?.clients || []
@@ -259,9 +259,10 @@ export function DashboardClient() {
 
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">All Clients · {rows.length}</div>
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
-          <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_100px_86px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
+          <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
             <span>Client</span>
             <SortHeader label="Revenue" active={sortBy === 'periodRevenue'} dir={sortDir} onClick={() => toggleSort('periodRevenue')} />
+            <SortHeader label="Cleaner Pay" active={sortBy === 'periodCleanerCost'} dir={sortDir} onClick={() => toggleSort('periodCleanerCost')} />
             <SortHeader label="Profit" active={sortBy === 'periodProfit'} dir={sortDir} onClick={() => toggleSort('periodProfit')} />
             <span className="text-right">Cleaner</span>
             <span className="text-right">Type</span>
@@ -275,13 +276,14 @@ export function DashboardClient() {
               {sortedRows.map((row, index) => (
                 <div
                   key={row.id}
-                  className="grid grid-cols-[minmax(260px,1fr)_120px_120px_100px_86px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
+                  className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
                 >
                   <div className="min-w-0">
                     <div className="font-semibold leading-tight">{row.name}</div>
                     <div className="truncate text-xs text-stone-400">{row.frequency || `${row.periodJobCount} jobs`}</div>
                   </div>
                   <div className="text-right font-mono font-semibold">{formatCurrency(row.periodRevenue)}</div>
+                  <div className="text-right font-mono font-semibold text-stone-500">-{formatCurrency(row.periodCleanerCost)}</div>
                   <div className={`text-right font-mono font-semibold ${row.periodProfit > 0 ? 'text-emerald-600' : row.periodProfit < 0 ? 'text-red-600' : 'text-stone-400'}`}>
                     {formatCurrency(row.periodProfit)}
                   </div>
@@ -292,9 +294,10 @@ export function DashboardClient() {
             </div>
           )}
           {!isLoading && (
-            <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_100px_86px] border-t-2 border-stone-950 bg-stone-50 px-4 py-2 text-sm font-bold">
+            <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] border-t-2 border-stone-950 bg-stone-50 px-4 py-2 text-sm font-bold">
               <span>Total</span>
               <span className="text-right font-mono">{formatCurrency(totals.periodRevenue)}</span>
+              <span className="text-right font-mono text-stone-500">-{formatCurrency(totals.periodCleanerCost)}</span>
               <span className="text-right font-mono text-emerald-600">{formatCurrency(totals.periodProfit)}</span>
               <span />
               <span />

@@ -1355,6 +1355,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             "!overflow-visible",
           ].join(" ")}
         >
+          <DialogTitle className="sr-only">Choose recurring change scope</DialogTitle>
           <div className="space-y-2">
             <p style={{ fontSize: '28px', fontWeight: 600, color: '#111827', lineHeight: 1.1 }}>
               Apply recurring change
@@ -1418,7 +1419,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
               className="rounded-full px-4 py-2 font-medium disabled:opacity-45"
               style={{ fontSize: '15px', color: '#2563EB' }}
             >
-              Cancel
+              Back
             </button>
             <button
               onClick={handleConfirmScopeChoice}

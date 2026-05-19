@@ -546,6 +546,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   // Computed display values
   const displayDate = localDate || new Date(job.date)
   const displayTime = localTime !== null ? localTime : job.startTime
+  const currentDateInputValue = () => format(localDate || new Date(job.date), 'yyyy-MM-dd')
+  const currentTimeInputValue = () => localTime !== null ? localTime : (job.startTime || '')
+  const closeQuickEdit = () => {
+    setActiveInlinePicker(null)
+    setActiveQuickFixPanel(null)
+    setScopeDialogAction(null)
+  }
 
   const handleQuickReschedule = (daysToAdd: number, label: 'tomorrow' | 'next-week') => {
     if (!canEditDateTime) return
@@ -608,6 +615,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   const handleSaveInlineDate = async () => {
     if (!draftDate) return
+    if (draftDate === currentDateInputValue()) {
+      setActiveInlinePicker(null)
+      return
+    }
     setIsSavingInlineDate(true)
     try {
       const currentTime = localTime !== null ? localTime : (job.startTime || null)
@@ -637,6 +648,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }
 
   const handleSaveInlineTime = async () => {
+    if ((draftTime || '') === currentTimeInputValue()) {
+      setActiveInlinePicker(null)
+      return
+    }
     setIsSavingInlineTime(true)
     try {
       const base = localDate || new Date(job.date)
@@ -667,9 +682,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   const handleSaveQuickMoveSingle = async () => {
     if (!draftDate || isSavingInlineDate) return
+    const nextTime = draftTime || null
+    if (draftDate === currentDateInputValue() && (nextTime || '') === currentTimeInputValue()) {
+      closeQuickEdit()
+      return
+    }
     setIsSavingInlineDate(true)
     try {
-      const nextTime = draftTime || null
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -839,6 +858,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     const newClientRate = parseFloat(draftClientRate)
     const newSubRate = parseFloat(draftSubcontractorRate)
     if (isNaN(newClientRate) || isNaN(newSubRate)) return
+    if (newClientRate === Number(job.clientRate || 0) && newSubRate === Number(job.subcontractorRate || 0)) {
+      setIsEditingRates(false)
+      closeQuickEdit()
+      return
+    }
     setIsSavingRates(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -867,6 +891,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const handleSaveClientRateSingle = async () => {
     const newClientRate = parseFloat(draftClientRate)
     if (isNaN(newClientRate)) return
+    if (newClientRate === Number(job.clientRate || 0)) {
+      closeQuickEdit()
+      return
+    }
     setIsSavingRates(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -891,6 +919,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const handleSaveClientRateFuture = async () => {
     const newClientRate = parseFloat(draftClientRate)
     if (isNaN(newClientRate)) return
+    if (newClientRate === Number(job.schedule?.defaultClientRate ?? job.clientRate ?? 0)) {
+      closeQuickEdit()
+      return
+    }
     if (!job.scheduleId || !job.schedule) {
       await handleSaveClientRateSingle()
       return
@@ -927,6 +959,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const handleSaveCleanerPaySingle = async () => {
     const newSubRate = parseFloat(draftSubcontractorRate)
     if (isNaN(newSubRate)) return
+    if (newSubRate === Number(job.subcontractorRate || 0)) {
+      closeQuickEdit()
+      return
+    }
     setIsSavingRates(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -951,6 +987,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const handleSaveCleanerPayFuture = async () => {
     const newSubRate = parseFloat(draftSubcontractorRate)
     if (isNaN(newSubRate)) return
+    if (newSubRate === Number(job.schedule?.defaultSubcontractorRate ?? job.subcontractorRate ?? 0)) {
+      closeQuickEdit()
+      return
+    }
     if (!job.scheduleId || !job.schedule) {
       await handleSaveCleanerPaySingle()
       return
@@ -990,6 +1030,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     const newClientRate = parseFloat(draftClientRate)
     const newSubRate = parseFloat(draftSubcontractorRate)
     if (isNaN(newClientRate) || isNaN(newSubRate)) return
+    if (
+      newClientRate === Number(job.schedule?.defaultClientRate ?? job.clientRate ?? 0) &&
+      newSubRate === Number(job.schedule?.defaultSubcontractorRate ?? job.subcontractorRate ?? 0)
+    ) {
+      closeQuickEdit()
+      return
+    }
     if (!job.scheduleId || !job.schedule) {
       await handleSaveRatesSingle()
       return
@@ -1111,6 +1158,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   const handleSaveCleanerSingle = async () => {
     if (!selectedSubcontractorId || isSavingSubcontractor) return
+    const currentCleanerId = job.subcontractor?.id || 'unassigned'
+    if (selectedSubcontractorId === currentCleanerId) {
+      closeQuickEdit()
+      return
+    }
     setIsSavingSubcontractor(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -1136,6 +1188,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   const handleSaveCleanerFuture = async () => {
     if (!selectedSubcontractorId || isSavingSubcontractor) return
+    const currentCleanerId = job.schedule?.subcontractorId || job.subcontractor?.id || 'unassigned'
+    if (selectedSubcontractorId === currentCleanerId) {
+      closeQuickEdit()
+      return
+    }
     if (!job.scheduleId || !job.schedule) {
       await handleSaveCleanerSingle()
       return

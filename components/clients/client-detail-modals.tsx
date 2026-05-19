@@ -276,16 +276,34 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
               <Button
                 variant="outline"
                 onClick={() => {
+                  if (addJobSelectedSchedule) {
+                    setAddJobSelectedSchedule(null)
+                    setAddJobDate('')
+                    setAddJobCustomTime(false)
+                    setAddJobTime('')
+                    return
+                  }
                   setShowAddJobModal(false)
-                  setAddJobSelectedSchedule(null)
-                  setAddJobDate('')
-                  setAddJobCustomTime(false)
-                  setAddJobTime('')
                 }}
                 className="flex-1"
               >
-                Cancel
+                {addJobSelectedSchedule ? 'Back' : 'Cancel'}
               </Button>
+              {addJobSelectedSchedule && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowAddJobModal(false)
+                    setAddJobSelectedSchedule(null)
+                    setAddJobDate('')
+                    setAddJobCustomTime(false)
+                    setAddJobTime('')
+                  }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              )}
               <Button
                 onClick={handleAddJobSubmit}
                 disabled={!addJobSelectedSchedule || !addJobDate || (addJobCustomTime && !addJobTime) || addingJob}

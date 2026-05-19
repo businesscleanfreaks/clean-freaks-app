@@ -149,14 +149,16 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
   )
   const [locationMenuOpen, setLocationMenuOpen] = useState<string | null>(null)
   const [inlineEdit, setInlineEdit] = useState<
-    | { type: 'schedule'; scheduleId: string; field: 'defaultClientRate' | 'defaultSubcontractorRate' }
-    | { type: 'location'; locationId: string; field: 'accessInfo' }
+    | { type: 'schedule'; scheduleId: string; field: 'defaultClientRate' | 'defaultSubcontractorRate'; originalValue: string }
+    | { type: 'location'; locationId: string; field: 'accessInfo'; originalValue: string }
     | null
   >(null)
   const [locationHeaderEdit, setLocationHeaderEdit] = useState<{
     locationId: string
     name: string
     address: string
+    originalName: string
+    originalAddress: string
   } | null>(null)
   const [inlineValue, setInlineValue] = useState('')
   const [scheduleInlineEdit, setScheduleInlineEdit] = useState<{
@@ -169,6 +171,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     startWindowEnd: string
     startDate: string
     endDate: string
+    originalSignature: string
   } | null>(null)
   const [savingInline, setSavingInline] = useState(false)
   const {
@@ -244,17 +247,31 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     field: 'defaultClientRate' | 'defaultSubcontractorRate',
     value: number | null | undefined
   ) => {
-    setInlineEdit({ type: 'schedule', scheduleId, field })
-    setInlineValue(String(value ?? 0))
+    const originalValue = String(value ?? 0)
+    setInlineEdit({ type: 'schedule', scheduleId, field, originalValue })
+    setInlineValue(originalValue)
   }
 
   const startLocationEdit = (locationId: string, field: 'accessInfo', value: string | null | undefined) => {
-    setInlineEdit({ type: 'location', locationId, field })
-    setInlineValue(value || '')
+    const originalValue = value || ''
+    setInlineEdit({ type: 'location', locationId, field, originalValue })
+    setInlineValue(originalValue)
   }
 
+  const getScheduleInlineSignature = (value: Omit<NonNullable<typeof scheduleInlineEdit>, 'originalSignature'>) =>
+    JSON.stringify({
+      frequency: value.frequency,
+      daysOfWeek: [...value.daysOfWeek].sort(),
+      timeType: value.timeType,
+      startTime: value.startTime,
+      startWindowBegin: value.startWindowBegin,
+      startWindowEnd: value.startWindowEnd,
+      startDate: value.startDate,
+      endDate: value.endDate,
+    })
+
   const startScheduleInlineEdit = (schedule: ClientSchedule) => {
-    setScheduleInlineEdit({
+    const next = {
       scheduleId: schedule.id,
       frequency: schedule.frequency || 'WEEKLY',
       daysOfWeek: parseScheduleDays(schedule.daysOfWeek),
@@ -264,6 +281,10 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       startWindowEnd: schedule.startWindowEnd || '',
       startDate: dateInputValue(schedule.startDate),
       endDate: dateInputValue(schedule.endDate),
+    }
+    setScheduleInlineEdit({
+      ...next,
+      originalSignature: getScheduleInlineSignature(next),
     })
   }
 
@@ -272,6 +293,8 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       locationId: location.id,
       name: location.name || '',
       address: location.address || '',
+      originalName: location.name || '',
+      originalAddress: location.address || '',
     })
   }
 
@@ -282,7 +305,6 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
 
   const saveInlineEdit = async () => {
     if (!inlineEdit || savingInline) return
-    setSavingInline(true)
 
     try {
       const endpoint = inlineEdit.type === 'schedule'
@@ -294,9 +316,19 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
 
       if (inlineEdit.type === 'schedule' && (!Number.isFinite(value as number) || (value as number) < 0)) {
         showError('Enter a valid non-negative amount')
-        setSavingInline(false)
         return
       }
+
+      const unchanged = inlineEdit.type === 'schedule'
+        ? Number(inlineValue) === Number(inlineEdit.originalValue)
+        : (inlineValue.trim() || '') === (inlineEdit.originalValue.trim() || '')
+
+      if (unchanged) {
+        cancelInlineEdit()
+        return
+      }
+
+      setSavingInline(true)
 
       const response = await fetch(endpoint, {
         method: 'PUT',
@@ -321,6 +353,12 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
 
   const saveScheduleInlineEdit = async () => {
     if (!scheduleInlineEdit || savingInline) return
+
+    const currentSignature = getScheduleInlineSignature(scheduleInlineEdit)
+    if (currentSignature === scheduleInlineEdit.originalSignature) {
+      setScheduleInlineEdit(null)
+      return
+    }
 
     if (scheduleInlineEdit.daysOfWeek.length === 0) {
       showError('Select at least one schedule day')
@@ -373,6 +411,14 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     if (!locationHeaderEdit || savingInline) return
     if (!locationHeaderEdit.name.trim()) {
       showError('Location name is required')
+      return
+    }
+
+    if (
+      locationHeaderEdit.name.trim() === locationHeaderEdit.originalName.trim() &&
+      (locationHeaderEdit.address.trim() || '') === (locationHeaderEdit.originalAddress.trim() || '')
+    ) {
+      setLocationHeaderEdit(null)
       return
     }
 
@@ -644,36 +690,70 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                     <DetailRow
                       label="Client Billing"
                       value={editingClientRate ? (
-                        <Input
-                          autoFocus
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={inlineValue}
-                          onChange={(event) => setInlineValue(event.target.value)}
-                          onKeyDown={handleInlineKeyDown}
-                          onBlur={saveInlineEdit}
-                          disabled={savingInline}
-                          className="h-7 w-28 text-sm font-semibold"
-                        />
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Input
+                            autoFocus
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={inlineValue}
+                            onChange={(event) => setInlineValue(event.target.value)}
+                            onKeyDown={handleInlineKeyDown}
+                            disabled={savingInline}
+                            className="h-7 w-28 text-sm font-semibold"
+                          />
+                          <button
+                            type="button"
+                            onClick={saveInlineEdit}
+                            disabled={savingInline}
+                            className="h-7 rounded-md bg-teal-600 px-2 text-[11px] font-semibold text-white disabled:opacity-60"
+                          >
+                            {savingInline ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelInlineEdit}
+                            disabled={savingInline}
+                            className="h-7 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-slate-500 hover:bg-gray-100 disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        </span>
                       ) : payLabel(sch.defaultClientRate, clientPayType)}
                       onClick={editingClientRate ? undefined : () => startScheduleRateEdit(sch.id, 'defaultClientRate', sch.defaultClientRate)}
                     />
                     <DetailRow
                       label="Cleaner Pay"
                       value={editingCleanerRate ? (
-                        <Input
-                          autoFocus
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={inlineValue}
-                          onChange={(event) => setInlineValue(event.target.value)}
-                          onKeyDown={handleInlineKeyDown}
-                          onBlur={saveInlineEdit}
-                          disabled={savingInline}
-                          className="h-7 w-28 text-sm font-semibold"
-                        />
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Input
+                            autoFocus
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={inlineValue}
+                            onChange={(event) => setInlineValue(event.target.value)}
+                            onKeyDown={handleInlineKeyDown}
+                            disabled={savingInline}
+                            className="h-7 w-28 text-sm font-semibold"
+                          />
+                          <button
+                            type="button"
+                            onClick={saveInlineEdit}
+                            disabled={savingInline}
+                            className="h-7 rounded-md bg-teal-600 px-2 text-[11px] font-semibold text-white disabled:opacity-60"
+                          >
+                            {savingInline ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelInlineEdit}
+                            disabled={savingInline}
+                            className="h-7 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-slate-500 hover:bg-gray-100 disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        </span>
                       ) : payLabel(sch.defaultSubcontractorRate, subPayType)}
                       onClick={editingCleanerRate ? undefined : () => startScheduleRateEdit(sch.id, 'defaultSubcontractorRate', sch.defaultSubcontractorRate)}
                     />
@@ -714,15 +794,32 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                     <DetailRow
                       label="Entry Codes"
                       value={editingAccessInfo ? (
-                        <Input
-                          autoFocus
-                          value={inlineValue}
-                          onChange={(event) => setInlineValue(event.target.value)}
-                          onKeyDown={handleInlineKeyDown}
-                          onBlur={saveInlineEdit}
-                          disabled={savingInline}
-                          className="h-7 text-sm font-semibold"
-                        />
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <Input
+                            autoFocus
+                            value={inlineValue}
+                            onChange={(event) => setInlineValue(event.target.value)}
+                            onKeyDown={handleInlineKeyDown}
+                            disabled={savingInline}
+                            className="h-7 text-sm font-semibold"
+                          />
+                          <button
+                            type="button"
+                            onClick={saveInlineEdit}
+                            disabled={savingInline}
+                            className="h-7 rounded-md bg-teal-600 px-2 text-[11px] font-semibold text-white disabled:opacity-60"
+                          >
+                            {savingInline ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelInlineEdit}
+                            disabled={savingInline}
+                            className="h-7 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-slate-500 hover:bg-gray-100 disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        </span>
                       ) : location.accessInfo || 'Add entry info'}
                       muted={!location.accessInfo}
                       onClick={editingAccessInfo ? undefined : () => startLocationEdit(location.id, 'accessInfo', location.accessInfo)}

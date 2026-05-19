@@ -305,6 +305,7 @@ function ClientCard({
 
 export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrapperProps) {
   const router = useRouter()
+  const [clientList, setClientList] = useState<Client[]>(clients)
   const [searchQuery, setSearchQuery] = useState("")
   const [showWizard, setShowWizard] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
@@ -317,6 +318,10 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
   const [deletingClientId, setDeletingClientId] = useState<string | null>(null)
 
   const { confirm, ConfirmDialog } = useConfirm()
+
+  useEffect(() => {
+    setClientList(clients)
+  }, [clients])
 
   const handleArchiveFromList = useCallback(
     async (client: Client) => {
@@ -340,6 +345,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
           return
         }
         showSuccess('Client archived')
+        setClientList(current => current.map(c => c.id === client.id ? { ...c, isActive: false } : c))
         mutate('/api/clients/data')
         mutate('/api/dashboard-stats')
         router.refresh()
@@ -374,6 +380,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
           return
         }
         showSuccess('Client removed')
+        setClientList(current => current.filter(c => c.id !== client.id))
         mutate('/api/clients/data')
         mutate('/api/dashboard-stats')
         router.refresh()
@@ -394,15 +401,15 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
   // Calculate stats
   const stats = useMemo(() => {
     return {
-      total: clients.length,
-      active: clients.filter(c => c.isActive).length,
-      inactive: clients.filter(c => !c.isActive).length,
+      total: clientList.length,
+      active: clientList.filter(c => c.isActive).length,
+      inactive: clientList.filter(c => !c.isActive).length,
     }
-  }, [clients])
+  }, [clientList])
 
   // Filter clients
   const filteredClients = useMemo(() => {
-    let result = clients
+    let result = clientList
 
     // Status filter
     if (statusFilter === 'active') {
@@ -422,7 +429,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
     }
 
     return result
-  }, [clients, statusFilter, searchQuery])
+  }, [clientList, statusFilter, searchQuery])
 
 
 

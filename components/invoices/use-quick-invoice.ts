@@ -106,6 +106,7 @@ export function useQuickInvoice({
   const [progress, setProgress] = useState(0)
   const [progressStep, setProgressStep] = useState('')
   const autoPreviewSignature = useRef<string | null>(null)
+  const [lineItemsReadyKey, setLineItemsReadyKey] = useState<string | null>(null)
   
   // Email fields — "To" supports multiple recipients (invoice API accepts string | string[])
   const [recipientPool, setRecipientPool] = useState<string[]>([])
@@ -132,6 +133,10 @@ export function useQuickInvoice({
   // Job selection for the job picker
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(() => new Set(jobs.map(j => j.id)))
   const isInitialJobRender = useRef(true)
+  const invoiceInputKey = useMemo(
+    () => `${client.id}::${initialMonth || 'auto'}::${jobs.map(j => j.id).sort().join(',')}`,
+    [client.id, initialMonth, jobs]
+  )
 
   // Location grouping collapse/expand
   const [expandedLocations, setExpandedLocations] = useState<Set<string>>(new Set())
@@ -492,6 +497,10 @@ export function useQuickInvoice({
 
   // Initialize line items, date filter, and due date when modal opens
   useEffect(() => {
+    if (!open) {
+      setLineItemsReadyKey(null)
+      return
+    }
     if (open && jobs.length > 0) {
       let month = initialMonth && initialMonth !== 'all' ? initialMonth : 'all'
       if (client.billingType === 'FLAT_RATE' && month === 'all') {
@@ -515,6 +524,7 @@ export function useQuickInvoice({
         setDateFrom('')
         setDateTo('')
       }
+      isInitialJobRender.current = true
       setSelectedJobIds(new Set(initialJobs.map(j => j.id)))
       const dueDate = new Date()
       dueDate.setDate(dueDate.getDate() + 7)
@@ -525,6 +535,7 @@ export function useQuickInvoice({
       setPreviewInvoiceId(null)
       setPreviewPdfUrl(null)
       autoPreviewSignature.current = null
+      setLineItemsReadyKey(invoiceInputKey)
       const basePool = mergeUniqueEmails(client.invoicingEmail, client.communicationEmail)
       setRecipientPool(basePool)
       const firstTo = client.invoicingEmail?.trim() || client.communicationEmail?.trim() || basePool[0] || ''
@@ -537,7 +548,7 @@ export function useQuickInvoice({
       setEmailMessage(getDefaultEmailMessage({ totalAmount: totalAmountStr, dueDate: dueDateStr }))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, jobs, client.billingType, client.invoicingEmail, client.communicationEmail, client.id, initialMonth, getMonthJobs])
+  }, [open, jobs, client.billingType, client.invoicingEmail, client.communicationEmail, client.id, initialMonth, getMonthJobs, invoiceInputKey])
 
   // Merge saved client contacts into recipient suggestions when the modal opens
   useEffect(() => {
@@ -1019,9 +1030,10 @@ export function useQuickInvoice({
   }
 
   useEffect(() => {
-    if (!open || lineItems.length === 0 || previewPdfUrl || isGeneratingPreview) return
+    if (!open || lineItemsReadyKey !== invoiceInputKey || lineItems.length === 0 || previewPdfUrl || isGeneratingPreview) return
 
     const signature = [
+      invoiceInputKey,
       client.id,
       dateDue,
       selectedJobIds.size,
@@ -1044,7 +1056,7 @@ export function useQuickInvoice({
       window.clearTimeout(timeout)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, lineItems, previewPdfUrl, isGeneratingPreview, client.id, dateDue, selectedJobIds.size])
+  }, [open, lineItemsReadyKey, invoiceInputKey, lineItems, previewPdfUrl, isGeneratingPreview, client.id, dateDue, selectedJobIds.size])
 
   const handleBatchApprove = async () => {
     setIsCreating(true)

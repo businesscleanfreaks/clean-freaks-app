@@ -11,10 +11,14 @@ export const revalidate = 0
 export async function GET() {
   try {
     await requireAuth()
-    // Load 1 month of past data and 2 months of future data
+    // Load the visible calendar month plus leading/trailing week days. Wider
+    // ranges are fetched lazily by the calendar when the user navigates.
     const today = new Date()
-    const startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-    const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0, 23, 59, 59)
+    const startDate = new Date(today.getFullYear(), today.getMonth(), 1)
+    startDate.setDate(startDate.getDate() - startDate.getDay())
+    startDate.setHours(0, 0, 0, 0)
+    const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59)
+    endDate.setDate(endDate.getDate() + (6 - endDate.getDay()))
 
     await ensureJobsForDateRange({ startDate, endDate })
 

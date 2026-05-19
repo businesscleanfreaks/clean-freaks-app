@@ -103,13 +103,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   // Lazy loading state for calendar navigation
   const [allJobs, setAllJobs] = useState<JobWithFullRelations[]>(initialJobs)
   const [loadedRanges, setLoadedRanges] = useState<Set<string>>(() => {
-    // Mark initial months as loaded (1 month past + current + 2 future = 4 months)
     const ranges = new Set<string>()
     const now = new Date()
-    for (let i = -1; i <= 2; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-      ranges.add(`${d.getFullYear()}-${d.getMonth()}`)
-    }
+    ranges.add(`${now.getFullYear()}-${now.getMonth()}`)
     return ranges
   })
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -306,10 +302,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     // Calculate which months the initial data covers (the API's default window)
     const initialMonths = new Set<string>()
     const now = new Date()
-    for (let i = -1; i <= 2; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-      initialMonths.add(`${d.getFullYear()}-${d.getMonth()}`)
-    }
+    initialMonths.add(`${now.getFullYear()}-${now.getMonth()}`)
 
     setAllJobs(prev => {
       // Keep only lazily-loaded jobs that are OUTSIDE the initial API window.
@@ -1388,6 +1381,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   };
 
   const renderCompactWeekTable = (days: Date[]) => {
+    const densityConfig = {
+      Comfortable: { cellMinHeight: 86, cardMinHeight: 58, cardPadding: '7px 9px', cardGap: 6 },
+      Compact: { cellMinHeight: 66, cardMinHeight: 48, cardPadding: '6px 8px', cardGap: 5 },
+      Dense: { cellMinHeight: 46, cardMinHeight: 34, cardPadding: '4px 6px', cardGap: 4 },
+    }[weekDensity]
+
     const getMinutes = (timeStr: string | null | undefined) => {
       if (!timeStr) return 0
       const [h, m] = timeStr.split(':').map(Number)
@@ -1462,6 +1461,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       const locationName = getCompactLocationName(job)
       const title = `${timeRange} ${job.location.client.name}${job.subcontractor?.name ? ` · ${job.subcontractor.name}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`
 
+      const isDenseCard = compact || weekDensity === 'Dense'
       return (
         <button
           key={job.id}
@@ -1481,8 +1481,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             borderLeft: `4px solid ${hex}`,
             backgroundColor: `${hex}1A`,
             opacity: isDimmed ? 0.3 : 1,
-            padding: compact ? '5px 7px' : '7px 9px',
-            minHeight: compact ? '44px' : '58px',
+            padding: isDenseCard ? densityConfig.cardPadding : '7px 9px',
+            minHeight: isDenseCard ? `${densityConfig.cardMinHeight}px` : '58px',
           }}
         >
           <div className="flex min-w-0 items-baseline gap-1.5">
@@ -1493,10 +1493,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               {job.location.client.name}
             </span>
           </div>
-          <div className="mt-0.5 truncate text-[11px] font-medium leading-tight text-gray-600">
+          <div className={`${weekDensity === 'Dense' ? 'hidden' : 'mt-0.5'} truncate text-[11px] font-medium leading-tight text-gray-600`}>
             {cleanerShort}
           </div>
-          {!compact && locationName && (
+          {!isDenseCard && locationName && (
             <div className="mt-0.5 truncate text-[11px] leading-tight text-gray-500">
               {locationName}
             </div>
@@ -1584,9 +1584,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           <td
                             key={`${day.toISOString()}-${hour}`}
                             className="min-h-[62px] border-b border-l border-gray-200 p-1.5 align-top last:border-r"
+                            style={{ minHeight: densityConfig.cellMinHeight }}
                             onClick={() => handleTimeSlotClick(day, `${String(hour).padStart(2, '0')}:00`)}
                           >
-                            <div className="flex flex-col gap-1.5">
+                            <div className="flex flex-col" style={{ gap: densityConfig.cardGap }}>
                               {jobsForHour.map(job => renderCompactJobCard(job, jobsForHour.length > 2))}
                             </div>
                           </td>

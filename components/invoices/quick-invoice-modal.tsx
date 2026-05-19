@@ -106,7 +106,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     <Dialog open={props.open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="w-[95vw] max-w-[720px] h-[92vh] max-h-[920px] rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
+        className="w-[94vw] max-w-[760px] h-[92vh] max-h-[920px] rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
       >
         <DialogTitle className="sr-only">Invoice review for {client.name}</DialogTitle>
         <DialogDescription className="sr-only">
@@ -464,7 +464,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                 <Button
                   onClick={handleSendToClient}
                   disabled={!canSubmit}
-                  className="h-10 min-w-0 bg-stone-900 px-6 text-sm text-white hover:bg-stone-800"
+                  className="h-10 min-w-0 bg-stone-900 px-4 text-sm text-white hover:bg-stone-800"
                 >
                   {isCreating ? <ActionSpinner size={15} color="white" className="mr-1.5" /> : <Send className="mr-1.5 h-3 w-3 shrink-0" />}
                   Send
