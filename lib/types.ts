@@ -66,6 +66,7 @@ export interface ClientSummary {
   phone: string | null
   communicationEmail: string | null
   invoicingEmail: string | null
+  invoicingCcEmail?: string | null
 }
 
 // ─── Job types ───────────────────────────────────────────────────────────────
@@ -242,6 +243,7 @@ export interface InboxClientRecord {
   phone: string | null
   communicationEmail: string | null
   invoicingEmail: string | null
+  invoicingCcEmail?: string | null
   isActive: boolean
   locations?: Array<{
     id: string

@@ -37,6 +37,7 @@ export interface QuickInvoiceClient {
   name: string
   billingType: string
   invoicingEmail?: string | null
+  invoicingCcEmail?: string | null
   communicationEmail?: string | null
 }
 
@@ -541,14 +542,14 @@ export function useQuickInvoice({
       const firstTo = client.invoicingEmail?.trim() || client.communicationEmail?.trim() || basePool[0] || ''
       setSelectedRecipients(firstTo ? [firstTo.trim()] : [])
       setManualEmailInput('')
-      setEmailCc('')
+      setEmailCc(client.invoicingCcEmail || '')
       setEmailSubject('Invoice from Clean Freaks')
       const totalAmountStr = formatCurrency(generatedItems.reduce((sum, item) => sum + item.amount, 0))
       const dueDateStr = dueDate ? format(dueDate, 'MMMM d, yyyy') : null
       setEmailMessage(getDefaultEmailMessage({ totalAmount: totalAmountStr, dueDate: dueDateStr }))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, jobs, client.billingType, client.invoicingEmail, client.communicationEmail, client.id, initialMonth, getMonthJobs, invoiceInputKey])
+  }, [open, jobs, client.billingType, client.invoicingEmail, client.invoicingCcEmail, client.communicationEmail, client.id, initialMonth, getMonthJobs, invoiceInputKey])
 
   // Merge saved client contacts into recipient suggestions when the modal opens
   useEffect(() => {

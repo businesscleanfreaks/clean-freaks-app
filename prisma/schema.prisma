@@ -18,6 +18,7 @@ model Client {
   communicationContactName String?    // Optional name of the person for communication emails
   communicationPhone       String?    // Phone number for the communication contact
   invoicingEmail           String?
+  invoicingCcEmail         String?    // Optional CC recipient(s) for invoice emails
   invoicingContactName     String?    // Optional name of the person for invoicing emails
   invoicingPhone           String?    // Phone number for the invoicing contact
   notes                    String?

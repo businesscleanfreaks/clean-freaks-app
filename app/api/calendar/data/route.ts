@@ -136,6 +136,7 @@ export async function GET() {
           phone: true,
           communicationEmail: true,
           invoicingEmail: true,
+          invoicingCcEmail: true,
           billingType: true,
           cleanerPayType: true,
           isActive: true,

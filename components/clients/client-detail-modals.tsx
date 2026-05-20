@@ -391,6 +391,15 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                     />
                   </div>
                   <div>
+                    <Label className="text-xs text-stone-400">CC Email(s)</Label>
+                    <Input
+                      value={formData.invoicingCcEmail}
+                      onChange={(e) => setFormData({ ...formData, invoicingCcEmail: e.target.value })}
+                      placeholder="Optional invoice CC"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
                     <Label className="text-xs text-stone-400">Phone</Label>
                     <Input
                       type="tel"
@@ -519,6 +528,15 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                       value={formData.invoicingEmail}
                       onChange={(e) => setFormData({ ...formData, invoicingEmail: e.target.value })}
                       placeholder="Leave blank to use communication email"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-stone-400">CC Email(s)</Label>
+                    <Input
+                      value={formData.invoicingCcEmail}
+                      onChange={(e) => setFormData({ ...formData, invoicingCcEmail: e.target.value })}
+                      placeholder="Optional invoice CC"
                       className="mt-1"
                     />
                   </div>

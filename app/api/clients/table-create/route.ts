@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       "addon1Name", "addon1Frequency",
       "addon2Name", "addon2Frequency",
       "phone", "communicationContactName", "communicationEmail",
-      "invoicingContactName", "invoicingEmail", "invoiceFrequency", "notes",
+      "invoicingContactName", "invoicingEmail", "invoicingCcEmail", "invoiceFrequency", "notes",
     ]
 
     for (const f of floatFields) {
@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       communicationEmail: client.communicationEmail,
       invoicingContactName: client.invoicingContactName,
       invoicingEmail: client.invoicingEmail,
+      invoicingCcEmail: client.invoicingCcEmail,
       invoiceFrequency: client.invoiceFrequency,
       notes: client.notes,
       startDate: client.startDate?.toISOString() ?? null,

@@ -13,6 +13,7 @@ export const createClientSchema = z.object({
   communicationContactName: z.string().max(200).optional().nullable().or(z.literal('')),
   communicationPhone: z.string().max(50, 'Phone number too long').optional().nullable().or(z.literal('')),
   invoicingEmail: z.string().email('Invalid email format').optional().nullable().or(z.literal('')),
+  invoicingCcEmail: z.string().max(1000, 'Invoice CC email(s) too long').optional().nullable().or(z.literal('')),
   invoicingContactName: z.string().max(200).optional().nullable().or(z.literal('')),
   invoicingPhone: z.string().max(50, 'Phone number too long').optional().nullable().or(z.literal('')),
   billingType: z.enum(['FLAT_RATE', 'PER_CLEAN'], {
@@ -208,7 +209,7 @@ export const emailInvoiceSchema = z.object({
   subject: z.string().min(1, 'Subject is required').max(200, 'Subject too long'),
   message: z.string().min(1, 'Message is required').max(10000, 'Message too long'),
   cc: z.union([
-    z.string().email('Invalid CC email address'),
+    z.string().max(1000, 'CC email list is too long'),
     z.array(z.string().email('Invalid CC email address')),
     z.literal('')
   ]).optional(),

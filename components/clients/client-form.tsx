@@ -29,6 +29,7 @@ interface ClientFormProps {
     communicationContactName: string | null
     communicationPhone: string | null
     invoicingEmail: string | null
+    invoicingCcEmail: string | null
     invoicingContactName: string | null
     invoicingPhone: string | null
     billingType: 'FLAT_RATE' | 'PER_CLEAN'
@@ -65,6 +66,7 @@ export function ClientForm({ client }: ClientFormProps) {
     communicationContactName: client?.communicationContactName || '',
     communicationPhone: client?.communicationPhone || '',
     invoicingEmail: client?.invoicingEmail || '',
+    invoicingCcEmail: client?.invoicingCcEmail || '',
     invoicingContactName: client?.invoicingContactName || '',
     invoicingPhone: client?.invoicingPhone || '',
     billingType: client?.billingType || 'PER_CLEAN',
@@ -235,6 +237,17 @@ export function ClientForm({ client }: ClientFormProps) {
                     setFormData({ ...formData, invoicingEmail: e.target.value })
                   }
                   placeholder="Defaults to communication email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invoicingCcEmail" className="text-xs text-gray-500">CC Email(s)</Label>
+                <Input
+                  id="invoicingCcEmail"
+                  value={formData.invoicingCcEmail}
+                  onChange={(e) =>
+                    setFormData({ ...formData, invoicingCcEmail: e.target.value })
+                  }
+                  placeholder="Optional invoice CC"
                 />
               </div>
               <div className="space-y-2">

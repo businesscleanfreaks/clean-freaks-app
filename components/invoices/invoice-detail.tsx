@@ -388,6 +388,7 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
                   return
                 }
                 const to = invoice.client.invoicingEmail || invoice.client.communicationEmail || ''
+                const cc = invoice.client.invoicingCcEmail || ''
                 if (!to) {
                   const { showError } = await import('@/lib/toast')
                   showError('No email address found for this client.')
@@ -401,6 +402,7 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
                     to,
                     subject: `Invoice ${invoice.invoiceNumber} from Clean Freaks`,
                     message: `Please find your invoice ${invoice.invoiceNumber} for ${formatCurrency(invoice.totalAmount)}.`,
+                    cc: cc || undefined,
                     isTest: false,
                   }),
                 })
@@ -616,6 +618,12 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
               <div>
                 <p className="text-sm text-muted-foreground">Email</p>
                 <p className="font-medium">{invoice.client.invoicingEmail}</p>
+              </div>
+            )}
+            {invoice.client.invoicingCcEmail && (
+              <div>
+                <p className="text-sm text-muted-foreground">CC</p>
+                <p className="font-medium">{invoice.client.invoicingCcEmail}</p>
               </div>
             )}
             <div>

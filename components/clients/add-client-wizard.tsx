@@ -476,6 +476,7 @@ export function AddClientWizard({
   const [communicationPhone, setCommunicationPhone] = useState('')
   const [sameEmail, setSameEmail] = useState(true)
   const [invoicingEmail, setInvoicingEmail] = useState('')
+  const [invoicingCcEmail, setInvoicingCcEmail] = useState('')
   const [invoicingContactName, setInvoicingContactName] = useState('')
   const [invoicingPhone, setInvoicingPhone] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
@@ -559,6 +560,7 @@ export function AddClientWizard({
     setCommunicationPhone('')
     setSameEmail(true)
     setInvoicingEmail('')
+    setInvoicingCcEmail('')
     setInvoicingContactName('')
     setInvoicingPhone('')
     setStartDate(new Date().toISOString().split('T')[0])
@@ -613,6 +615,13 @@ export function AddClientWizard({
   }
 
   const isValidEmail = (val: string) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)
+  const isValidEmailList = (val: string) =>
+    !val ||
+    val
+      .split(/[;,]/)
+      .map(item => item.trim())
+      .filter(Boolean)
+      .every(isValidEmail)
 
   const goNext = () => {
     const newErrors: Record<string, string> = {}
@@ -622,6 +631,9 @@ export function AddClientWizard({
       if (email && !isValidEmail(email)) newErrors.email = 'Invalid email format'
       if (!sameEmail && invoicingEmail && !isValidEmail(invoicingEmail)) {
         newErrors.invoicingEmail = 'Invalid email format'
+      }
+      if (invoicingCcEmail && !isValidEmailList(invoicingCcEmail)) {
+        newErrors.invoicingCcEmail = 'Invalid CC email format'
       }
     }
 
@@ -688,6 +700,7 @@ export function AddClientWizard({
           communicationContactName: communicationContactName || null,
           communicationPhone: communicationPhone || null,
           invoicingEmail: sameEmail ? (email || null) : (invoicingEmail || null),
+          invoicingCcEmail: invoicingCcEmail || null,
           invoicingContactName: sameEmail ? (communicationContactName || null) : (invoicingContactName || null),
           invoicingPhone: sameEmail ? (communicationPhone || null) : (invoicingPhone || null),
           billingType,
@@ -1106,6 +1119,16 @@ export function AddClientWizard({
                       />
                       <span style={{ fontSize: '13px', color: '#5F6368' }}>Send invoices to this email</span>
                     </label>
+                    <div style={{ marginTop: '10px' }}>
+                      <CleanInput
+                        value={invoicingCcEmail}
+                        onChange={v => { setInvoicingCcEmail(v); setErrors(e => ({ ...e, invoicingCcEmail: '' })) }}
+                        placeholder="Invoice CC email(s), optional"
+                        type="text"
+                        error={!!errors.invoicingCcEmail}
+                      />
+                      <FieldError msg={errors.invoicingCcEmail} />
+                    </div>
                   </div>
 
                   {/* Separate invoicing contact (if different) */}

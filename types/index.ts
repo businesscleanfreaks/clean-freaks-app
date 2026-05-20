@@ -6,6 +6,7 @@ export interface Client {
   phone: string | null
   communicationEmail: string | null
   invoicingEmail: string | null
+  invoicingCcEmail: string | null
   notes: string | null
   billingType: 'FLAT_RATE' | 'PER_CLEAN'
   cleanerPayType: 'FLAT_RATE' | 'PER_CLEAN'

@@ -208,6 +208,7 @@ export async function GET() {
         communicationEmail: client.communicationEmail ?? null,
         invoicingContactName: client.invoicingContactName ?? null,
         invoicingEmail: client.invoicingEmail ?? null,
+        invoicingCcEmail: client.invoicingCcEmail ?? null,
         invoiceFrequency: client.invoiceFrequency ?? null,
         notes: client.notes ?? null,
         startDate: client.startDate?.toISOString() ?? null,

@@ -12,6 +12,16 @@ import { getBaseUrl } from '@/lib/url'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+function splitEmailList(value: string | string[] | undefined) {
+  if (!value) return []
+  const values = Array.isArray(value) ? value : value.split(/[;,]/)
+  return values.map((item) => item.trim()).filter(Boolean)
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } }
@@ -34,9 +44,14 @@ export async function POST(
 
     // Normalize recipients to arrays for consistent handling
     const toRecipients = Array.isArray(to) ? to : [to]
-    const ccRecipients = cc 
-      ? (Array.isArray(cc) ? cc : cc === '' ? [] : [cc])
-      : []
+    const ccRecipients = splitEmailList(cc)
+    const invalidCc = ccRecipients.find((email) => !isValidEmail(email))
+    if (invalidCc) {
+      return NextResponse.json(
+        { error: `Invalid CC email address: ${invalidCc}` },
+        { status: 400 }
+      )
+    }
 
     // CRITICAL SAFETY CHECK: Force test mode if safety flags not set
     const allowRealEmails = process.env.ALLOW_REAL_CLIENT_EMAILS === 'true'

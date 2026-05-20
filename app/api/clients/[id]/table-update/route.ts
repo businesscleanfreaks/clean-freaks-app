@@ -25,6 +25,7 @@ const ALLOWED_FIELDS = new Set([
   "communicationEmail",
   "invoicingContactName",
   "invoicingEmail",
+  "invoicingCcEmail",
   "invoiceFrequency",
   "preferredPaymentMethod",
   "notes",

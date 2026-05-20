@@ -75,6 +75,7 @@ interface ClientEntry {
     billingType: string
     invoiceFrequency?: string
     invoicingEmail?: string
+    invoicingCcEmail?: string | null
     communicationEmail?: string
   }
   jobs: ReadyToBillJob[]
@@ -1267,6 +1268,7 @@ export function InvoicesPageClient({
             name: selectedClient.client.name,
             billingType: selectedClient.billingType,
             invoicingEmail: selectedClient.client.invoicingEmail || null,
+            invoicingCcEmail: selectedClient.client.invoicingCcEmail || null,
             communicationEmail: selectedClient.client.communicationEmail || null,
           }}
           jobs={selectedClient.jobs}

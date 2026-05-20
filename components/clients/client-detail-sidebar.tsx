@@ -26,6 +26,7 @@ export function ClientDetailContactSummary({ state }: ClientDetailSidebarProps) 
   const communicationName = client.communicationContactName || client.invoicingContactName || "No contact name"
   const communicationEmail = client.communicationEmail || "No email"
   const invoiceEmail = client.invoicingEmail || client.communicationEmail || "No invoice email"
+  const invoiceCc = client.invoicingCcEmail || ""
   const extraContacts = contacts
     .filter((contact) => contact.name && contact.name !== client.communicationContactName && contact.name !== client.invoicingContactName)
     .slice(0, 2)
@@ -42,6 +43,12 @@ export function ClientDetailContactSummary({ state }: ClientDetailSidebarProps) 
         <span>
           Invoice to: <a href={invoiceEmail !== "No invoice email" ? `mailto:${invoiceEmail}` : undefined} className="hover:text-teal-700">{invoiceEmail}</a>
         </span>
+        {invoiceCc && (
+          <>
+            <span className="text-slate-300">Â·</span>
+            <span>CC: {invoiceCc}</span>
+          </>
+        )}
         {hasDifferentInvoicingEmail && (
           <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">Different</span>
         )}

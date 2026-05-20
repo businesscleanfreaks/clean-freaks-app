@@ -77,6 +77,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     communicationContactName: client.communicationContactName || '',
     communicationPhone: client.communicationPhone || '',
     invoicingEmail: client.invoicingEmail || '',
+    invoicingCcEmail: client.invoicingCcEmail || '',
     invoicingContactName: client.invoicingContactName || '',
     invoicingPhone: client.invoicingPhone || '',
     billingType: client.billingType,
@@ -316,6 +317,29 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
   }, [client])
 
   const handleUpdate = async () => {
+    const normalizedPayload = JSON.stringify(formData)
+    const normalizedCurrent = JSON.stringify({
+      name: client.name,
+      phone: client.phone || '',
+      communicationEmail: client.communicationEmail || '',
+      communicationContactName: client.communicationContactName || '',
+      communicationPhone: client.communicationPhone || '',
+      invoicingEmail: client.invoicingEmail || '',
+      invoicingCcEmail: client.invoicingCcEmail || '',
+      invoicingContactName: client.invoicingContactName || '',
+      invoicingPhone: client.invoicingPhone || '',
+      billingType: client.billingType,
+      cleanerPayType: client.cleanerPayType || 'PER_CLEAN',
+      invoiceFrequency: client.invoiceFrequency || 'END_OF_MONTH',
+      startDate: client.startDate ? new Date(client.startDate).toISOString().split('T')[0] : '',
+      notes: client.notes || '',
+    })
+    if (normalizedPayload === normalizedCurrent) {
+      setEditing(false)
+      setEditingContact(false)
+      return
+    }
+
     try {
       const response = await fetch(`/api/clients/${client.id}`, {
         method: 'PUT',
