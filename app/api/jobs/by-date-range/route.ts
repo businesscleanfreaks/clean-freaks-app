@@ -34,16 +34,23 @@ export async function GET(request: Request) {
       )
     }
 
-    // Limit range to 6 months max to prevent abuse
-    const sixMonthsMs = 6 * 30 * 24 * 60 * 60 * 1000
-    if (endDate.getTime() - startDate.getTime() > sixMonthsMs) {
+    // Keep the API safe for accidental huge requests, while still allowing
+    // historical calendar navigation and wider prefetch windows.
+    const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000
+    if (endDate.getTime() - startDate.getTime() > twoYearsMs) {
       return NextResponse.json(
-        { error: 'Date range cannot exceed 6 months' },
+        { error: 'Date range cannot exceed 2 years' },
         { status: 400 }
       )
     }
 
-    await ensureJobsForDateRange({ startDate, endDate })
+    // Past months should be a fast read. Current/future months can generate
+    // missing recurring jobs so the calendar remains self-healing.
+    const now = new Date()
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    if (endDate >= currentMonthStart) {
+      await ensureJobsForDateRange({ startDate, endDate })
+    }
 
     const jobs = await prisma.job.findMany({
       where: {
@@ -73,7 +80,14 @@ export async function GET(request: Request) {
       },
     })
 
-    return NextResponse.json({ jobs })
+    return NextResponse.json(
+      { jobs },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     return handleApiError(error, 'Failed to fetch jobs')
   }

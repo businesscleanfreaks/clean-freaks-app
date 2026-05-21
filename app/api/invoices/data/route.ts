@@ -256,18 +256,25 @@ export async function GET(request: Request) {
       updatedAt: inv.updatedAt?.toISOString() || inv.createdAt?.toISOString() || new Date().toISOString(),
     }))
 
-    return NextResponse.json({
-      invoices: serializedInvoices,
-      hasMore,
-      nextCursor,
-      flatRateClients: serializedFlatRate,
-      perCleanClients: serializedPerClean,
-      totalReadyToBill,
-      draftsCount,
-      waitingCount,
-      paidCount,
-      readyCount: readyToBill.length,
-    })
+    return NextResponse.json(
+      {
+        invoices: serializedInvoices,
+        hasMore,
+        nextCursor,
+        flatRateClients: serializedFlatRate,
+        perCleanClients: serializedPerClean,
+        totalReadyToBill,
+        draftsCount,
+        waitingCount,
+        paidCount,
+        readyCount: readyToBill.length,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     logger.error('Invoices data error:', error)
     return NextResponse.json(

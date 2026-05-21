@@ -362,7 +362,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
     async (client: Client) => {
       const confirmed = await confirm({
         title: 'Remove Client?',
-        description: `Permanently delete "${client.name}"? This is only allowed for clients with no jobs, invoices, schedules, or payment history. If they have history, keep them archived instead.`,
+        description: `Permanently delete "${client.name}"? Draft invoices, generated jobs, and schedules will be removed. Sent/paid invoices or payment history must be voided first.`,
         confirmText: 'Remove',
         cancelText: 'Cancel',
         variant: 'destructive',
@@ -372,7 +372,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
       try {
         const response = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
         if (response.status === 409) {
-          showError('This client has job/invoice history and cannot be permanently deleted. Keep them archived instead.')
+          showError('This client has sent/paid invoices or payment history. Archive it, or void/remove that final history first.')
           return
         }
         if (!response.ok) {

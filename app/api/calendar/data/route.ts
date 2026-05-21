@@ -248,11 +248,18 @@ export async function GET() {
       logger.warn(`[calendar] Found ${duplicatesFound} duplicate jobs (same schedule + date). Showing only one per date.`)
     }
 
-    return NextResponse.json({
-      jobs: dedupedJobs,
-      clients: serializedClients,
-      subcontractors: serializedSubcontractors,
-    })
+    return NextResponse.json(
+      {
+        jobs: dedupedJobs,
+        clients: serializedClients,
+        subcontractors: serializedSubcontractors,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     logger.error('Calendar data error:', error)
     return NextResponse.json(

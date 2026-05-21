@@ -46,6 +46,7 @@ interface CandidateCardProps {
   selectable?: boolean
   selected?: boolean
   onToggleSelect?: (candidateId: string) => void
+  canSelectNonActionable?: boolean
 }
 
 function getExceptionLabel(exception: InvoiceCandidate['exceptions'][number]) {
@@ -67,7 +68,7 @@ function getLineItemLabel(item: InvoiceCandidate['lineItems'][number]) {
   return item.description
 }
 
-export function CandidateCard({ candidate, onReview, selectable, selected, onToggleSelect }: CandidateCardProps) {
+export function CandidateCard({ candidate, onReview, selectable, selected, onToggleSelect, canSelectNonActionable }: CandidateCardProps) {
   const [expanded, setExpanded] = useState(false)
   const hasExceptions = candidate.exceptions.length > 0
   const isActionable = candidate.status === 'READY' || candidate.status === 'NEEDS_ATTENTION'
@@ -83,11 +84,14 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
   const canExpand = isPerClean && candidate.lineItems.length > 0
   const existingStatusLabel = candidate.existingInvoiceStatus === 'DRAFT'
     ? 'Draft exists'
+    : candidate.existingInvoiceStatus === 'MARKED_INVOICED'
+      ? 'Marked invoiced'
     : candidate.existingInvoiceStatus === 'SENT'
       ? 'Sent'
       : candidate.existingInvoiceStatus === 'PAID'
         ? 'Paid'
         : 'Already invoiced'
+  const showSelectionCheckbox = selectable && (isActionable || canSelectNonActionable)
 
   return (
     <div
@@ -113,7 +117,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
         }}
         onClick={() => isActionable && onReview(candidate)}
       >
-        {selectable && isActionable && (
+        {showSelectionCheckbox && (
           <button
             type="button"
             aria-label={selected ? 'Deselect invoice' : 'Select invoice'}

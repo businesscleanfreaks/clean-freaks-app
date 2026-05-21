@@ -76,7 +76,11 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json(serializedClients)
+    return NextResponse.json(serializedClients, {
+      headers: {
+        'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+      },
+    })
   } catch (error) {
     console.error('Clients data error:', error)
     return NextResponse.json(

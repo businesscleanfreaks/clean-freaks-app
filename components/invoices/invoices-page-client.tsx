@@ -12,6 +12,7 @@ import {
   CheckCheck,
   X,
   Download,
+  RotateCcw,
 } from "lucide-react"
 import Link from "next/link"
 import { addMonths, format, startOfMonth, endOfMonth } from "date-fns"
@@ -177,6 +178,8 @@ export function InvoicesPageClient({
   const [exportMonth, setExportMonth] = useState(format(new Date(), 'yyyy-MM'))
   const [candidateSelectionMode, setCandidateSelectionMode] = useState(false)
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
+  const [selectedExistingCandidateIds, setSelectedExistingCandidateIds] = useState<Set<string>>(new Set())
+  const [returningToReview, setReturningToReview] = useState(false)
 
   const handleBulkExport = async () => {
     setIsExporting(true)
@@ -390,6 +393,10 @@ export function InvoicesPageClient({
   const readyCandidates = candidates.filter(c => c.status === 'READY')
   const attentionCandidates = candidates.filter(c => c.status === 'NEEDS_ATTENTION')
   const existingCandidates = candidates.filter(c => c.status === 'DRAFT_EXISTS' || c.status === 'SENT' || c.status === 'PAID')
+  const resettableExistingCandidates = useMemo(
+    () => existingCandidates.filter(c => c.existingInvoiceStatus === 'DRAFT' || c.existingInvoiceStatus === 'MARKED_INVOICED'),
+    [existingCandidates]
+  )
 
   // Split actionable candidates (READY + NEEDS_ATTENTION) by billing type
   const actionableCandidates = useMemo(() => [...readyCandidates, ...attentionCandidates], [readyCandidates, attentionCandidates])
@@ -429,9 +436,75 @@ export function InvoicesPageClient({
     setSelectedCandidateIds(new Set())
   }
 
+  const toggleExistingCandidateSelection = (candidateId: string) => {
+    setSelectedExistingCandidateIds(prev => {
+      const next = new Set(prev)
+      if (next.has(candidateId)) {
+        next.delete(candidateId)
+      } else {
+        next.add(candidateId)
+      }
+      return next
+    })
+  }
+
+  const toggleAllResettableExisting = () => {
+    const resettableIds = resettableExistingCandidates.map(c => c.candidateId)
+    const allSelected = resettableIds.length > 0 && resettableIds.every(id => selectedExistingCandidateIds.has(id))
+    setSelectedExistingCandidateIds(allSelected ? new Set() : new Set(resettableIds))
+  }
+
+  const handleReturnSelectedToReview = async () => {
+    const selected = existingCandidates.filter(c => selectedExistingCandidateIds.has(c.candidateId))
+    if (selected.length === 0) return
+
+    const confirmed = await confirm({
+      title: 'Return selected to Review?',
+      description: `This will delete draft invoices or undo manual "already invoiced" marks for ${selected.length} item${selected.length === 1 ? '' : 's'}. Sent and paid invoices stay protected.`,
+      confirmText: 'Return to Review',
+      cancelText: 'Cancel',
+    })
+
+    if (!confirmed) return
+
+    setReturningToReview(true)
+    try {
+      const response = await fetch('/api/invoices/bulk-return-to-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: selected.map(candidate => ({
+            invoiceId: candidate.existingInvoiceStatus === 'DRAFT' ? candidate.existingInvoiceId : undefined,
+            jobIds: candidate.existingInvoiceStatus === 'MARKED_INVOICED' ? candidate.jobIds : [],
+          })),
+        }),
+      })
+
+      if (!response.ok) {
+        await showApiError(response, 'Failed to return selected items to Review')
+        return
+      }
+
+      const result = await response.json().catch(() => ({}))
+      const { showSuccess, showWarning } = await import('@/lib/toast')
+      showSuccess(result.message || 'Selected items returned to Review')
+      if (result.skippedInvoices?.length) {
+        showWarning(`${result.skippedInvoices.length} sent/paid invoice${result.skippedInvoices.length === 1 ? '' : 's'} were left alone.`)
+      }
+      setSelectedExistingCandidateIds(new Set())
+      onDataChange()
+    } catch {
+      const { showError } = await import('@/lib/toast')
+      showError('Failed to return selected items to Review. Please try again.')
+    } finally {
+      setReturningToReview(false)
+    }
+  }
+
   const exitCandidateSelectionMode = () => {
     setCandidateSelectionMode(false)
     setSelectedCandidateIds(new Set())
+    setSelectedExistingCandidateIds(new Set())
   }
 
   const handleBatchReviewSelected = () => {
@@ -861,20 +934,74 @@ export function InvoicesPageClient({
               {/* ── Already Invoiced Section ── */}
               {existingCandidates.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2 px-1">
-                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Already Invoiced
-                    </h3>
-                    <span style={{
-                      fontSize: '11px', fontWeight: 600, color: '#6B7280',
-                      backgroundColor: '#F3F4F6', padding: '1px 6px', borderRadius: '8px',
-                    }}>
-                      {existingCandidates.length}
-                    </span>
+                  <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
+                    <div className="flex items-center gap-2">
+                      <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Already Invoiced
+                      </h3>
+                      <span style={{
+                        fontSize: '11px', fontWeight: 600, color: '#6B7280',
+                        backgroundColor: '#F3F4F6', padding: '1px 6px', borderRadius: '8px',
+                      }}>
+                        {existingCandidates.length}
+                      </span>
+                    </div>
+                    {resettableExistingCandidates.length > 0 && (
+                      <div className="ml-auto flex items-center gap-2">
+                        <button
+                          onClick={toggleAllResettableExisting}
+                          disabled={returningToReview}
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: '#64748B',
+                            backgroundColor: 'white',
+                            border: '1px solid #E5E7EB',
+                            borderRadius: '8px',
+                            cursor: returningToReview ? 'not-allowed' : 'pointer',
+                            opacity: returningToReview ? 0.6 : 1,
+                          }}
+                        >
+                          {resettableExistingCandidates.every(c => selectedExistingCandidateIds.has(c.candidateId)) ? 'Clear resettable' : 'Select resettable'}
+                        </button>
+                        {selectedExistingCandidateIds.size > 0 && (
+                          <button
+                            onClick={handleReturnSelectedToReview}
+                            disabled={returningToReview}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '5px 10px',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              color: 'white',
+                              backgroundColor: '#0F766E',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: returningToReview ? 'not-allowed' : 'pointer',
+                              opacity: returningToReview ? 0.7 : 1,
+                            }}
+                          >
+                            <RotateCcw style={{ width: '13px', height: '13px' }} />
+                            {returningToReview ? 'Returning...' : `Return ${selectedExistingCandidateIds.size} to Review`}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
                     {existingCandidates.map(c => (
-                      <CandidateCard key={c.existingInvoiceId || c.clientId} candidate={c} onReview={handleCandidateReview} />
+                      <CandidateCard
+                        key={c.existingInvoiceId || c.candidateId}
+                        candidate={c}
+                        onReview={handleCandidateReview}
+                        selectable={c.existingInvoiceStatus === 'DRAFT' || c.existingInvoiceStatus === 'MARKED_INVOICED'}
+                        canSelectNonActionable
+                        selected={selectedExistingCandidateIds.has(c.candidateId)}
+                        onToggleSelect={toggleExistingCandidateSelection}
+                      />
                     ))}
                   </div>
                 </div>

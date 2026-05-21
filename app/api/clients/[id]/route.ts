@@ -11,6 +11,14 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 async function getClientWithDetails(id: string) {
+  const now = new Date()
+  const profileJobsStart = new Date(now)
+  profileJobsStart.setDate(profileJobsStart.getDate() - 60)
+  profileJobsStart.setHours(0, 0, 0, 0)
+  const profileJobsEnd = new Date(now)
+  profileJobsEnd.setMonth(profileJobsEnd.getMonth() + 6)
+  profileJobsEnd.setHours(23, 59, 59, 999)
+
   return prisma.client.findUnique({
     where: { id },
     include: {
@@ -26,6 +34,12 @@ async function getClientWithDetails(id: string) {
             },
           },
           jobs: {
+            where: {
+              date: {
+                gte: profileJobsStart,
+                lte: profileJobsEnd,
+              },
+            },
             select: {
               id: true,
               date: true,
@@ -98,7 +112,11 @@ export async function GET(
       )
     }
 
-    return NextResponse.json(client)
+    return NextResponse.json(client, {
+      headers: {
+        'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+      },
+    })
   } catch (error) {
     logger.error('Error fetching client:', error)
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch client'
@@ -313,41 +331,61 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Safety check: count linked records to prevent destroying real data
-    const [jobCount, invoiceCount, scheduleCount, paymentLineCount] = await prisma.$transaction([
-      prisma.job.count({ where: { location: { clientId: params.id } } }),
-      prisma.invoice.count({ where: { clientId: params.id } }),
-      prisma.schedule.count({ where: { location: { clientId: params.id } } }),
+    const client = await prisma.client.findUnique({
+      where: { id: params.id },
+      select: { id: true, name: true },
+    })
+
+    if (!client) {
+      return NextResponse.json(
+        { error: 'Client not found' },
+        { status: 404 }
+      )
+    }
+
+    // Safety check: only final financial history blocks permanent deletion.
+    // Draft invoices, generated schedules, and generated jobs should not make
+    // a test/imported client impossible to clean up.
+    const [finalInvoiceCount, paymentLineCount, vendorPaymentLineCount] = await prisma.$transaction([
+      prisma.invoice.count({
+        where: {
+          clientId: params.id,
+          status: { in: ['SENT', 'PAID'] },
+        },
+      }),
       prisma.subcontractorPaymentLineItem.count({
         where: { job: { location: { clientId: params.id } } },
       }),
+      prisma.vendorPaymentLineItem.count({
+        where: {
+          addOnService: {
+            OR: [
+              { job: { location: { clientId: params.id } } },
+              { schedule: { location: { clientId: params.id } } },
+            ],
+          },
+        },
+      }),
     ])
 
-    const totalLinked = jobCount + invoiceCount + scheduleCount + paymentLineCount
+    const protectedHistoryCount = finalInvoiceCount + paymentLineCount + vendorPaymentLineCount
 
-    if (totalLinked > 0) {
+    if (protectedHistoryCount > 0) {
       return NextResponse.json(
         {
-          error: 'Cannot delete: this client has linked history. Use Archive instead.',
+          error: 'Cannot delete: this client has sent/paid invoices or payment history. Archive it, or void/remove that final history first.',
           details: {
-            jobs: jobCount,
-            invoices: invoiceCount,
-            schedules: scheduleCount,
-            payments: paymentLineCount,
+            finalInvoices: finalInvoiceCount,
+            cleanerPayments: paymentLineCount,
+            vendorPayments: vendorPaymentLineCount,
           },
         },
         { status: 409 }
       )
     }
 
-    // Safe to permanently delete — no linked history
-    await prisma.$transaction(async (tx) => {
-      // Delete any client contacts
-      await tx.clientContact.deleteMany({ where: { clientId: params.id } })
-
-      // Delete the client (cascades locations via schema)
-      await tx.client.delete({ where: { id: params.id } })
-    })
+    // Safe to permanently delete. Schema cascades draft/generated records.
+    await prisma.client.delete({ where: { id: params.id } })
 
     // Revalidate all client-related pages
     revalidateClientPages()

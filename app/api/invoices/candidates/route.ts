@@ -3,7 +3,6 @@ import { prisma } from "@/lib/db"
 import { startOfMonth, endOfMonth, format } from "date-fns"
 import { getBillingStartDate } from "@/lib/billing-settings"
 import { logger } from "@/lib/logger"
-import { ensureJobsForDateRange } from "@/lib/regenerate-schedule-jobs"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -80,8 +79,6 @@ export async function GET(request: Request) {
     const effectivePeriodStart = billingStartDate && billingStartDate > periodStart ? billingStartDate : periodStart
     const currentMonthStart = startOfMonth(new Date())
     const olderWorkCutoff = periodStart < currentMonthStart ? periodStart : currentMonthStart
-
-    await ensureJobsForDateRange({ startDate: effectivePeriodStart, endDate: periodEnd })
 
     const [
       allJobs,
@@ -243,6 +240,7 @@ export async function GET(request: Request) {
       const existingDraft = clientInvoices.find(i => i.status === 'DRAFT')
       const existingSent = clientInvoices.find(i => i.status === 'SENT')
       const existingPaid = clientInvoices.find(i => i.status === 'PAID')
+      const hasExistingActiveInvoice = clientInvoices.some(i => i.status !== 'VOID')
       const reservedJobIds = new Set<string>()
       const reservedScheduleMonths = new Set<string>()
       clientInvoices.forEach(invoice => {
@@ -260,6 +258,13 @@ export async function GET(request: Request) {
 
       // Separate jobs by type
       const uninvoicedJobs = jobs.filter(j => !j.invoiced && !isReservedByInvoice(j) && j.status !== 'CANCELLED')
+      const manuallyMarkedJobs = hasExistingActiveInvoice
+        ? []
+        : jobs.filter(job =>
+            job.invoiced &&
+            job.status !== 'CANCELLED' &&
+            !job.invoiceLineItems.some(item => item.invoice.status !== 'VOID')
+          )
       const skippedJobs = jobs.filter(j => j.status === 'CANCELLED' && jobMatchesScheduleDay(j))
       const recurringJobs = uninvoicedJobs.filter(j => j.scheduleId)
       const oneOffJobs = uninvoicedJobs.filter(j => !j.scheduleId)
@@ -571,6 +576,35 @@ export async function GET(request: Request) {
             jobIds: uninvoicedJobs.map(job => job.id),
           })
         }
+      } else if (manuallyMarkedJobs.length > 0) {
+        candidates.push({
+          candidateId: `manual:${clientId}:${periodStart.toISOString().slice(0, 10)}`,
+          clientId,
+          clientName: client.name,
+          billingType,
+          status: 'DRAFT_EXISTS',
+          scheduleSummary,
+          lineItems: manuallyMarkedJobs.map(job => ({
+            description: `Marked invoiced — ${job.location.name} — ${format(job.date, 'MMM d')}`,
+            quantity: 1,
+            price: job.clientRate,
+            sourceType: 'JOB',
+            sourceId: job.id,
+            jobId: job.id,
+            scheduleId: job.scheduleId || undefined,
+            locationName: job.location.name,
+          })),
+          exceptions: [],
+          total: manuallyMarkedJobs.reduce((sum, job) => {
+            const addOns = job.addOnServices.reduce((addOnSum, addOn) => addOnSum + addOn.clientRate, 0)
+            return sum + job.clientRate + addOns
+          }, 0),
+          existingInvoiceStatus: 'MARKED_INVOICED',
+          jobCount: manuallyMarkedJobs.length,
+          completedCount: manuallyMarkedJobs.filter(j => j.status === 'COMPLETED').length,
+          hasEmail,
+          jobIds: manuallyMarkedJobs.map(job => job.id),
+        })
       }
     }
 
@@ -664,26 +698,33 @@ export async function GET(request: Request) {
       .filter(c => c.status === 'READY' || c.status === 'NEEDS_ATTENTION')
       .reduce((sum, c) => sum + c.total, 0)
 
-    return NextResponse.json({
-      candidates,
-      period: {
-        start: startParam,
-        end: endParam,
+    return NextResponse.json(
+      {
+        candidates,
+        period: {
+          start: startParam,
+          end: endParam,
+        },
+        stats: {
+          readyCount,
+          attentionCount,
+          draftCount,
+          sentCount,
+          paidCount,
+          readyTotal,
+          totalCandidates: candidates.length,
+        },
+        olderUninvoiced: {
+          count: olderUninvoicedCount,
+          months: olderMonths,
+        },
       },
-      stats: {
-        readyCount,
-        attentionCount,
-        draftCount,
-        sentCount,
-        paidCount,
-        readyTotal,
-        totalCandidates: candidates.length,
-      },
-      olderUninvoiced: {
-        count: olderUninvoicedCount,
-        months: olderMonths,
-      },
-    })
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     logger.error('Invoice candidates error:', error)
     return NextResponse.json(

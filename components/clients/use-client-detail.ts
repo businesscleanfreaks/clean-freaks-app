@@ -99,6 +99,24 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       .catch(() => showError("Failed to load subcontractors"))
   }, [initialClient])
 
+  const refreshClientSnapshot = async () => {
+    try {
+      const response = await fetch(`/api/clients/${client.id}`, { cache: 'no-store' })
+      if (response.ok) {
+        const freshClient = await response.json()
+        setClient(freshClient)
+        void globalMutate(`/api/clients/${client.id}`, freshClient, { revalidate: false })
+      }
+    } catch {
+      // Keep the successful local action; the normal SWR refresh below can retry.
+    }
+
+    void globalMutate('/api/clients/data')
+    void globalMutate('/api/dashboard-stats')
+    void globalMutate('/api/calendar/data')
+    onDataChange?.()
+  }
+
   // Calculate stats
   const stats = useMemo(() => {
     const now = new Date()
@@ -351,7 +369,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       setClient(updatedClient)
       setEditing(false)
       setEditingContact(false)
-      onDataChange?.()
+      await refreshClientSnapshot()
       showSuccess('Client updated')
     } catch (error) {
       showError('Failed to update')
@@ -373,7 +391,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       setNewLocation({ name: '', address: '' })
       setAddingLocation(false)
       showSuccess('Location added')
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch (error) {
       showError('Failed to add location')
     }
@@ -395,7 +413,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
         return
       }
       showSuccess('Location deleted')
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch {
       showError('Failed to delete location. Please try again.')
     }
@@ -417,7 +435,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
         return
       }
       showSuccess('Schedule deleted')
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch {
       showError('Failed to delete schedule. Please try again.')
     }
@@ -436,7 +454,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
         return
       }
       showSuccess(currentlyActive ? 'Schedule paused' : 'Schedule resumed')
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch {
       showError('Failed to update schedule. Please try again.')
     } finally {
@@ -493,7 +511,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
   const handleDeleteClient = async () => {
     const confirmed = await confirm({
       title: "Delete Permanently?",
-      description: `Permanently delete "${client.name}"? This cannot be undone. This is only allowed for clients with no jobs, invoices, or payment history.`,
+      description: `Permanently delete "${client.name}"? This cannot be undone. Draft invoices, generated jobs, and schedules will be removed. Sent/paid invoices or payment history must be voided first.`,
       confirmText: "Delete Permanently",
       cancelText: "Cancel",
       variant: "destructive",
@@ -503,8 +521,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     try {
       const response = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
       if (response.status === 409) {
-        // Backend says client has history — offer archive instead
-        showError('This client has job/invoice history and cannot be permanently deleted. Use Archive instead.')
+        // Backend says client has protected final history.
+        showError('This client has sent/paid invoices or payment history. Archive it, or void/remove that final history first.')
         return
       }
       if (!response.ok) {
@@ -596,7 +614,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       }
       // Ensure any server-only changes (e.g. regenerated jobs on resume)
       // are pulled in.
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch {
       showError(`Failed to ${currentlyActive ? 'pause' : 'resume'} client. Please try again.`)
       // Revert optimistic update
@@ -741,7 +759,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       setAddJobDate('')
       setAddJobCustomTime(false)
       setAddJobTime('')
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch (error) {
       showError(error instanceof Error ? getErrorMessage(error) : 'Failed to create job')
     } finally {
@@ -804,7 +822,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       }
       showSuccess('Cleaner reassigned (future jobs updated)')
       setReassigningSchedule(null)
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch (error) {
       showError('Failed to reassign cleaner')
     } finally {
@@ -859,7 +877,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       setOneTimeJobDate('')
       setOneTimeJobCustomTime(false)
       setOneTimeJobTime('')
-      onDataChange?.()
+      await refreshClientSnapshot()
     } catch (error) {
       showError(error instanceof Error ? getErrorMessage(error) : 'Failed to create job')
     } finally {
@@ -1060,8 +1078,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     handleQuickReassign,
     handleCreateOneTimeJob,
     
-    // Re-export onDataChange so sub-components can call it
-    onDataChange,
+    // Re-export the local snapshot refresh so sub-components update this page too.
+    onDataChange: refreshClientSnapshot,
   }
 }
 

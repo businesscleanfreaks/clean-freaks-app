@@ -164,7 +164,24 @@ export function WorkersPageWrapper({
     }
   }
 
-  const refreshAfterPaymentChange = () => {
+  const patchPaymentState = (jobIds: string[], paid: boolean) => {
+    const ids = new Set(jobIds)
+    const patchJobs = (jobs: CleanerJob[] = []) =>
+      jobs?.map(job => ids.has(job.id) ? { ...job, subcontractorPaid: paid } : job)
+
+    void globalMutate(
+      `/api/subcontractors/data?period=${period}`,
+      (current: CleanerData[] | undefined) => current?.map(sub => ({
+        ...sub,
+        jobs: patchJobs(sub.jobs),
+        periodJobs: patchJobs(sub.periodJobs),
+      })),
+      { revalidate: false }
+    )
+  }
+
+  const refreshAfterPaymentChange = (jobIds: string[], paid: boolean) => {
+    patchPaymentState(jobIds, paid)
     onDataChange()
     globalMutate("/dashboard-stats")
     globalMutate("/api/dashboard-stats")
@@ -185,7 +202,7 @@ export function WorkersPageWrapper({
       })
       if (!res.ok) throw new Error((await res.json()).error || "Failed to mark paid")
       showSuccess("Payment tracked")
-      refreshAfterPaymentChange()
+      refreshAfterPaymentChange(jobIds, true)
     } catch (error) {
       showError(error instanceof Error ? error.message : "Failed to mark paid")
     } finally {
@@ -209,7 +226,7 @@ export function WorkersPageWrapper({
         }
       }))
       showSuccess("Payment unchecked")
-      refreshAfterPaymentChange()
+      refreshAfterPaymentChange(jobIds, false)
     } catch (error) {
       showError(error instanceof Error ? error.message : "Failed to unmark paid")
     } finally {

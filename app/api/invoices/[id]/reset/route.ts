@@ -3,6 +3,12 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
 
+const FINAL_INVOICE_STATUSES = ['SENT', 'PAID']
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))]
+}
+
 /**
  * Reset invoice for testing purposes
  * POST /api/invoices/[id]/reset
@@ -27,7 +33,13 @@ export async function POST(
       include: {
         lineItems: {
           include: {
-            job: true,
+            job: {
+              select: {
+                id: true,
+                scheduleId: true,
+                date: true,
+              },
+            },
           },
         },
         client: true,
@@ -42,18 +54,63 @@ export async function POST(
     }
 
     if (resetType === 'full') {
+      if (FINAL_INVOICE_STATUSES.includes(invoice.status)) {
+        return NextResponse.json(
+          { error: `Invoice ${invoice.invoiceNumber} is ${invoice.status.toLowerCase()} and cannot be returned to Review. Void or status-reset it first.` },
+          { status: 409 }
+        )
+      }
+
       // Full reset: Delete invoice and unmark jobs
       logger.info('Full reset for invoice:', invoice.invoiceNumber)
 
-      // Get job IDs from line items
-      const jobIds = invoice.lineItems
-        .filter(item => item.jobId)
-        .map(item => item.jobId as string)
+      // Get direct jobs from line items, and expand flat-rate recurring
+      // line items to every job in the same schedule/month.
+      const directJobIds = uniqueStrings(invoice.lineItems.map(item => item.jobId))
+      const scheduleMonthKeys = new Map<string, { scheduleId: string; monthStart: Date; monthEnd: Date }>()
+
+      invoice.lineItems.forEach(item => {
+        if (!item.job?.scheduleId) return
+        const date = new Date(item.job.date)
+        const monthStart = new Date(date.getFullYear(), date.getMonth(), 1)
+        const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
+        scheduleMonthKeys.set(`${item.job.scheduleId}:${monthStart.toISOString()}`, {
+          scheduleId: item.job.scheduleId,
+          monthStart,
+          monthEnd,
+        })
+      })
+
+      const relatedRecurringJobs = scheduleMonthKeys.size > 0
+        ? await prisma.job.findMany({
+            where: {
+              status: { not: 'CANCELLED' },
+              OR: Array.from(scheduleMonthKeys.values()).map(entry => ({
+                scheduleId: entry.scheduleId,
+                date: { gte: entry.monthStart, lte: entry.monthEnd },
+              })),
+              invoiceLineItems: {
+                none: { invoice: { status: { in: FINAL_INVOICE_STATUSES } } },
+              },
+            },
+            select: { id: true },
+          })
+        : []
+
+      const jobIds = uniqueStrings([
+        ...directJobIds,
+        ...relatedRecurringJobs.map(job => job.id),
+      ])
 
       // Unmark jobs as invoiced
       if (jobIds.length > 0) {
         await prisma.job.updateMany({
-          where: { id: { in: jobIds } },
+          where: {
+            id: { in: jobIds },
+            invoiceLineItems: {
+              none: { invoice: { status: { in: FINAL_INVOICE_STATUSES } } },
+            },
+          },
           data: { invoiced: false },
         })
         logger.info('Unmarked jobs as invoiced:', jobIds.length)

@@ -487,24 +487,31 @@ export async function GET() {
       status: job.status,
     }))
 
-    return NextResponse.json({
-      mrr,
-      recurringProfit,
-      recurringClientsCount,
-      outstandingClientBalance,
-      totalJobsThisMonth,
-      jobsTodayCount,
-      jobsCompletedTodayCount,
-      overdueInvoicesCount,
-      pendingInvoicesCount,
-      pendingInvoicesAmount,
-      unassignedJobsCount,
-      pendingPayoutsCount: uniqueSubcontractorsOwed,
-      pendingPayoutsTotal,
-      sentInvoicesCount,
-      sentInvoicesAmount,
-      todaysJobsList,
-    })
+    return NextResponse.json(
+      {
+        mrr,
+        recurringProfit,
+        recurringClientsCount,
+        outstandingClientBalance,
+        totalJobsThisMonth,
+        jobsTodayCount,
+        jobsCompletedTodayCount,
+        overdueInvoicesCount,
+        pendingInvoicesCount,
+        pendingInvoicesAmount,
+        unassignedJobsCount,
+        pendingPayoutsCount: uniqueSubcontractorsOwed,
+        pendingPayoutsTotal,
+        sentInvoicesCount,
+        sentInvoicesAmount,
+        todaysJobsList,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     console.error('Dashboard stats error:', error)
     return NextResponse.json(

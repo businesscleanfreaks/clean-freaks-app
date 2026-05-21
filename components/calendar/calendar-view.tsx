@@ -334,8 +334,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         })
     }
 
-    prefetchMonth(-1)
-    prefetchMonth(1)
+    const timers = [
+      window.setTimeout(() => prefetchMonth(-1), 0),
+      window.setTimeout(() => prefetchMonth(1), 150),
+      window.setTimeout(() => prefetchMonth(-2), 500),
+      window.setTimeout(() => prefetchMonth(2), 900),
+      window.setTimeout(() => prefetchMonth(-3), 1300),
+      window.setTimeout(() => prefetchMonth(3), 1700),
+    ]
+
+    return () => {
+      timers.forEach(timer => window.clearTimeout(timer))
+    }
   }, [currentDate, loadedRanges])
 
   // Initialize filter selections when data loads

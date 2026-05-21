@@ -141,7 +141,38 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
     return groups.filter(group => accountName(group).toLowerCase().includes(query))
   }, [groups, searchQuery])
 
-  const refreshAfterPaymentChange = () => {
+  const patchPaymentState = (jobIds: string[], paid: boolean) => {
+    const ids = new Set(jobIds)
+    const patchJobs = (jobs: CleanerJob[] = []) =>
+      jobs?.map(job => ids.has(job.id) ? { ...job, subcontractorPaid: paid } : job)
+
+    mutate(
+      current => current
+        ? {
+            ...current,
+            jobs: patchJobs(current.jobs),
+            periodJobs: patchJobs(current.periodJobs),
+          }
+        : current,
+      { revalidate: false }
+    )
+
+    void globalMutate(
+      `/api/subcontractors/data?period=${period}`,
+      (current: CleanerData[] | undefined) => current?.map(cleaner => cleaner.id === id
+        ? {
+            ...cleaner,
+            jobs: patchJobs(cleaner.jobs),
+            periodJobs: patchJobs(cleaner.periodJobs),
+          }
+        : cleaner
+      ),
+      { revalidate: false }
+    )
+  }
+
+  const refreshAfterPaymentChange = (jobIds: string[], paid: boolean) => {
+    patchPaymentState(jobIds, paid)
     mutate()
     globalMutate(`/api/subcontractors/data?period=${period}`)
     globalMutate("/api/dashboard-stats")
@@ -162,7 +193,7 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
       })
       if (!response.ok) throw new Error((await response.json()).error || "Failed to mark paid")
       showSuccess("Payment tracked")
-      refreshAfterPaymentChange()
+      refreshAfterPaymentChange(jobIds, true)
     } catch (error) {
       showError(error instanceof Error ? error.message : "Failed to mark paid")
     } finally {
@@ -186,7 +217,7 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
         }
       }))
       showSuccess("Payment unchecked")
-      refreshAfterPaymentChange()
+      refreshAfterPaymentChange(jobIds, false)
     } catch (error) {
       showError(error instanceof Error ? error.message : "Failed to unmark paid")
     } finally {
