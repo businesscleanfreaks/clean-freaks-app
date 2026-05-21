@@ -108,6 +108,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     ranges.add(`${now.getFullYear()}-${now.getMonth()}`)
     return ranges
   })
+  const prefetchingRangesRef = useRef<Set<string>>(new Set())
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   
   // Use allJobs instead of initialJobs throughout the component
@@ -283,6 +284,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             next.add(monthKey)
             return next
           })
+
         }
       } catch (error) {
         console.error('Failed to load more jobs:', error)
@@ -292,6 +294,48 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     }
     
     fetchMoreJobs()
+  }, [currentDate, loadedRanges])
+
+  useEffect(() => {
+    const monthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`
+    if (!loadedRanges.has(monthKey)) return
+
+    const prefetchMonth = (offset: number) => {
+      const target = new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1)
+      const targetKey = `${target.getFullYear()}-${target.getMonth()}`
+      if (loadedRanges.has(targetKey)) return
+      if (prefetchingRangesRef.current.has(targetKey)) return
+      prefetchingRangesRef.current.add(targetKey)
+
+      const start = new Date(target.getFullYear(), target.getMonth(), 1)
+      start.setDate(start.getDate() - start.getDay())
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(target.getFullYear(), target.getMonth() + 1, 0, 23, 59, 59)
+      end.setDate(end.getDate() + (6 - end.getDay()))
+
+      fetch(`/api/jobs/by-date-range?start=${start.toISOString()}&end=${end.toISOString()}`)
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          if (!data?.jobs) return
+          setAllJobs(prev => {
+            const existingIds = new Set(prev.map(j => j.id))
+            const uniqueNewJobs = (data.jobs as JobWithFullRelations[]).filter(j => !existingIds.has(j.id))
+            return uniqueNewJobs.length > 0 ? [...prev, ...uniqueNewJobs] : prev
+          })
+          setLoadedRanges(prev => {
+            const next = new Set(prev)
+            next.add(targetKey)
+            return next
+          })
+        })
+        .catch(() => {})
+        .finally(() => {
+          prefetchingRangesRef.current.delete(targetKey)
+        })
+    }
+
+    prefetchMonth(-1)
+    prefetchMonth(1)
   }, [currentDate, loadedRanges])
 
   // Initialize filter selections when data loads

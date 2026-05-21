@@ -123,7 +123,8 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
   const weekInterval = WEEK_INTERVALS[params.frequency]
 
   if (weekInterval) {
-    const daysOfWeek = params.daysOfWeek ? JSON.parse(params.daysOfWeek) : []
+    const parsedDaysOfWeek = params.daysOfWeek ? JSON.parse(params.daysOfWeek) : []
+    const daysOfWeek = parsedDaysOfWeek.length > 0 ? parsedDaysOfWeek : [startDate.getUTCDay()]
     let currentDate = new Date(startDate)
     let weekCount = 0
 
@@ -302,42 +303,74 @@ export async function ensureJobsForDateRange({
   const rangeStart = utcDateOnly(startDate)
   const rangeEnd = utcDateOnly(endDate)
 
-  const schedules = await prisma.schedule.findMany({
-    where: {
-      isActive: true,
-      AND: [
-        {
-          OR: [
-            { startDate: { lte: rangeEnd } },
-            { location: { client: { startDate: { lte: rangeEnd } } } },
-          ],
-        },
-        {
-          OR: [
-            { endDate: null },
-            { endDate: { gte: rangeStart } },
-          ],
-        },
-      ],
-    },
-    include: {
-      location: {
-        select: {
-          id: true,
-          clientId: true,
-          client: {
-            select: {
-              startDate: true,
+  const [schedules, existingJobs] = await Promise.all([
+    prisma.schedule.findMany({
+      where: {
+        isActive: true,
+        AND: [
+          {
+            OR: [
+              { startDate: { lte: rangeEnd } },
+              { location: { client: { startDate: { lte: rangeEnd } } } },
+            ],
+          },
+          {
+            OR: [
+              { endDate: null },
+              { endDate: { gte: rangeStart } },
+            ],
+          },
+        ],
+      },
+      include: {
+        location: {
+          select: {
+            id: true,
+            clientId: true,
+            client: {
+              select: {
+                startDate: true,
+              },
             },
           },
         },
       },
-    },
-  })
+    }),
+    prisma.job.findMany({
+      where: {
+        scheduleId: { not: null },
+        date: { gte: rangeStart, lte: rangeEnd },
+      },
+      include: {
+        invoiceLineItems: {
+          include: { invoice: { select: { id: true, status: true } } },
+        },
+      },
+    }),
+  ])
+
+  const jobsBySchedule = new Map<string, typeof existingJobs>()
+  for (const job of existingJobs) {
+    if (!job.scheduleId) continue
+    const jobs = jobsBySchedule.get(job.scheduleId) ?? []
+    jobs.push(job)
+    jobsBySchedule.set(job.scheduleId, jobs)
+  }
 
   let createdCount = 0
   let repairedCount = 0
   let skippedCount = 0
+  const jobsToCreate: Array<{
+    locationId: string
+    subcontractorId: string | null
+    scheduleId: string
+    date: Date
+    startTime: string | null
+    startWindowBegin: string | null
+    startWindowEnd: string | null
+    clientRate: number
+    subcontractorRate: number
+  }> = []
 
   for (const schedule of schedules) {
     const effectiveStartDate = getHistoricalScheduleStartDate(schedule)
@@ -353,77 +386,36 @@ export async function ensureJobsForDateRange({
 
     if (candidateDates.length === 0) continue
 
-    const existingJobs = await prisma.job.findMany({
-      where: {
-        scheduleId: schedule.id,
-        date: { gte: rangeStart, lte: rangeEnd },
-      },
-      include: {
-        invoiceLineItems: {
-          include: { invoice: { select: { id: true, status: true } } },
-        },
-      },
-    })
-
-    const existingByTime = new Map(existingJobs.map(job => [job.date.getTime(), job]))
+    const scheduleJobs = jobsBySchedule.get(schedule.id) ?? []
+    const existingByTime = new Map(scheduleJobs.map(job => [job.date.getTime(), job]))
     const timeFields = getScheduleJobTimeFields(schedule)
 
-    for (const job of existingJobs) {
-      if (!hasScheduleTime(schedule) || hasJobTime(job) || hasFinalInvoice(job.invoiceLineItems)) continue
+    const repairableJobIds = hasScheduleTime(schedule)
+      ? scheduleJobs
+          .filter(job => !hasJobTime(job) && !hasFinalInvoice(job.invoiceLineItems))
+          .map(job => job.id)
+      : []
 
-      await prisma.job.update({
-        where: { id: job.id },
+    if (repairableJobIds.length > 0) {
+      const updated = await prisma.job.updateMany({
+        where: { id: { in: repairableJobIds } },
         data: {
           ...timeFields,
-          subcontractorId: job.subcontractorId ?? schedule.subcontractorId,
-          clientRate: job.clientRate ?? schedule.defaultClientRate,
-          subcontractorRate: job.subcontractorRate ?? schedule.defaultSubcontractorRate,
+          subcontractorId: schedule.subcontractorId,
+          clientRate: schedule.defaultClientRate,
+          subcontractorRate: schedule.defaultSubcontractorRate,
         },
       })
-      repairedCount++
+      repairedCount += updated.count
     }
 
-    if (hasScheduleTime(schedule)) {
-      const orphanJobs = await prisma.job.findMany({
-        where: {
-          locationId: schedule.locationId,
-          scheduleId: null,
-          date: { gte: rangeStart, lte: rangeEnd },
-          startTime: null,
-          startWindowBegin: null,
-        },
-        include: {
-          invoiceLineItems: {
-            include: { invoice: { select: { id: true, status: true } } },
-          },
-        },
-      })
-
-      for (const job of orphanJobs) {
-        if (hasFinalInvoice(job.invoiceLineItems)) continue
-        if (!dateMatchesSchedulePatternIgnoringStart(schedule, job.date)) continue
-
-        await prisma.job.update({
-          where: { id: job.id },
-          data: {
-            scheduleId: schedule.id,
-            ...timeFields,
-            subcontractorId: job.subcontractorId ?? schedule.subcontractorId,
-            clientRate: job.clientRate ?? schedule.defaultClientRate,
-            subcontractorRate: job.subcontractorRate ?? schedule.defaultSubcontractorRate,
-          },
-        })
-        repairedCount++
+    for (const date of candidateDates) {
+      const exists = existingByTime.has(date.getTime())
+      if (exists) {
+        skippedCount++
+        continue
       }
-    }
-
-    const jobsToCreate = candidateDates
-      .filter(date => {
-        const exists = existingByTime.has(date.getTime())
-        if (exists) skippedCount++
-        return !exists
-      })
-      .map(date => ({
+      jobsToCreate.push({
         locationId: schedule.locationId,
         subcontractorId: schedule.subcontractorId,
         scheduleId: schedule.id,
@@ -431,16 +423,17 @@ export async function ensureJobsForDateRange({
         ...timeFields,
         clientRate: schedule.defaultClientRate,
         subcontractorRate: schedule.defaultSubcontractorRate,
-      }))
-
-    if (jobsToCreate.length > 0) {
-      const result = await prisma.job.createMany({
-        data: jobsToCreate,
-        skipDuplicates: true,
       })
-      createdCount += result.count
-      skippedCount += jobsToCreate.length - result.count
     }
+  }
+
+  if (jobsToCreate.length > 0) {
+    const result = await prisma.job.createMany({
+      data: jobsToCreate,
+      skipDuplicates: true,
+    })
+    createdCount = result.count
+    skippedCount += jobsToCreate.length - result.count
   }
 
   if (createdCount || repairedCount) {

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { revalidateClientPages } from '@/lib/revalidate'
 import { updateClientSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
-import { ensureJobsForDateRange, regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
+import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { startOfDay } from 'date-fns'
 
@@ -89,11 +89,6 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const today = new Date()
-    await ensureJobsForDateRange({
-      startDate: new Date(today.getFullYear(), today.getMonth() - 1, 1),
-      endDate: new Date(today.getFullYear(), today.getMonth() + 2, 0, 23, 59, 59, 999),
-    })
     const client = await getClientWithDetails(params.id)
 
     if (!client) {
