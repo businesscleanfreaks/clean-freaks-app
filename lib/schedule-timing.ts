@@ -1,3 +1,5 @@
+import { parseDateOnly } from '@/lib/date-only'
+
 type ScheduleTimingLike = {
   startDate?: Date | string | null
   endDate?: Date | string | null
@@ -6,17 +8,15 @@ type ScheduleTimingLike = {
 export type ScheduleLifecycle = "current" | "upcoming" | "ended"
 
 function normalizeStartDate(value?: Date | string | null) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
+  const date = parseDateOnly(value)
+  if (!date) return null
   date.setHours(0, 0, 0, 0)
   return date
 }
 
 function normalizeEndDate(value?: Date | string | null) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
+  const date = parseDateOnly(value)
+  if (!date) return null
   date.setHours(23, 59, 59, 999)
   return date
 }

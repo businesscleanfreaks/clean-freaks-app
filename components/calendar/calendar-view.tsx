@@ -250,12 +250,17 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     // If this month is already loaded, skip
     if (loadedRanges.has(monthKey)) return
     
-    // Fetch jobs for this month and adjacent months (3 month window)
+    // Fetch only the visible calendar month (plus leading/trailing week days).
+    // Loading three months at a time made historical navigation feel frozen
+    // because each jump also generated jobs for adjacent months.
     const fetchMoreJobs = async () => {
       setIsLoadingMore(true)
       try {
-        const start = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1)
-        const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 2, 0, 23, 59, 59)
+        const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+        start.setDate(start.getDate() - start.getDay())
+        start.setHours(0, 0, 0, 0)
+        const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59)
+        end.setDate(end.getDate() + (6 - end.getDay()))
         
         const response = await fetch(
           `/api/jobs/by-date-range?start=${start.toISOString()}&end=${end.toISOString()}`
@@ -272,13 +277,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             return [...prev, ...uniqueNewJobs]
           })
           
-          // Mark these months as loaded
+          // Mark this month as loaded
           setLoadedRanges(prev => {
             const next = new Set(prev)
-            for (let i = -1; i <= 1; i++) {
-              const d = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1)
-              next.add(`${d.getFullYear()}-${d.getMonth()}`)
-            }
+            next.add(monthKey)
             return next
           })
         }

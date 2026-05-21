@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { parseDateOnlyForStorage } from "@/lib/date-only"
 
 const ALLOWED_FIELDS = new Set([
   "clientPrice",
@@ -78,8 +79,8 @@ export async function PUT(
       if (value === null || value === "" || value === undefined) {
         processedValue = null
       } else {
-        const d = new Date(value)
-        if (isNaN(d.getTime())) {
+        const d = parseDateOnlyForStorage(value)
+        if (!d || isNaN(d.getTime())) {
           return NextResponse.json({ error: "Invalid date" }, { status: 400 })
         }
         processedValue = d

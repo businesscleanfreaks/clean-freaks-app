@@ -77,6 +77,11 @@ export async function GET() {
             { status: "COMPLETED" },
             { status: "SCHEDULED", date: { lte: todayEnd } },
           ],
+          location: {
+            client: {
+              isActive: true,
+            },
+          },
           ...billingDateFilter,
         },
         include: {
@@ -107,6 +112,11 @@ export async function GET() {
             { status: "COMPLETED" },
             { status: "SCHEDULED", date: { lte: todayEnd } },
           ],
+          location: {
+            client: {
+              isActive: true,
+            },
+          },
           ...billingDateFilter,
         },
         include: {
@@ -130,6 +140,11 @@ export async function GET() {
             gte: monthStart,
             lte: monthEnd,
           },
+          location: {
+            client: {
+              isActive: true,
+            },
+          },
         },
       }),
       // Jobs still needing a cleaner: no assignee on the job AND no default cleaner on the linked schedule.
@@ -140,6 +155,11 @@ export async function GET() {
           date: {
             gte: todayStart,
             lte: todayEnd,
+          },
+          location: {
+            client: {
+              isActive: true,
+            },
           },
           AND: [
             { subcontractorId: null },
@@ -159,6 +179,11 @@ export async function GET() {
             gte: startOfDay(now),
             lte: endOfDay(now),
           },
+          location: {
+            client: {
+              isActive: true,
+            },
+          },
           status: "SCHEDULED",
         },
       }),
@@ -168,6 +193,11 @@ export async function GET() {
           date: {
             gte: startOfDay(now),
             lte: endOfDay(now),
+          },
+          location: {
+            client: {
+              isActive: true,
+            },
           },
           status: "COMPLETED",
         },
@@ -270,6 +300,11 @@ export async function GET() {
           date: {
             gte: startOfDay(now),
             lte: endOfDay(now),
+          },
+          location: {
+            client: {
+              isActive: true,
+            },
           },
           status: { in: ["SCHEDULED", "COMPLETED"] },
         },

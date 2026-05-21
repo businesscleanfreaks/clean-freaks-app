@@ -1,4 +1,3 @@
-import { differenceInCalendarDays, startOfMonth, endOfMonth } from 'date-fns'
 import { calculateScheduleDates, type ScheduleDateParams } from '@/lib/regenerate-schedule-jobs'
 import { getAvgOccurrencesPerMonth } from '@/lib/frequency-utils'
 
@@ -36,16 +35,45 @@ export interface MonthlyProjection {
   jobCount: number
 }
 
+function utcDateOnly(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12, 0, 0))
+}
+
+function parseUtcDateOnly(value: Date | string): Date {
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) {
+      const [, year, month, day] = match
+      return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12, 0, 0))
+    }
+  }
+
+  return utcDateOnly(new Date(value))
+}
+
+function startOfUtcMonth(year: number, month: number): Date {
+  return new Date(Date.UTC(year, month, 1, 12, 0, 0))
+}
+
+function endOfUtcMonth(year: number, month: number): Date {
+  return new Date(Date.UTC(year, month + 1, 0, 12, 0, 0))
+}
+
+function differenceInUtcDays(end: Date, start: Date): number {
+  const msPerDay = 24 * 60 * 60 * 1000
+  return Math.round((utcDateOnly(end).getTime() - utcDateOnly(start).getTime()) / msPerDay)
+}
+
 function getActiveMonthRatio(schedule: ProjectableSchedule, monthStart: Date, monthEnd: Date): number {
-  const scheduleStart = new Date(schedule.startDate)
-  const scheduleEnd = schedule.endDate ? new Date(schedule.endDate) : monthEnd
+  const scheduleStart = parseUtcDateOnly(schedule.startDate)
+  const scheduleEnd = schedule.endDate ? parseUtcDateOnly(schedule.endDate) : monthEnd
   const activeStart = scheduleStart > monthStart ? scheduleStart : monthStart
   const activeEnd = scheduleEnd < monthEnd ? scheduleEnd : monthEnd
 
   if (activeEnd < activeStart) return 0
 
-  const activeDays = differenceInCalendarDays(activeEnd, activeStart) + 1
-  const totalDays = differenceInCalendarDays(monthEnd, monthStart) + 1
+  const activeDays = differenceInUtcDays(activeEnd, activeStart) + 1
+  const totalDays = differenceInUtcDays(monthEnd, monthStart) + 1
   return Math.max(0, Math.min(1, activeDays / totalDays))
 }
 
@@ -61,8 +89,8 @@ export function projectSchedulesForMonth(
   year: number,
   month: number
 ): MonthlyProjection {
-  const monthStart = startOfMonth(new Date(year, month, 1))
-  const monthEnd = endOfMonth(new Date(year, month, 1))
+  const monthStart = startOfUtcMonth(year, month)
+  const monthEnd = endOfUtcMonth(year, month)
 
   let revenue = 0
   let workerPayments = 0
@@ -76,7 +104,7 @@ export function projectSchedulesForMonth(
     // Calculate exact dates that fall in this month
     const dateParams: ScheduleDateParams = {
       frequency: schedule.frequency,
-      startDate: new Date(schedule.startDate),
+      startDate: parseUtcDateOnly(schedule.startDate),
       endDate: schedule.endDate ?? null,
       daysOfWeek: schedule.daysOfWeek,
       monthlyPattern: schedule.monthlyPattern,

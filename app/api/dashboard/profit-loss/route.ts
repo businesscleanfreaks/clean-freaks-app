@@ -30,6 +30,11 @@ export async function GET(request: NextRequest) {
         where: {
           date: { gte: monthStart, lte: monthEnd },
           status: { in: ['COMPLETED'] },
+          location: {
+            client: {
+              isActive: true,
+            },
+          },
         },
         include: {
           location: { include: { client: true } },
@@ -126,7 +131,14 @@ export async function GET(request: NextRequest) {
       // Uses exact schedule date math to determine how many jobs fall in
       // the target month, then multiplies by rates. Works for any month.
       const schedules = await prisma.schedule.findMany({
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          location: {
+            client: {
+              isActive: true,
+            },
+          },
+        },
         include: {
           recurringAddOnServices: { where: { isRecurring: true } },
         },

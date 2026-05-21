@@ -29,6 +29,9 @@ export async function GET(request: NextRequest) {
 
     // Get all clients with their schedules, locations, and add-ons
     const clients = await prisma.client.findMany({
+      where: {
+        isActive: true,
+      },
       include: {
         locations: {
           include: {
@@ -59,6 +62,11 @@ export async function GET(request: NextRequest) {
           where: {
             date: { gte: periodStart, lte: periodEnd },
             status: { in: ['COMPLETED'] },
+            location: {
+              client: {
+                isActive: true,
+              },
+            },
           },
           include: pastJobInclude,
         })

@@ -6,6 +6,7 @@ import { revalidateSchedulePages } from '@/lib/revalidate'
 import { triggerSystemRefresh } from '@/lib/cascading-updates'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { changeScheduleGoingForwardSchema } from '@/lib/validations'
+import { parseDateOnly, parseDateOnlyForStorage } from '@/lib/date-only'
 
 export async function POST(
   request: Request,
@@ -49,12 +50,9 @@ export async function POST(
       ...newScheduleData
     } = validationResult.data
 
-    const newStartDate = startOfDay(
-      typeof newScheduleData.startDate === 'string'
-        ? new Date(newScheduleData.startDate)
-        : newScheduleData.startDate
-    )
-    const currentStartDate = startOfDay(new Date(existingSchedule.startDate))
+    const parsedNewStartDate = parseDateOnly(newScheduleData.startDate)!
+    const newStartDate = startOfDay(parsedNewStartDate)
+    const currentStartDate = startOfDay(parseDateOnly(existingSchedule.startDate)!)
     const today = startOfDay(new Date())
 
     if (newStartDate < today) {
@@ -71,14 +69,8 @@ export async function POST(
       )
     }
 
-    const persistedStartDate =
-      typeof newScheduleData.startDate === 'string'
-        ? new Date(newScheduleData.startDate)
-        : newScheduleData.startDate
-    const persistedEndDate =
-      typeof newScheduleData.endDate === 'string'
-        ? new Date(newScheduleData.endDate)
-        : newScheduleData.endDate
+    const persistedStartDate = parseDateOnlyForStorage(newScheduleData.startDate)!
+    const persistedEndDate = parseDateOnlyForStorage(newScheduleData.endDate)
 
     if (persistedEndDate && startOfDay(persistedEndDate) < newStartDate) {
       return NextResponse.json(
@@ -137,7 +129,7 @@ export async function POST(
 
     const requestedOldEndDate = subDays(newStartDate, 1)
     const existingEndDate = existingSchedule.endDate
-      ? startOfDay(new Date(existingSchedule.endDate))
+      ? startOfDay(parseDateOnly(existingSchedule.endDate)!)
       : null
     const oldScheduleEndDate = existingEndDate && existingEndDate < requestedOldEndDate
       ? existingEndDate

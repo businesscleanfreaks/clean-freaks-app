@@ -73,13 +73,13 @@ export function DashboardStats({
         title="Monthly Recurring"
         value={formatCurrency(mrr)}
         icon={<DollarSign className="w-5 h-5 text-cf-icon-muted" />}
-        tooltip="Per-clean clients: rate × avg cleans/month (52-week annualized ÷ 12). Flat rate clients: monthly rate as-is. Includes recurring add-on revenue at their own frequency."
+        tooltip="Per-clean clients: rate times expected cleans/month from the schedule. Flat rate clients: monthly rate as-is. Includes recurring add-on revenue at its own frequency."
       />
       <StatCard
         title="Recurring Gross Profit"
         value={formatCurrency(recurringProfit)}
         icon={<TrendingUp className="w-5 h-5 text-cf-icon-muted" />}
-        tooltip="MRR minus monthly subcontractor costs (same 52/12 averaging). Flat rate cleaner pay counted once per month."
+        tooltip="Recurring revenue minus expected monthly cleaner costs. Flat rate cleaner pay is counted once per month."
       />
       <StatCard
         title="Average Margin"

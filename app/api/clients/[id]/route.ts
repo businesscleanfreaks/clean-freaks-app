@@ -4,6 +4,7 @@ import { revalidateClientPages } from '@/lib/revalidate'
 import { updateClientSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { ensureJobsForDateRange, regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
+import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { startOfDay } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
@@ -146,7 +147,7 @@ export async function PUT(
       where: { id: params.id },
       data: {
         ...clientData,
-        ...(startDate !== undefined && { startDate: startDate ? new Date(startDate) : null }),
+        ...(startDate !== undefined && { startDate: parseDateOnlyForStorage(startDate) }),
       },
       include: {
         locations: {

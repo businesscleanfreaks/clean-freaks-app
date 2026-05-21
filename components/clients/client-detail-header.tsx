@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
-import { format } from "date-fns"
+import { formatDateOnly } from "@/lib/date-only"
 import {
   Plus, Edit, Calendar, ArrowLeft,
   PauseCircle, PlayCircle, MoreHorizontal, Archive, Trash2,
@@ -67,7 +67,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
                   <span>·</span>
                   <span>{client.billingType === 'FLAT_RATE' ? 'Monthly flat rate' : 'Per clean'}</span>
                   <span>·</span>
-                  <span>Since {stats.clientSince ? format(stats.clientSince, 'MMM d, yyyy') : '—'}</span>
+                  <span>Since {formatDateOnly(stats.clientSince) || '—'}</span>
                   {nextClean && (
                     <>
                       <span>·</span>

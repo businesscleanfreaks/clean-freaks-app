@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import type { Prisma } from "@prisma/client"
+import { parseDateOnlyForStorage } from "@/lib/date-only"
 
 export async function POST(request: Request) {
   try {
@@ -45,8 +46,8 @@ export async function POST(request: Request) {
     }
 
     if (rest.startDate) {
-      const d = new Date(rest.startDate)
-      if (!isNaN(d.getTime())) data.startDate = d
+      const d = parseDateOnlyForStorage(rest.startDate)
+      if (d && !isNaN(d.getTime())) data.startDate = d
     }
 
     const client = await prisma.client.create({

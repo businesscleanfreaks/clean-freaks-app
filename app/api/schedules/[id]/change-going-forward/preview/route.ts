@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { calculateScheduleDates, previewScheduleChanges } from '@/lib/regenerate-schedule-jobs'
 import { changeScheduleGoingForwardSchema } from '@/lib/validations'
+import { parseDateOnly, parseDateOnlyForStorage } from '@/lib/date-only'
 
 type OverlapLike = {
   startDate: Date
@@ -15,10 +16,10 @@ function rangesOverlap(
   left: OverlapLike,
   right: OverlapLike
 ) {
-  const leftStart = startOfDay(new Date(left.startDate))
-  const rightStart = startOfDay(new Date(right.startDate))
-  const leftEnd = left.endDate ? endOfDay(new Date(left.endDate)) : null
-  const rightEnd = right.endDate ? endOfDay(new Date(right.endDate)) : null
+  const leftStart = startOfDay(parseDateOnly(left.startDate)!)
+  const rightStart = startOfDay(parseDateOnly(right.startDate)!)
+  const leftEnd = left.endDate ? endOfDay(parseDateOnly(left.endDate)!) : null
+  const rightEnd = right.endDate ? endOfDay(parseDateOnly(right.endDate)!) : null
 
   if (leftEnd && leftEnd < rightStart) return false
   if (rightEnd && rightEnd < leftStart) return false
@@ -64,12 +65,8 @@ export async function POST(
       ...newScheduleData
     } = validationResult.data
 
-    const newStartDate = startOfDay(
-      typeof newScheduleData.startDate === 'string'
-        ? new Date(newScheduleData.startDate)
-        : newScheduleData.startDate
-    )
-    const currentStartDate = startOfDay(new Date(existingSchedule.startDate))
+    const newStartDate = startOfDay(parseDateOnly(newScheduleData.startDate)!)
+    const currentStartDate = startOfDay(parseDateOnly(existingSchedule.startDate)!)
     const today = startOfDay(new Date())
 
     if (newStartDate < today) {
@@ -90,10 +87,7 @@ export async function POST(
     const isSameStartDate = newStartDate.getTime() === currentStartDate.getTime()
 
     if (isSameStartDate) {
-      const persistedEndDate =
-        typeof newScheduleData.endDate === 'string'
-          ? new Date(newScheduleData.endDate)
-          : newScheduleData.endDate
+      const persistedEndDate = parseDateOnlyForStorage(newScheduleData.endDate)
 
       if (persistedEndDate && startOfDay(persistedEndDate) < newStartDate) {
         return NextResponse.json(
@@ -140,10 +134,7 @@ export async function POST(
       })
     }
 
-    const persistedEndDate =
-      typeof newScheduleData.endDate === 'string'
-        ? new Date(newScheduleData.endDate)
-        : newScheduleData.endDate
+    const persistedEndDate = parseDateOnlyForStorage(newScheduleData.endDate)
 
     if (persistedEndDate && startOfDay(persistedEndDate) < newStartDate) {
       return NextResponse.json(
@@ -154,7 +145,7 @@ export async function POST(
 
     const requestedOldEndDate = subDays(newStartDate, 1)
     const existingEndDate = existingSchedule.endDate
-      ? startOfDay(new Date(existingSchedule.endDate))
+      ? startOfDay(parseDateOnly(existingSchedule.endDate)!)
       : null
     const oldScheduleEndDate = existingEndDate && existingEndDate < requestedOldEndDate
       ? existingEndDate

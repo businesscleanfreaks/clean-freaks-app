@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { revalidateClientPages } from '@/lib/revalidate'
 import { createClientSchema } from '@/lib/validations'
 import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
+import { parseDateOnlyForStorage } from '@/lib/date-only'
 
 export async function GET() {
   try {
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const client = await prisma.client.create({
       data: {
         ...clientData,
-        startDate: startDate ? new Date(startDate) : null,
+        startDate: parseDateOnlyForStorage(startDate),
         locations: locations
           ? {
               create: locations.map((loc: { name: string; address: string }) => ({

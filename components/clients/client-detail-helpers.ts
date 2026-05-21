@@ -1,4 +1,4 @@
-import { format } from "date-fns"
+import { formatDateOnly } from "@/lib/date-only"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getScheduleLifecycle } from "@/lib/schedule-timing"
 import type { ClientSchedule } from "./client-detail-types"
@@ -63,14 +63,14 @@ export function getScheduleTimingBadge(schedule: ClientSchedule) {
 
   if (lifecycle === 'upcoming') {
     return {
-      label: `Starts ${format(new Date(schedule.startDate), 'MMM d')}`,
+      label: `Starts ${formatDateOnly(schedule.startDate, 'MMM d') || ''}`,
       className: 'bg-blue-50 text-blue-700 border border-blue-200',
     }
   }
 
   if (lifecycle === 'ended') {
     return {
-      label: `Ended ${schedule.endDate ? format(new Date(schedule.endDate), 'MMM d') : 'earlier'}`,
+      label: `Ended ${schedule.endDate ? formatDateOnly(schedule.endDate, 'MMM d') : 'earlier'}`,
       className: 'bg-stone-100 text-stone-500 border border-stone-200',
     }
   }
@@ -83,9 +83,7 @@ export function getScheduleTimingBadge(schedule: ClientSchedule) {
 
 export function formatScheduleDate(value?: Date | string | null) {
   if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return format(date, 'MMM d, yyyy')
+  return formatDateOnly(value)
 }
 
 export function getScheduleHistoryLine(schedule: ClientSchedule) {

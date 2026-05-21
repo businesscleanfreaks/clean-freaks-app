@@ -5,6 +5,7 @@ import { revalidateSchedulePages } from '@/lib/revalidate'
 import { createScheduleSchema } from '@/lib/validations'
 import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
 import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
+import { parseDateOnlyForStorage } from '@/lib/date-only'
 
 // Type for transaction client
 type TransactionClient = Prisma.TransactionClient
@@ -72,9 +73,15 @@ export async function POST(request: Request) {
 
     // Use a transaction to ensure schedule + jobs are created atomically
     // If job generation fails, the schedule creation is rolled back
+    const scheduleData = {
+      ...validationResult.data,
+      startDate: parseDateOnlyForStorage(validationResult.data.startDate)!,
+      endDate: parseDateOnlyForStorage(validationResult.data.endDate),
+    }
+
     const schedule = await prisma.$transaction(async (tx) => {
       const newSchedule = await tx.schedule.create({
-        data: validationResult.data,
+        data: scheduleData,
         include: {
           location: {
             include: {

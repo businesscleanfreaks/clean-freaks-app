@@ -11,6 +11,7 @@ import { AddOnCard } from "./add-on-card"
 import { formatCurrency, formatTime } from "@/lib/utils"
 import { format } from "date-fns"
 import { showApiError, showError, showSuccess } from "@/lib/toast"
+import { dateInputValue as formatDateInputValue } from "@/lib/date-only"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getPrimaryScheduleForDisplay, sortSchedulesForDisplay } from "@/lib/schedule-timing"
 import {
@@ -49,11 +50,6 @@ function scheduleSummary(sch: ClientSchedule) {
 
 function payLabel(amount: number | null | undefined, payType: string | null | undefined) {
   return `${formatCurrency(amount || 0)}${payType === 'FLAT_RATE' ? '/mo' : '/clean'}`
-}
-
-function dateInputValue(date: string | Date | null | undefined) {
-  if (!date) return ''
-  return new Date(date).toISOString().slice(0, 10)
 }
 
 const INLINE_FREQUENCIES = [
@@ -279,8 +275,8 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       startTime: schedule.startTime || '',
       startWindowBegin: schedule.startWindowBegin || '',
       startWindowEnd: schedule.startWindowEnd || '',
-      startDate: dateInputValue(schedule.startDate),
-      endDate: dateInputValue(schedule.endDate),
+      startDate: formatDateInputValue(schedule.startDate),
+      endDate: formatDateInputValue(schedule.endDate),
     }
     setScheduleInlineEdit({
       ...next,

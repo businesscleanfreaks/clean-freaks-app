@@ -5,6 +5,7 @@ import { updateScheduleSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { triggerSystemRefresh } from '@/lib/cascading-updates'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
+import { parseDateOnlyForStorage } from '@/lib/date-only'
 
 export async function DELETE(
   request: Request,
@@ -106,11 +107,11 @@ export async function PUT(
     if (subcontractor && !updateData.subcontractorId) {
       updateData.subcontractorId = subcontractor
     }
-    if (updateData.startDate && typeof updateData.startDate === 'string') {
-      updateData.startDate = new Date(updateData.startDate)
+    if (updateData.startDate) {
+      updateData.startDate = parseDateOnlyForStorage(updateData.startDate as string | Date)
     }
-    if (updateData.endDate && typeof updateData.endDate === 'string') {
-      updateData.endDate = new Date(updateData.endDate)
+    if (updateData.endDate) {
+      updateData.endDate = parseDateOnlyForStorage(updateData.endDate as string | Date)
     }
     
     // Ensure only valid Prisma fields are included (remove any undefined or null values that might cause issues)

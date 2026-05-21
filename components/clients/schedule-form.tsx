@@ -19,15 +19,7 @@ import { InlineHelp } from "@/components/ui/inline-help"
 import { logger } from "@/lib/logger"
 import { showError, showSuccess, showApiError } from "@/lib/toast"
 import { createScheduleSchema, updateScheduleSchema } from "@/lib/validations"
-
-// Helper function to format date for input without timezone issues
-function formatDateForInput(date: Date | string): string {
-  const d = new Date(date)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+import { dateInputValue as formatDateForInput } from "@/lib/date-only"
 
 export interface ScheduleRecord {
   id: string
