@@ -265,13 +265,150 @@ async function repairSoundcheckJobs() {
   }
 }
 
+async function repairScheduleJobsForClient(clientName: string) {
+  const client = await prisma.client.findFirst({
+    where: { name: clientName },
+    include: {
+      locations: {
+        include: { schedules: true },
+      },
+    },
+  })
+
+  if (!client) {
+    return { clientName, found: false, schedulesChecked: 0, wrongJobsDeleted: 0, jobsCreated: 0, skippedUnsafeJobs: 0 }
+  }
+
+  const schedules = client.locations.flatMap(location => location.schedules).filter(schedule => schedule.isActive)
+  let wrongJobsDeleted = 0
+  let jobsCreated = 0
+  let skippedUnsafeJobs = 0
+
+  for (const schedule of schedules) {
+    const rangeStart = schedule.startDate
+    const rangeEnd = utcDate(2026, 11, 31)
+    const desiredDates = calculateScheduleDates({
+      frequency: schedule.frequency,
+      startDate: schedule.startDate,
+      endDate: schedule.endDate,
+      daysOfWeek: schedule.daysOfWeek,
+      monthlyPattern: schedule.monthlyPattern,
+      customDates: schedule.customDates,
+      excludedDates: schedule.excludedDates,
+    }, rangeEnd).filter(date => date >= rangeStart && date <= rangeEnd)
+    const desiredKeys = new Set(desiredDates.map(dateKey))
+
+    const existingJobs = await prisma.job.findMany({
+      where: {
+        scheduleId: schedule.id,
+        date: { gte: rangeStart, lte: rangeEnd },
+      },
+      include: {
+        invoiceLineItems: { include: { invoice: { select: { id: true, status: true } } } },
+        paymentLineItems: { select: { id: true } },
+        addOnServices: { include: { vendorPaymentLineItems: { select: { id: true } } } },
+      },
+      orderBy: { date: 'asc' },
+    })
+
+    const wrongJobs = existingJobs.filter(job => !desiredKeys.has(dateKey(job.date)))
+    const deletableWrongJobIds = wrongJobs.filter(canDeleteGeneratedJob).map(job => job.id)
+    wrongJobsDeleted += await deleteJobs(deletableWrongJobIds)
+    skippedUnsafeJobs += wrongJobs.length - deletableWrongJobIds.length
+
+    const existingAfterDeletes = existingJobs.filter(job => !deletableWrongJobIds.includes(job.id))
+    const existingKeys = new Set(existingAfterDeletes.map(job => dateKey(job.date)))
+    const missingDates = desiredDates.filter(date => !existingKeys.has(dateKey(date)))
+
+    if (!APPLY) {
+      jobsCreated += missingDates.length
+    } else if (missingDates.length > 0) {
+      const result = await prisma.job.createMany({
+        data: missingDates.map(date => ({
+          locationId: schedule.locationId,
+          subcontractorId: schedule.subcontractorId,
+          scheduleId: schedule.id,
+          date,
+          startTime: schedule.timeType === 'SPECIFIC' ? schedule.startTime : null,
+          startWindowBegin: schedule.timeType === 'WINDOW' ? schedule.startWindowBegin : null,
+          startWindowEnd: schedule.timeType === 'WINDOW' ? schedule.startWindowEnd : null,
+          clientRate: schedule.defaultClientRate,
+          subcontractorRate: schedule.defaultSubcontractorRate,
+        })),
+        skipDuplicates: true,
+      })
+      jobsCreated += result.count
+    }
+  }
+
+  return {
+    clientName,
+    found: true,
+    schedulesChecked: schedules.length,
+    wrongJobsDeleted,
+    jobsCreated,
+    skippedUnsafeJobs,
+  }
+}
+
+async function restoreBurbankMay18() {
+  const burbank = await prisma.client.findFirst({
+    where: { name: 'Burbank Dance Academy' },
+    include: {
+      locations: {
+        include: { schedules: true },
+      },
+    },
+  })
+
+  const schedule = burbank?.locations.flatMap(location => location.schedules).find(candidate => candidate.isActive)
+  if (!schedule) return { found: Boolean(burbank), restored: false, reason: 'No active schedule' }
+
+  const job = await prisma.job.findUnique({
+    where: {
+      unique_schedule_date: {
+        scheduleId: schedule.id,
+        date: utcDate(2026, 4, 18),
+      },
+    },
+    include: {
+      invoiceLineItems: { include: { invoice: { select: { id: true, status: true } } } },
+      paymentLineItems: { select: { id: true } },
+      addOnServices: { include: { vendorPaymentLineItems: { select: { id: true } } } },
+    },
+  })
+
+  if (!job) return { found: true, restored: false, reason: 'May 18 job missing' }
+  if (job.status !== 'CANCELLED') return { found: true, restored: false, reason: `May 18 already ${job.status}` }
+  if (!canDeleteGeneratedJob(job)) return { found: true, restored: false, reason: 'May 18 is protected' }
+
+  if (APPLY) {
+    await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        status: 'SCHEDULED',
+        clientRate: schedule.defaultClientRate,
+        subcontractorRate: schedule.defaultSubcontractorRate,
+      },
+    })
+  }
+
+  return { found: true, restored: true, reason: null }
+}
+
 async function main() {
   console.log(APPLY ? 'Applying data accuracy repair...' : 'Dry run only. Re-run with --apply to write changes.')
 
   const dtla = await repairDtlaVisuals()
   const soundcheck = await repairSoundcheckJobs()
+  const payScheduleRepairs = await Promise.all([
+    repairScheduleJobsForClient('SRU Studios'),
+    repairScheduleJobsForClient('Interior Doors Co.'),
+    repairScheduleJobsForClient('Sam Darring Music Studio'),
+  ])
+  const burbankMay18 = await restoreBurbankMay18()
 
-  console.log(JSON.stringify({ apply: APPLY, dtla, soundcheck }, null, 2))
+  console.log(JSON.stringify({ apply: APPLY, dtla, soundcheck, payScheduleRepairs, burbankMay18 }, null, 2))
 }
 
 main()

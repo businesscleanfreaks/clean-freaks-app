@@ -65,6 +65,14 @@ export async function PUT(
           status: true,
           scheduleId: true,
           date: true,
+          clientRate: true,
+          subcontractorRate: true,
+          schedule: {
+            select: {
+              defaultClientRate: true,
+              defaultSubcontractorRate: true,
+            },
+          },
           location: {
             include: {
               client: true,
@@ -185,6 +193,18 @@ export async function PUT(
 
       // Handle cancelled job cleanup
       const isBeingCancelled = status === 'CANCELLED' && currentJob.status !== 'CANCELLED'
+      const isBeingRestored = status === 'SCHEDULED' && currentJob.status === 'CANCELLED'
+
+      // Skipped recurring cleans intentionally zero their rates while cancelled.
+      // Restoring without an explicit override should recover schedule defaults.
+      if (isBeingRestored) {
+        if (clientRate === undefined && currentJob.clientRate === 0 && currentJob.schedule) {
+          updateData.clientRate = currentJob.schedule.defaultClientRate
+        }
+        if (subcontractorRate === undefined && currentJob.subcontractorRate === 0 && currentJob.schedule) {
+          updateData.subcontractorRate = currentJob.schedule.defaultSubcontractorRate
+        }
+      }
 
       // Handle payment cleanup if unmarking as unpaid
       if (subcontractorPaid === false) {

@@ -214,7 +214,9 @@ export function WorkersPageWrapper({
     if (jobIds.length === 0) return
     setPendingKey(key)
     try {
-      await Promise.all(jobIds.map(async (jobId) => {
+      // Jobs marked together commonly share one payment. Undo those writes in
+      // order so payment-line cleanup cannot race itself on the same payment.
+      for (const jobId of jobIds) {
         const res = await fetch(`/api/jobs/${jobId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -224,7 +226,7 @@ export function WorkersPageWrapper({
           const errorData = await res.json().catch(() => ({}))
           throw new Error(errorData.error || "Failed to unmark paid")
         }
-      }))
+      }
       showSuccess("Payment unchecked")
       refreshAfterPaymentChange(jobIds, false)
     } catch (error) {

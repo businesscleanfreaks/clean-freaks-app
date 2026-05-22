@@ -40,6 +40,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   // Shared state
   const [isDeleting, setIsDeleting] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
+  const [isRestoring, setIsRestoring] = useState(false)
   const [isCompleting, setIsCompleting] = useState(false)
   const [isSavingTrial, setIsSavingTrial] = useState(false)
   const [isEditingSubcontractor, setIsEditingSubcontractor] = useState(false)
@@ -119,6 +120,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       // Reset action-in-progress flags (fixes "Saving..." stuck bug)
       setIsCompleting(false)
       setIsCancelling(false)
+      setIsRestoring(false)
       setIsDeleting(false)
       setIsMarkingInvoiced(false)
       setIsSavingSubcontractor(false)
@@ -361,6 +363,31 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     } catch (error) {
       showError('Failed to cancel job. Please try again.')
       setIsCancelling(false)
+    }
+  }
+
+  const handleRestoreCancelledClean = async () => {
+    if (hasFinalInvoice || job.subcontractorPaid || isRestoring) return
+
+    setIsRestoring(true)
+    try {
+      const response = await fetch(`/api/jobs/${job.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'SCHEDULED' }),
+      })
+      if (!response.ok) {
+        await showApiError(response, 'Failed to restore clean')
+        return
+      }
+
+      onOpenChange(false)
+      showSuccess('Clean restored')
+      refreshCalendarData()
+    } catch {
+      showError('Failed to restore clean. Please try again.')
+    } finally {
+      setIsRestoring(false)
     }
   }
 
@@ -1389,7 +1416,34 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setShowOutcomeSheet(false)
       setActiveQuickFixPanel(null)
       onOpenChange(false)
-      showSuccess(`${outcomeLabel} saved`)
+      if (outcomeType === 'skipped') {
+        const originalNotes = job.notes ?? null
+        const originalClientRate = job.clientRate
+        const originalSubcontractorRate = job.subcontractorRate
+        showUndoToast('Clean skipped', async () => {
+          try {
+            const undoResponse = await fetch(`/api/jobs/${job.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                status: 'SCHEDULED',
+                clientRate: originalClientRate,
+                subcontractorRate: originalSubcontractorRate,
+                notes: originalNotes,
+              }),
+            })
+            if (!undoResponse.ok) {
+              await showApiError(undoResponse, 'Failed to undo skipped clean')
+              return
+            }
+            refreshCalendarData()
+          } catch {
+            showError('Failed to undo skipped clean. Please try again.')
+          }
+        })
+      } else {
+        showSuccess(`${outcomeLabel} saved`)
+      }
       refreshCalendarData()
     } catch (error) {
       showError(getErrorMessage(error))
@@ -1453,7 +1507,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     job, open, onOpenChange, subcontractors,
 
     // State
-    isDeleting, isCancelling, isCompleting,
+    isDeleting, isCancelling, isRestoring, isCompleting,
     isSavingTrial,
     isEditingSubcontractor, setIsEditingSubcontractor,
     selectedSubcontractorId, setSelectedSubcontractorId,
@@ -1513,7 +1567,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     // Handlers  
     handleToggleTrial, handleSaveTrialNotes,
     handleEditSubcontractor, handleSaveSubcontractor, handleCancelEdit,
-    handleDeleteAddOn, handleDelete, handleComplete, handleCancel,
+    handleDeleteAddOn, handleDelete, handleComplete, handleCancel, handleRestoreCancelledClean,
     handleMarkAsInvoiced,
     handleSaveSubcontractorMobile, handleConfirmCancelMobile, handleConfirmDeleteMobile,
     handleQuickReschedule, openCleanerPicker, openAddOnEditor,

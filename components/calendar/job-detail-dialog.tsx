@@ -49,7 +49,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
   const {
     ConfirmDialog,
     // State
-    isDeleting, isCancelling, isCompleting,
+    isDeleting, isCancelling, isRestoring, isCompleting,
     isSavingTrial,
     isEditingSubcontractor, setIsEditingSubcontractor,
     selectedSubcontractorId, setSelectedSubcontractorId,
@@ -105,7 +105,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     // Handlers
     handleToggleTrial, handleSaveTrialNotes,
     handleEditSubcontractor, handleSaveSubcontractor, handleCancelEdit,
-    handleDeleteAddOn, handleDelete, handleComplete, handleCancel,
+    handleDeleteAddOn, handleDelete, handleComplete, handleCancel, handleRestoreCancelledClean,
     handleMarkAsInvoiced,
     handleSaveSubcontractorMobile, handleConfirmCancelMobile, handleConfirmDeleteMobile,
     handleQuickReschedule, openCleanerPicker, openAddOnEditor,
@@ -1065,6 +1065,20 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     const content = (
       <div className="space-y-3">
         {/* Mark as Completed removed — assumed completion model */}
+
+        {job.status === 'CANCELLED' && (
+          <button
+            onClick={handleRestoreCancelledClean}
+            disabled={isRestoring || hasFinalInvoice || job.subcontractorPaid}
+            className="w-full rounded-[12px] px-4 py-3 text-left disabled:opacity-60"
+            style={{ backgroundColor: '#F0FDFA', border: '1px solid #99F6E4', fontSize: '15px', fontWeight: 600, color: '#0F766E' }}
+          >
+            <span>{isRestoring ? 'Restoring...' : 'Restore This Clean'}</span>
+            <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#5B7280', marginTop: '2px' }}>
+              Put a skipped or cancelled clean back on the schedule
+            </span>
+          </button>
+        )}
 
         {!job.invoiced && (
           <button
