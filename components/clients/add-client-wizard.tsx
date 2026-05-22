@@ -467,6 +467,7 @@ export function AddClientWizard({
   const [direction, setDirection] = useState(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [sourceProspectId, setSourceProspectId] = useState<string | null>(null)
+  const [clientType, setClientType] = useState<'RECURRING' | 'ONE_TIME'>('RECURRING')
 
   // Step 1: Client Info
   const [clientName, setClientName] = useState('')
@@ -528,6 +529,7 @@ export function AddClientWizard({
     setNotes(initialData.notes || '')
     setStep(1)
     setDirection(1)
+    setClientType('RECURRING')
   }, [initialData, isOpen])
 
   const createEmptyExtraLocation = (): ExtraLocationData => ({
@@ -553,6 +555,7 @@ export function AddClientWizard({
     setStep(1)
     setDirection(1)
     setErrors({})
+    setClientType('RECURRING')
     setClientName('')
     setPhone('')
     setEmail('')
@@ -675,7 +678,35 @@ export function AddClientWizard({
   const [submitProgress, setSubmitProgress] = useState('')
 
   const handleSubmit = async () => {
-    if (!clientName.trim()) return
+    const submitErrors: Record<string, string> = {}
+    if (!clientName.trim()) submitErrors.clientName = 'Client name is required'
+    if (!address.trim()) submitErrors.address = 'Address is required'
+    if (email && !isValidEmail(email)) submitErrors.email = 'Invalid email format'
+    if (!sameEmail && invoicingEmail && !isValidEmail(invoicingEmail)) {
+      submitErrors.invoicingEmail = 'Invalid email format'
+    }
+    if (invoicingCcEmail && !isValidEmailList(invoicingCcEmail)) {
+      submitErrors.invoicingCcEmail = 'Invalid CC email format'
+    }
+    if (clientType === 'RECURRING') {
+      if (frequency !== 'MONTHLY' && daysOfWeek.length === 0) {
+        submitErrors.daysOfWeek = 'Select at least one schedule day'
+      }
+      if (!clientRate || Number.isNaN(parseFloat(clientRate)) || parseFloat(clientRate) <= 0) {
+        submitErrors.clientRate = 'Enter a valid client rate'
+      }
+      if (subcontractorId && (!subcontractorRate || Number.isNaN(parseFloat(subcontractorRate)) || parseFloat(subcontractorRate) < 0)) {
+        submitErrors.subcontractorRate = 'Enter a valid cleaner rate'
+      }
+    }
+
+    if (Object.keys(submitErrors).length > 0) {
+      setErrors(submitErrors)
+      showError(Object.values(submitErrors)[0])
+      return
+    }
+
+    setErrors({})
 
     setIsSubmitting(true)
     setSubmitProgress('Creating client...')
@@ -743,7 +774,7 @@ export function AddClientWizard({
           logger.debug(`[wizard] Location created in ${Math.round(performance.now() - t1)}ms`)
 
           // Step 3: Create schedule + jobs (this is the slow part)
-          const canCreateSchedule = frequency === 'MONTHLY' ? true : daysOfWeek.length > 0
+          const canCreateSchedule = clientType === 'RECURRING' && (frequency === 'MONTHLY' ? true : daysOfWeek.length > 0)
           if (canCreateSchedule && clientRate) {
             const t2 = performance.now()
             setSubmitProgress('Setting up schedule...')
@@ -751,7 +782,7 @@ export function AddClientWizard({
               locationId: loc.id,
               frequency,
               daysOfWeek: frequency === 'MONTHLY' ? null : JSON.stringify(daysOfWeek),
-              startDate: new Date().toISOString(),
+              startDate: startDate || new Date().toISOString(),
               defaultClientRate: parseFloat(clientRate) || 0,
               defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
               clientPayType: billingType,
@@ -824,8 +855,8 @@ export function AddClientWizard({
             })
             if (!locRes.ok) return
             const loc = await locRes.json()
-            if (extraLoc.sameSchedule) {
-              if (daysOfWeek.length > 0 && clientRate) {
+            if (clientType === 'RECURRING' && extraLoc.sameSchedule) {
+              if ((frequency === 'MONTHLY' || daysOfWeek.length > 0) && clientRate) {
                 await fetch('/api/schedules', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -833,7 +864,7 @@ export function AddClientWizard({
                     locationId: loc.id,
                     frequency,
                     daysOfWeek: JSON.stringify(daysOfWeek),
-                    startDate: new Date().toISOString(),
+                    startDate: startDate || new Date().toISOString(),
                     defaultClientRate: parseFloat(clientRate) || 0,
                     defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
                     clientPayType: billingType,
@@ -846,8 +877,8 @@ export function AddClientWizard({
                   }),
                 })
               }
-            } else {
-              if (extraLoc.daysOfWeek.length > 0 && extraLoc.clientRate) {
+            } else if (clientType === 'RECURRING') {
+              if ((extraLoc.frequency === 'MONTHLY' || extraLoc.daysOfWeek.length > 0) && extraLoc.clientRate) {
                 await fetch('/api/schedules', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -855,7 +886,7 @@ export function AddClientWizard({
                     locationId: loc.id,
                     frequency: extraLoc.frequency,
                     daysOfWeek: JSON.stringify(extraLoc.daysOfWeek),
-                    startDate: new Date().toISOString(),
+                    startDate: startDate || new Date().toISOString(),
                     defaultClientRate: parseFloat(extraLoc.clientRate) || 0,
                     defaultSubcontractorRate: parseFloat(extraLoc.subcontractorRate) || 0,
                     clientPayType: extraLoc.billingType,
@@ -876,7 +907,7 @@ export function AddClientWizard({
 
       // Step 6: Create trial / intro clean one-off job — use primaryLocationId directly
       // instead of re-fetching from API (saves a round trip)
-      if (firstCleanDate && primaryLocationId) {
+      if (clientType === 'RECURRING' && firstCleanDate && primaryLocationId) {
         try {
           await fetch('/api/jobs', {
             method: 'POST',

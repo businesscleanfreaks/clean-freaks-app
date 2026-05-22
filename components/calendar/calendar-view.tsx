@@ -14,7 +14,7 @@ import {
 } from "date-fns"
 import { formatTime } from "@/lib/utils"
 import { JobDetailDialog } from "./job-detail-dialog"
-import { CreateJobDialog } from "./create-job-dialog"
+import { CompactCreateJobDialog } from "./compact-create-job-dialog"
 import { QuickAssignModal } from "./quick-assign-modal"
 import { BulkJobActions } from "./bulk-job-actions"
 
@@ -1278,7 +1278,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       <div className="hidden lg:flex flex-col shrink-0 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between px-4 h-16">
           <div className="flex items-center gap-4">
-            <div>
+            <div className="w-[292px] shrink-0">
               <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold leading-none mb-1">Operations Calendar</p>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold text-gray-900 leading-none">{monthLabel}</h1>
@@ -1303,6 +1303,20 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               <button onClick={() => navigate('next')} className="w-8 h-8 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
                 <ChevronRight className="w-5 h-5" />
               </button>
+              <label className="relative ml-1 inline-flex h-8 items-center rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
+                <span className="sr-only">Jump to month</span>
+                <input
+                  type="month"
+                  aria-label="Jump to month"
+                  value={format(currentDate, 'yyyy-MM')}
+                  onChange={(event) => {
+                    if (!event.target.value) return
+                    const [year, month] = event.target.value.split('-').map(Number)
+                    setCurrentDate(new Date(year, month - 1, 1, 12))
+                  }}
+                  className="w-[116px] bg-transparent text-xs font-semibold text-gray-700 outline-none"
+                />
+              </label>
             </div>
             {isLoadingMore && <Loader2 className="w-4 h-4 animate-spin text-teal-600" />}
           </div>
@@ -2408,7 +2422,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       />
 
       {/* Create Job Dialog */}
-      <CreateJobDialog
+      <CompactCreateJobDialog
         open={createJobDialogOpen}
         onOpenChange={(open) => {
           setCreateJobDialogOpen(open)
@@ -2418,7 +2432,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         }}
         selectedDate={selectedDateForNewJob}
         selectedTime={selectedTimeForNewJob}
-        clients={clients as unknown as React.ComponentProps<typeof CreateJobDialog>['clients']}
+        clients={clients as unknown as React.ComponentProps<typeof CompactCreateJobDialog>['clients']}
         subcontractors={subcontractors}
       />
 

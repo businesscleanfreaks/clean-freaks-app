@@ -1,0 +1,460 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
+import { format } from "date-fns"
+import { CalendarDays, Check, DollarSign, MapPin, Search, X } from "lucide-react"
+import { refreshCalendarData } from "./calendar-client"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { TimePicker } from "@/components/ui/time-picker"
+import { showError, showSuccess } from "@/lib/toast"
+import type { ClientListItem, SubcontractorSummary } from "@/lib/types"
+
+interface CompactCreateJobDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  selectedDate: Date | null
+  selectedTime?: string
+  clients: ClientListItem[]
+  subcontractors: SubcontractorSummary[]
+  preSelectedClientId?: string
+}
+
+type ClientMode = "existing" | "one-time"
+type TimeMode = "specific" | "window" | "tbd"
+type JobType = "regular" | "deep_clean" | "post_construction" | "move_in_out" | "event"
+
+const jobTypes: Array<{ value: JobType; label: string }> = [
+  { value: "regular", label: "Regular clean" },
+  { value: "deep_clean", label: "Deep clean" },
+  { value: "post_construction", label: "Post-construction" },
+  { value: "move_in_out", label: "Move in/out" },
+  { value: "event", label: "Event" },
+]
+
+function initialLocationIds(client?: ClientListItem) {
+  return client?.locations?.length === 1 ? [client.locations[0].id] : []
+}
+
+function toInputDate(date: Date | null) {
+  return date ? format(date, "yyyy-MM-dd") : ""
+}
+
+export function CompactCreateJobDialog({
+  open,
+  onOpenChange,
+  selectedDate,
+  selectedTime,
+  clients,
+  subcontractors,
+  preSelectedClientId,
+}: CompactCreateJobDialogProps) {
+  const initialClient = clients.find(client => client.id === preSelectedClientId)
+  const [clientMode, setClientMode] = useState<ClientMode>(preSelectedClientId ? "existing" : "existing")
+  const [search, setSearch] = useState("")
+  const [selectedClientId, setSelectedClientId] = useState(preSelectedClientId || "")
+  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>(initialLocationIds(initialClient))
+  const [oneTimeName, setOneTimeName] = useState("")
+  const [oneTimeAddress, setOneTimeAddress] = useState("")
+  const [oneTimePhone, setOneTimePhone] = useState("")
+  const [jobType, setJobType] = useState<JobType>("regular")
+  const [isTrial, setIsTrial] = useState(false)
+  const [jobDate, setJobDate] = useState<Date | null>(selectedDate)
+  const [timeMode, setTimeMode] = useState<TimeMode>(selectedTime ? "specific" : "window")
+  const [startTime, setStartTime] = useState(selectedTime || "")
+  const [startWindowBegin, setStartWindowBegin] = useState("")
+  const [startWindowEnd, setStartWindowEnd] = useState("")
+  const [subcontractorId, setSubcontractorId] = useState("unassigned")
+  const [clientRate, setClientRate] = useState("")
+  const [cleanerPay, setCleanerPay] = useState("")
+  const [trialNotes, setTrialNotes] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  const activeCleaners = useMemo(
+    () => subcontractors.filter(subcontractor => subcontractor.isActive !== false),
+    [subcontractors]
+  )
+  const selectedClient = clients.find(client => client.id === selectedClientId)
+  const locations = selectedClient?.locations || []
+
+  const filteredClients = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return [...clients]
+      .filter(client => !query || client.name.toLowerCase().includes(query))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 8)
+  }, [clients, search])
+
+  const profit = (Number(clientRate) || 0) - (Number(cleanerPay) || 0)
+  const canCreate =
+    !!jobDate &&
+    Number(clientRate) >= 0 &&
+    Number(cleanerPay) >= 0 &&
+    clientRate !== "" &&
+    cleanerPay !== "" &&
+    (clientMode === "one-time"
+      ? !!oneTimeName.trim() && !!oneTimeAddress.trim()
+      : !!selectedClientId && selectedLocationIds.length > 0)
+
+  useEffect(() => {
+    if (!open) return
+    const preselected = clients.find(client => client.id === preSelectedClientId)
+    setClientMode("existing")
+    setSearch("")
+    setSelectedClientId(preSelectedClientId || "")
+    setSelectedLocationIds(initialLocationIds(preselected))
+    setOneTimeName("")
+    setOneTimeAddress("")
+    setOneTimePhone("")
+    setJobType("regular")
+    setIsTrial(false)
+    setJobDate(selectedDate)
+    setTimeMode(selectedTime ? "specific" : "window")
+    setStartTime(selectedTime || "")
+    setStartWindowBegin("")
+    setStartWindowEnd("")
+    setSubcontractorId("unassigned")
+    setClientRate("")
+    setCleanerPay("")
+    setTrialNotes("")
+  }, [clients, open, preSelectedClientId, selectedDate, selectedTime])
+
+  const chooseClient = (client: ClientListItem) => {
+    setSelectedClientId(client.id)
+    setSelectedLocationIds(initialLocationIds(client))
+    setSearch("")
+  }
+
+  const toggleLocation = (locationId: string) => {
+    setSelectedLocationIds(current =>
+      current.includes(locationId)
+        ? current.filter(id => id !== locationId)
+        : [...current, locationId]
+    )
+  }
+
+  const close = () => onOpenChange(false)
+
+  const createJob = async () => {
+    if (!jobDate) {
+      showError("Choose a job date")
+      return
+    }
+    if (!canCreate) {
+      showError("Choose a client, location, and rates before creating the job")
+      return
+    }
+
+    setLoading(true)
+    try {
+      let locationIds = selectedLocationIds
+
+      if (clientMode === "one-time") {
+        const clientResponse = await fetch("/api/clients", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: oneTimeName.trim(),
+            phone: oneTimePhone.trim() || null,
+            billingType: "PER_CLEAN",
+            cleanerPayType: "PER_CLEAN",
+            notes: `One-time ${jobTypes.find(type => type.value === jobType)?.label || "clean"} job`,
+            locations: [{ name: "Primary", address: oneTimeAddress.trim() }],
+          }),
+        })
+
+        if (!clientResponse.ok) throw new Error((await clientResponse.json()).error || "Failed to add one-time client")
+        const newClient = await clientResponse.json()
+        locationIds = [newClient.locations[0].id]
+      }
+
+      await Promise.all(locationIds.map(async locationId => {
+        const response = await fetch("/api/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            locationId,
+            subcontractorId: subcontractorId === "unassigned" ? null : subcontractorId,
+            date: format(jobDate, "yyyy-MM-dd"),
+            startTime: timeMode === "specific" ? startTime || null : null,
+            startWindowBegin: timeMode === "window" ? startWindowBegin || null : null,
+            startWindowEnd: timeMode === "window" ? startWindowEnd || null : null,
+            clientRate: Number(clientRate),
+            subcontractorRate: Number(cleanerPay),
+            isTrial,
+            trialNotes: isTrial ? trialNotes.trim() || null : null,
+          }),
+        })
+
+        if (!response.ok) throw new Error((await response.json()).error || "Failed to create job")
+      }))
+
+      showSuccess(locationIds.length > 1 ? `${locationIds.length} jobs added` : "Job added")
+      refreshCalendarData()
+      close()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to create job")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={value => !value && close()}>
+      <DialogContent hideClose className="max-h-[92vh] max-w-[430px] overflow-hidden p-0">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+              <CalendarDays className="h-4 w-4" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-bold tracking-tight text-slate-950">Add Job</DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">One clean, in one quick pass.</DialogDescription>
+            </div>
+          </div>
+          <button aria-label="Close add job" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(92vh-140px)] space-y-3 overflow-y-auto px-5 py-4">
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Client</Label>
+              <div className="flex rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setClientMode("existing")}
+                  className={`rounded px-2 py-1 ${clientMode === "existing" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+                >
+                  Existing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClientMode("one-time")
+                    setSelectedClientId("")
+                    setSelectedLocationIds([])
+                  }}
+                  className={`rounded px-2 py-1 ${clientMode === "one-time" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+                >
+                  New one-time
+                </button>
+              </div>
+            </div>
+
+            {clientMode === "existing" ? (
+              <>
+                {selectedClient ? (
+                  <div className="flex items-start justify-between gap-2 rounded-lg border border-teal-100 bg-teal-50 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-slate-950">{selectedClient.name}</div>
+                      <div className="text-xs text-slate-500">{locations.length} location{locations.length === 1 ? "" : "s"}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedClientId("")
+                        setSelectedLocationIds([])
+                      }}
+                      className="text-xs font-semibold text-teal-700"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        autoFocus
+                        value={search}
+                        onChange={event => setSearch(event.target.value)}
+                        placeholder="Search clients..."
+                        className="h-9 pl-8 text-sm"
+                      />
+                    </div>
+                    <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                      {filteredClients.map(client => (
+                        <button
+                          key={client.id}
+                          type="button"
+                          onClick={() => chooseClient(client)}
+                          className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-slate-950">{client.name}</span>
+                            <span className="block text-xs text-slate-400">{client.locations?.length || 0} locations</span>
+                          </span>
+                          <Check className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                        </button>
+                      ))}
+                      {filteredClients.length === 0 && <div className="px-3 py-3 text-xs text-slate-400">No matching clients.</div>}
+                    </div>
+                  </div>
+                )}
+
+                {selectedClient && locations.length > 0 && (
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-slate-500">Location</Label>
+                    <div className="space-y-1">
+                      {locations.map(location => {
+                        const selected = selectedLocationIds.includes(location.id)
+                        return (
+                          <button
+                            key={location.id}
+                            type="button"
+                            onClick={() => toggleLocation(location.id)}
+                            className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left ${selected ? "border-teal-300 bg-teal-50" : "border-slate-200 bg-white"}`}
+                          >
+                            <span className={`flex h-4 w-4 items-center justify-center rounded border ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300"}`}>
+                              {selected && <Check className="h-3 w-3" />}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-slate-900">{location.name}</span>
+                              <span className="block truncate text-[11px] text-slate-400">{location.address}</span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+                <Input value={oneTimeName} onChange={event => setOneTimeName(event.target.value)} placeholder="Client name *" className="h-9" />
+                <Input value={oneTimeAddress} onChange={event => setOneTimeAddress(event.target.value)} placeholder="Full address *" className="h-9" />
+                <Input value={oneTimePhone} onChange={event => setOneTimePhone(event.target.value)} placeholder="Phone (optional)" className="h-9" />
+              </div>
+            )}
+          </section>
+
+          <div className="h-px bg-slate-100" />
+
+          <section className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="mb-1 block text-[11px] text-slate-500">Job type</Label>
+                <Select value={isTrial ? "trial" : "one-time"} onValueChange={value => setIsTrial(value === "trial")}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="one-time">One-time</SelectItem>
+                    <SelectItem value="trial">Trial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="mb-1 block text-[11px] text-slate-500">Clean type</Label>
+                <Select value={jobType} onValueChange={value => setJobType(value as JobType)}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {jobTypes.map(type => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+              <div>
+                <Label className="mb-1 block text-[11px] text-slate-500">Date</Label>
+                <Input
+                  type="date"
+                  value={toInputDate(jobDate)}
+                  onChange={event => setJobDate(event.target.value ? new Date(`${event.target.value}T12:00:00`) : null)}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="mb-1 block text-[11px] text-slate-500">Arrival</Label>
+                <div className="flex h-9 rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
+                  {(["specific", "window", "tbd"] as TimeMode[]).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setTimeMode(mode)}
+                      className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+                    >
+                      {mode === "specific" ? "Exact" : mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {timeMode === "specific" && <TimePicker value={startTime} onChange={setStartTime} />}
+            {timeMode === "window" && (
+              <div className="grid grid-cols-2 gap-2">
+                <TimePicker value={startWindowBegin} onChange={setStartWindowBegin} />
+                <TimePicker value={startWindowEnd} onChange={setStartWindowEnd} />
+              </div>
+            )}
+          </section>
+
+          <section className="grid grid-cols-3 gap-2">
+            <div className="col-span-3">
+              <Label className="mb-1 block text-[11px] text-slate-500">Assigned to</Label>
+              <Select value={subcontractorId} onValueChange={setSubcontractorId}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="mb-1 block text-[11px] text-slate-500">Client rate *</Label>
+              <div className="relative">
+                <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <Input type="number" min="0" step="0.01" value={clientRate} onChange={event => setClientRate(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+              </div>
+            </div>
+            <div>
+              <Label className="mb-1 block text-[11px] text-slate-500">Cleaner pay *</Label>
+              <div className="relative">
+                <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+              </div>
+            </div>
+            <div className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1">
+              <Label className="block text-[11px] text-emerald-700">Margin</Label>
+              <div className={`truncate font-mono text-sm font-bold ${profit < 0 ? "text-red-600" : "text-emerald-700"}`}>
+                ${profit.toFixed(2)}
+              </div>
+            </div>
+          </section>
+
+          {isTrial && (
+            <section className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial notes</Label>
+              <textarea
+                value={trialNotes}
+                onChange={event => setTrialNotes(event.target.value)}
+                placeholder="Entry details, expectations, special prep..."
+                rows={2}
+                className="w-full resize-none rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none"
+              />
+            </section>
+          )}
+
+          {selectedClient && selectedLocationIds.length > 0 && (
+            <div className="flex items-center gap-1 text-xs text-teal-700">
+              <MapPin className="h-3 w-3" />
+              {selectedLocationIds.length === 1 ? "1 selected location" : `${selectedLocationIds.length} selected locations`}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 border-t border-slate-100 bg-white px-5 py-3">
+          <Button type="button" variant="outline" className="h-10 flex-1" onClick={close}>Cancel</Button>
+          <Button type="button" className="h-10 flex-1 bg-teal-600 hover:bg-teal-700" disabled={!canCreate || loading} onClick={createJob}>
+            {loading ? "Adding..." : "Add Job"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}

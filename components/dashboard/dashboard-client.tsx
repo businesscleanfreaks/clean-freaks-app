@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import useSWR from "swr"
 import { addMonths, format, subMonths } from "date-fns"
 import { ChevronLeft, ChevronRight, Settings2 } from "lucide-react"
+import Link from "next/link"
 import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
 
 interface ClientOverviewRow {
@@ -52,7 +53,7 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value || 0)
 
-type SortKey = 'periodRevenue' | 'periodCleanerCost' | 'periodProfit' | 'avgRevenue' | 'avgProfit'
+type SortKey = 'name' | 'periodRevenue' | 'periodCleanerCost' | 'periodProfit' | 'avgRevenue' | 'avgProfit'
 
 function shortenName(name: string) {
   if (!name || name === 'Unassigned') return name || 'Unassigned'
@@ -131,6 +132,10 @@ export function DashboardClient() {
 
   const sortedRows = useMemo(() => {
     return [...rows].sort((a, b) => {
+      if (sortBy === 'name') {
+        const comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+        return sortDir === 'desc' ? -comparison : comparison
+      }
       const aVal = a[sortBy] || 0
       const bVal = b[sortBy] || 0
       return sortDir === 'desc' ? bVal - aVal : aVal - bVal
@@ -142,7 +147,7 @@ export function DashboardClient() {
       setSortDir(current => current === 'desc' ? 'asc' : 'desc')
     } else {
       setSortBy(key)
-      setSortDir('desc')
+      setSortDir(key === 'name' ? 'asc' : 'desc')
     }
   }
 
@@ -260,7 +265,7 @@ export function DashboardClient() {
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">All Clients · {rows.length}</div>
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
           <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
-            <span>Client</span>
+            <SortHeader label="Client" active={sortBy === 'name'} dir={sortDir} align="left" onClick={() => toggleSort('name')} />
             <SortHeader label="Revenue" active={sortBy === 'periodRevenue'} dir={sortDir} onClick={() => toggleSort('periodRevenue')} />
             <SortHeader label="Cleaner Pay" active={sortBy === 'periodCleanerCost'} dir={sortDir} onClick={() => toggleSort('periodCleanerCost')} />
             <SortHeader label="Profit" active={sortBy === 'periodProfit'} dir={sortDir} onClick={() => toggleSort('periodProfit')} />
@@ -273,9 +278,10 @@ export function DashboardClient() {
             </div>
           ) : (
             <div className="max-h-[480px] overflow-y-auto">
-              {sortedRows.map((row, index) => (
-                <div
+              {sortedRows.map((row) => (
+                <Link
                   key={row.id}
+                  href={`/clients/${row.id}`}
                   className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
                 >
                   <div className="min-w-0">
@@ -289,7 +295,7 @@ export function DashboardClient() {
                   </div>
                   <div className="text-right text-xs text-stone-500">{shortenName(row.cleanerAssigned)}</div>
                   <div className="text-right text-xs text-stone-400">{row.clientPayType.replace('Flat Rate', 'Flat')}</div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -320,9 +326,21 @@ function PnlCell({ label, value, tone }: { label: string; value: string; tone?: 
   )
 }
 
-function SortHeader({ label, active, dir, onClick }: { label: string; active: boolean; dir: 'asc' | 'desc'; onClick: () => void }) {
+function SortHeader({
+  label,
+  active,
+  dir,
+  align = 'right',
+  onClick,
+}: {
+  label: string
+  active: boolean
+  dir: 'asc' | 'desc'
+  align?: 'left' | 'right'
+  onClick: () => void
+}) {
   return (
-    <button type="button" onClick={onClick} className={`text-right hover:text-stone-950 ${active ? 'text-stone-950' : 'text-stone-500'}`}>
+    <button type="button" onClick={onClick} className={`${align === 'left' ? 'text-left' : 'text-right'} hover:text-stone-950 ${active ? 'text-stone-950' : 'text-stone-500'}`}>
       {label} {active ? (dir === 'desc' ? '↓' : '↑') : ''}
     </button>
   )
