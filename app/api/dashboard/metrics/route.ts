@@ -268,17 +268,24 @@ export async function GET(request: Request) {
     // For now, use cleanerPayExpenses (from subcontractor payments) as the source of truth for cleaner pay
     const totalExpenses = totalBusinessExpenses + cleanerPayExpenses
 
-    return NextResponse.json({
-      mrr,
-      income,
-      expenses: totalExpenses, // Total expenses (all business expenses + cleaner pay)
-      cleanerPay: cleanerPayExpenses, // Cleaner pay from subcontractor payments
-      fixedExpenses,
-      variableExpenses,
-      uncategorizedExpenses,
-      businessExpenses: totalBusinessExpenses, // All expenses from Expense model
-      recurringClients,
-    })
+    return NextResponse.json(
+      {
+        mrr,
+        income,
+        expenses: totalExpenses, // Total expenses (all business expenses + cleaner pay)
+        cleanerPay: cleanerPayExpenses, // Cleaner pay from subcontractor payments
+        fixedExpenses,
+        variableExpenses,
+        uncategorizedExpenses,
+        businessExpenses: totalBusinessExpenses, // All expenses from Expense model
+        recurringClients,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     logger.error("Error fetching business metrics:", error)
     return NextResponse.json(
@@ -287,4 +294,3 @@ export async function GET(request: Request) {
     )
   }
 }
-

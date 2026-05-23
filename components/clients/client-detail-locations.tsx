@@ -209,6 +209,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
     handleQuickReassign,
     handleCreateOneTimeJob,
     onDataChange,
+    confirm,
   } = state
 
   // Click-outside dismiss for schedule menu and reassign dropdown
@@ -324,6 +325,15 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
         return
       }
 
+      const confirmed = await confirm({
+        title: 'Confirm change',
+        description: inlineEdit.type === 'schedule'
+          ? 'Save this billing/pay change for this schedule?'
+          : 'Save this entry code change for this location?',
+        confirmText: 'Save change',
+      })
+      if (!confirmed) return
+
       setSavingInline(true)
 
       const response = await fetch(endpoint, {
@@ -371,6 +381,13 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       return
     }
 
+    const confirmed = await confirm({
+      title: 'Confirm schedule change',
+      description: 'Save these schedule changes and update future jobs from this schedule?',
+      confirmText: 'Save schedule',
+    })
+    if (!confirmed) return
+
     setSavingInline(true)
     try {
       const response = await fetch(`/api/schedules/${scheduleInlineEdit.scheduleId}`, {
@@ -417,6 +434,13 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
       setLocationHeaderEdit(null)
       return
     }
+
+    const confirmed = await confirm({
+      title: 'Confirm location change',
+      description: 'Save this location name/address change?',
+      confirmText: 'Save location',
+    })
+    if (!confirmed) return
 
     setSavingInline(true)
     try {

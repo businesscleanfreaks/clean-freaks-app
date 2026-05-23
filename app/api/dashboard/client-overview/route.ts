@@ -278,16 +278,23 @@ export async function GET(request: NextRequest) {
       periodJobCount: clientData.reduce((sum, c) => sum + (c?.periodJobCount || 0), 0),
     }
 
-    return NextResponse.json({
-      clients: clientData,
-      totals,
-      period: {
-        year,
-        month,
-        label: format(periodStart, 'MMMM yyyy'),
-        isFuture: !isPastMonth && periodStart > now,
+    return NextResponse.json(
+      {
+        clients: clientData,
+        totals,
+        period: {
+          year,
+          month,
+          label: format(periodStart, 'MMMM yyyy'),
+          isFuture: !isPastMonth && periodStart > now,
+        },
       },
-    })
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     logger.error("[client-overview] Error:", {
       message: error instanceof Error ? error.message : 'Unknown error',

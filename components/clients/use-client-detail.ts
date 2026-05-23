@@ -772,7 +772,6 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     newSubcontractorId: string | null,
     effectiveDate?: string // YYYY-MM-DD, defaults to today
   ) => {
-    setReassigningScheduleId(scheduleId)
     try {
       // Find the schedule from client data
       let schedule: ClientSchedule | undefined
@@ -791,6 +790,22 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
         return
       }
 
+      if ((schedule.subcontractorId || null) === (newSubcontractorId || null)) {
+        setReassigningSchedule(null)
+        return
+      }
+
+      const newCleanerName = newSubcontractorId
+        ? subcontractors.find((sub) => sub.id === newSubcontractorId)?.name || 'the selected cleaner'
+        : 'Unassigned'
+      const confirmed = await confirm({
+        title: 'Confirm cleaner change',
+        description: `Change this schedule's cleaner to ${newCleanerName}? Future jobs will be updated from the selected effective date.`,
+        confirmText: 'Change cleaner',
+      })
+      if (!confirmed) return
+
+      setReassigningScheduleId(scheduleId)
       const effectiveDateStr = effectiveDate || new Date().toISOString().split('T')[0]
 
       // Use change-going-forward to safely preserve past jobs
@@ -978,6 +993,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     mounted,
     fadeIn,
     ConfirmDialog,
+    confirm,
     
     // Computed
     stats,

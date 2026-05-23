@@ -29,6 +29,7 @@ export async function POST(request: Request) {
       startWindowEnd,
       clientRate,
       subcontractorRate,
+      notes,
       isTrial,
       trialNotes,
     } = validationResult.data
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
         startWindowEnd: startWindowEnd || null,
         clientRate,
         subcontractorRate,
+        notes: notes || null,
         status: 'SCHEDULED',
         isTrial: isTrial || false,
         trialNotes: trialNotes || null,

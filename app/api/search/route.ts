@@ -10,7 +10,14 @@ export async function GET(request: NextRequest) {
   const q = searchParams.get('q')?.trim() || ''
 
   if (!q || q.length < 1) {
-    return NextResponse.json({ clients: [], invoices: [], subcontractors: [], locations: [] })
+    return NextResponse.json(
+      { clients: [], invoices: [], subcontractors: [], locations: [] },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   }
 
   const [clients, invoices, subcontractors, locations] = await Promise.all([
@@ -65,5 +72,12 @@ export async function GET(request: NextRequest) {
     }),
   ])
 
-  return NextResponse.json({ clients, invoices, subcontractors, locations })
+  return NextResponse.json(
+    { clients, invoices, subcontractors, locations },
+    {
+      headers: {
+        'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+      },
+    }
+  )
 }

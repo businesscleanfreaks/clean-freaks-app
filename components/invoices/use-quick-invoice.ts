@@ -768,7 +768,7 @@ export function useQuickInvoice({
       const pdfResponse = await fetch(`/api/invoices/${invoiceId}/generate-pdf`, { method: 'POST' })
       if (pdfResponse.ok) {
         const pdfData = await pdfResponse.json()
-        setPreviewPdfUrl(pdfData.pdfDataUrl || pdfData.pdfUrl)
+        setPreviewPdfUrl(pdfData.pdfUrl || pdfData.pdfDataUrl)
         setProgress(70)
       } else {
         const { showError } = await import('@/lib/toast')
@@ -906,7 +906,7 @@ export function useQuickInvoice({
         return
       }
       const pdfData = await pdfResponse.json()
-      setPreviewPdfUrl(pdfData.pdfDataUrl || pdfData.pdfUrl)
+      setPreviewPdfUrl(pdfData.pdfUrl || pdfData.pdfDataUrl)
       setProgress(70)
 
       setProgress(80)
@@ -1013,7 +1013,7 @@ export function useQuickInvoice({
         throw new Error(errorMessage)
       }
       const pdfData = await pdfResponse.json()
-      setPreviewPdfUrl(pdfData.pdfDataUrl || pdfData.pdfUrl)
+      setPreviewPdfUrl(pdfData.pdfUrl || pdfData.pdfDataUrl)
       if (!options?.silent) {
         const { showSuccess } = await import('@/lib/toast')
         showSuccess('Preview generated!')
@@ -1042,15 +1042,16 @@ export function useQuickInvoice({
     ].join('::')
 
     if (autoPreviewSignature.current === signature) return
-    autoPreviewSignature.current = signature
 
     let cancelled = false
     const timeout = window.setTimeout(async () => {
+      if (cancelled || autoPreviewSignature.current === signature) return
+      autoPreviewSignature.current = signature
       const generated = await handleGeneratePreview({ silent: true })
       if (!generated && !cancelled) {
         autoPreviewSignature.current = null
       }
-    }, 50)
+    }, 150)
 
     return () => {
       cancelled = true

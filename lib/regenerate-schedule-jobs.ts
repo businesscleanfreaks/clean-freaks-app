@@ -341,9 +341,21 @@ export async function ensureJobsForDateRange({
         scheduleId: { not: null },
         date: { gte: rangeStart, lte: rangeEnd },
       },
-      include: {
+      select: {
+        id: true,
+        scheduleId: true,
+        date: true,
+        startTime: true,
+        startWindowBegin: true,
+        startWindowEnd: true,
         invoiceLineItems: {
-          include: { invoice: { select: { id: true, status: true } } },
+          select: {
+            invoice: {
+              select: {
+                status: true,
+              },
+            },
+          },
         },
       },
     }),

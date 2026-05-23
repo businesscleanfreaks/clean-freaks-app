@@ -186,17 +186,24 @@ export async function GET(request: NextRequest) {
     // Exclude cleanerPayFromExpenses from otherExpenses to avoid double-counting.
     const otherExpenses = fixedExpenses + variableExpenses + uncategorizedExpenses
 
-    return NextResponse.json({
-      revenue,
-      addOnRevenue,
-      workerPayments: totalWorkerPayments,
-      addOnWorkerPayments,
-      otherExpenses,
-      fixedExpenses,
-      variableExpenses,
-      cleanerPayFromExpenses,
-      uncategorizedExpenses,
-    })
+    return NextResponse.json(
+      {
+        revenue,
+        addOnRevenue,
+        workerPayments: totalWorkerPayments,
+        addOnWorkerPayments,
+        otherExpenses,
+        fixedExpenses,
+        variableExpenses,
+        cleanerPayFromExpenses,
+        uncategorizedExpenses,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     logger.error("Error fetching profit/loss:", error)
     return NextResponse.json(

@@ -4,8 +4,6 @@ import { handleApiError } from '@/lib/api-error-handler'
 import { ensureJobsForDateRange } from '@/lib/regenerate-schedule-jobs'
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
-
 /**
  * Fetches jobs for a specific date range (for lazy loading calendar)
  * GET /api/jobs/by-date-range?start=2025-01-01&end=2025-03-31
@@ -44,13 +42,9 @@ export async function GET(request: Request) {
       )
     }
 
-    // Past months should be a fast read. Current/future months can generate
-    // missing recurring jobs so the calendar remains self-healing.
-    const now = new Date()
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    if (endDate >= currentMonthStart) {
-      await ensureJobsForDateRange({ startDate, endDate })
-    }
+    // Any viewed range should self-heal from recurring schedules. This keeps
+    // historical calendar navigation useful for disputes and backfilled data.
+    await ensureJobsForDateRange({ startDate, endDate })
 
     const jobs = await prisma.job.findMany({
       where: {
@@ -58,7 +52,6 @@ export async function GET(request: Request) {
           gte: startDate,
           lte: endDate,
         },
-        status: { not: 'CANCELLED' },
       },
       include: {
         location: {

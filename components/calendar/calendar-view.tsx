@@ -337,10 +337,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const timers = [
       window.setTimeout(() => prefetchMonth(-1), 0),
       window.setTimeout(() => prefetchMonth(1), 150),
-      window.setTimeout(() => prefetchMonth(-2), 500),
-      window.setTimeout(() => prefetchMonth(2), 900),
-      window.setTimeout(() => prefetchMonth(-3), 1300),
-      window.setTimeout(() => prefetchMonth(3), 1700),
     ]
 
     return () => {

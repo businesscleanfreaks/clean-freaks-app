@@ -5,7 +5,6 @@ import React from 'react'
 import { InvoicePDF } from '@/components/invoices/invoice-pdf'
 import type { LogoSettings } from '@/components/invoices/invoice-pdf'
 import { logger } from '@/lib/logger'
-import { getBaseUrl } from '@/lib/url'
 import type { InvoiceWithRelations } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -78,16 +77,14 @@ export async function POST(
     const invoiceElement = React.createElement(InvoicePDF, pdfProps)
     const pdfBuffer = await renderToBuffer(invoiceElement as React.ReactElement)
 
-    // Convert buffer to base64 data URL
-    const base64 = Buffer.from(pdfBuffer).toString('base64')
-    const dataUrl = `data:application/pdf;base64,${base64}`
-
     // Generate a filename for download
     const filename = `invoice-${invoice.invoiceNumber || invoice.id}.pdf`
 
-    // Generate the hosted PDF URL (for email and viewing)
-    const baseUrl = getBaseUrl()
-    const hostedPdfUrl = `${baseUrl}/api/invoices/${invoice.id}/generate-pdf`
+    // Generate the hosted PDF URL (for email and viewing). Use the request
+    // origin so local 127.0.0.1 previews and production previews stay same-origin.
+    const requestOrigin = new URL(request.url).origin
+    const hostedPdfUrl = `${requestOrigin}/api/invoices/${invoice.id}/generate-pdf`
+    const previewPdfUrl = `/api/invoices/${invoice.id}/generate-pdf`
 
     // Save the PDF URL to the database so email can use it
     await prisma.invoice.update({
@@ -106,8 +103,8 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      pdfDataUrl: dataUrl,
-      pdfUrl: hostedPdfUrl,
+      pdfUrl: previewPdfUrl,
+      hostedPdfUrl,
       filename,
       invoiceNumber: invoice.invoiceNumber,
     })

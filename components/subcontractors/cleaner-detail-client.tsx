@@ -202,21 +202,17 @@ export function CleanerDetailClient({ id }: CleanerDetailClientProps) {
   }
 
   const unmarkJobsPaid = async (jobIds: string[], key: string) => {
-    if (jobIds.length === 0) return
+    if (!sub || jobIds.length === 0) return
     setPendingKey(key)
     try {
-      // A parent checkbox may undo several jobs from one payment. Keep those
-      // requests ordered so payment-line cleanup stays consistent.
-      for (const jobId of jobIds) {
-        const response = await fetch(`/api/jobs/${jobId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subcontractorPaid: false }),
-        })
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || "Failed to unmark paid")
-        }
+      const response = await fetch(`/api/subcontractors/${sub.id}/payments`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobIds }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || "Failed to unmark paid")
       }
       showSuccess("Payment unchecked")
       refreshAfterPaymentChange(jobIds, false)

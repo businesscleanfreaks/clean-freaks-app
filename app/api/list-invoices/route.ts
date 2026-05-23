@@ -20,15 +20,22 @@ export async function GET(request: Request) {
     take: 20
   })
 
-  return NextResponse.json({
-    count: invoices.length,
-    invoices: invoices.map(inv => ({
-      id: inv.id,
-      number: inv.invoiceNumber,
-      client: inv.client.name,
-      amount: inv.totalAmount,
-      status: inv.status,
-      created: inv.dateCreated
-    }))
-  })
+  return NextResponse.json(
+    {
+      count: invoices.length,
+      invoices: invoices.map(inv => ({
+        id: inv.id,
+        number: inv.invoiceNumber,
+        client: inv.client.name,
+        amount: inv.totalAmount,
+        status: inv.status,
+        created: inv.dateCreated
+      }))
+    },
+    {
+      headers: {
+        'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+      },
+    }
+  )
 }

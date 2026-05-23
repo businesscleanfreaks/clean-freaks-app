@@ -5,7 +5,6 @@ import { getBillingStartDate } from "@/lib/billing-settings"
 import { logger } from "@/lib/logger"
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 function jobMatchesScheduleDay(job: {
   date: Date
@@ -721,7 +720,7 @@ export async function GET(request: Request) {
       },
       {
         headers: {
-          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+          'Cache-Control': 's-maxage=15, stale-while-revalidate=60',
         },
       }
     )

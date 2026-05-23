@@ -247,7 +247,7 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
       }
 
       const data = await response.json()
-      setPdfUrl(data.pdfDataUrl || data.pdfUrl)
+      setPdfUrl(data.pdfUrl || data.pdfDataUrl)
       
       const { showSuccess } = await import('@/lib/toast')
       showSuccess('PDF generated successfully!')

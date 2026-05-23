@@ -26,6 +26,8 @@ interface CompactCreateJobDialogProps {
 type ClientMode = "existing" | "one-time"
 type TimeMode = "specific" | "window" | "tbd"
 type JobType = "regular" | "deep_clean" | "post_construction" | "move_in_out" | "event"
+type ClientLocation = ClientListItem["locations"][number]
+type ClientSchedule = ClientLocation["schedules"][number]
 
 const jobTypes: Array<{ value: JobType; label: string }> = [
   { value: "regular", label: "Regular clean" },
@@ -37,6 +39,12 @@ const jobTypes: Array<{ value: JobType; label: string }> = [
 
 function initialLocationIds(client?: ClientListItem) {
   return client?.locations?.length === 1 ? [client.locations[0].id] : []
+}
+
+function primaryScheduleForLocation(location?: ClientLocation): ClientSchedule | undefined {
+  return location?.schedules
+    ?.filter(schedule => schedule.isActive !== false)
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0]
 }
 
 function toInputDate(date: Date | null) {
@@ -60,6 +68,7 @@ export function CompactCreateJobDialog({
   const [oneTimeName, setOneTimeName] = useState("")
   const [oneTimeAddress, setOneTimeAddress] = useState("")
   const [oneTimePhone, setOneTimePhone] = useState("")
+  const [oneTimeEmail, setOneTimeEmail] = useState("")
   const [jobType, setJobType] = useState<JobType>("regular")
   const [isTrial, setIsTrial] = useState(false)
   const [jobDate, setJobDate] = useState<Date | null>(selectedDate)
@@ -70,6 +79,8 @@ export function CompactCreateJobDialog({
   const [subcontractorId, setSubcontractorId] = useState("unassigned")
   const [clientRate, setClientRate] = useState("")
   const [cleanerPay, setCleanerPay] = useState("")
+  const [showNotes, setShowNotes] = useState(false)
+  const [notes, setNotes] = useState("")
   const [trialNotes, setTrialNotes] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -88,9 +99,14 @@ export function CompactCreateJobDialog({
       .slice(0, 8)
   }, [clients, search])
 
+  const hasValidTime =
+    timeMode === "tbd" ||
+    (timeMode === "specific" ? !!startTime : !!startWindowBegin && !!startWindowEnd)
+
   const profit = (Number(clientRate) || 0) - (Number(cleanerPay) || 0)
   const canCreate =
     !!jobDate &&
+    hasValidTime &&
     Number(clientRate) >= 0 &&
     Number(cleanerPay) >= 0 &&
     clientRate !== "" &&
@@ -109,6 +125,7 @@ export function CompactCreateJobDialog({
     setOneTimeName("")
     setOneTimeAddress("")
     setOneTimePhone("")
+    setOneTimeEmail("")
     setJobType("regular")
     setIsTrial(false)
     setJobDate(selectedDate)
@@ -119,21 +136,57 @@ export function CompactCreateJobDialog({
     setSubcontractorId("unassigned")
     setClientRate("")
     setCleanerPay("")
+    setShowNotes(false)
+    setNotes("")
     setTrialNotes("")
   }, [clients, open, preSelectedClientId, selectedDate, selectedTime])
 
+  const applyScheduleDefaults = (
+    locationIds: string[],
+    options?: { force?: boolean; sourceLocations?: ClientLocation[] }
+  ) => {
+    if (locationIds.length !== 1) return
+    const location = (options?.sourceLocations || locations).find(item => item.id === locationIds[0])
+    const schedule = primaryScheduleForLocation(location)
+    if (!schedule) return
+
+    const shouldSet = (value: string) => options?.force || value === ""
+    const shouldSetAssignee = options?.force || subcontractorId === "" || subcontractorId === "unassigned"
+
+    if (shouldSet(clientRate) && schedule.defaultClientRate != null) setClientRate(String(schedule.defaultClientRate))
+    if (shouldSet(cleanerPay) && schedule.defaultSubcontractorRate != null) setCleanerPay(String(schedule.defaultSubcontractorRate))
+    if (shouldSetAssignee && schedule.subcontractorId) setSubcontractorId(schedule.subcontractorId)
+
+    if (selectedTime) return
+    if (schedule.timeType === "SPECIFIC" && schedule.startTime) {
+      setTimeMode("specific")
+      setStartTime(schedule.startTime)
+      setStartWindowBegin("")
+      setStartWindowEnd("")
+    } else if (schedule.startWindowBegin && schedule.startWindowEnd) {
+      setTimeMode("window")
+      setStartTime("")
+      setStartWindowBegin(schedule.startWindowBegin)
+      setStartWindowEnd(schedule.startWindowEnd)
+    }
+  }
+
   const chooseClient = (client: ClientListItem) => {
     setSelectedClientId(client.id)
-    setSelectedLocationIds(initialLocationIds(client))
+    const nextLocationIds = initialLocationIds(client)
+    setSelectedLocationIds(nextLocationIds)
+    applyScheduleDefaults(nextLocationIds, { sourceLocations: client.locations })
     setSearch("")
   }
 
   const toggleLocation = (locationId: string) => {
-    setSelectedLocationIds(current =>
-      current.includes(locationId)
+    setSelectedLocationIds(current => {
+      const next = current.includes(locationId)
         ? current.filter(id => id !== locationId)
         : [...current, locationId]
-    )
+      applyScheduleDefaults(next)
+      return next
+    })
   }
 
   const close = () => onOpenChange(false)
@@ -144,7 +197,7 @@ export function CompactCreateJobDialog({
       return
     }
     if (!canCreate) {
-      showError("Choose a client, location, and rates before creating the job")
+      showError("Choose a client, location, time, and rates before creating the job")
       return
     }
 
@@ -159,6 +212,8 @@ export function CompactCreateJobDialog({
           body: JSON.stringify({
             name: oneTimeName.trim(),
             phone: oneTimePhone.trim() || null,
+            communicationEmail: oneTimeEmail.trim() || null,
+            invoicingEmail: oneTimeEmail.trim() || null,
             billingType: "PER_CLEAN",
             cleanerPayType: "PER_CLEAN",
             notes: `One-time ${jobTypes.find(type => type.value === jobType)?.label || "clean"} job`,
@@ -184,6 +239,7 @@ export function CompactCreateJobDialog({
             startWindowEnd: timeMode === "window" ? startWindowEnd || null : null,
             clientRate: Number(clientRate),
             subcontractorRate: Number(cleanerPay),
+            notes: notes.trim() || null,
             isTrial,
             trialNotes: isTrial ? trialNotes.trim() || null : null,
           }),
@@ -328,7 +384,10 @@ export function CompactCreateJobDialog({
               <div className="space-y-2 rounded-lg border border-slate-200 p-3">
                 <Input value={oneTimeName} onChange={event => setOneTimeName(event.target.value)} placeholder="Client name *" className="h-9" />
                 <Input value={oneTimeAddress} onChange={event => setOneTimeAddress(event.target.value)} placeholder="Full address *" className="h-9" />
-                <Input value={oneTimePhone} onChange={event => setOneTimePhone(event.target.value)} placeholder="Phone (optional)" className="h-9" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input value={oneTimePhone} onChange={event => setOneTimePhone(event.target.value)} placeholder="Phone" className="h-9" />
+                  <Input value={oneTimeEmail} onChange={event => setOneTimeEmail(event.target.value)} placeholder="Email" className="h-9" />
+                </div>
               </div>
             )}
           </section>
@@ -436,6 +495,39 @@ export function CompactCreateJobDialog({
                 placeholder="Entry details, expectations, special prep..."
                 rows={2}
                 className="w-full resize-none rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none"
+              />
+            </section>
+          )}
+
+          {!showNotes ? (
+            <button
+              type="button"
+              onClick={() => setShowNotes(true)}
+              className="text-xs font-semibold text-slate-400 hover:text-teal-700"
+            >
+              + Add notes
+            </button>
+          ) : (
+            <section className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="mb-1 flex items-center justify-between">
+                <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Notes</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNotes(false)
+                    setNotes("")
+                  }}
+                  className="text-[11px] font-semibold text-slate-400 hover:text-slate-700"
+                >
+                  Remove
+                </button>
+              </div>
+              <textarea
+                value={notes}
+                onChange={event => setNotes(event.target.value)}
+                placeholder="Gate codes, parking, special instructions..."
+                rows={2}
+                className="w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
               />
             </section>
           )}

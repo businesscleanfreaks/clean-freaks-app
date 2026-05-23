@@ -80,3 +80,5 @@ public/swe-worker*
 # Sentry Config File
 .env.sentry-build-plugin
 playwright-report/
+.codex-next-dev.err.log
+.codex-next-dev.log

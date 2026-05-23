@@ -106,6 +106,7 @@ export const createJobSchema = z.object({
   startWindowEnd: z.string().optional().nullable(),
   clientRate: z.number().min(0, 'Client rate must be positive'),
   subcontractorRate: z.number().min(0, 'Subcontractor rate must be positive'),
+  notes: z.string().max(5000, 'Notes too long').optional().nullable(),
   isTrial: z.boolean().optional().default(false),
   trialNotes: z.string().max(5000, 'Trial notes too long').optional().nullable(),
 })

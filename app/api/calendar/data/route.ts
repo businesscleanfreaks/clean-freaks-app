@@ -29,7 +29,6 @@ export async function GET() {
             gte: startDate,
             lte: endDate,
           },
-          status: { not: 'CANCELLED' },
         },
         select: {
           id: true,

@@ -179,3 +179,99 @@ export async function POST(
     )
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> | { id: string } }
+) {
+  try {
+    const resolvedParams = await Promise.resolve(params)
+    const { jobIds } = await request.json().catch(() => ({ jobIds: [] }))
+
+    if (!Array.isArray(jobIds) || jobIds.length === 0 || !jobIds.every(id => typeof id === 'string')) {
+      return NextResponse.json(
+        { error: 'jobIds must be a non-empty array' },
+        { status: 400 }
+      )
+    }
+
+    const jobs = await prisma.job.findMany({
+      where: {
+        id: { in: jobIds },
+        subcontractorId: resolvedParams.id,
+      },
+      select: { id: true },
+    })
+
+    if (jobs.length === 0) {
+      return NextResponse.json(
+        { error: 'No matching jobs found for this subcontractor' },
+        { status: 404 }
+      )
+    }
+
+    const validJobIds = jobs.map(job => job.id)
+
+    const result = await prisma.$transaction(async (tx) => {
+      const lineItems = await tx.subcontractorPaymentLineItem.findMany({
+        where: { jobId: { in: validJobIds } },
+        select: {
+          id: true,
+          jobId: true,
+          paymentId: true,
+        },
+      })
+
+      const affectedPaymentIds = Array.from(new Set(lineItems.map(item => item.paymentId)))
+
+      if (lineItems.length > 0) {
+        await tx.subcontractorPaymentLineItem.deleteMany({
+          where: { id: { in: lineItems.map(item => item.id) } },
+        })
+      }
+
+      for (const paymentId of affectedPaymentIds) {
+        const remaining = await tx.subcontractorPaymentLineItem.findMany({
+          where: { paymentId },
+          select: { amount: true },
+        })
+
+        if (remaining.length === 0) {
+          await tx.subcontractorPayment.delete({ where: { id: paymentId } })
+        } else {
+          const totalAmount = remaining.reduce((sum, item) => sum + item.amount, 0)
+          await tx.subcontractorPayment.update({
+            where: { id: paymentId },
+            data: { totalAmount },
+          })
+        }
+      }
+
+      const updatedJobs = await tx.job.updateMany({
+        where: { id: { in: validJobIds } },
+        data: { subcontractorPaid: false },
+      })
+
+      return {
+        unmarkedCount: updatedJobs.count,
+        removedLineItemCount: lineItems.length,
+        affectedPaymentCount: affectedPaymentIds.length,
+      }
+    })
+
+    revalidateSubcontractorPages(resolvedParams.id)
+
+    return NextResponse.json({
+      success: true,
+      message: `Unchecked ${result.unmarkedCount} job(s).`,
+      ...result,
+    })
+  } catch (error) {
+    logger.error('Error unmarking payment jobs:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to unmark paid jobs'
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    )
+  }
+}

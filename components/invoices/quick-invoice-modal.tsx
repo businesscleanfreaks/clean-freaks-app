@@ -106,7 +106,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     <Dialog open={props.open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="w-[94vw] max-w-[760px] h-[92vh] max-h-[920px] rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
+        className="h-[min(92vh,920px)] w-[min(94vw,760px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
       >
         <DialogTitle className="sr-only">Invoice review for {client.name}</DialogTitle>
         <DialogDescription className="sr-only">
@@ -367,7 +367,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
           </div>
         )}
 
-        <div className="flex-1 overflow-auto bg-stone-300/70 px-4 py-4">
+        <div className="flex-1 overflow-auto bg-stone-300/70 px-3 py-4 sm:px-4">
           <div className="mx-auto flex min-h-full w-full max-w-[612px] items-start justify-center">
             {isGeneratingPreview ? (
               <div className="mt-24 rounded-lg bg-white px-10 py-8 text-center shadow-sm">
@@ -378,7 +378,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
             ) : previewPdfUrl ? (
               <div className="h-[792px] w-full overflow-hidden bg-white shadow-xl">
                 <iframe
-                  src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                  src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
                   className="h-full w-full border-0"
                   title="Invoice Preview"
                 />
@@ -433,21 +433,21 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
               </div>
             </div>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}
                 disabled={isCreating || isSendingTest}
-                className="order-last h-10 w-full px-4 sm:order-first sm:w-auto"
+                className="order-last h-10 w-full px-4 sm:order-first sm:w-auto sm:min-w-[96px]"
               >
                 Cancel
               </Button>
-              <div className="grid min-w-0 grid-cols-1 gap-2 min-[520px]:grid-cols-3">
+              <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 min-[520px]:grid-cols-3 sm:max-w-[480px]">
                 <Button
                   variant="outline"
                   onClick={() => handleCreateInvoice(false)}
                   disabled={!canSubmit}
-                  className="h-10 min-w-0 px-3 text-sm"
+                  className="h-10 min-w-0 px-2 text-sm"
                 >
                   {isCreating ? <ActionSpinner size={15} className="mr-1.5" /> : <Save className="mr-1.5 h-4 w-4 shrink-0" />}
                    Draft
@@ -456,7 +456,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                   variant="outline"
                   onClick={() => handleCreateInvoice(true)}
                   disabled={!canSubmit}
-                  className="h-10 min-w-0 px-3 text-sm"
+                  className="h-10 min-w-0 px-2 text-sm"
                 >
                   {isSendingTest ? <ActionSpinner size={15} className="mr-1.5" /> : <TestTube className="mr-1.5 h-4 w-4 shrink-0" />}
                   Test
@@ -464,7 +464,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                 <Button
                   onClick={handleSendToClient}
                   disabled={!canSubmit}
-                  className="h-10 min-w-0 bg-stone-900 px-4 text-sm text-white hover:bg-stone-800"
+                  className="h-10 min-w-0 bg-stone-900 px-3 text-sm text-white hover:bg-stone-800"
                 >
                   {isCreating ? <ActionSpinner size={15} color="white" className="mr-1.5" /> : <Send className="mr-1.5 h-3 w-3 shrink-0" />}
                   Send

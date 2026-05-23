@@ -111,6 +111,17 @@ function vendorTotals(vendor: VendorData) {
   return { total, unpaid, paid: Math.max(0, total - unpaid) }
 }
 
+function vendorServiceTags(vendor: VendorData) {
+  const tags = Array.from(
+    new Set(
+      vendor.addOnServices
+        .map(addOn => addOn.description.trim())
+        .filter(Boolean)
+    )
+  )
+  return tags.slice(0, 3)
+}
+
 export function VendorsPageClient() {
   const { data: vendors, error, isLoading, mutate } = useSWR<VendorData[]>(
     "/api/vendors",
@@ -323,9 +334,11 @@ export function VendorsPageClient() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <div className="flex items-center justify-between border-b border-gray-950 px-4 py-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 border-b border-gray-950 px-4 py-2 md:grid-cols-[minmax(0,1fr)_180px_90px_120px]">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Vendor</span>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Owed</span>
+              <span className="hidden text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500 md:block">Services</span>
+              <span className="hidden text-center text-[11px] font-semibold uppercase tracking-wider text-gray-500 md:block">Unpaid</span>
+              <span className="text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500">Owed</span>
             </div>
 
             {rows.map(({ vendor, total, unpaid, paid }, rowIndex) => {
@@ -333,6 +346,8 @@ export function VendorsPageClient() {
               const allPaid = vendor.addOnServices.length > 0 && vendor.addOnServices.every(addOn => addOn.vendorPaid)
               const isBusy = pendingKey === `${vendor.id}:all`
               const historyOpen = historyVendorId === vendor.id
+              const serviceTags = vendorServiceTags(vendor)
+              const unpaidCount = vendor.addOnServices.filter(addOn => !addOn.vendorPaid).length
 
               return (
                 <div key={vendor.id} className={cn(rowIndex < rows.length - 1 && "border-b border-gray-100")}>
@@ -340,7 +355,7 @@ export function VendorsPageClient() {
                     role="button"
                     tabIndex={0}
                     className={cn(
-                      "flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-gray-50",
+                      "grid cursor-pointer grid-cols-[minmax(0,1fr)_120px] items-center gap-4 px-4 py-3 transition-colors hover:bg-gray-50 md:grid-cols-[minmax(0,1fr)_180px_90px_120px]",
                       isExpanded && "bg-gray-50"
                     )}
                     onClick={() => setExpandedVendor(isExpanded ? null : vendor.id)}
@@ -363,7 +378,23 @@ export function VendorsPageClient() {
                         </p>
                       </div>
                     </div>
-                    <div className={cn("font-mono text-base font-bold tracking-tight", unpaid === 0 && "text-emerald-600")}>
+                    <div className="hidden justify-end gap-1 md:flex">
+                      {serviceTags.length === 0 ? (
+                        <span className="text-xs text-gray-300">-</span>
+                      ) : serviceTags.map(tag => (
+                        <span
+                          key={tag}
+                          className="max-w-[88px] truncate rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500"
+                          title={tag}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="hidden text-center text-xs font-semibold text-gray-500 md:block">
+                      {unpaidCount > 0 ? unpaidCount : "Paid up"}
+                    </div>
+                    <div className={cn("text-right font-mono text-base font-bold tracking-tight", unpaid === 0 && "text-emerald-600")}>
                       {isBusy ? <ActionSpinner size={14} /> : unpaid > 0 ? formatCurrency(unpaid) : "✓"}
                     </div>
                   </div>
