@@ -27,6 +27,20 @@ export type QuickFixScope = 'single' | 'future' | 'all'
 export type ScopeDialogAction = Exclude<QuickFixPanel, 'outcome' | 'schedule' | null>
 export type DesktopSection = 'actions' | 'details' | 'more'
 
+type UndoJobPayload = {
+  date?: string
+  startTime?: string | null
+  startWindowBegin?: string | null
+  startWindowEnd?: string | null
+  subcontractorId?: string | null
+  clientRate?: number
+  subcontractorRate?: number
+  status?: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
+  notes?: string | null
+  isTrial?: boolean
+  trialNotes?: string | null
+}
+
 interface UseJobDetailOptions {
   job: CalendarJob
   open: boolean
@@ -167,6 +181,31 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     return jobHasFinalInvoice(job?.invoiceLineItems)
   }, [job])
 
+  const showJobUndo = (
+    message: string,
+    payload: UndoJobPayload,
+    afterUndo?: () => void
+  ) => {
+    showUndoToast(message, async () => {
+      try {
+        const response = await fetch(`/api/jobs/${job.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          await showApiError(response, 'Failed to undo change')
+          return
+        }
+        afterUndo?.()
+        showSuccess('Change undone')
+        refreshCalendarData()
+      } catch {
+        showError('Failed to undo change. Please try again.')
+      }
+    })
+  }
+
   // ─── Desktop helpers ────────────────────────────────────────────────────────
 
   const getStatusColor = (status: string) => {
@@ -201,6 +240,8 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const handleSaveTrialFields = async (nextIsTrial: boolean, nextTrialNotes: string) => {
     setIsSavingTrial(true)
     try {
+      const previousTrialEnabled = Boolean((job as any).isTrial)
+      const previousTrialNotes = ((job as any).trialNotes as string | null) || null
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -213,7 +254,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
         await showApiError(response, 'Failed to update trial fields')
         return
       }
-      showSuccess(nextIsTrial ? 'Marked as trial clean' : 'Removed trial flag')
+      showJobUndo(nextIsTrial ? 'Marked as trial clean' : 'Removed trial flag', {
+        isTrial: previousTrialEnabled,
+        trialNotes: previousTrialNotes,
+      }, () => {
+        setTrialEnabled(previousTrialEnabled)
+        setTrialNotesDraft(previousTrialNotes || '')
+      })
       refreshCalendarData()
     } finally {
       setIsSavingTrial(false)
@@ -236,6 +283,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }
 
   const handleSaveSubcontractor = async () => {
+    const currentSubcontractorId = job.subcontractor?.id || 'unassigned'
+    if (!selectedSubcontractorId || selectedSubcontractorId === currentSubcontractorId) {
+      handleCancelEdit()
+      return
+    }
     setIsSavingSubcontractor(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -247,7 +299,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       })
       if (!response.ok) throw new Error('Failed to update subcontractor')
       setIsEditingSubcontractor(false)
-      showSuccess('Cleaner updated')
+      showJobUndo('Cleaner updated', {
+        subcontractorId: currentSubcontractorId === 'unassigned' ? null : currentSubcontractorId,
+      }, () => {
+        setSelectedSubcontractorId(currentSubcontractorId)
+      })
       refreshCalendarData()
     } catch (error) {
       showError('Failed to update subcontractor. Please try again.')
@@ -262,6 +318,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   }
 
   const handleDeleteAddOn = async (addOnId: string) => {
+    const originalAddOn = addOns.find((addOn) => addOn.id === addOnId)
     setDeletingAddOnId(addOnId)
     try {
       const res = await fetch(`/api/add-on-services/${addOnId}`, { method: 'DELETE' })
@@ -271,7 +328,34 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
         return
       }
       setAddOns((prev) => prev.filter((a) => a.id !== addOnId))
-      showSuccess('Add-on removed')
+      if (originalAddOn) {
+        showUndoToast('Add-on removed', async () => {
+          try {
+            const restoreResponse = await fetch('/api/add-on-services', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                jobId: job.id,
+                description: originalAddOn.description,
+                clientRate: Number(originalAddOn.clientRate || 0),
+                subcontractorRate: Number(originalAddOn.subcontractorRate || 0),
+              }),
+            })
+            if (!restoreResponse.ok) {
+              await showApiError(restoreResponse, 'Failed to restore add-on')
+              return
+            }
+            const restored = await restoreResponse.json()
+            setAddOns((prev) => [...prev, restored])
+            showSuccess('Add-on restored')
+            refreshCalendarData()
+          } catch {
+            showError('Failed to restore add-on')
+          }
+        })
+      } else {
+        showSuccess('Add-on removed')
+      }
     } catch {
       showError('Failed to remove add-on')
     } finally {
@@ -307,6 +391,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const handleComplete = async () => {
     setIsCompleting(true)
     try {
+      const previousStatus = job.status as 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -318,7 +403,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
         return
       }
       onOpenChange(false)
-      showSuccess('Job marked as completed')
+      showJobUndo('Job marked as completed', { status: previousStatus })
       refreshCalendarData()
     } catch (error) {
       showError('Failed to complete job. Please try again.')
@@ -648,6 +733,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     }
     setIsSavingInlineDate(true)
     try {
+      const previousDate = currentDateInputValue()
       const currentTime = localTime !== null ? localTime : (job.startTime || null)
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
@@ -662,7 +748,9 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setLocalDate(saved)
       setActiveInlinePicker(null)
       setActiveQuickFixPanel(null)
-      showSuccess('Date updated')
+      showJobUndo('Date updated', { date: previousDate, startTime: currentTime }, () => {
+        setLocalDate(new Date(`${previousDate}T12:00:00`))
+      })
       refreshCalendarData({
         jobId: job.id,
         updates: { date: saved.toISOString(), startTime: currentTime },
@@ -683,6 +771,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     try {
       const base = localDate || new Date(job.date)
       const dateStr = format(base, 'yyyy-MM-dd')
+      const previousTime = currentTimeInputValue() || null
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -695,7 +784,9 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setLocalTime(draftTime)
       setActiveInlinePicker(null)
       setActiveQuickFixPanel(null)
-      showSuccess('Time updated')
+      showJobUndo('Time updated', { date: dateStr, startTime: previousTime }, () => {
+        setLocalTime(previousTime)
+      })
       refreshCalendarData({
         jobId: job.id,
         updates: { date: base.toISOString(), startTime: draftTime || null },
@@ -716,6 +807,8 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     }
     setIsSavingInlineDate(true)
     try {
+      const previousDate = currentDateInputValue()
+      const previousTime = currentTimeInputValue() || null
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -729,7 +822,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setLocalDate(savedDate)
       setLocalTime(nextTime)
       setActiveQuickFixPanel(null)
-      showSuccess('Job moved')
+      showJobUndo('Job moved', { date: previousDate, startTime: previousTime }, () => {
+        setLocalDate(new Date(`${previousDate}T12:00:00`))
+        setLocalTime(previousTime)
+      })
       onOpenChange(false)
       refreshCalendarData({
         jobId: job.id,
@@ -903,7 +999,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       }
       setIsEditingRates(false)
       setActiveQuickFixPanel(null)
-      showSuccess('Rates updated')
+      showJobUndo('Rates updated', {
+        clientRate: Number(job.clientRate || 0),
+        subcontractorRate: Number(job.subcontractorRate || 0),
+      })
       refreshCalendarData({
         jobId: job.id,
         updates: { clientRate: newClientRate, subcontractorRate: newSubRate },
@@ -934,7 +1033,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
         throw new Error(errorData.error || 'Failed to update client price')
       }
       setActiveQuickFixPanel(null)
-      showSuccess('Client price updated')
+      showJobUndo('Client price updated', { clientRate: Number(job.clientRate || 0) })
       refreshCalendarData({ jobId: job.id, updates: { clientRate: newClientRate } })
     } catch {
       showError('Failed to update client price — try again')
@@ -1002,7 +1101,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
         throw new Error(errorData.error || 'Failed to update cleaner pay')
       }
       setActiveQuickFixPanel(null)
-      showSuccess('Cleaner pay updated')
+      showJobUndo('Cleaner pay updated', { subcontractorRate: Number(job.subcontractorRate || 0) })
       refreshCalendarData({ jobId: job.id, updates: { subcontractorRate: newSubRate } })
     } catch {
       showError('Failed to update cleaner pay — try again')
@@ -1117,7 +1216,20 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       }
       const created = await response.json()
       setAddOns(prev => [...prev, created])
-      showSuccess('Add-on service added')
+      showUndoToast('Add-on service added', async () => {
+        try {
+          const undoResponse = await fetch(`/api/add-on-services/${created.id}`, { method: 'DELETE' })
+          if (!undoResponse.ok) {
+            await showApiError(undoResponse, 'Failed to undo add-on')
+            return
+          }
+          setAddOns(prev => prev.filter((addOn) => addOn.id !== created.id))
+          showSuccess('Add-on removed')
+          refreshCalendarData()
+        } catch {
+          showError('Failed to undo add-on')
+        }
+      })
       setNewAddOn({ description: '', clientRate: '', subcontractorRate: '' })
       setIsAddingAddOn(false)
       setActiveQuickFixPanel(null)
@@ -1200,7 +1312,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       if (!response.ok) throw new Error('Failed to update cleaner')
       setActiveQuickFixPanel(null)
       setScopeDialogAction(null)
-      showSuccess('Cleaner updated')
+      showJobUndo('Cleaner updated', {
+        subcontractorId: currentCleanerId === 'unassigned' ? null : currentCleanerId,
+      }, () => {
+        setSelectedSubcontractorId(currentCleanerId)
+      })
       onOpenChange(false)
       refreshCalendarData({
         jobId: job.id,
@@ -1252,8 +1368,36 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     }
   }
 
+  const quickFixHasNoChanges = () => {
+    if (activeQuickFixPanel === 'move') {
+      const nextTime = draftTime || ''
+      return Boolean(draftDate) && draftDate === currentDateInputValue() && nextTime === currentTimeInputValue()
+    }
+
+    if (activeQuickFixPanel === 'cleaner') {
+      const currentCleanerId = job.subcontractor?.id || 'unassigned'
+      return Boolean(selectedSubcontractorId) && selectedSubcontractorId === currentCleanerId
+    }
+
+    if (activeQuickFixPanel === 'client-rate') {
+      const newClientRate = parseFloat(draftClientRate)
+      return !Number.isNaN(newClientRate) && newClientRate === Number(job.clientRate || 0)
+    }
+
+    if (activeQuickFixPanel === 'cleaner-pay') {
+      const newSubcontractorRate = parseFloat(draftSubcontractorRate)
+      return !Number.isNaN(newSubcontractorRate) && newSubcontractorRate === Number(job.subcontractorRate || 0)
+    }
+
+    return false
+  }
+
   const handleQuickFixSave = async () => {
     if (!activeQuickFixPanel) return
+    if (quickFixHasNoChanges()) {
+      closeQuickEdit()
+      return
+    }
     if (canShowFutureScope && activeQuickFixPanel && activeQuickFixPanel !== 'outcome' && activeQuickFixPanel !== 'schedule') {
       setScopeChoice('single')
       setScopeDialogAction(activeQuickFixPanel)
@@ -1397,6 +1541,10 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
       const updatedNotes = noteLines.join('\n')
       const nextStatus = clientAmount === 0 && cleanerAmount === 0 ? 'CANCELLED' : 'COMPLETED'
+      const originalStatus = job.status as 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
+      const originalNotes = job.notes ?? null
+      const originalClientRate = job.clientRate
+      const originalSubcontractorRate = job.subcontractorRate
 
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
@@ -1416,34 +1564,12 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setShowOutcomeSheet(false)
       setActiveQuickFixPanel(null)
       onOpenChange(false)
-      if (outcomeType === 'skipped') {
-        const originalNotes = job.notes ?? null
-        const originalClientRate = job.clientRate
-        const originalSubcontractorRate = job.subcontractorRate
-        showUndoToast('Clean skipped', async () => {
-          try {
-            const undoResponse = await fetch(`/api/jobs/${job.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                status: 'SCHEDULED',
-                clientRate: originalClientRate,
-                subcontractorRate: originalSubcontractorRate,
-                notes: originalNotes,
-              }),
-            })
-            if (!undoResponse.ok) {
-              await showApiError(undoResponse, 'Failed to undo skipped clean')
-              return
-            }
-            refreshCalendarData()
-          } catch {
-            showError('Failed to undo skipped clean. Please try again.')
-          }
-        })
-      } else {
-        showSuccess(`${outcomeLabel} saved`)
-      }
+      showJobUndo(outcomeType === 'skipped' ? 'Clean skipped' : `${outcomeLabel} saved`, {
+        status: originalStatus,
+        clientRate: originalClientRate,
+        subcontractorRate: originalSubcontractorRate,
+        notes: originalNotes,
+      })
       refreshCalendarData()
     } catch (error) {
       showError(getErrorMessage(error))
@@ -1462,6 +1588,8 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       'Other'
     const cancellationNote = `Cancelled: ${reasonLabel}`
     const updatedNotes = job.notes ? `${cancellationNote}\n\n${job.notes}` : cancellationNote
+    const originalStatus = job.status as 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
+    const originalNotes = job.notes ?? null
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
@@ -1493,7 +1621,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setShowCancellationSheet(false)
       refreshCalendarData()
       onOpenChange(false)
-      showSuccess('Job cancelled')
+      if (feeValue > 0) {
+        showSuccess('Job cancelled')
+      } else {
+        showJobUndo('Job cancelled', { status: originalStatus, notes: originalNotes })
+      }
     } catch (error) {
       showError('Failed to cancel job. Please try again.')
     } finally {

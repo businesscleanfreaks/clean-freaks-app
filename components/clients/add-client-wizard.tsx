@@ -34,6 +34,7 @@ interface ExtraLocationData {
   accessInfo: string
   sameSchedule: boolean
   frequency: string
+  monthlyDay?: number
   daysOfWeek: number[]
   timeType: 'SPECIFIC' | 'WINDOW'
   startTime: string
@@ -539,6 +540,7 @@ export function AddClientWizard({
     accessInfo: '',
     sameSchedule: true,
     frequency: 'WEEKLY',
+    monthlyDay: 1,
     daysOfWeek: [],
     timeType: 'WINDOW',
     startTime: '',
@@ -857,46 +859,54 @@ export function AddClientWizard({
             const loc = await locRes.json()
             if (clientType === 'RECURRING' && extraLoc.sameSchedule) {
               if ((frequency === 'MONTHLY' || daysOfWeek.length > 0) && clientRate) {
+                const schedulePayload: Record<string, unknown> = {
+                  locationId: loc.id,
+                  frequency,
+                  daysOfWeek: frequency === 'MONTHLY' ? null : JSON.stringify(daysOfWeek),
+                  startDate: startDate || new Date().toISOString(),
+                  defaultClientRate: parseFloat(clientRate) || 0,
+                  defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
+                  clientPayType: billingType,
+                  subcontractorPayType: cleanerPayType,
+                  subcontractorId: subcontractorId || null,
+                  timeType,
+                  startTime: timeType === 'SPECIFIC' ? startTime : null,
+                  startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
+                  startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
+                }
+                if (frequency === 'MONTHLY') {
+                  schedulePayload.monthlyPattern = JSON.stringify({ type: 'FIXED_DATES', dates: [monthlyDay] })
+                }
                 await fetch('/api/schedules', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    locationId: loc.id,
-                    frequency,
-                    daysOfWeek: JSON.stringify(daysOfWeek),
-                    startDate: startDate || new Date().toISOString(),
-                    defaultClientRate: parseFloat(clientRate) || 0,
-                    defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
-                    clientPayType: billingType,
-                    subcontractorPayType: cleanerPayType,
-                    subcontractorId: subcontractorId || null,
-                    timeType,
-                    startTime: timeType === 'SPECIFIC' ? startTime : null,
-                    startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
-                    startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
-                  }),
+                  body: JSON.stringify(schedulePayload),
                 })
               }
             } else if (clientType === 'RECURRING') {
               if ((extraLoc.frequency === 'MONTHLY' || extraLoc.daysOfWeek.length > 0) && extraLoc.clientRate) {
+                const schedulePayload: Record<string, unknown> = {
+                  locationId: loc.id,
+                  frequency: extraLoc.frequency,
+                  daysOfWeek: extraLoc.frequency === 'MONTHLY' ? null : JSON.stringify(extraLoc.daysOfWeek),
+                  startDate: startDate || new Date().toISOString(),
+                  defaultClientRate: parseFloat(extraLoc.clientRate) || 0,
+                  defaultSubcontractorRate: parseFloat(extraLoc.subcontractorRate) || 0,
+                  clientPayType: extraLoc.billingType,
+                  subcontractorPayType: extraLoc.cleanerPayType,
+                  subcontractorId: extraLoc.subcontractorId || null,
+                  timeType: extraLoc.timeType,
+                  startTime: extraLoc.timeType === 'SPECIFIC' ? extraLoc.startTime : null,
+                  startWindowBegin: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowBegin : null,
+                  startWindowEnd: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowEnd : null,
+                }
+                if (extraLoc.frequency === 'MONTHLY') {
+                  schedulePayload.monthlyPattern = JSON.stringify({ type: 'FIXED_DATES', dates: [extraLoc.monthlyDay || 1] })
+                }
                 await fetch('/api/schedules', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    locationId: loc.id,
-                    frequency: extraLoc.frequency,
-                    daysOfWeek: JSON.stringify(extraLoc.daysOfWeek),
-                    startDate: startDate || new Date().toISOString(),
-                    defaultClientRate: parseFloat(extraLoc.clientRate) || 0,
-                    defaultSubcontractorRate: parseFloat(extraLoc.subcontractorRate) || 0,
-                    clientPayType: extraLoc.billingType,
-                    subcontractorPayType: extraLoc.cleanerPayType,
-                    subcontractorId: extraLoc.subcontractorId || null,
-                    timeType: extraLoc.timeType,
-                    startTime: extraLoc.timeType === 'SPECIFIC' ? extraLoc.startTime : null,
-                    startWindowBegin: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowBegin : null,
-                    startWindowEnd: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowEnd : null,
-                  }),
+                  body: JSON.stringify(schedulePayload),
                 })
               }
             }
@@ -957,6 +967,415 @@ export function AddClientWizard({
 
   const canCreate = !!clientName.trim() && !!address.trim()
   const stepLabels = ['Client', 'Location', 'Schedule', 'Pricing', 'Extras']
+
+  const selectedSubcontractor = subcontractors.find(sub => sub.id === subcontractorId)
+  const margin = (parseFloat(clientRate) || 0) - (parseFloat(subcontractorRate) || 0)
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(15,23,42,0.42)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-client-title"
+        style={{
+          width: 'min(620px, 100%)',
+          maxHeight: 'min(920px, calc(100vh - 32px))',
+          borderRadius: '14px',
+          backgroundColor: 'white',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ padding: '16px 22px 12px', borderBottom: '1px solid #F1F5F9', position: 'relative', flexShrink: 0 }}>
+          <h2 id="add-client-title" style={{ fontSize: '19px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+            Add New Client
+          </h2>
+          <button
+            type="button"
+            onClick={() => { onClose(); resetForm() }}
+            aria-label="Close"
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: '14px',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              display: 'grid',
+              placeItems: 'center',
+            }}
+            className="hover:bg-gray-100 transition-colors"
+          >
+            <X style={{ width: '18px', height: '18px', color: '#64748B' }} />
+          </button>
+        </div>
+
+        <div style={{ overflowY: 'auto', padding: '14px 22px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+            <StepLabel text="Client" />
+            <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '7px', padding: '2px', marginBottom: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setClientType('RECURRING')}
+                style={{
+                  flex: 1,
+                  height: '30px',
+                  border: 'none',
+                  borderRadius: '5px',
+                  background: clientType === 'RECURRING' ? 'white' : 'transparent',
+                  boxShadow: clientType === 'RECURRING' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  color: clientType === 'RECURRING' ? '#0F172A' : '#94A3B8',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Recurring
+              </button>
+              <button
+                type="button"
+                onClick={() => setClientType('ONE_TIME')}
+                style={{
+                  flex: 1,
+                  height: '30px',
+                  border: 'none',
+                  borderRadius: '5px',
+                  background: clientType === 'ONE_TIME' ? 'white' : 'transparent',
+                  boxShadow: clientType === 'ONE_TIME' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  color: clientType === 'ONE_TIME' ? '#0F172A' : '#94A3B8',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                One-Time
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(150px, 0.8fr)', gap: '8px' }}>
+              <div>
+                <StepLabel text="Name" />
+                <CleanInput
+                  value={clientName}
+                  onChange={v => { setClientName(v); setErrors(e => ({ ...e, clientName: '' })) }}
+                  placeholder="Business or client name"
+                  error={!!errors.clientName}
+                />
+                <FieldError msg={errors.clientName} />
+              </div>
+              <div>
+                <StepLabel text="Client since" />
+                <CleanInput value={startDate} onChange={setStartDate} type="date" />
+              </div>
+            </div>
+          </section>
+
+          <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+            <StepLabel text="Location and Contact" />
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(130px, 0.9fr)', gap: '8px', marginBottom: '8px' }}>
+              <div>
+                <CleanInput
+                  value={address}
+                  onChange={v => { setAddress(v); setErrors(e => ({ ...e, address: '' })) }}
+                  placeholder="Full address"
+                  error={!!errors.address}
+                />
+                <FieldError msg={errors.address} />
+              </div>
+              <CleanInput value={locationName} onChange={setLocationName} placeholder="Location name" />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', marginBottom: '8px' }}>
+              <CleanInput value={communicationContactName} onChange={setCommunicationContactName} placeholder="Contact name" />
+              <CleanInput
+                value={email}
+                onChange={v => { setEmail(v); setErrors(e => ({ ...e, email: '' })) }}
+                placeholder="Contact email"
+                type="email"
+                error={!!errors.email}
+              />
+              <CleanInput value={communicationPhone} onChange={setCommunicationPhone} placeholder="Contact phone" />
+              <CleanInput value={phone} onChange={setPhone} placeholder="Client phone" />
+            </div>
+            <FieldError msg={errors.email} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'start' }}>
+              <textarea
+                value={accessInfo}
+                onChange={e => setAccessInfo(e.target.value)}
+                placeholder="Entry code, key location, parking notes..."
+                style={{
+                  width: '100%',
+                  minHeight: '40px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #E0E0E0',
+                  color: '#111111',
+                  fontSize: '13px',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', minHeight: '40px', color: '#475569', fontSize: '12px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={sameEmail} onChange={e => setSameEmail(e.target.checked)} style={{ accentColor: '#00A896' }} />
+                Same invoice email
+              </label>
+            </div>
+            {!sameEmail && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', marginTop: '8px' }}>
+                <CleanInput value={invoicingContactName} onChange={setInvoicingContactName} placeholder="Invoice contact" />
+                <CleanInput
+                  value={invoicingEmail}
+                  onChange={v => { setInvoicingEmail(v); setErrors(e => ({ ...e, invoicingEmail: '' })) }}
+                  placeholder="Invoice email"
+                  type="email"
+                  error={!!errors.invoicingEmail}
+                />
+                <CleanInput value={invoicingPhone} onChange={setInvoicingPhone} placeholder="Invoice phone" />
+                <CleanInput
+                  value={invoicingCcEmail}
+                  onChange={v => { setInvoicingCcEmail(v); setErrors(e => ({ ...e, invoicingCcEmail: '' })) }}
+                  placeholder="Invoice CC emails"
+                  error={!!errors.invoicingCcEmail}
+                />
+              </div>
+            )}
+            {sameEmail && (
+              <div style={{ marginTop: '8px' }}>
+                <CleanInput
+                  value={invoicingCcEmail}
+                  onChange={v => { setInvoicingCcEmail(v); setErrors(e => ({ ...e, invoicingCcEmail: '' })) }}
+                  placeholder="Invoice CC emails"
+                  error={!!errors.invoicingCcEmail}
+                />
+              </div>
+            )}
+            <FieldError msg={errors.invoicingEmail || errors.invoicingCcEmail} />
+          </section>
+
+          {clientType === 'RECURRING' && (
+            <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+              <StepLabel text="Schedule and Pricing" />
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(140px, 0.7fr)', gap: '10px', marginBottom: '10px' }}>
+                <div>
+                  <StepLabel text="Frequency" />
+                  <FrequencyPills selected={frequency} onChange={setFrequency} />
+                </div>
+                <div>
+                  {frequency === 'MONTHLY' ? (
+                    <>
+                      <StepLabel text="Day of month" />
+                      <CleanInput value={String(monthlyDay)} onChange={v => setMonthlyDay(Math.min(28, Math.max(1, parseInt(v) || 1)))} type="number" />
+                    </>
+                  ) : (
+                    <>
+                      <StepLabel text="Days" />
+                      <DayPicker selected={daysOfWeek} onChange={v => { setDaysOfWeek(v); setErrors(e => ({ ...e, daysOfWeek: '' })) }} />
+                      <FieldError msg={errors.daysOfWeek} />
+                    </>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                <div>
+                  <StepLabel text="Arrival" />
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                    <TogglePill label="Specific" active={timeType === 'SPECIFIC'} onClick={() => setTimeType('SPECIFIC')} />
+                    <TogglePill label="Window" active={timeType === 'WINDOW'} onClick={() => setTimeType('WINDOW')} />
+                  </div>
+                  {timeType === 'SPECIFIC' ? (
+                    <select value={startTime} onChange={e => setStartTime(e.target.value)} style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #E0E0E0', backgroundColor: 'white', color: '#111111', fontSize: '13px', padding: '0 10px', outline: 'none' }}>
+                      <option value="">Select time</option>
+                      {generateQuarterHourTimes().map(time => <option key={time} value={time}>{formatTimeLabel(time)}</option>)}
+                    </select>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <select value={startWindowBegin} onChange={e => setStartWindowBegin(e.target.value)} style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #E0E0E0', backgroundColor: 'white', color: '#111111', fontSize: '13px', padding: '0 10px', outline: 'none' }}>
+                        {generateQuarterHourTimes().map(time => <option key={time} value={time}>{formatTimeLabel(time)}</option>)}
+                      </select>
+                      <select value={startWindowEnd} onChange={e => setStartWindowEnd(e.target.value)} style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #E0E0E0', backgroundColor: 'white', color: '#111111', fontSize: '13px', padding: '0 10px', outline: 'none' }}>
+                        {generateQuarterHourTimes().map(time => <option key={time} value={time}>{formatTimeLabel(time)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <StepLabel text="Cleaner" />
+                  <select value={subcontractorId} onChange={e => setSubcontractorId(e.target.value)} style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #E0E0E0', backgroundColor: 'white', color: '#111111', fontSize: '13px', padding: '0 10px', outline: 'none' }}>
+                    <option value="">Unassigned</option>
+                    {subcontractors.map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
+                  </select>
+                  <div style={{ marginTop: '8px' }}>
+                    <StepLabel text="First intro clean" />
+                    <CleanInput value={firstCleanDate} onChange={setFirstCleanDate} type="date" />
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+                <div>
+                  <StepLabel text="Client rate" />
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                    <TogglePill label="Per clean" active={billingType === 'PER_CLEAN'} onClick={() => setBillingType('PER_CLEAN')} />
+                    <TogglePill label="Monthly" active={billingType === 'FLAT_RATE'} onClick={() => setBillingType('FLAT_RATE')} />
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748B' }}>$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={clientRate}
+                      onChange={e => { setClientRate(e.target.value); setErrors(er => ({ ...er, clientRate: '' })) }}
+                      placeholder="150"
+                      style={{ width: '100%', height: '40px', paddingLeft: '26px', paddingRight: '10px', borderRadius: '8px', border: errors.clientRate ? '1px solid #E53935' : '1px solid #E0E0E0', fontSize: '14px', fontWeight: 600, color: '#111111', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <FieldError msg={errors.clientRate} />
+                </div>
+                <div>
+                  <StepLabel text="Cleaner pay" />
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                    <TogglePill label="Per clean" active={cleanerPayType === 'PER_CLEAN'} onClick={() => setCleanerPayType('PER_CLEAN')} />
+                    <TogglePill label="Monthly" active={cleanerPayType === 'FLAT_RATE'} onClick={() => setCleanerPayType('FLAT_RATE')} />
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748B' }}>$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={subcontractorRate}
+                      onChange={e => { setSubcontractorRate(e.target.value); setErrors(er => ({ ...er, subcontractorRate: '' })) }}
+                      placeholder={selectedSubcontractor ? `Pay ${selectedSubcontractor.name}` : 'Cleaner rate'}
+                      style={{ width: '100%', height: '40px', paddingLeft: '26px', paddingRight: '10px', borderRadius: '8px', border: errors.subcontractorRate ? '1px solid #E53935' : '1px solid #E0E0E0', fontSize: '14px', fontWeight: 600, color: '#111111', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <FieldError msg={errors.subcontractorRate} />
+                </div>
+              </div>
+              {(clientRate || subcontractorRate) && (
+                <div style={{ marginTop: '7px', textAlign: 'right', color: '#64748B', fontSize: '12px' }}>
+                  Margin: <strong style={{ color: margin >= 0 ? '#15803D' : '#DC2626' }}>${margin.toFixed(2)}</strong>/{billingType === 'FLAT_RATE' ? 'mo' : 'clean'}
+                </div>
+              )}
+            </section>
+          )}
+
+          <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: extraLocations.length ? '10px' : 0 }}>
+              <StepLabel text="Additional Locations" />
+              <button type="button" onClick={() => setExtraLocations(prev => [...prev, createEmptyExtraLocation()])} style={{ border: 'none', background: 'none', color: '#0D9488', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                + Add location
+              </button>
+            </div>
+            {extraLocations.map((location, idx) => (
+              <ExtraLocationCard
+                key={location.id}
+                location={location}
+                index={idx}
+                subcontractors={subcontractors}
+                onUpdate={data => updateExtraLocation(location.id, data)}
+                onRemove={() => removeExtraLocation(location.id)}
+              />
+            ))}
+          </section>
+
+          <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+              <StepLabel text="Add-ons and Notes" />
+              {clientType === 'RECURRING' && (
+                <button type="button" onClick={() => addAddOn()} style={{ border: 'none', background: 'none', color: '#0D9488', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                  + Add service
+                </button>
+              )}
+            </div>
+            {clientType === 'RECURRING' && addOns.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                {addOns.map(addOn => (
+                  <div key={addOn.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 96px 96px 120px auto', gap: '6px', alignItems: 'center' }}>
+                    <CleanInput value={addOn.description} onChange={v => updateAddOn(addOn.id, { description: v })} placeholder="Service" />
+                    <CleanInput value={addOn.clientRate} onChange={v => updateAddOn(addOn.id, { clientRate: v })} placeholder="Client $" type="number" />
+                    <CleanInput value={addOn.subcontractorRate} onChange={v => updateAddOn(addOn.id, { subcontractorRate: v })} placeholder="Pay $" type="number" />
+                    <select value={addOn.frequency} onChange={e => updateAddOn(addOn.id, { frequency: e.target.value })} style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #E0E0E0', backgroundColor: 'white', color: '#111111', fontSize: '13px', padding: '0 10px', outline: 'none' }}>
+                      <option value="ONE_TIME">One time</option>
+                      {FREQUENCIES.map(freq => <option key={freq.value} value={freq.value}>{freq.label}</option>)}
+                    </select>
+                    <button type="button" aria-label="Remove add-on" onClick={() => removeAddOn(addOn.id)} style={{ border: 'none', background: 'none', color: '#94A3B8', cursor: 'pointer', padding: '4px' }}>
+                      <Trash2 style={{ width: '15px', height: '15px' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Notes or special instructions"
+              style={{
+                width: '100%',
+                minHeight: '56px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #E0E0E0',
+                color: '#111111',
+                fontSize: '13px',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+                boxSizing: 'border-box',
+              }}
+            />
+          </section>
+        </div>
+
+        <div style={{ padding: '12px 22px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', gap: '10px', background: 'white', flexShrink: 0 }}>
+          <button type="button" onClick={() => { onClose(); resetForm() }} style={{ height: '42px', padding: '0 18px', borderRadius: '8px', border: '1px solid #CBD5E1', color: '#0F172A', background: 'white', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting || !canCreate}
+            style={{
+              minWidth: '152px',
+              height: '42px',
+              padding: '0 18px',
+              border: 'none',
+              borderRadius: '8px',
+              background: canCreate && !isSubmitting ? '#00A896' : '#CBD5E1',
+              color: 'white',
+              fontSize: '14px',
+              fontWeight: 700,
+              cursor: canCreate && !isSubmitting ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            {isSubmitting ? (
+              <>{submitProgress || 'Creating...'} <ActionSpinner size={15} color="white" /></>
+            ) : (
+              'Create Client'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 
 
 
