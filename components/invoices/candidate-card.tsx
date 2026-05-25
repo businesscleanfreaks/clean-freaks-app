@@ -77,10 +77,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
   const isPerClean = !isFlatRate
   const showNoChanges = isFlatRate && isActionable && !hasExceptions
   const visibleExceptions = candidate.exceptions.slice(0, 2)
-  const scheduledCount = Math.max(candidate.jobCount - candidate.completedCount, 0)
-  const statusSummary = isPerClean
-    ? `${candidate.jobCount} clean${candidate.jobCount === 1 ? '' : 's'} - ${candidate.completedCount} done, ${scheduledCount} scheduled`
-    : candidate.scheduleSummary
+  const statusSummary = candidate.scheduleSummary
   const canExpand = isPerClean && candidate.lineItems.length > 0
   const existingStatusLabel = candidate.existingInvoiceStatus === 'DRAFT'
     ? 'Draft exists'

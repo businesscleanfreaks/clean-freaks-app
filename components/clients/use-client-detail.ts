@@ -9,6 +9,7 @@ import { format } from "date-fns"
 import { getAvgOccurrencesPerMonth } from "@/lib/frequency-utils"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getPrimaryScheduleForDisplay, sortSchedulesForDisplay } from "@/lib/schedule-timing"
+import { dateInputValue, parseDateOnly } from "@/lib/date-only"
 import { showError, showSuccess, showInfo } from "@/lib/toast"
 import { useConfirm } from "@/hooks/use-confirm"
 import { showApiError } from "@/lib/toast"
@@ -83,7 +84,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     billingType: client.billingType,
     cleanerPayType: client.cleanerPayType || 'PER_CLEAN',
     invoiceFrequency: client.invoiceFrequency || 'END_OF_MONTH',
-    startDate: client.startDate ? new Date(client.startDate).toISOString().split('T')[0] : '',
+    startDate: dateInputValue(client.startDate),
     notes: client.notes || '',
   })
   const [newLocation, setNewLocation] = useState({ name: '', address: '' })
@@ -278,8 +279,8 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     const primaryWorker = Object.entries(workerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unassigned'
     const parseValidDate = (value: string | Date | null | undefined) => {
       if (!value) return null
-      const parsed = new Date(value)
-      return Number.isFinite(parsed.getTime()) ? parsed : null
+      const parsed = parseDateOnly(value)
+      return parsed && Number.isFinite(parsed.getTime()) ? parsed : null
     }
     const canonicalClientStart =
       parseValidDate(client.startDate) ||
@@ -349,7 +350,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       billingType: client.billingType,
       cleanerPayType: client.cleanerPayType || 'PER_CLEAN',
       invoiceFrequency: client.invoiceFrequency || 'END_OF_MONTH',
-      startDate: client.startDate ? new Date(client.startDate).toISOString().split('T')[0] : '',
+      startDate: dateInputValue(client.startDate),
       notes: client.notes || '',
     })
     if (normalizedPayload === normalizedCurrent) {

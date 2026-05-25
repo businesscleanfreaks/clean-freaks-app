@@ -337,6 +337,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const timers = [
       window.setTimeout(() => prefetchMonth(-1), 0),
       window.setTimeout(() => prefetchMonth(1), 150),
+      window.setTimeout(() => prefetchMonth(-2), 500),
+      window.setTimeout(() => prefetchMonth(2), 750),
+      window.setTimeout(() => prefetchMonth(-3), 1100),
+      window.setTimeout(() => prefetchMonth(3), 1400),
     ]
 
     return () => {
@@ -1334,6 +1338,26 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 </button>
               ))}
             </div>
+
+            {viewMode === 'week' && (
+              <div className="hidden items-center bg-white p-0.5 rounded-lg border border-gray-200 lg:flex" title="Week density">
+                {(['Comfortable', 'Compact', 'Dense'] as WeekDensity[]).map(density => (
+                  <button
+                    key={density}
+                    type="button"
+                    aria-pressed={weekDensity === density}
+                    onClick={() => changeWeekDensity(density)}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      weekDensity === density
+                        ? 'bg-teal-50 text-teal-700 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {density === 'Comfortable' ? 'Comfort' : density}
+                  </button>
+                ))}
+              </div>
+            )}
             
             <button
               onClick={() => handleDateClick(currentDate)}

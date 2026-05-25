@@ -180,6 +180,23 @@ export function WorkersPageWrapper({
     )
   }
 
+  const patchCleanerActiveState = (subId: string, isActive: boolean) => {
+    void globalMutate(
+      `/api/subcontractors/data?period=${period}`,
+      (current: CleanerData[] | undefined) =>
+        current?.map(sub => sub.id === subId ? { ...sub, isActive } : sub),
+      { revalidate: false }
+    )
+  }
+
+  const removeCleanerFromCache = (subId: string) => {
+    void globalMutate(
+      `/api/subcontractors/data?period=${period}`,
+      (current: CleanerData[] | undefined) => current?.filter(sub => sub.id !== subId),
+      { revalidate: false }
+    )
+  }
+
   const refreshAfterPaymentChange = (jobIds: string[], paid: boolean) => {
     patchPaymentState(jobIds, paid)
     onDataChange()
@@ -263,6 +280,7 @@ export function WorkersPageWrapper({
       })
       if (!res.ok) throw new Error("Failed to archive")
       showSuccess(`${sub.name} archived`)
+      patchCleanerActiveState(sub.id, false)
       onDataChange()
     } catch {
       showError("Failed to archive cleaner")
@@ -575,6 +593,7 @@ export function WorkersPageWrapper({
                           })
                           if (!res.ok) throw new Error("Failed to restore")
                           showSuccess(`${sub.name} restored`)
+                          patchCleanerActiveState(sub.id, true)
                           onDataChange()
                         } catch {
                           showError("Failed to restore cleaner")
@@ -631,6 +650,7 @@ export function WorkersPageWrapper({
                   }
                   if (!res.ok) throw new Error("Failed to delete")
                   showSuccess("Cleaner permanently deleted")
+                  removeCleanerFromCache(confirmDeleteId)
                   setConfirmDeleteId(null)
                   onDataChange()
                 } catch {

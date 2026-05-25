@@ -206,6 +206,17 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     })
   }
 
+  const confirmJobEdit = (
+    title: string,
+    description: string,
+    confirmText = 'Save Change'
+  ) => confirm({
+    title,
+    description,
+    confirmText,
+    cancelText: 'Go Back',
+  })
+
   // ─── Desktop helpers ────────────────────────────────────────────────────────
 
   const getStatusColor = (status: string) => {
@@ -238,16 +249,34 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   // ─── Shared handlers ───────────────────────────────────────────────────────
 
   const handleSaveTrialFields = async (nextIsTrial: boolean, nextTrialNotes: string) => {
+    const previousTrialEnabled = Boolean((job as any).isTrial)
+    const previousTrialNotes = ((job as any).trialNotes as string | null) || null
+    const normalizedTrialNotes = nextIsTrial ? (nextTrialNotes.trim() || null) : null
+    if (nextIsTrial === previousTrialEnabled && normalizedTrialNotes === previousTrialNotes) {
+      return
+    }
+
+    const confirmed = await confirmJobEdit(
+      nextIsTrial ? 'Mark as trial clean?' : 'Remove trial flag?',
+      nextIsTrial
+        ? 'This will mark this clean as a trial visit. It does not change billing logic.'
+        : 'This will remove the trial marker from this clean.',
+      nextIsTrial ? 'Mark Trial' : 'Remove Flag'
+    )
+    if (!confirmed) {
+      setTrialEnabled(previousTrialEnabled)
+      setTrialNotesDraft(previousTrialNotes || '')
+      return
+    }
+
     setIsSavingTrial(true)
     try {
-      const previousTrialEnabled = Boolean((job as any).isTrial)
-      const previousTrialNotes = ((job as any).trialNotes as string | null) || null
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           isTrial: nextIsTrial,
-          trialNotes: nextIsTrial ? (nextTrialNotes.trim() || null) : null,
+          trialNotes: normalizedTrialNotes,
         }),
       })
       if (!response.ok) {
@@ -288,6 +317,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       handleCancelEdit()
       return
     }
+    const confirmed = await confirmJobEdit(
+      'Change cleaner?',
+      `This will update the cleaner for ${job.location.client.name} on ${format(new Date(job.date), 'MMM d, yyyy')}.`,
+      'Change Cleaner'
+    )
+    if (!confirmed) return
+
     setIsSavingSubcontractor(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -509,6 +545,23 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   // ─── Mobile-specific handlers ────────────────────────────────────────────────
 
   const handleSaveSubcontractorMobile = async (subId: string) => {
+    const currentSubcontractorId = job.subcontractor?.id || 'unassigned'
+    if (subId === currentSubcontractorId) {
+      setIsSelectingCleaner(false)
+      setActiveQuickFixPanel(null)
+      return
+    }
+
+    const selectedCleanerName = subId === 'unassigned'
+      ? 'Unassigned'
+      : subcontractors.find((sub) => sub.id === subId)?.name || 'the selected cleaner'
+    const confirmed = await confirmJobEdit(
+      'Change cleaner?',
+      `This will assign ${selectedCleanerName} to this clean only.`,
+      'Change Cleaner'
+    )
+    if (!confirmed) return
+
     setIsSelectingCleaner(false)
     setActiveQuickFixPanel(null)
     setIsSavingSubcontractor(true)
@@ -519,8 +572,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
         body: JSON.stringify({ subcontractorId: subId === 'unassigned' ? null : subId }),
       })
       if (!response.ok) throw new Error('Failed to update cleaner')
-      showSuccess('Cleaner updated')
-      refreshCalendarData()
+      showJobUndo('Cleaner updated', {
+        subcontractorId: currentSubcontractorId === 'unassigned' ? null : currentSubcontractorId,
+      })
+      refreshCalendarData({
+        jobId: job.id,
+        updates: { subcontractorId: subId === 'unassigned' ? null : subId },
+      })
     } catch (error) {
       showError('Failed to update cleaner. Please try again.')
     } finally {
@@ -731,6 +789,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setActiveInlinePicker(null)
       return
     }
+    const confirmed = await confirmJobEdit(
+      'Change clean date?',
+      `Move this clean from ${format(new Date(job.date), 'MMM d, yyyy')} to ${format(new Date(`${draftDate}T12:00:00`), 'MMM d, yyyy')}?`,
+      'Change Date'
+    )
+    if (!confirmed) return
+
     setIsSavingInlineDate(true)
     try {
       const previousDate = currentDateInputValue()
@@ -767,6 +832,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       setActiveInlinePicker(null)
       return
     }
+    const confirmed = await confirmJobEdit(
+      'Change clean time?',
+      `Update the time for this clean to ${draftTime ? formatTime(draftTime) : 'TBD'}?`,
+      'Change Time'
+    )
+    if (!confirmed) return
+
     setIsSavingInlineTime(true)
     try {
       const base = localDate || new Date(job.date)
@@ -805,6 +877,15 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       closeQuickEdit()
       return
     }
+    if (!scopeDialogAction) {
+      const confirmed = await confirmJobEdit(
+        'Move this clean?',
+        `This will move only this clean to ${format(new Date(`${draftDate}T12:00:00`), 'MMM d, yyyy')}${nextTime ? ` at ${formatTime(nextTime)}` : ''}.`,
+        'Move Clean'
+      )
+      if (!confirmed) return
+    }
+
     setIsSavingInlineDate(true)
     try {
       const previousDate = currentDateInputValue()
@@ -986,6 +1067,15 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       closeQuickEdit()
       return
     }
+    if (!scopeDialogAction) {
+      const confirmed = await confirmJobEdit(
+        'Change this clean\'s rates?',
+        `Client price will be ${formatCurrency(newClientRate)} and cleaner pay will be ${formatCurrency(newSubRate)} for this clean only.`,
+        'Change Rates'
+      )
+      if (!confirmed) return
+    }
+
     setIsSavingRates(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -1021,6 +1111,15 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       closeQuickEdit()
       return
     }
+    if (!scopeDialogAction) {
+      const confirmed = await confirmJobEdit(
+        'Change client price?',
+        `Client price will be ${formatCurrency(newClientRate)} for this clean only.`,
+        'Change Price'
+      )
+      if (!confirmed) return
+    }
+
     setIsSavingRates(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -1089,6 +1188,15 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       closeQuickEdit()
       return
     }
+    if (!scopeDialogAction) {
+      const confirmed = await confirmJobEdit(
+        'Change cleaner pay?',
+        `Cleaner pay will be ${formatCurrency(newSubRate)} for this clean only.`,
+        'Change Pay'
+      )
+      if (!confirmed) return
+    }
+
     setIsSavingRates(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -1302,6 +1410,18 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       closeQuickEdit()
       return
     }
+    if (!scopeDialogAction) {
+      const selectedCleanerName = selectedSubcontractorId === 'unassigned'
+        ? 'Unassigned'
+        : subcontractors.find((sub) => sub.id === selectedSubcontractorId)?.name || 'the selected cleaner'
+      const confirmed = await confirmJobEdit(
+        'Change cleaner?',
+        `This will assign ${selectedCleanerName} to this clean only.`,
+        'Change Cleaner'
+      )
+      if (!confirmed) return
+    }
+
     setIsSavingSubcontractor(true)
     try {
       const response = await fetch(`/api/jobs/${job.id}`, {
@@ -1516,7 +1636,6 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
 
   const handleSaveOutcome = async (generalNotes: string | null | undefined) => {
     if (!outcomeType || isSavingOutcome) return
-    setIsSavingOutcome(true)
     try {
       const clientAmount = resolveOutcomeAmount(clientChargeMode, partialClientAmount, job.clientRate, 'client charge')
       const cleanerAmount = resolveOutcomeAmount(cleanerPayMode, partialCleanerAmount, job.subcontractorRate, 'cleaner pay')
@@ -1546,6 +1665,14 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       const originalClientRate = job.clientRate
       const originalSubcontractorRate = job.subcontractorRate
 
+      const confirmed = await confirmJobEdit(
+        `${outcomeLabel} this clean?`,
+        `This will set client charge to ${formatCurrency(clientAmount)} and cleaner pay to ${formatCurrency(cleanerAmount)}.`,
+        outcomeType === 'skipped' ? 'Skip Clean' : 'Save Outcome'
+      )
+      if (!confirmed) return
+
+      setIsSavingOutcome(true)
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

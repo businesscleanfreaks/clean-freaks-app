@@ -10,7 +10,14 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       where: { clientId: params.id },
       orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
     })
-    return NextResponse.json({ contacts })
+    return NextResponse.json(
+      { contacts },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        },
+      }
+    )
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 })
   }

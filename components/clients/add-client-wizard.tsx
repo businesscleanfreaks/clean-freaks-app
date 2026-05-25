@@ -35,6 +35,7 @@ interface ExtraLocationData {
   sameSchedule: boolean
   frequency: string
   monthlyDay?: number
+  monthlyDays?: number[]
   daysOfWeek: number[]
   timeType: 'SPECIFIC' | 'WINDOW'
   startTime: string
@@ -66,6 +67,7 @@ const FREQUENCIES = [
   { value: 'EVERY_4_WEEKS', label: 'Every 4 Wks' },
   { value: 'EVERY_6_WEEKS', label: 'Every 6 Wks' },
   { value: 'MONTHLY', label: 'Monthly' },
+  { value: '2X_MONTHLY', label: '2x Monthly' },
 ]
 
 const QUICK_ADD_SERVICES = [
@@ -82,6 +84,59 @@ const QUICK_ADD_SERVICES = [
 
 function generateId() {
   return Math.random().toString(36).substr(2, 9)
+}
+
+function clampDayOfMonth(value: number) {
+  return Math.min(28, Math.max(1, Number.isFinite(value) ? value : 1))
+}
+
+function normalizeTwiceMonthlyDays(days?: number[]) {
+  const normalized = (days && days.length > 0 ? days : [1, 15])
+    .map(day => clampDayOfMonth(day))
+    .filter((day, index, list) => list.indexOf(day) === index)
+
+  while (normalized.length < 2) {
+    normalized.push(normalized[0] === 15 ? 1 : 15)
+  }
+
+  return normalized.slice(0, 2).sort((a, b) => a - b)
+}
+
+function isFixedMonthlyFrequency(frequency: string) {
+  return frequency === 'MONTHLY' || frequency === '2X_MONTHLY'
+}
+
+function buildMonthlyPattern(frequency: string, monthlyDay: number, monthlyDays?: number[]) {
+  if (frequency === '2X_MONTHLY') {
+    return JSON.stringify({ type: 'FIXED_DATES', dates: normalizeTwiceMonthlyDays(monthlyDays) })
+  }
+
+  if (frequency === 'MONTHLY') {
+    return JSON.stringify({ type: 'FIXED_DATES', dates: [clampDayOfMonth(monthlyDay)] })
+  }
+
+  return null
+}
+
+function getScheduleTimeError(
+  timeType: 'SPECIFIC' | 'WINDOW',
+  startTime: string,
+  startWindowBegin: string,
+  startWindowEnd: string
+) {
+  if (timeType === 'SPECIFIC') {
+    return startTime ? '' : 'Select a start time'
+  }
+
+  if (!startWindowBegin || !startWindowEnd) {
+    return 'Select a full arrival window'
+  }
+
+  if (startWindowBegin >= startWindowEnd) {
+    return 'Arrival window end must be after start'
+  }
+
+  return ''
 }
 
 // ── Shared sub-components ────────────────────────────────────────────────────
@@ -240,7 +295,8 @@ function ExtraLocationCard({
   onUpdate: (data: Partial<ExtraLocationData>) => void
   onRemove: () => void
 }) {
-  const isMonthly = location.frequency === 'MONTHLY'
+  const isFixedMonthly = isFixedMonthlyFrequency(location.frequency)
+  const twiceMonthlyDays = normalizeTwiceMonthlyDays(location.monthlyDays ?? [location.monthlyDay ?? 1, 15])
   return (
     <div style={{ background: 'white', border: '1px solid #EEEEEE', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -296,28 +352,60 @@ function ExtraLocationCard({
           {/* Frequency */}
           <div>
             <StepLabel text="Frequency" />
-            <FrequencyPills selected={location.frequency} onChange={v => onUpdate({ frequency: v })} />
+            <FrequencyPills
+              selected={location.frequency}
+              onChange={v => onUpdate({
+                frequency: v,
+                ...(v === '2X_MONTHLY' ? { monthlyDays: twiceMonthlyDays } : {}),
+                ...(v === 'MONTHLY' ? { monthlyDay: location.monthlyDay || 1 } : {}),
+              })}
+            />
           </div>
 
           {/* Days or Day-of-month */}
-          {isMonthly ? (
+          {isFixedMonthly ? (
             <div>
-              <StepLabel text="Day of month" />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input
-                  type="number"
-                  min={1}
-                  max={28}
-                  value={(location as ExtraLocationData & { monthlyDay?: number }).monthlyDay || 1}
-                  onChange={e => onUpdate({ monthlyDay: Math.min(28, Math.max(1, parseInt(e.target.value) || 1)) } as any)}
-                  style={{
-                    width: '70px', height: '40px', padding: '0 12px', borderRadius: '8px',
-                    border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
-                    textAlign: 'center',
-                  }}
-                />
-                <span style={{ fontSize: '13px', color: '#888888' }}>of each month</span>
-              </div>
+              <StepLabel text={location.frequency === '2X_MONTHLY' ? 'Days of month' : 'Day of month'} />
+              {location.frequency === '2X_MONTHLY' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {[0, 1].map(index => (
+                    <input
+                      key={index}
+                      type="number"
+                      min={1}
+                      max={28}
+                      value={twiceMonthlyDays[index]}
+                      onChange={e => {
+                        const next = [...twiceMonthlyDays]
+                        next[index] = clampDayOfMonth(parseInt(e.target.value) || 1)
+                        onUpdate({ monthlyDays: normalizeTwiceMonthlyDays(next) })
+                      }}
+                      style={{
+                        width: '70px', height: '40px', padding: '0 12px', borderRadius: '8px',
+                        border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                        textAlign: 'center',
+                      }}
+                    />
+                  ))}
+                  <span style={{ fontSize: '13px', color: '#888888' }}>of each month</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    value={location.monthlyDay || 1}
+                    onChange={e => onUpdate({ monthlyDay: clampDayOfMonth(parseInt(e.target.value) || 1) })}
+                    style={{
+                      width: '70px', height: '40px', padding: '0 12px', borderRadius: '8px',
+                      border: '1px solid #E0E0E0', fontSize: '14px', color: '#111111', outline: 'none',
+                      textAlign: 'center',
+                    }}
+                  />
+                  <span style={{ fontSize: '13px', color: '#888888' }}>of each month</span>
+                </div>
+              )}
             </div>
           ) : (
             <div>
@@ -493,6 +581,7 @@ export function AddClientWizard({
   const [frequency, setFrequency] = useState('WEEKLY')
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([])
   const [monthlyDay, setMonthlyDay] = useState(1)
+  const [monthlyDays, setMonthlyDays] = useState<number[]>([1, 15])
   const [timeType, setTimeType] = useState<'SPECIFIC' | 'WINDOW'>('WINDOW')
   const [startTime, setStartTime] = useState('')
   const [startWindowBegin, setStartWindowBegin] = useState('09:00')
@@ -541,6 +630,7 @@ export function AddClientWizard({
     sameSchedule: true,
     frequency: 'WEEKLY',
     monthlyDay: 1,
+    monthlyDays: [1, 15],
     daysOfWeek: [],
     timeType: 'WINDOW',
     startTime: '',
@@ -576,6 +666,7 @@ export function AddClientWizard({
     setFrequency('WEEKLY')
     setDaysOfWeek([])
     setMonthlyDay(1)
+    setMonthlyDays([1, 15])
     setTimeType('WINDOW')
     setStartTime('')
     setStartWindowBegin('09:00')
@@ -647,7 +738,9 @@ export function AddClientWizard({
     }
 
     if (step === 3) {
-      if (frequency !== 'MONTHLY' && daysOfWeek.length === 0) newErrors.daysOfWeek = 'Select at least one day'
+      if (!isFixedMonthlyFrequency(frequency) && daysOfWeek.length === 0) newErrors.daysOfWeek = 'Select at least one day'
+      const timeError = getScheduleTimeError(timeType, startTime, startWindowBegin, startWindowEnd)
+      if (timeError) newErrors.scheduleTime = timeError
     }
 
     if (step === 4) {
@@ -691,14 +784,29 @@ export function AddClientWizard({
       submitErrors.invoicingCcEmail = 'Invalid CC email format'
     }
     if (clientType === 'RECURRING') {
-      if (frequency !== 'MONTHLY' && daysOfWeek.length === 0) {
+      if (!isFixedMonthlyFrequency(frequency) && daysOfWeek.length === 0) {
         submitErrors.daysOfWeek = 'Select at least one schedule day'
+      }
+      const timeError = getScheduleTimeError(timeType, startTime, startWindowBegin, startWindowEnd)
+      if (timeError) {
+        submitErrors.scheduleTime = timeError
       }
       if (!clientRate || Number.isNaN(parseFloat(clientRate)) || parseFloat(clientRate) <= 0) {
         submitErrors.clientRate = 'Enter a valid client rate'
       }
       if (subcontractorId && (!subcontractorRate || Number.isNaN(parseFloat(subcontractorRate)) || parseFloat(subcontractorRate) < 0)) {
         submitErrors.subcontractorRate = 'Enter a valid cleaner rate'
+      }
+
+      const invalidExtraLocation = extraLocations.find(extraLoc => {
+        if (extraLoc.sameSchedule) return false
+        if (!extraLoc.address.trim()) return false
+        if (!isFixedMonthlyFrequency(extraLoc.frequency) && extraLoc.daysOfWeek.length === 0) return true
+        if (!extraLoc.clientRate || Number.isNaN(parseFloat(extraLoc.clientRate)) || parseFloat(extraLoc.clientRate) <= 0) return true
+        return !!getScheduleTimeError(extraLoc.timeType, extraLoc.startTime, extraLoc.startWindowBegin, extraLoc.startWindowEnd)
+      })
+      if (invalidExtraLocation) {
+        submitErrors.extraLocations = 'Finish the independent schedule for each added location'
       }
     }
 
@@ -776,14 +884,14 @@ export function AddClientWizard({
           logger.debug(`[wizard] Location created in ${Math.round(performance.now() - t1)}ms`)
 
           // Step 3: Create schedule + jobs (this is the slow part)
-          const canCreateSchedule = clientType === 'RECURRING' && (frequency === 'MONTHLY' ? true : daysOfWeek.length > 0)
+          const canCreateSchedule = clientType === 'RECURRING' && (isFixedMonthlyFrequency(frequency) ? true : daysOfWeek.length > 0)
           if (canCreateSchedule && clientRate) {
             const t2 = performance.now()
             setSubmitProgress('Setting up schedule...')
             const schedPayload: Record<string, unknown> = {
               locationId: loc.id,
               frequency,
-              daysOfWeek: frequency === 'MONTHLY' ? null : JSON.stringify(daysOfWeek),
+              daysOfWeek: isFixedMonthlyFrequency(frequency) ? null : JSON.stringify(daysOfWeek),
               startDate: startDate || new Date().toISOString(),
               defaultClientRate: parseFloat(clientRate) || 0,
               defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
@@ -795,8 +903,9 @@ export function AddClientWizard({
               startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
               startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
             }
-            if (frequency === 'MONTHLY') {
-              schedPayload.monthlyPattern = JSON.stringify({ type: 'FIXED_DATES', dates: [monthlyDay] })
+            const monthlyPattern = buildMonthlyPattern(frequency, monthlyDay, monthlyDays)
+            if (monthlyPattern) {
+              schedPayload.monthlyPattern = monthlyPattern
             }
             const schedRes = await fetch('/api/schedules', {
               method: 'POST',
@@ -858,11 +967,11 @@ export function AddClientWizard({
             if (!locRes.ok) return
             const loc = await locRes.json()
             if (clientType === 'RECURRING' && extraLoc.sameSchedule) {
-              if ((frequency === 'MONTHLY' || daysOfWeek.length > 0) && clientRate) {
+              if ((isFixedMonthlyFrequency(frequency) || daysOfWeek.length > 0) && clientRate) {
                 const schedulePayload: Record<string, unknown> = {
                   locationId: loc.id,
                   frequency,
-                  daysOfWeek: frequency === 'MONTHLY' ? null : JSON.stringify(daysOfWeek),
+                  daysOfWeek: isFixedMonthlyFrequency(frequency) ? null : JSON.stringify(daysOfWeek),
                   startDate: startDate || new Date().toISOString(),
                   defaultClientRate: parseFloat(clientRate) || 0,
                   defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
@@ -874,8 +983,9 @@ export function AddClientWizard({
                   startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
                   startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
                 }
-                if (frequency === 'MONTHLY') {
-                  schedulePayload.monthlyPattern = JSON.stringify({ type: 'FIXED_DATES', dates: [monthlyDay] })
+                const monthlyPattern = buildMonthlyPattern(frequency, monthlyDay, monthlyDays)
+                if (monthlyPattern) {
+                  schedulePayload.monthlyPattern = monthlyPattern
                 }
                 await fetch('/api/schedules', {
                   method: 'POST',
@@ -884,11 +994,11 @@ export function AddClientWizard({
                 })
               }
             } else if (clientType === 'RECURRING') {
-              if ((extraLoc.frequency === 'MONTHLY' || extraLoc.daysOfWeek.length > 0) && extraLoc.clientRate) {
+              if ((isFixedMonthlyFrequency(extraLoc.frequency) || extraLoc.daysOfWeek.length > 0) && extraLoc.clientRate) {
                 const schedulePayload: Record<string, unknown> = {
                   locationId: loc.id,
                   frequency: extraLoc.frequency,
-                  daysOfWeek: extraLoc.frequency === 'MONTHLY' ? null : JSON.stringify(extraLoc.daysOfWeek),
+                  daysOfWeek: isFixedMonthlyFrequency(extraLoc.frequency) ? null : JSON.stringify(extraLoc.daysOfWeek),
                   startDate: startDate || new Date().toISOString(),
                   defaultClientRate: parseFloat(extraLoc.clientRate) || 0,
                   defaultSubcontractorRate: parseFloat(extraLoc.subcontractorRate) || 0,
@@ -900,8 +1010,9 @@ export function AddClientWizard({
                   startWindowBegin: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowBegin : null,
                   startWindowEnd: extraLoc.timeType === 'WINDOW' ? extraLoc.startWindowEnd : null,
                 }
-                if (extraLoc.frequency === 'MONTHLY') {
-                  schedulePayload.monthlyPattern = JSON.stringify({ type: 'FIXED_DATES', dates: [extraLoc.monthlyDay || 1] })
+                const monthlyPattern = buildMonthlyPattern(extraLoc.frequency, extraLoc.monthlyDay || 1, extraLoc.monthlyDays)
+                if (monthlyPattern) {
+                  schedulePayload.monthlyPattern = monthlyPattern
                 }
                 await fetch('/api/schedules', {
                   method: 'POST',
@@ -989,7 +1100,7 @@ export function AddClientWizard({
         aria-modal="true"
         aria-labelledby="add-client-title"
         style={{
-          width: 'min(620px, 100%)',
+          width: 'min(560px, 100%)',
           maxHeight: 'min(920px, calc(100vh - 32px))',
           borderRadius: '14px',
           backgroundColor: 'white',
@@ -1003,6 +1114,9 @@ export function AddClientWizard({
           <h2 id="add-client-title" style={{ fontSize: '19px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
             Add New Client
           </h2>
+          <p style={{ margin: '3px 42px 0 0', color: '#64748B', fontSize: '12px', lineHeight: 1.35 }}>
+            Client, location, schedule, pricing, contacts, and add-ons in one pass.
+          </p>
           <button
             type="button"
             onClick={() => { onClose(); resetForm() }}
@@ -1176,10 +1290,27 @@ export function AddClientWizard({
                   <FrequencyPills selected={frequency} onChange={setFrequency} />
                 </div>
                 <div>
-                  {frequency === 'MONTHLY' ? (
+                  {isFixedMonthlyFrequency(frequency) ? (
                     <>
-                      <StepLabel text="Day of month" />
-                      <CleanInput value={String(monthlyDay)} onChange={v => setMonthlyDay(Math.min(28, Math.max(1, parseInt(v) || 1)))} type="number" />
+                      <StepLabel text={frequency === '2X_MONTHLY' ? 'Days of month' : 'Day of month'} />
+                      {frequency === '2X_MONTHLY' ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                          {[0, 1].map(index => (
+                            <CleanInput
+                              key={index}
+                              value={String(normalizeTwiceMonthlyDays(monthlyDays)[index])}
+                              onChange={v => {
+                                const next = [...normalizeTwiceMonthlyDays(monthlyDays)]
+                                next[index] = clampDayOfMonth(parseInt(v) || 1)
+                                setMonthlyDays(normalizeTwiceMonthlyDays(next))
+                              }}
+                              type="number"
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <CleanInput value={String(monthlyDay)} onChange={v => setMonthlyDay(clampDayOfMonth(parseInt(v) || 1))} type="number" />
+                      )}
                     </>
                   ) : (
                     <>
@@ -1212,6 +1343,7 @@ export function AddClientWizard({
                       </select>
                     </div>
                   )}
+                  <FieldError msg={errors.scheduleTime} />
                 </div>
                 <div>
                   <StepLabel text="Cleaner" />
@@ -1292,6 +1424,7 @@ export function AddClientWizard({
                 onRemove={() => removeExtraLocation(location.id)}
               />
             ))}
+            <FieldError msg={errors.extraLocations} />
           </section>
 
           <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
@@ -1697,7 +1830,7 @@ export function AddClientWizard({
                   </div>
 
                   {/* Days (weekday picker) OR Day-of-month (for MONTHLY) */}
-                  {frequency === 'MONTHLY' ? (
+                  {isFixedMonthlyFrequency(frequency) ? (
                     <div style={{ marginBottom: '18px' }}>
                       <StepLabel text="Day of month" />
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

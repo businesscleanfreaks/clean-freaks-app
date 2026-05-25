@@ -55,7 +55,7 @@ export const updateLocationSchema = createLocationSchema.omit({ clientId: true }
 // Monthly pattern schemas for 2x monthly scheduling
 export const fixedDatesPatternSchema = z.object({
   type: z.literal('FIXED_DATES'),
-  dates: z.array(z.number().min(1).max(31)).length(2, 'Must select exactly 2 dates'),
+  dates: z.array(z.number().min(1).max(31)).min(1, 'Must select at least 1 date').max(2, 'Must select no more than 2 dates'),
 })
 
 export const nthWeekdayPatternSchema = z.object({

@@ -99,6 +99,7 @@ export function useQuickInvoice({
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
   const [previewInvoiceId, setPreviewInvoiceId] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [netTerms, setNetTerms] = useState('net-7')
   const [dateDue, setDateDue] = useState('')
   const [notes, setNotes] = useState('')
@@ -107,7 +108,6 @@ export function useQuickInvoice({
   const [progress, setProgress] = useState(0)
   const [progressStep, setProgressStep] = useState('')
   const autoPreviewSignature = useRef<string | null>(null)
-  const [lineItemsReadyKey, setLineItemsReadyKey] = useState<string | null>(null)
   
   // Email fields — "To" supports multiple recipients (invoice API accepts string | string[])
   const [recipientPool, setRecipientPool] = useState<string[]>([])
@@ -499,7 +499,7 @@ export function useQuickInvoice({
   // Initialize line items, date filter, and due date when modal opens
   useEffect(() => {
     if (!open) {
-      setLineItemsReadyKey(null)
+      autoPreviewSignature.current = null
       return
     }
     if (open && jobs.length > 0) {
@@ -535,8 +535,8 @@ export function useQuickInvoice({
       setCreatedInvoiceId(null)
       setPreviewInvoiceId(null)
       setPreviewPdfUrl(null)
+      setPreviewError(null)
       autoPreviewSignature.current = null
-      setLineItemsReadyKey(invoiceInputKey)
       const basePool = mergeUniqueEmails(client.invoicingEmail, client.communicationEmail)
       setRecipientPool(basePool)
       const firstTo = client.invoicingEmail?.trim() || client.communicationEmail?.trim() || basePool[0] || ''
@@ -598,6 +598,8 @@ export function useQuickInvoice({
       setPreviewInvoiceId(null)
       setPreviewPdfUrl(null)
     }
+    setPreviewError(null)
+    autoPreviewSignature.current = null
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems])
 
@@ -971,6 +973,7 @@ export function useQuickInvoice({
       return false
     }
     setIsGeneratingPreview(true)
+    setPreviewError(null)
     try {
       if (previewInvoiceId) {
         await fetch(`/api/invoices/${previewInvoiceId}`, { method: 'DELETE' })
@@ -1021,9 +1024,12 @@ export function useQuickInvoice({
       return true
     } catch (error) {
       logger.error('Error generating preview:', error)
-      const { showError } = await import('@/lib/toast')
       const errorMessage = error instanceof Error ? error.message : 'Failed to generate preview'
-      showError(errorMessage)
+      setPreviewError(errorMessage)
+      if (!options?.silent) {
+        const { showError } = await import('@/lib/toast')
+        showError(errorMessage)
+      }
       return false
     } finally {
       setIsGeneratingPreview(false)
@@ -1031,13 +1037,13 @@ export function useQuickInvoice({
   }
 
   useEffect(() => {
-    if (!open || lineItemsReadyKey !== invoiceInputKey || lineItems.length === 0 || previewPdfUrl || isGeneratingPreview) return
+    if (!open || lineItems.length === 0 || previewPdfUrl || isGeneratingPreview) return
 
     const signature = [
       invoiceInputKey,
       client.id,
       dateDue,
-      selectedJobIds.size,
+      Array.from(selectedJobIds).sort().join(','),
       lineItems.map(item => `${item.jobId || 'custom'}:${item.description}:${item.amount}`).join('|'),
     ].join('::')
 
@@ -1058,7 +1064,7 @@ export function useQuickInvoice({
       window.clearTimeout(timeout)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, lineItemsReadyKey, invoiceInputKey, lineItems, previewPdfUrl, isGeneratingPreview, client.id, dateDue, selectedJobIds.size])
+  }, [open, invoiceInputKey, lineItems, previewPdfUrl, isGeneratingPreview, client.id, dateDue, selectedJobIds])
 
   const handleBatchApprove = async () => {
     setIsCreating(true)
@@ -1125,7 +1131,7 @@ export function useQuickInvoice({
 
     // State
     isCreating, isSendingTest, isGeneratingPreview,
-    previewInvoiceId, previewPdfUrl,
+    previewInvoiceId, previewPdfUrl, previewError,
     netTerms, setNetTerms,
     dateDue, setDateDue,
     notes, setNotes,

@@ -4,6 +4,7 @@ import { type ReactNode } from "react"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogClose,
@@ -900,6 +901,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       </p>
       <p
         className="truncate"
+        title={typeof value === 'string' ? value : undefined}
         style={{
           fontSize: '15px',
           fontWeight: 700,
@@ -914,6 +916,9 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
   const renderDesktopOverviewSection = () => {
     const margin = (job.clientRate ?? 0) - (job.subcontractorRate ?? 0)
+    const locationSummary = job.location.address
+      ? `${job.location.name} - ${job.location.address}`
+      : job.location.name || 'No location set'
 
     return (
       <div className="space-y-0 overflow-hidden rounded-[10px] bg-white" style={{ border: '1px solid #E4E7EC' }}>
@@ -943,7 +948,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             {renderCompactFact('Cleaner', job.subcontractor?.name || 'Unassigned', job.subcontractor ? 'default' : 'muted')}
           </div>
           <div className="px-4 py-3">
-            {renderCompactFact('Location', job.location.name || job.location.address)}
+            {renderCompactFact('Location', locationSummary)}
           </div>
         </div>
 
@@ -1370,6 +1375,9 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
           ].join(" ")}
         >
           <DialogTitle className="sr-only">Choose recurring change scope</DialogTitle>
+          <DialogDescription className="sr-only">
+            Pick whether this change applies only to this clean, this clean and future cleans, or every clean in the recurring plan.
+          </DialogDescription>
           <div className="space-y-2">
             <p style={{ fontSize: '28px', fontWeight: 600, color: '#111827', lineHeight: 1.1 }}>
               Apply recurring change
@@ -1498,6 +1506,43 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     </div>
   )
 
+  const renderRestoreCancelledCleanCard = () => {
+    if (job.status !== 'CANCELLED') return null
+
+    const restoreBlockedReason = hasFinalInvoice
+      ? 'This clean is on a sent or paid invoice. Reset or void the invoice before restoring it.'
+      : job.subcontractorPaid
+        ? 'The cleaner has already been paid for this clean. Unmark the cleaner payment before restoring it.'
+        : 'Put this skipped or cancelled clean back on the schedule.'
+
+    return (
+      <div
+        className="rounded-[12px] p-3"
+        style={{ backgroundColor: '#F0FDFA', border: '1px solid #99F6E4' }}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-medium uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px', color: '#0F766E' }}>
+              Skipped / cancelled clean
+            </p>
+            <p style={{ fontSize: '13px', color: '#0F172A', marginTop: '4px', lineHeight: 1.35 }}>
+              {restoreBlockedReason}
+            </p>
+          </div>
+          <button
+            onClick={handleRestoreCancelledClean}
+            disabled={isRestoring || hasFinalInvoice || job.subcontractorPaid}
+            className="inline-flex flex-shrink-0 items-center justify-center gap-2 rounded-full px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: '#0D9488', color: 'white', fontSize: '13px' }}
+          >
+            {isRestoring && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {isRestoring ? 'Restoring...' : 'Restore'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <ConfirmDialog />
@@ -1513,11 +1558,15 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             "!rounded-t-[20px] !rounded-b-none",
             // Desktop (md+): restore centered dialog
             "md:!left-1/2 md:!top-1/2 md:!bottom-auto md:!right-auto",
-            "md:!w-[min(92vw,560px)] md:!max-w-[560px] md:!max-h-[90vh]",
+            "md:!w-[min(92vw,480px)] md:!max-w-[480px] md:!max-h-[90vh]",
             "md:!-translate-x-1/2 md:!-translate-y-1/2",
             "md:!rounded-[12px]",
           ].join(" ")}
         >
+          <DialogTitle className="sr-only">Job details for {job.location.client.name}</DialogTitle>
+          <DialogDescription className="sr-only">
+            Review this clean, update schedule details, cleaner, rates, notes, add-ons, and status.
+          </DialogDescription>
           {/* ═══════════════════════════════════════════════════════════
               MOBILE LAYOUT  (hidden on md+)
           ═══════════════════════════════════════════════════════════ */}
@@ -1601,6 +1650,14 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                     className="px-5 py-4 flex items-center justify-between"
                     style={{ borderBottom: '1px solid #F5F5F5' }}
                   >
+                    <button
+                      onClick={() => setIsSelectingCleaner(false)}
+                      className="inline-flex items-center gap-1 rounded-full pr-3 font-semibold transition-colors hover:text-[#0B5F59]"
+                      style={{ fontSize: '14px', color: '#0F766E' }}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Back
+                    </button>
                     <p className="font-semibold text-[#111111]">Assign Cleaner</p>
                     <button
                       onClick={() => setIsSelectingCleaner(false)}
@@ -1857,6 +1914,8 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                     </div>
                   )}
 
+                  {renderRestoreCancelledCleanCard()}
+
                   {renderTrialCard()}
 
                   {renderSummarySection(true)}
@@ -2063,10 +2122,10 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
               className="text-center flex-shrink-0"
               style={{
                 borderBottom: '1px solid #F5F5F5',
-                paddingTop: isQuickFixMode ? '20px' : '32px',
-                paddingBottom: isQuickFixMode ? '16px' : '24px',
-                paddingLeft: '24px',
-                paddingRight: '24px',
+                paddingTop: isQuickFixMode ? '18px' : '22px',
+                paddingBottom: isQuickFixMode ? '14px' : '16px',
+                paddingLeft: '20px',
+                paddingRight: '20px',
               }}
             >
               {!isQuickFixMode && (
@@ -2083,7 +2142,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                   </span>
                 </div>
               )}
-              <p className="font-bold text-[#111111] leading-tight" style={{ fontSize: isQuickFixMode ? '20px' : '24px' }}>
+              <p className="font-bold text-[#111111] leading-tight" style={{ fontSize: isQuickFixMode ? '20px' : '22px' }}>
                 {job.location.client.name}
               </p>
               <p className="text-[#888888] mt-1" style={{ fontSize: isQuickFixMode ? '13px' : '14px' }}>
@@ -2092,7 +2151,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             </div>
 
             {/* ── Scrollable body ── */}
-            <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-6 py-5 space-y-4" : "flex-1 px-6 py-5"}>
+            <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-5 py-4 space-y-4" : "flex-1 px-5 py-4"}>
 
               {/* Invoiced / Paid warnings */}
               {hasFinalInvoice && (
@@ -2107,6 +2166,8 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                   <p className="text-sm text-green-900">Subcontractor has been paid — rates and schedule are locked.</p>
                 </div>
               )}
+
+              {renderRestoreCancelledCleanCard()}
 
               {isQuickFixMode ? renderQuickFixPanel(false) : null}
 

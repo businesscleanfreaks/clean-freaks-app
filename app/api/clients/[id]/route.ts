@@ -8,7 +8,6 @@ import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { startOfDay } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 async function getClientWithDetails(id: string) {
   const now = new Date()

@@ -139,7 +139,15 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
   } else if (params.frequency === 'MONTHLY' && params.monthlyPattern) {
     // MONTHLY with NTH_WEEKDAY pattern (e.g., "1st Tuesday" or "1st & 3rd Tuesday")
     const pattern = JSON.parse(params.monthlyPattern)
-    if (pattern.type === 'NTH_WEEKDAY') {
+    if (pattern.type === 'FIXED_DATES' && Array.isArray(pattern.dates) && pattern.dates.length > 0) {
+      const dayOfMonth = pattern.dates[0] as number
+      let currentMonth = startOfUtcMonth(startDate)
+      while (currentMonth <= endDate) {
+        const jobDate = utcDayOfMonth(currentMonth, dayOfMonth)
+        if (jobDate >= startDate && jobDate <= endDate) dates.push(jobDate)
+        currentMonth = addUtcMonths(currentMonth, 1)
+      }
+    } else if (pattern.type === 'NTH_WEEKDAY') {
       const weekday = pattern.weekday as number
       const ordinals = pattern.weeks as (number | 'last')[]
       let currentMonth = startOfUtcMonth(startDate)

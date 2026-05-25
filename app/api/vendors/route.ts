@@ -120,7 +120,11 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json(result)
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+      },
+    })
   } catch (error) {
     console.error('Vendors list error:', error)
     return NextResponse.json(

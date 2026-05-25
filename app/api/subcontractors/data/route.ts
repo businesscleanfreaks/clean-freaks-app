@@ -6,7 +6,6 @@ import type { CadenceSubcontractorInfo, CadenceScheduleInfo } from "@/lib/paymen
 import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 // Subcontractors data API for instant page loads
 export async function GET(request: Request) {

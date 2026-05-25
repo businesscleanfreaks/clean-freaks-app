@@ -10,7 +10,7 @@ import { AddClientWizard } from "./add-client-wizard"
 import Link from "next/link"
 import {
   Plus, Search, Phone, Mail,
-  UserPlus, Building2, ChevronRight, User, Archive
+  UserPlus, Building2, ChevronRight, User, Archive, RotateCcw
 } from "lucide-react"
 
 
@@ -109,16 +109,20 @@ function ClientCard({
   isHovered,
   onHover,
   onArchiveFromList,
+  onRestoreFromList,
   onDeleteFromList,
   isArchiving,
+  isRestoring,
   isDeleting,
 }: {
   client: Client
   isHovered?: boolean
   onHover?: (clientId: string | null) => void
   onArchiveFromList: (client: Client) => void
+  onRestoreFromList: (client: Client) => void
   onDeleteFromList: (client: Client) => void
   isArchiving?: boolean
+  isRestoring?: boolean
   isDeleting?: boolean
 }) {
   const email = client.communicationEmail || client.invoicingEmail
@@ -272,21 +276,31 @@ function ClientCard({
 
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 bg-gray-50/90">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          {isClientActive && (
+          {isClientActive ? (
             <button
               type="button"
               onClick={() => onArchiveFromList(client)}
-              disabled={isArchiving || isDeleting}
+              disabled={isArchiving || isRestoring || isDeleting}
               className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900 px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Archive className="w-3.5 h-3.5" aria-hidden />
               {isArchiving ? 'Archiving...' : 'Archive'}
             </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onRestoreFromList(client)}
+              disabled={isArchiving || isRestoring || isDeleting}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 px-2 py-1.5 rounded-lg border border-teal-200 bg-teal-50 hover:bg-teal-100 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RotateCcw className="w-3.5 h-3.5" aria-hidden />
+              {isRestoring ? 'Restoring...' : 'Restore'}
+            </button>
           )}
           <button
             type="button"
             onClick={() => onDeleteFromList(client)}
-            disabled={isArchiving || isDeleting}
+            disabled={isArchiving || isRestoring || isDeleting}
             className="text-xs font-semibold text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isDeleting ? 'Removing...' : 'Remove...'}
@@ -315,6 +329,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
   // On mobile, always force card/grid view
   const [hoveredClientId, setHoveredClientId] = useState<string | null>(null)
   const [archivingClientId, setArchivingClientId] = useState<string | null>(null)
+  const [restoringClientId, setRestoringClientId] = useState<string | null>(null)
   const [deletingClientId, setDeletingClientId] = useState<string | null>(null)
 
   const { confirm, ConfirmDialog } = useConfirm()
@@ -391,6 +406,33 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
       }
     },
     [confirm, router],
+  )
+
+  const handleRestoreFromList = useCallback(
+    async (client: Client) => {
+      setRestoringClientId(client.id)
+      try {
+        const response = await fetch(`/api/clients/${client.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isActive: true }),
+        })
+        if (!response.ok) {
+          await showApiError(response, 'Failed to restore client')
+          return
+        }
+        showSuccess('Client restored')
+        setClientList(current => current.map(c => c.id === client.id ? { ...c, isActive: true } : c))
+        mutate('/api/clients/data')
+        mutate('/api/dashboard-stats')
+        router.refresh()
+      } catch {
+        showError('Failed to restore client. Please try again.')
+      } finally {
+        setRestoringClientId(null)
+      }
+    },
+    [router],
   )
   useEffect(() => {
     if (prefillProspect) {
@@ -540,10 +582,14 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
                   onArchiveFromList={(c) => {
                     void handleArchiveFromList(c)
                   }}
+                  onRestoreFromList={(c) => {
+                    void handleRestoreFromList(c)
+                  }}
                   onDeleteFromList={(c) => {
                     void handleDeleteFromList(c)
                   }}
                   isArchiving={archivingClientId === client.id}
+                  isRestoring={restoringClientId === client.id}
                   isDeleting={deletingClientId === client.id}
                 />
               ))}

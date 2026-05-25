@@ -90,6 +90,11 @@ export function CompactCreateJobDialog({
   )
   const selectedClient = clients.find(client => client.id === selectedClientId)
   const locations = selectedClient?.locations || []
+  const typedClientName = search.trim()
+  const exactClientMatch = useMemo(
+    () => clients.some(client => client.name.toLowerCase() === typedClientName.toLowerCase()),
+    [clients, typedClientName]
+  )
 
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -172,11 +177,33 @@ export function CompactCreateJobDialog({
   }
 
   const chooseClient = (client: ClientListItem) => {
+    setClientMode("existing")
     setSelectedClientId(client.id)
     const nextLocationIds = initialLocationIds(client)
     setSelectedLocationIds(nextLocationIds)
     applyScheduleDefaults(nextLocationIds, { sourceLocations: client.locations })
     setSearch("")
+  }
+
+  const useTypedClientAsOneTime = () => {
+    if (!typedClientName) return
+    setClientMode("one-time")
+    setOneTimeName(typedClientName)
+    setSelectedClientId("")
+    setSelectedLocationIds([])
+    setSearch("")
+  }
+
+  const resetClientChoice = () => {
+    const nameToSearch = clientMode === "one-time" ? oneTimeName : ""
+    setClientMode("existing")
+    setSearch(nameToSearch)
+    setSelectedClientId("")
+    setSelectedLocationIds([])
+    setOneTimeName("")
+    setOneTimeAddress("")
+    setOneTimePhone("")
+    setOneTimeEmail("")
   }
 
   const toggleLocation = (locationId: string) => {
@@ -260,7 +287,7 @@ export function CompactCreateJobDialog({
 
   return (
     <Dialog open={open} onOpenChange={value => !value && close()}>
-      <DialogContent hideClose className="max-h-[92vh] max-w-[430px] overflow-hidden p-0">
+      <DialogContent hideClose className="max-h-[92vh] max-w-[400px] overflow-hidden p-0">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
@@ -268,7 +295,7 @@ export function CompactCreateJobDialog({
             </div>
             <div>
               <DialogTitle className="text-lg font-bold tracking-tight text-slate-950">Add Job</DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">One clean, in one quick pass.</DialogDescription>
+              <DialogDescription className="text-xs text-slate-500">Client, schedule, rates, and notes in one quick pass.</DialogDescription>
             </div>
           </div>
           <button aria-label="Close add job" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
@@ -280,26 +307,9 @@ export function CompactCreateJobDialog({
           <section className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Client</Label>
-              <div className="flex rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setClientMode("existing")}
-                  className={`rounded px-2 py-1 ${clientMode === "existing" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-                >
-                  Existing
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClientMode("one-time")
-                    setSelectedClientId("")
-                    setSelectedLocationIds([])
-                  }}
-                  className={`rounded px-2 py-1 ${clientMode === "one-time" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-                >
-                  New one-time
-                </button>
-              </div>
+              <span className="text-[11px] font-medium text-slate-400">
+                Search existing, or type a one-time job
+              </span>
             </div>
 
             {clientMode === "existing" ? (
@@ -312,10 +322,7 @@ export function CompactCreateJobDialog({
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedClientId("")
-                        setSelectedLocationIds([])
-                      }}
+                      onClick={resetClientChoice}
                       className="text-xs font-semibold text-teal-700"
                     >
                       Change
@@ -350,6 +357,16 @@ export function CompactCreateJobDialog({
                       ))}
                       {filteredClients.length === 0 && <div className="px-3 py-3 text-xs text-slate-400">No matching clients.</div>}
                     </div>
+                    {typedClientName && !exactClientMatch && (
+                      <button
+                        type="button"
+                        onClick={useTypedClientAsOneTime}
+                        className="flex w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-900 hover:bg-amber-100"
+                      >
+                        <span className="min-w-0 truncate">Use "{typedClientName}" as a one-time client</span>
+                        <Check className="h-3.5 w-3.5 shrink-0" />
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -381,8 +398,17 @@ export function CompactCreateJobDialog({
                 )}
               </>
             ) : (
-              <div className="space-y-2 rounded-lg border border-slate-200 p-3">
-                <Input value={oneTimeName} onChange={event => setOneTimeName(event.target.value)} placeholder="Client name *" className="h-9" />
+              <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-950">{oneTimeName || "One-time client"}</div>
+                    <div className="text-[11px] text-amber-800">This creates a one-time client record and job.</div>
+                  </div>
+                  <button type="button" onClick={resetClientChoice} className="shrink-0 text-xs font-semibold text-amber-800">
+                    Change
+                  </button>
+                </div>
+                <Input value={oneTimeName} onChange={event => setOneTimeName(event.target.value)} placeholder="Client name *" className="h-9 bg-white" />
                 <Input value={oneTimeAddress} onChange={event => setOneTimeAddress(event.target.value)} placeholder="Full address *" className="h-9" />
                 <div className="grid grid-cols-2 gap-2">
                   <Input value={oneTimePhone} onChange={event => setOneTimePhone(event.target.value)} placeholder="Phone" className="h-9" />

@@ -22,9 +22,7 @@ import { useConfirm } from "@/hooks/use-confirm"
 import { showApiError } from "@/lib/toast"
 
 function getJobSummary(entry: ClientEntry): string {
-  const scheduled = Math.max(entry.scheduledJobs, 0)
-  const cleanLabel = `${entry.jobs.length} clean${entry.jobs.length !== 1 ? 's' : ''}`
-  return `${cleanLabel} · ${entry.completedJobs} done, ${scheduled} scheduled`
+  return entry.invoiceFrequency || `${entry.jobs.length} clean${entry.jobs.length === 1 ? '' : 's'}`
 }
 
 interface ReadyToBillJob {
@@ -1222,15 +1220,15 @@ export function InvoicesPageClient({
                           </div>
                           <div style={{ fontSize: '12px', color: '#777777', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{
-                              padding: '1px 6px', borderRadius: '4px',
-                              fontSize: '11px', fontWeight: 500,
-                              backgroundColor: entry.billingType === 'FLAT_RATE' ? '#EEF2FF' : '#F0FDF4',
-                              color: entry.billingType === 'FLAT_RATE' ? '#4F46E5' : '#15803D',
+                              padding: 0, borderRadius: 0,
+                              fontSize: '12px', fontWeight: 500,
+                              backgroundColor: 'transparent',
+                              color: '#777777',
                             }}>
-                              {entry.billingType === 'FLAT_RATE' ? 'Flat rate' : 'Per clean'}
+                              {jobSummary}
                             </span>
-                            <span style={{ color: '#DDDDDD' }}>·</span>
-                            <span>{jobSummary}</span>
+                            {!hasEmail && <span style={{ color: '#DDDDDD' }}>·</span>}
+                            {!hasEmail && <span style={{ color: '#92400E', fontWeight: 600 }}>Email needed</span>}
                           </div>
                         </div>
 

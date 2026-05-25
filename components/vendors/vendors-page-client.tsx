@@ -131,7 +131,7 @@ export function VendorsPageClient() {
 
   const [searchQuery, setSearchQuery] = useState("")
   const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [addForm, setAddForm] = useState({ name: "", phone: "", email: "" })
+  const [addForm, setAddForm] = useState({ name: "", phone: "", email: "", notes: "" })
   const [saving, setSaving] = useState(false)
   const [expandedVendor, setExpandedVendor] = useState<string | null>(null)
   const [pendingKey, setPendingKey] = useState<string | null>(null)
@@ -166,6 +166,33 @@ export function VendorsPageClient() {
 
   const refreshAfterPaymentChange = () => mutate()
 
+  const patchVendorActiveState = (vendorId: string, isActive: boolean) => {
+    void mutate(
+      (current) => current?.map(vendor => vendor.id === vendorId ? { ...vendor, isActive } : vendor),
+      { revalidate: false }
+    )
+  }
+
+  const removeVendorFromCache = (vendorId: string) => {
+    void mutate(
+      (current) => current?.filter(vendor => vendor.id !== vendorId),
+      { revalidate: false }
+    )
+  }
+
+  const patchVendorPaymentState = (addOnIds: string[], paid: boolean) => {
+    const ids = new Set(addOnIds)
+    void mutate(
+      (current) => current?.map(vendor => ({
+        ...vendor,
+        addOnServices: vendor.addOnServices.map(addOn =>
+          ids.has(addOn.id) ? { ...addOn, vendorPaid: paid } : addOn
+        ),
+      })),
+      { revalidate: false }
+    )
+  }
+
   const toggleAddOnsPaid = async (vendor: VendorData, addOnIds: string[], paid: boolean, key: string) => {
     if (addOnIds.length === 0) return
     setPendingKey(key)
@@ -177,6 +204,7 @@ export function VendorsPageClient() {
       })
       if (!res.ok) throw new Error((await res.json()).error || "Failed to update vendor payment")
       showSuccess(paid ? "Payment tracked" : "Payment unchecked")
+      patchVendorPaymentState(addOnIds, paid)
       refreshAfterPaymentChange()
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to update vendor payment")
@@ -220,6 +248,12 @@ export function VendorsPageClient() {
       })
       if (!res.ok) throw new Error("Failed to update")
       showSuccess(`${vendorEditForm.name} updated`)
+      void mutate(
+        (current) => current?.map(vendor =>
+          vendor.id === editingVendor.id ? { ...vendor, ...vendorEditForm } : vendor
+        ),
+        { revalidate: false }
+      )
       setEditingVendor(null)
       mutate()
     } catch {
@@ -241,7 +275,7 @@ export function VendorsPageClient() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to create vendor")
       showSuccess("Vendor added")
       setAddDialogOpen(false)
-      setAddForm({ name: "", phone: "", email: "" })
+      setAddForm({ name: "", phone: "", email: "", notes: "" })
       mutate()
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to add vendor")
@@ -261,6 +295,7 @@ export function VendorsPageClient() {
       })
       if (!res.ok) throw new Error("Failed to update status")
       showSuccess(isArchiving ? "Vendor archived" : "Vendor restored")
+      patchVendorActiveState(vendor.id, !isArchiving)
       mutate()
     } catch {
       showError("Failed to update vendor status")
@@ -588,6 +623,7 @@ export function VendorsPageClient() {
                     }
                     if (!res.ok) throw new Error("Failed to delete")
                     showSuccess("Vendor permanently deleted")
+                    removeVendorFromCache(confirmDeleteVendorId)
                     setConfirmDeleteVendorId(null)
                     mutate()
                   } catch {
@@ -622,6 +658,15 @@ export function VendorsPageClient() {
                   <Label className="text-xs font-medium text-gray-500">Email</Label>
                   <Input value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} placeholder="vendor@email.com" className="mt-1" />
                 </div>
+              </div>
+              <div>
+                <Label className="text-xs font-medium text-gray-500">Notes</Label>
+                <textarea
+                  value={addForm.notes}
+                  onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
+                  placeholder="Services, payment notes, or preferred instructions"
+                  className="mt-1 min-h-[72px] w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition-colors placeholder:text-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
               </div>
             </div>
             <DialogFooter className="gap-2">
@@ -658,7 +703,12 @@ export function VendorsPageClient() {
               </div>
               <div>
                 <Label className="text-xs font-medium text-gray-500">Notes</Label>
-                <Input value={vendorEditForm.notes} onChange={(e) => setVendorEditForm({ ...vendorEditForm, notes: e.target.value })} placeholder="Optional notes" className="mt-1" />
+                <textarea
+                  value={vendorEditForm.notes}
+                  onChange={(e) => setVendorEditForm({ ...vendorEditForm, notes: e.target.value })}
+                  placeholder="Services, payment notes, or preferred instructions"
+                  className="mt-1 min-h-[72px] w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition-colors placeholder:text-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
               </div>
             </div>
             <DialogFooter className="gap-2">

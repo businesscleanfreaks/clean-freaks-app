@@ -4,6 +4,8 @@ import { getAvgOccurrencesPerMonth } from "@/lib/frequency-utils"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getPrimaryScheduleForDisplay, getScheduleLifecycle } from "@/lib/schedule-timing"
 
+export const dynamic = 'force-dynamic'
+
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const DAY_SORT_ORDER = [1, 2, 3, 4, 5, 6, 0] // Mon-Sun ordering
 

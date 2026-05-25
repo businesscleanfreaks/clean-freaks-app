@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  AlertCircle,
   Mail,
   Plus,
   Save,
@@ -55,6 +56,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     isSendingTest,
     isGeneratingPreview,
     previewPdfUrl,
+    previewError,
     dateDue,
     notes,
     setNotes,
@@ -106,7 +108,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     <Dialog open={props.open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="h-[min(92vh,920px)] w-[min(94vw,760px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
+        className="h-[min(94vh,860px)] w-[min(96vw,720px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
       >
         <DialogTitle className="sr-only">Invoice review for {client.name}</DialogTitle>
         <DialogDescription className="sr-only">
@@ -384,10 +386,18 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                 />
               </div>
             ) : (
-              <div className="mt-24 rounded-lg border border-stone-200 bg-white px-10 py-8 text-center shadow-sm">
-                <Eye className="mx-auto mb-4 h-10 w-10 text-stone-300" />
-                <p className="font-semibold text-stone-700">Ready to preview</p>
-                <p className="mt-1 text-xs text-stone-500">The preview should generate automatically.</p>
+              <div className={`mt-24 rounded-lg border bg-white px-10 py-8 text-center shadow-sm ${previewError ? 'border-red-200' : 'border-stone-200'}`}>
+                {previewError ? (
+                  <AlertCircle className="mx-auto mb-4 h-10 w-10 text-red-400" />
+                ) : (
+                  <Eye className="mx-auto mb-4 h-10 w-10 text-stone-300" />
+                )}
+                <p className="font-semibold text-stone-700">
+                  {previewError ? 'Preview did not generate' : 'Ready to preview'}
+                </p>
+                <p className={`mt-1 max-w-sm text-xs ${previewError ? 'text-red-600' : 'text-stone-500'}`}>
+                  {previewError || 'The preview should generate automatically.'}
+                </p>
                 <Button
                   type="button"
                   onClick={() => handleGeneratePreview()}
@@ -395,7 +405,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                   className="mt-4 h-8 bg-teal-700 text-xs hover:bg-teal-800"
                 >
                   <Eye className="mr-2 h-3.5 w-3.5" />
-                  Generate now
+                  {previewError ? 'Try again' : 'Generate now'}
                 </Button>
               </div>
             )}
@@ -433,16 +443,16 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(88px,auto)_1fr] sm:items-center">
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}
                 disabled={isCreating || isSendingTest}
-                className="order-last h-10 w-full px-4 sm:order-first sm:w-auto sm:min-w-[96px]"
+                className="h-10 min-w-0 px-3 sm:w-auto"
               >
                 Cancel
               </Button>
-              <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 min-[520px]:grid-cols-3 sm:max-w-[480px]">
+              <div className="col-span-2 grid min-w-0 grid-cols-3 gap-2 sm:col-span-1">
                 <Button
                   variant="outline"
                   onClick={() => handleCreateInvoice(false)}
