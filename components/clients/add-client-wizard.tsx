@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, Fragment } from "react"
+import { createPortal } from "react-dom"
 import { Input } from "@/components/ui/input"
 
 import {
@@ -1075,6 +1076,7 @@ export function AddClientWizard({
   }
 
   if (!isOpen) return null
+  if (typeof document === 'undefined') return null
 
   const canCreate = !!clientName.trim() && !!address.trim()
   const stepLabels = ['Client', 'Location', 'Schedule', 'Pricing', 'Extras']
@@ -1082,17 +1084,21 @@ export function AddClientWizard({
   const selectedSubcontractor = subcontractors.find(sub => sub.id === subcontractorId)
   const margin = (parseFloat(clientRate) || 0) - (parseFloat(subcontractorRate) || 0)
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
-        inset: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
         backgroundColor: 'rgba(15,23,42,0.42)',
         zIndex: 9999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '16px',
+        overflow: 'auto',
       }}
     >
       <div
@@ -1101,13 +1107,14 @@ export function AddClientWizard({
         aria-labelledby="add-client-title"
         style={{
           width: 'min(560px, 100%)',
-          maxHeight: 'min(920px, calc(100vh - 32px))',
+          maxHeight: 'calc(100vh - 32px)',
           borderRadius: '14px',
           backgroundColor: 'white',
           boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          margin: 'auto',
         }}
       >
         <div style={{ padding: '16px 22px 12px', borderBottom: '1px solid #F1F5F9', position: 'relative', flexShrink: 0 }}>
@@ -1507,12 +1514,16 @@ export function AddClientWizard({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 
 
 
-  return (
+  // Legacy alternate layout — unreachable after the createPortal return above. Kept as dead code to avoid
+  // a large surgical removal; intentionally unused.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _legacyRender = (
     <div
       style={{
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
