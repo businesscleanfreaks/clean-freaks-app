@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select"
 import { refreshCalendarData } from "./calendar-client"
 import { useJobDetail, type CalendarJob, type OutcomeType, type OutcomeAmountMode } from "./use-job-detail"
+import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
 import type { Subcontractor, AddOnService } from "@/types"
 
 interface JobDetailDialogProps {
@@ -201,13 +202,6 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       icon: XCircle,
       disabled: !canApplyOutcome,
       onClick: () => openOutcomeQuickFix('no-access'),
-    },
-    {
-      key: 're-clean',
-      label: 'Re-clean / Make Good',
-      icon: CheckCircle,
-      disabled: !canApplyOutcome,
-      onClick: () => openOutcomeQuickFix('re-clean'),
     },
   ]
 
@@ -731,7 +725,6 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                 {[
                   { id: 'skipped', label: 'Skipped' },
                   { id: 'no-access', label: 'No Access / No Show' },
-                  { id: 're-clean', label: 'Re-clean / Make Good' },
                 ].map((option) => (
                   <button
                     key={option.id}
@@ -822,7 +815,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     )
   }
 
-  const renderSummaryCard = (label: string, value: string, isMobile: boolean, muted = false) => (
+  const renderSummaryCard = (label: string, value: string, isMobile: boolean, muted = false, accentColor?: string) => (
     <div
       className="rounded-[14px] bg-white"
       style={{
@@ -835,9 +828,14 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
         {label}
       </p>
-      <p style={{ fontSize: isMobile ? '14px' : '13px', fontWeight: 600, color: muted ? '#6B7280' : '#111827', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {value}
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+        {accentColor && (
+          <span aria-hidden="true" style={{ flexShrink: 0, width: '8px', height: '8px', borderRadius: '50%', backgroundColor: accentColor }} />
+        )}
+        <p style={{ fontSize: isMobile ? '14px' : '13px', fontWeight: 600, color: muted ? '#6B7280' : '#111827', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+          {value}
+        </p>
+      </div>
     </div>
   )
 
@@ -880,7 +878,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       <div className="grid grid-cols-2 gap-2">
         {renderSummaryCard('Date', format(displayDate, isMobile ? 'EEE, MMM d' : 'EEE, MMM d, yyyy'), isMobile)}
         {renderSummaryCard('Time', jobTimeDisplay, isMobile)}
-        {renderSummaryCard('Cleaner', job.subcontractor?.name || 'Unassigned', isMobile, !job.subcontractor)}
+        {renderSummaryCard('Cleaner', job.subcontractor?.name || 'Unassigned', isMobile, !job.subcontractor, job.subcontractor ? getCleanerColorInfo(job.subcontractor.name).hex : undefined)}
         {renderSummaryCard('Client Price', formatCurrency(job.clientRate ?? 0), isMobile)}
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -945,7 +943,16 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
         <div className="grid grid-cols-[110px_1fr] gap-0 border-b border-[#EEF0F3]">
           <div className="border-r border-[#EEF0F3] px-4 py-3">
-            {renderCompactFact('Cleaner', job.subcontractor?.name || 'Unassigned', job.subcontractor ? 'default' : 'muted')}
+            {renderCompactFact(
+              'Cleaner',
+              job.subcontractor ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                  <span aria-hidden="true" style={{ flexShrink: 0, width: '8px', height: '8px', borderRadius: '50%', backgroundColor: getCleanerColorInfo(job.subcontractor.name).hex }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{job.subcontractor.name}</span>
+                </span>
+              ) : 'Unassigned',
+              job.subcontractor ? 'default' : 'muted'
+            )}
           </div>
           <div className="px-4 py-3">
             {renderCompactFact('Location', locationSummary)}
@@ -1082,28 +1089,6 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
             <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#5B7280', marginTop: '2px' }}>
               Put a skipped or cancelled clean back on the schedule
             </span>
-          </button>
-        )}
-
-        {!job.invoiced && (
-          <button
-            onClick={handleMarkAsInvoiced}
-            disabled={isMarkingInvoiced}
-            className="w-full rounded-[12px] px-4 py-3 text-left disabled:opacity-60"
-            style={{ backgroundColor: '#F8FAFC', border: '1px solid #D9E3E1', fontSize: '15px', fontWeight: 600, color: '#111827' }}
-          >
-            {isMarkingInvoiced ? 'Saving…' : 'Mark as Already Invoiced'}
-          </button>
-        )}
-
-        {/* Skip This Clean — uses the outcome flow */}
-        {job.status === 'SCHEDULED' && (
-          <button
-            onClick={() => openOutcomeQuickFix('skipped')}
-            className="w-full rounded-[12px] px-4 py-3 text-left"
-            style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '15px', fontWeight: 600, color: '#92400E' }}
-          >
-            Skip This Clean
           </button>
         )}
 
@@ -1259,7 +1244,6 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         {[
           { id: 'skipped', label: 'Skipped' },
           { id: 'no-access', label: 'No Access / No Show' },
-          { id: 're-clean', label: 'Re-clean / Make Good' },
         ].map((option) => (
           <button
             key={option.id}

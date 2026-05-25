@@ -105,6 +105,14 @@ export async function POST(
         },
       })
 
+      await prisma.client.update({
+        where: { id: updatedSchedule.location.client.id },
+        data: {
+          billingType: newScheduleData.clientPayType,
+          cleanerPayType: newScheduleData.subcontractorPayType,
+        },
+      })
+
       const summary = updatedSchedule.isActive
         ? await regenerateJobsForSchedule(updatedSchedule.id)
         : null
@@ -182,6 +190,14 @@ export async function POST(
               client: true,
             },
           },
+        },
+      })
+
+      await tx.client.update({
+        where: { id: existingSchedule.location.client.id },
+        data: {
+          billingType: newScheduleData.clientPayType,
+          cleanerPayType: newScheduleData.subcontractorPayType,
         },
       })
 
