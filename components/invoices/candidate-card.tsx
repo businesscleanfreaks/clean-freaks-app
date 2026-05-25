@@ -90,18 +90,25 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
         : 'Already invoiced'
   const showSelectionCheckbox = selectable && (isActionable || canSelectNonActionable)
 
+  // Highlight flat-rate rows that have exceptions (changed rows) with a soft yellow background per spec
+  const highlightChanged = isFlatRate && hasExceptions && isActionable
+  const restingBg = highlightChanged ? '#FFFBEB' : 'white'
+  const hoverBg = highlightChanged ? '#FEF3C7' : '#FAFAFA'
+  const selectedBg = highlightChanged ? '#FEF3C7' : 'rgba(0,168,150,0.06)'
+
   return (
     <div
       style={{
-        backgroundColor: selected ? 'rgba(0,168,150,0.06)' : 'white',
+        backgroundColor: selected ? selectedBg : restingBg,
         borderBottom: '1px solid #F1F5F9',
+        borderLeft: highlightChanged ? '3px solid #FDE68A' : '3px solid transparent',
         transition: 'background-color 120ms',
       }}
       onMouseEnter={e => {
-        if (isActionable && !selected) e.currentTarget.style.backgroundColor = '#FAFAFA'
+        if (isActionable && !selected) e.currentTarget.style.backgroundColor = hoverBg
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.backgroundColor = selected ? 'rgba(0,168,150,0.06)' : 'white'
+        e.currentTarget.style.backgroundColor = selected ? selectedBg : restingBg
       }}
     >
       <div
@@ -140,7 +147,7 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           </button>
         )}
 
-        {canExpand && (
+        {canExpand ? (
           <button
             type="button"
             aria-label={expanded ? 'Collapse invoice details' : 'Expand invoice details'}
@@ -171,6 +178,9 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
               }}
             />
           </button>
+        ) : (
+          // Empty placeholder so flat-rate rows align with per-clean rows that have a chevron
+          <span aria-hidden="true" style={{ width: '18px', height: '18px', flexShrink: 0 }} />
         )}
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -206,10 +216,20 @@ export function CandidateCard({ candidate, onReview, selectable, selected, onTog
           >
             {statusSummary && <span>{statusSummary}</span>}
             {showNoChanges && (
-              <>
-                {statusSummary && <span style={{ color: '#CBD5E1' }}>·</span>}
-                <span style={{ color: '#047857', fontWeight: 700 }}>No changes ✓</span>
-              </>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                color: '#047857',
+                backgroundColor: '#ECFDF5',
+                border: '1px solid #A7F3D0',
+                fontWeight: 700,
+                fontSize: '11px',
+                padding: '1px 7px',
+                borderRadius: '10px',
+              }}>
+                No changes ✓
+              </span>
             )}
             {!isActionable && hasExisting && (
               <>

@@ -1,23 +1,11 @@
 "use client"
 
-import { useState, useMemo, useEffect, useCallback } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { mutate } from "swr"
-import { useIsMobile } from "@/lib/hooks/use-media-query"
 import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { AddClientWizard } from "./add-client-wizard"
-import Link from "next/link"
-import {
-  Plus, Search, Phone, Mail,
-  UserPlus, Building2, ChevronRight, User, Archive, RotateCcw
-} from "lucide-react"
-
-
-
-import { EmptyState } from "@/components/ui/empty-state"
-import { useConfirm } from "@/hooks/use-confirm"
-import { showApiError, showError, showSuccess } from "@/lib/toast"
+import { Plus, Search as SearchIcon, ChevronRight, X as XIcon, MapPin } from "lucide-react"
+import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
 
 interface Location {
   id: string
@@ -25,6 +13,7 @@ interface Location {
   address: string
   latitude: number | null
   longitude: number | null
+  area?: string
   jobs?: Array<{ status: string; date?: string | Date }>
 }
 
@@ -33,6 +22,7 @@ interface Client {
   name: string
   phone: string | null
   communicationEmail: string | null
+  communicationContactName: string | null
   invoicingEmail: string | null
   billingType: string
   cleanerPayType?: string
@@ -42,6 +32,11 @@ interface Client {
   startDate?: string | null
   locations: Location[]
   cleanerDisplay?: string
+  primaryRate: number | null
+  primaryClientPayType?: string
+  primaryFrequency: string | null
+  scheduleText: string
+  primaryArea: string
 }
 
 interface ClientsPageWrapperProps {
@@ -56,575 +51,537 @@ interface ClientsPageWrapperProps {
   } | null
 }
 
-function SegmentedFilter({
-  stats,
-  onFilterChange,
-  activeFilter
+type ViewMode = "az" | "cleaner" | "map"
+type SortKey = "name" | "contact" | "cleaner" | "rate" | "schedule"
+type SortDir = "asc" | "desc"
+
+function getInitials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).map(w => w[0]).join("").toUpperCase().slice(0, 2)
+}
+
+function formatRate(n: number | null): string {
+  if (n == null || Number.isNaN(n)) return "—"
+  if (n >= 1000) return `$${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`
+  return `$${Math.round(n)}`
+}
+
+function isClientNew(client: Client): boolean {
+  if (!client.isActive) return false
+  const created = new Date(client.createdAt)
+  if (!Number.isFinite(created.getTime())) return false
+  const daysSinceCreated = Math.floor((Date.now() - created.getTime()) / 86_400_000)
+  if (daysSinceCreated < 0 || daysSinceCreated > 7) return false
+  const startDate = client.startDate ? new Date(client.startDate) : null
+  const daysSinceStart = startDate && Number.isFinite(startDate.getTime())
+    ? Math.floor((Date.now() - startDate.getTime()) / 86_400_000)
+    : daysSinceCreated
+  if (daysSinceStart < 0 || daysSinceStart > 14) return false
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const hasHistorical = client.locations?.some(loc =>
+    loc.jobs?.some((job) => {
+      if (!job.date || job.status === "CANCELLED") return false
+      const d = new Date(job.date)
+      return Number.isFinite(d.getTime()) && d <= todayStart
+    })
+  )
+  return !hasHistorical
+}
+
+function ClientRow({
+  client,
+  showCleaner,
+  zebra,
+  onOpen,
 }: {
-  stats: { total: number; active: number; inactive: number }
-  onFilterChange: (filter: 'all' | 'active' | 'inactive') => void
-  activeFilter: string
+  client: Client
+  showCleaner: boolean
+  zebra: boolean
+  onOpen: (id: string) => void
 }) {
-  const segments: { key: string; label: string; count: number }[] = [
-    { key: 'all', label: 'All', count: stats.total },
-    { key: 'active', label: 'Active', count: stats.active },
-    { key: 'inactive', label: 'Inactive', count: stats.inactive },
-  ]
+  const [hovered, setHovered] = useState(false)
+  const cleanerHex = getCleanerColorInfo(client.cleanerDisplay && client.cleanerDisplay !== "Unassigned" && client.cleanerDisplay !== "Mixed" ? client.cleanerDisplay : null).hex
+  const isFlat = client.primaryClientPayType === "FLAT_RATE" || client.billingType === "FLAT_RATE"
+  const billingPillBg = isFlat ? "#F5F3FF" : "#F0FDFA"
+  const billingPillColor = isFlat ? "#7C3AED" : "#0D9488"
+  const billingPillText = isFlat ? "Mo" : "Per"
+  const locLabel = client.locations.length > 1 ? `${client.locations.length} locations` : (client.locations[0]?.name && client.locations[0].name !== client.name ? client.locations[0].name : "")
+  const isNew = isClientNew(client)
 
   return (
-    <div
-      role="tablist"
-      className="inline-flex items-center bg-gray-100 rounded-lg p-0.5"
+    <tr
+      onClick={() => onOpen(client.id)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        cursor: "pointer",
+        background: hovered ? "#F0FDFA" : zebra ? "#FCFCFD" : "transparent",
+        borderBottom: "1px solid #F8FAFC",
+        transition: "background 0.08s",
+      }}
     >
-      {segments.map((seg) => (
-        <button
-          key={seg.key}
-          role="tab"
-          aria-selected={activeFilter === seg.key}
-          onClick={() => onFilterChange(seg.key as 'all' | 'active' | 'inactive')}
-          className={`
-            flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-md text-sm font-medium
-            transition-all duration-150 whitespace-nowrap
-            ${activeFilter === seg.key
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-500 hover:text-gray-700'
-            }
-          `}
-        >
-          {seg.label}
-          <span className={`
-            text-xs tabular-nums
-            ${activeFilter === seg.key ? 'text-teal-600 font-semibold' : 'text-gray-400'}
-          `}>
-            {seg.count}
-          </span>
-        </button>
-      ))}
-    </div>
+      <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <div style={{
+            width: 22, height: 22, borderRadius: 5, flexShrink: 0,
+            background: "linear-gradient(145deg,#0FA89D,#0D8680)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontSize: 9, fontWeight: 700,
+          }}>{getInitials(client.name)}</div>
+          <span style={{ fontSize: 13, fontWeight: 500, color: client.isActive ? "#0F172A" : "#94A3B8", overflow: "hidden", textOverflow: "ellipsis" }}>{client.name}</span>
+          {locLabel && <span style={{ fontSize: 11, color: "#94A3B8" }}>· {locLabel}</span>}
+          {isNew && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#0D9488", background: "#F0FDFA", padding: "1px 5px", borderRadius: 3, marginLeft: 2 }}>NEW</span>
+          )}
+          {!client.isActive && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#92400E", background: "#FEF3C7", padding: "1px 5px", borderRadius: 3, marginLeft: 2 }}>INACTIVE</span>
+          )}
+          {client.primaryArea && (
+            <span style={{ fontSize: 11, color: "#B0B8C4", marginLeft: 2 }}>{client.primaryArea}</span>
+          )}
+        </div>
+      </td>
+      <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 12, color: "#64748B" }}>{client.communicationContactName || "—"}</span>
+      </td>
+      {showCleaner && (
+        <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: cleanerHex, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: "#64748B" }}>{client.cleanerDisplay || "Unassigned"}</span>
+          </div>
+        </td>
+      )}
+      <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 9, fontWeight: 600, color: billingPillColor, background: billingPillBg, padding: "1px 5px", borderRadius: 3 }}>{billingPillText}</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#0F172A", fontVariantNumeric: "tabular-nums" }}>{formatRate(client.primaryRate)}</span>
+        </div>
+      </td>
+      <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 12, color: "#64748B" }}>{client.scheduleText || "—"}</span>
+      </td>
+    </tr>
   )
 }
 
-function ClientCard({
-  client,
-  isHovered,
-  onHover,
-  onArchiveFromList,
-  onRestoreFromList,
-  onDeleteFromList,
-  isArchiving,
-  isRestoring,
-  isDeleting,
-}: {
-  client: Client
-  isHovered?: boolean
-  onHover?: (clientId: string | null) => void
-  onArchiveFromList: (client: Client) => void
-  onRestoreFromList: (client: Client) => void
-  onDeleteFromList: (client: Client) => void
-  isArchiving?: boolean
-  isRestoring?: boolean
-  isDeleting?: boolean
-}) {
-  const email = client.communicationEmail || client.invoicingEmail
-  const isClientActive = client.isActive !== false
-  const status = !isClientActive ? 'inactive' : 'active'
+function MapView({ clients, onOpen }: { clients: Client[]; onOpen: (id: string) => void }) {
+  const [hovered, setHovered] = useState<Client | null>(null)
+  const [pinned, setPinned] = useState<Client | null>(null)
+  const W = 900, H = 500
+  // LA region bounds
+  const cLat = 34.05, cLng = -118.33, latR = 0.38, lngR = 0.40
+  const proj = (lat: number, lng: number) => ({
+    x: ((lng - (cLng - lngR / 2)) / lngR) * (W - 40) + 20,
+    y: (((cLat + latR / 2) - lat) / latR) * (H - 40) + 20,
+  })
+  const active = pinned || hovered
 
-  const createdDate = new Date(client.createdAt)
-  const daysSinceCreated = Number.isFinite(createdDate.getTime())
-    ? Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
-    : Infinity
-  const relationshipStart = client.startDate ? new Date(client.startDate) : null
-  const daysSinceRelationshipStart = relationshipStart && Number.isFinite(relationshipStart.getTime())
-    ? Math.floor((Date.now() - relationshipStart.getTime()) / (1000 * 60 * 60 * 24))
-    : daysSinceCreated
-  
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  const hasHistoricalJobs = client.locations?.some(loc =>
-    loc.jobs?.some((job) => {
-      if (!job.date || job.status === 'CANCELLED') return false
-      const jobDate = new Date(job.date)
-      if (!Number.isFinite(jobDate.getTime())) return false
-      return jobDate <= todayStart
+  const pinnable = clients
+    .map(c => {
+      const loc = c.locations.find(l => l.latitude != null && l.longitude != null)
+      return loc ? { client: c, lat: loc.latitude!, lng: loc.longitude! } : null
     })
-  ) ?? false
-  
-  // Show NEW only for genuinely new relationships. Imported/backfilled clients may
-  // have a recent createdAt but an older startDate, so startDate wins when present.
-  const isNew = isClientActive
-    && daysSinceCreated >= 0
-    && daysSinceCreated <= 7
-    && daysSinceRelationshipStart >= 0
-    && daysSinceRelationshipStart <= 14
-    && !hasHistoricalJobs
+    .filter((x): x is { client: Client; lat: number; lng: number } => x !== null)
 
-  const getInitials = (name: string) =>
-    name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-
-  const badgeLabel = status === 'inactive' ? 'Inactive' : 'Active'
-  const badgeStyles = {
-    active: { bg: 'rgba(0,168,150,0.1)', color: '#00A896' },
-    inactive: { bg: 'rgba(0,0,0,0.06)', color: '#6B7280' },
-  }[status]
-
-  const cardShell = `
-    bg-white rounded-xl overflow-hidden relative
-    border transition-all duration-200 ease-out
-    hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]
-    ${isHovered
-      ? 'border-teal-500 -translate-y-0.5 shadow-[0_4px_12px_rgba(0,0,0,0.08)]'
-      : 'border-gray-200'}
-  `
+  const cleanerLegend = Array.from(new Map(pinnable.map(({ client }) => [
+    client.cleanerDisplay && client.cleanerDisplay !== "Unassigned" && client.cleanerDisplay !== "Mixed" ? client.cleanerDisplay : "Unassigned",
+    getCleanerColorInfo(client.cleanerDisplay && client.cleanerDisplay !== "Unassigned" && client.cleanerDisplay !== "Mixed" ? client.cleanerDisplay : null).hex,
+  ])).entries())
 
   return (
-    <div
-      onMouseEnter={() => onHover?.(client.id)}
-      onMouseLeave={() => onHover?.(null)}
-      className={cardShell}
-    >
-      <Link
-        href={`/clients/${client.id}`}
-        className="block p-4 pb-3 relative no-underline text-inherit active:scale-[0.99] active:shadow-inner transition-transform"
-      >
-        <ChevronRight
-          className={`
-            absolute top-4 right-4 w-[18px] h-[18px] flex-shrink-0
-            text-gray-400 transition-transform duration-200
-            ${isHovered ? 'translate-x-0.5' : ''}
-          `}
-        />
-
-        <div className="flex items-start gap-3 mb-3 pr-6">
-          <div
-            className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[15px] font-semibold"
-            style={{ backgroundColor: isClientActive ? '#00A896' : '#9CA3AF' }}
-          >
-            {getInitials(client.name)}
-          </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[17px] font-bold text-gray-900 leading-snug mb-1 break-words">
-            {client.name}
-          </p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className="inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded"
-              style={{ color: badgeStyles.color, backgroundColor: badgeStyles.bg }}
-            >
-              {badgeLabel}
+    <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #E2E8F0", overflow: "hidden" }}>
+      <div style={{ padding: "8px 14px", borderBottom: "1px solid #F1F5F9", background: "#FAFBFC", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#64748B" }}>
+          {pinnable.length} location{pinnable.length !== 1 ? "s" : ""} on map
+          {pinnable.length < clients.length && (
+            <span style={{ color: "#94A3B8", fontWeight: 400, marginLeft: 6 }}>
+              ({clients.length - pinnable.length} missing coordinates)
             </span>
-            {isNew && (
-              <span
-                className="inline-block text-[11px] font-bold px-1.5 py-0.5 rounded"
-                style={{ color: '#FFFFFF', backgroundColor: '#F59E0B' }}
-              >
-                NEW
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] text-gray-500">Billing</span>
-          <span className="text-[13px] font-medium text-gray-700">
-            {client.billingType === 'FLAT_RATE' ? 'Monthly' : 'Per Clean'}
-          </span>
-        </div>
-
-        {client.locations.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <Building2 className="w-[13px] h-[13px] text-gray-400 flex-shrink-0" />
-            <span className="text-[13px] font-medium text-gray-900">
-              {client.locations.length === 1
-                ? client.locations[0].name || client.locations[0].address.split(',')[0]
-                : `${client.locations.length} locations`}
-            </span>
-          </div>
-        )}
-
-        {client.phone && (
-          <div className="flex items-center gap-1.5">
-            <Phone className="w-[13px] h-[13px] text-gray-400 flex-shrink-0" />
-            <span className="text-[13px] text-gray-500">{client.phone}</span>
-          </div>
-        )}
-
-        {email && (
-          <div className="flex items-center gap-1.5 overflow-hidden">
-            <Mail className="w-[13px] h-[13px] text-gray-400 flex-shrink-0" />
-            <span className="text-[13px] text-gray-500 truncate">
-              {email}
-            </span>
-          </div>
-        )}
-
-        {client.cleanerDisplay && (
-          <div className="flex items-center gap-1.5">
-            <User className="w-[13px] h-[13px] text-gray-400 flex-shrink-0" />
-            <span className={`text-[13px] font-medium ${
-              client.cleanerDisplay === 'Unassigned' ? 'text-gray-400 italic'
-                : client.cleanerDisplay === 'Mixed' ? 'text-amber-600'
-                : 'text-teal-700'
-            }`}>
-              {client.cleanerDisplay}
-            </span>
-          </div>
-        )}
-      </div>
-      </Link>
-
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 bg-gray-50/90">
-        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          {isClientActive ? (
-            <button
-              type="button"
-              onClick={() => onArchiveFromList(client)}
-              disabled={isArchiving || isRestoring || isDeleting}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900 px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Archive className="w-3.5 h-3.5" aria-hidden />
-              {isArchiving ? 'Archiving...' : 'Archive'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onRestoreFromList(client)}
-              disabled={isArchiving || isRestoring || isDeleting}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 px-2 py-1.5 rounded-lg border border-teal-200 bg-teal-50 hover:bg-teal-100 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RotateCcw className="w-3.5 h-3.5" aria-hidden />
-              {isRestoring ? 'Restoring...' : 'Restore'}
-            </button>
           )}
-          <button
-            type="button"
-            onClick={() => onDeleteFromList(client)}
-            disabled={isArchiving || isRestoring || isDeleting}
-            className="text-xs font-semibold text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isDeleting ? 'Removing...' : 'Remove...'}
-          </button>
+        </span>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {cleanerLegend.map(([name, col]) => (
+            <div key={name} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: col }} />
+              <span style={{ fontSize: 10, color: "#94A3B8" }}>{name.split(" ")[0]}</span>
+            </div>
+          ))}
         </div>
-        <Link
-          href={`/clients/${client.id}`}
-          className="text-xs font-semibold text-teal-700 hover:text-teal-800 shrink-0 py-1.5"
-        >
-          Open
-        </Link>
       </div>
+      {pinnable.length === 0 ? (
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "#94A3B8" }}>
+          <MapPin style={{ width: 32, height: 32, margin: "0 auto 10px", opacity: 0.4 }} />
+          <div style={{ fontSize: 13, fontWeight: 500 }}>No clients have map coordinates yet</div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>Coordinates are added when locations are geocoded.</div>
+        </div>
+      ) : (
+        <div style={{ position: "relative", background: "#EDF2F7" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+            <rect width={W} height={H} fill="#EDF2F7" />
+            {[
+              { x1: 0, y1: H * 0.35, x2: W, y2: H * 0.35 },
+              { x1: 0, y1: H * 0.55, x2: W, y2: H * 0.55 },
+              { x1: 0, y1: H * 0.75, x2: W, y2: H * 0.75 },
+              { x1: W * 0.25, y1: 0, x2: W * 0.25, y2: H },
+              { x1: W * 0.5, y1: 0, x2: W * 0.5, y2: H },
+              { x1: W * 0.75, y1: 0, x2: W * 0.75, y2: H },
+            ].map((r, i) => <line key={i} {...r} stroke="#D4DCE6" strokeWidth="1.5" opacity="0.6" />)}
+            {pinnable.map(({ client, lat, lng }) => {
+              const { x, y } = proj(lat, lng)
+              const isActive = active?.id === client.id
+              const hex = getCleanerColorInfo(client.cleanerDisplay && client.cleanerDisplay !== "Unassigned" && client.cleanerDisplay !== "Mixed" ? client.cleanerDisplay : null).hex
+              return (
+                <g key={client.id} style={{ cursor: "pointer" }}
+                  onMouseEnter={() => setHovered(client)}
+                  onMouseLeave={() => setHovered(null)}
+                  onClick={() => setPinned(pinned?.id === client.id ? null : client)}>
+                  <circle cx={x} cy={y + 1} r={isActive ? 8 : 5} fill="rgba(0,0,0,0.12)" />
+                  <circle cx={x} cy={y} r={isActive ? 7 : 5} fill={hex} stroke="#fff" strokeWidth={isActive ? 2.5 : 1.5} />
+                </g>
+              )
+            })}
+          </svg>
+          {active && (() => {
+            const loc = active.locations.find(l => l.latitude != null && l.longitude != null)
+            if (!loc) return null
+            const { x, y } = proj(loc.latitude!, loc.longitude!)
+            const hex = getCleanerColorInfo(active.cleanerDisplay && active.cleanerDisplay !== "Unassigned" && active.cleanerDisplay !== "Mixed" ? active.cleanerDisplay : null).hex
+            return (
+              <div style={{
+                position: "absolute",
+                left: `${(x / W) * 100}%`, top: `${(y / H) * 100}%`,
+                transform: "translate(12px, -100%)",
+                background: "#fff", borderRadius: 8, padding: "10px 14px",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.15)", border: "1px solid #E2E8F0",
+                zIndex: 30, width: 200, pointerEvents: pinned ? "auto" : "none",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A", marginBottom: 1 }}>{active.name}</div>
+                {active.primaryArea && <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>{active.primaryArea}</div>}
+                <div style={{ display: "flex", alignItems: "center", gap: 3, marginBottom: 4 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: hex }} />
+                  <span style={{ fontSize: 11, color: "#64748B" }}>{active.cleanerDisplay}</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, fontSize: 11 }}>
+                  <span style={{ fontWeight: 700, color: "#0F172A" }}>{formatRate(active.primaryRate)}</span>
+                  <span style={{ color: "#94A3B8" }}>{active.scheduleText}</span>
+                </div>
+                {pinned?.id === active.id && (
+                  <button onClick={() => onOpen(active.id)} style={{
+                    marginTop: 8, width: "100%", padding: "5px 0", fontSize: 11, fontWeight: 600,
+                    background: "#0F172A", color: "#fff", border: "none", borderRadius: 5, cursor: "pointer",
+                  }}>View Profile</button>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
     </div>
   )
 }
 
 export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrapperProps) {
   const router = useRouter()
-  const [clientList, setClientList] = useState<Client[]>(clients)
   const [searchQuery, setSearchQuery] = useState("")
   const [showWizard, setShowWizard] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
-
-  const isMobile = useIsMobile()
-
-  // On mobile, always force card/grid view
-  const [hoveredClientId, setHoveredClientId] = useState<string | null>(null)
-  const [archivingClientId, setArchivingClientId] = useState<string | null>(null)
-  const [restoringClientId, setRestoringClientId] = useState<string | null>(null)
-  const [deletingClientId, setDeletingClientId] = useState<string | null>(null)
-
-  const { confirm, ConfirmDialog } = useConfirm()
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
+  const [viewMode, setViewMode] = useState<ViewMode>("az")
+  const [sortKey, setSortKey] = useState<SortKey>("name")
+  const [sortDir, setSortDir] = useState<SortDir>("asc")
+  const [collapsedCleaners, setCollapsedCleaners] = useState<Record<string, boolean>>({})
+  const searchRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    setClientList(clients)
-  }, [clients])
-
-  const handleArchiveFromList = useCallback(
-    async (client: Client) => {
-      const confirmed = await confirm({
-        title: 'Archive Client?',
-        description: `Archive "${client.name}"? They will be marked inactive and hidden from the active clients list. All jobs, invoices, and payment history will be preserved.`,
-        confirmText: 'Archive',
-        cancelText: 'Cancel',
-        variant: 'destructive',
-      })
-      if (!confirmed) return
-      setArchivingClientId(client.id)
-      try {
-        const response = await fetch(`/api/clients/${client.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isActive: false }),
-        })
-        if (!response.ok) {
-          await showApiError(response, 'Failed to archive client')
-          return
-        }
-        showSuccess('Client archived')
-        setClientList(current => current.map(c => c.id === client.id ? { ...c, isActive: false } : c))
-        mutate('/api/clients/data')
-        mutate('/api/dashboard-stats')
-        router.refresh()
-      } catch {
-        showError('Failed to archive client. Please try again.')
-      } finally {
-        setArchivingClientId(null)
-      }
-    },
-    [confirm, router],
-  )
-
-  const handleDeleteFromList = useCallback(
-    async (client: Client) => {
-      const confirmed = await confirm({
-        title: 'Remove Client?',
-        description: `Permanently delete "${client.name}"? Draft invoices, generated jobs, and schedules will be removed. Sent/paid invoices or payment history must be voided first.`,
-        confirmText: 'Remove',
-        cancelText: 'Cancel',
-        variant: 'destructive',
-      })
-      if (!confirmed) return
-      setDeletingClientId(client.id)
-      try {
-        const response = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
-        if (response.status === 409) {
-          showError('This client has sent/paid invoices or payment history. Archive it, or void/remove that final history first.')
-          return
-        }
-        if (!response.ok) {
-          await showApiError(response, 'Failed to remove client')
-          return
-        }
-        showSuccess('Client removed')
-        setClientList(current => current.filter(c => c.id !== client.id))
-        mutate('/api/clients/data')
-        mutate('/api/dashboard-stats')
-        router.refresh()
-      } catch {
-        showError('Failed to remove client. Please try again.')
-      } finally {
-        setDeletingClientId(null)
-      }
-    },
-    [confirm, router],
-  )
-
-  const handleRestoreFromList = useCallback(
-    async (client: Client) => {
-      setRestoringClientId(client.id)
-      try {
-        const response = await fetch(`/api/clients/${client.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isActive: true }),
-        })
-        if (!response.ok) {
-          await showApiError(response, 'Failed to restore client')
-          return
-        }
-        showSuccess('Client restored')
-        setClientList(current => current.map(c => c.id === client.id ? { ...c, isActive: true } : c))
-        mutate('/api/clients/data')
-        mutate('/api/dashboard-stats')
-        router.refresh()
-      } catch {
-        showError('Failed to restore client. Please try again.')
-      } finally {
-        setRestoringClientId(null)
-      }
-    },
-    [router],
-  )
-  useEffect(() => {
-    if (prefillProspect) {
-      setShowWizard(true)
-    }
+    if (prefillProspect) setShowWizard(true)
   }, [prefillProspect])
 
-  // Calculate stats
-  const stats = useMemo(() => {
-    return {
-      total: clientList.length,
-      active: clientList.filter(c => c.isActive).length,
-      inactive: clientList.filter(c => !c.isActive).length,
-    }
-  }, [clientList])
+  const stats = useMemo(() => ({
+    total: clients.length,
+    active: clients.filter(c => c.isActive).length,
+    inactive: clients.filter(c => !c.isActive).length,
+  }), [clients])
 
-  // Filter clients
-  const filteredClients = useMemo(() => {
-    let result = clientList
-
-    // Status filter
-    if (statusFilter === 'active') {
-      result = result.filter(c => c.isActive)
-    } else if (statusFilter === 'inactive') {
-      result = result.filter(c => !c.isActive)
-    }
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter(c =>
-        c.name.toLowerCase().includes(query) ||
-        c.communicationEmail?.toLowerCase().includes(query) ||
-        c.phone?.includes(query)
+  const filtered = useMemo(() => {
+    let list = clients
+    if (statusFilter === "active") list = list.filter(c => c.isActive)
+    else if (statusFilter === "inactive") list = list.filter(c => !c.isActive)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      list = list.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.cleanerDisplay || "").toLowerCase().includes(q) ||
+        (c.primaryArea || "").toLowerCase().includes(q) ||
+        (c.communicationContactName || "").toLowerCase().includes(q) ||
+        (c.communicationEmail || "").toLowerCase().includes(q) ||
+        (c.phone || "").includes(q)
       )
     }
+    return list
+  }, [clients, statusFilter, searchQuery])
 
-    return result
-  }, [clientList, statusFilter, searchQuery])
+  const sorted = useMemo(() => {
+    const arr = [...filtered]
+    const d = sortDir === "asc" ? 1 : -1
+    arr.sort((a, b) => {
+      if (sortKey === "name") return d * a.name.localeCompare(b.name)
+      if (sortKey === "contact") return d * (a.communicationContactName || "").localeCompare(b.communicationContactName || "")
+      if (sortKey === "cleaner") return d * (a.cleanerDisplay || "").localeCompare(b.cleanerDisplay || "")
+      if (sortKey === "rate") return d * ((a.primaryRate ?? 0) - (b.primaryRate ?? 0))
+      if (sortKey === "schedule") return d * a.scheduleText.localeCompare(b.scheduleText)
+      return 0
+    })
+    return arr
+  }, [filtered, sortKey, sortDir])
 
+  const grouped = useMemo(() => {
+    if (viewMode !== "cleaner") return null
+    const map = new Map<string, { color: string; clients: Client[] }>()
+    sorted.forEach(c => {
+      const name = c.cleanerDisplay || "Unassigned"
+      const color = getCleanerColorInfo(name !== "Unassigned" && name !== "Mixed" ? name : null).hex
+      if (!map.has(name)) map.set(name, { color, clients: [] })
+      map.get(name)!.clients.push(c)
+    })
+    return Array.from(map.entries()).sort((a, b) => b[1].clients.length - a[1].clients.length)
+  }, [sorted, viewMode])
 
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc")
+    else { setSortKey(k); setSortDir("asc") }
+  }
+  const toggleCollapse = (n: string) => setCollapsedCleaners(prev => ({ ...prev, [n]: !prev[n] }))
+
+  const openClient = (id: string) => router.push(`/clients/${id}`)
+
+  const Chev = ({ k }: { k: SortKey }) => sortKey === k ? (
+    <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ transform: sortDir === "desc" ? "rotate(180deg)" : "none", transition: "transform 0.12s", marginLeft: 2 }}>
+      <path d="M2.5 6L5 3.5 7.5 6" />
+    </svg>
+  ) : null
+
+  const Hd = ({ k, label }: { k: SortKey; label: string }) => (
+    <span onClick={() => toggleSort(k)} style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 2, color: sortKey === k ? "#0F172A" : "#94A3B8" }}>
+      {label}<Chev k={k} />
+    </span>
+  )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="w-full px-6 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="hidden sm:block text-xl font-semibold text-gray-900">Clients</h1>
-
-
-
-            <Button
-              onClick={() => setShowWizard(true)}
-              size="sm"
-              className="hidden sm:flex bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white px-4 h-10 shadow-md shadow-teal-500/20 transition-all duration-200 hover:shadow-lg hover:shadow-teal-500/30 active:scale-95 ml-auto"
+    <div style={{ minHeight: "100vh", background: "#F8FAFC", color: "#0F172A" }}>
+      {/* LINE 1: title + search + Add Client */}
+      <div style={{ padding: "16px 24px 0", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: "-0.03em", whiteSpace: "nowrap" }}>Clients</h1>
+        <div style={{ flex: 1, maxWidth: 360, minWidth: 200, position: "relative" }}>
+          <SearchIcon style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, color: "#94A3B8", pointerEvents: "none" }} />
+          <input
+            ref={searchRef}
+            type="text"
+            placeholder="Search clients, cleaners, or areas..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "7px 30px 7px 30px",
+              border: "1px solid #E2E8F0",
+              borderRadius: 7,
+              fontSize: 13,
+              color: "#0F172A",
+              background: "#fff",
+              outline: "none",
+            }}
+            onFocus={e => { e.currentTarget.style.borderColor = "#94A3B8" }}
+            onBlur={e => { e.currentTarget.style.borderColor = "#E2E8F0" }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => { setSearchQuery(""); searchRef.current?.focus() }}
+              aria-label="Clear search"
+              style={{
+                position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)",
+                background: "#E2E8F0", border: "none", borderRadius: "50%",
+                width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", color: "#64748B",
+              }}
             >
-              <Plus className="w-4 h-4 mr-1.5" />
-              Add Client
-            </Button>
+              <XIcon style={{ width: 10, height: 10 }} />
+            </button>
+          )}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setShowWizard(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 14px", background: "#0F172A", color: "#fff",
+            border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Plus style={{ width: 12, height: 12 }} />
+          Add Client
+        </button>
+      </div>
+
+      {/* LINE 2: tabs + view toggle */}
+      <div style={{ padding: "10px 24px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #E2E8F0", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", gap: 16 }}>
+          {([
+            ["all", "All", stats.total],
+            ["active", "Active", stats.active],
+            ["inactive", "Inactive", stats.inactive],
+          ] as const).map(([k, l, n]) => (
+            <button
+              key={k}
+              onClick={() => setStatusFilter(k as "all" | "active" | "inactive")}
+              style={{
+                padding: "0 0 8px",
+                fontSize: 13,
+                background: "none", border: "none", cursor: "pointer",
+                fontWeight: statusFilter === k ? 600 : 400,
+                color: statusFilter === k ? "#0F172A" : "#94A3B8",
+                borderBottom: statusFilter === k ? "2px solid #0F172A" : "2px solid transparent",
+              }}
+            >
+              {l} {n}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+          <span style={{ fontSize: 11, color: "#94A3B8" }}>View:</span>
+          <div style={{ display: "flex", background: "#F1F5F9", borderRadius: 6, padding: 2 }}>
+            {([
+              ["az", "A–Z"],
+              ["cleaner", "Cleaner"],
+              ["map", "Map"],
+            ] as const).map(([v, l]) => (
+              <button
+                key={v}
+                onClick={() => setViewMode(v as ViewMode)}
+                style={{
+                  padding: "3px 10px",
+                  border: "none",
+                  borderRadius: 5,
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  background: viewMode === v ? "#fff" : "transparent",
+                  color: viewMode === v ? "#0F172A" : "#94A3B8",
+                  boxShadow: viewMode === v ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
+                }}
+              >
+                {l}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      <div className="w-full px-6 py-4">
-        {/* Toolbar — card view only */}
-        {
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <SegmentedFilter
-              stats={stats}
-              onFilterChange={setStatusFilter}
-              activeFilter={statusFilter}
-            />
+      {searchQuery.trim() && (
+        <div style={{ padding: "6px 24px 0", fontSize: 11, color: "#94A3B8" }}>
+          {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+        </div>
+      )}
 
-
-
-            {/* Search */}
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search clients..."
-                className="pl-10 bg-white h-10"
-              />
-            </div>
+      {/* CONTENT */}
+      <div style={{ padding: "10px 24px 28px" }}>
+        {sorted.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px 0", color: "#94A3B8", background: "#fff", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>No clients found</div>
+            {searchQuery ? (
+              <button onClick={() => setSearchQuery("")} style={{ fontSize: 12, color: "#0F766E", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Clear search</button>
+            ) : (
+              <button onClick={() => setShowWizard(true)} style={{ marginTop: 6, padding: "6px 14px", fontSize: 12, fontWeight: 600, background: "#0F172A", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>Add Your First Client</button>
+            )}
           </div>
-        }
-
-
-
-        {filteredClients.length === 0 ? (
-          searchQuery ? (
-            <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
-              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="w-10 h-10 text-gray-300" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-1">No results found</h3>
-              <p className="text-gray-500 mb-4">
-                No clients match &ldquo;{searchQuery}&rdquo;. Try a different search term.
-              </p>
-              <Button onClick={() => setSearchQuery('')} variant="outline">
-                Clear Search
-              </Button>
-            </div>
-          ) : statusFilter !== 'all' ? (
-            <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
-              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Building2 className="w-10 h-10 text-gray-300" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-1">
-                No {statusFilter} clients
-              </h3>
-              <p className="text-gray-500 mb-4">
-                There are no clients matching this filter.
-              </p>
-              <Button onClick={() => setStatusFilter('all')} variant="outline">
-                Show All Clients
-              </Button>
-            </div>
-          ) : (
-            <div onClick={() => setShowWizard(true)} className="cursor-pointer">
-              <EmptyState
-                icon={UserPlus}
-                title="Welcome to Clean Freaks!"
-                description="You haven't added any clients yet. Start by adding your first client with their location details to begin scheduling jobs and sending invoices."
-                actionLabel="Add Your First Client"
-                actionHref="#"
-                secondaryActionLabel="Learn More"
-                secondaryActionHref="/help"
-              />
-            </div>
-          )
+        ) : viewMode === "az" ? (
+          <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #E2E8F0", overflow: "hidden" }}>
+            <table style={{ borderCollapse: "collapse", tableLayout: "fixed", width: "100%" }}>
+              <colgroup>
+                <col />
+                <col style={{ width: 130 }} />
+                <col style={{ width: 165 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 180 }} />
+              </colgroup>
+              <thead>
+                <tr style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", background: "#FAFBFC", borderBottom: "1px solid #F1F5F9", userSelect: "none" }}>
+                  <th style={{ padding: "8px 12px", textAlign: "left" }}><Hd k="name" label="Client" /></th>
+                  <th style={{ padding: "8px 12px", textAlign: "left" }}><Hd k="contact" label="Contact" /></th>
+                  <th style={{ padding: "8px 12px", textAlign: "left" }}><Hd k="cleaner" label="Cleaner" /></th>
+                  <th style={{ padding: "8px 12px", textAlign: "left" }}><Hd k="rate" label="Rate" /></th>
+                  <th style={{ padding: "8px 12px", textAlign: "left" }}><Hd k="schedule" label="Schedule" /></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((c, i) => (
+                  <ClientRow key={c.id} client={c} showCleaner zebra={i % 2 === 1} onOpen={openClient} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : viewMode === "cleaner" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {grouped && grouped.map(([name, { color, clients: cls }]) => {
+              const collapsed = collapsedCleaners[name] ?? false
+              const open = !collapsed
+              const total = cls.reduce((s, c) => s + (c.primaryRate ?? 0), 0)
+              return (
+                <div key={name} style={{ background: "#fff", borderRadius: 8, border: "1px solid #E2E8F0", overflow: "hidden" }}>
+                  <div onClick={() => toggleCollapse(name)} style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, background: "#FAFBFC", borderBottom: open ? "1px solid #F1F5F9" : "none", cursor: "pointer", userSelect: "none" }}>
+                    <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" style={{ transition: "transform 0.15s", transform: open ? "rotate(90deg)" : "rotate(0deg)", flexShrink: 0 }}>
+                      <path d="M3 1.5L7 5 3 8.5" />
+                    </svg>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>
+                    <span style={{ fontSize: 12, color: "#94A3B8" }}>
+                      {cls.length} client{cls.length !== 1 ? "s" : ""} · {formatRate(total)}
+                    </span>
+                  </div>
+                  {open && (
+                    <table style={{ borderCollapse: "collapse", tableLayout: "fixed", width: "100%" }}>
+                      <colgroup>
+                        <col />
+                        <col style={{ width: 130 }} />
+                        <col style={{ width: 110 }} />
+                        <col style={{ width: 180 }} />
+                      </colgroup>
+                      <tbody>
+                        {cls.map((c, i) => (
+                          <ClientRow key={c.id} client={c} showCleaner={false} zebra={i % 2 === 1} onOpen={openClient} />
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         ) : (
-          <div
-            key="cards"
-            className="animate-fadeIn"
-            style={{ animation: 'fadeIn 150ms ease-in-out' }}
-          >
-            <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredClients.map((client) => (
-                <ClientCard
-                  key={client.id}
-                  client={client}
-                  isHovered={hoveredClientId === client.id}
-                  onHover={setHoveredClientId}
-                  onArchiveFromList={(c) => {
-                    void handleArchiveFromList(c)
-                  }}
-                  onRestoreFromList={(c) => {
-                    void handleRestoreFromList(c)
-                  }}
-                  onDeleteFromList={(c) => {
-                    void handleDeleteFromList(c)
-                  }}
-                  isArchiving={archivingClientId === client.id}
-                  isRestoring={restoringClientId === client.id}
-                  isDeleting={deletingClientId === client.id}
-                />
-              ))}
-            </div>
-          </div>
+          <MapView clients={filtered} onOpen={openClient} />
         )}
       </div>
 
-      {/* Mobile FAB — fixed bottom right above bottom nav */}
+      {/* Mobile FAB */}
       <button
         onClick={() => setShowWizard(true)}
         className="sm:hidden"
         style={{
-          position: 'fixed',
-          bottom: '90px',
-          right: '20px',
-          width: '56px',
-          height: '56px',
-          borderRadius: '50%',
-          backgroundColor: '#00A896',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 4px 12px rgba(0,168,150,0.35)',
-          border: 'none',
-          cursor: 'pointer',
-          zIndex: 40,
+          position: "fixed",
+          bottom: 90,
+          right: 20,
+          width: 56, height: 56,
+          borderRadius: "50%",
+          backgroundColor: "#0F172A",
+          color: "white",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 4px 12px rgba(15,23,42,0.35)",
+          border: "none", cursor: "pointer", zIndex: 40,
         }}
         aria-label="Add client"
       >
-        <Plus style={{ width: '24px', height: '24px' }} />
+        <Plus style={{ width: 24, height: 24 }} />
       </button>
 
-      {/* Add Client Wizard */}
       <AddClientWizard
         isOpen={showWizard}
         initialData={prefillProspect ? {
@@ -637,18 +594,18 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
         } : null}
         onClose={() => {
           setShowWizard(false)
-          if (prefillProspect) router.replace('/clients')
+          if (prefillProspect) router.replace("/clients")
         }}
         onSuccess={(clientId: string) => {
-          mutate('/api/clients/data')
-          mutate('/api/dashboard-stats')
-          mutate('/api/calendar/data')
-
-          // Navigate to the new client's profile for confirmation
+          mutate("/api/clients/data")
+          mutate("/api/dashboard-stats")
+          mutate("/api/calendar/data")
           router.push(`/clients/${clientId}`)
         }}
       />
-      <ConfirmDialog />
     </div>
   )
 }
+
+// Helper exported for the icon import to satisfy ESLint if needed elsewhere.
+export { ChevronRight as _ChevronRight }
