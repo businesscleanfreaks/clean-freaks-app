@@ -1274,169 +1274,235 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     }
     const activeSummaryText = activeSummaryParts.join(" · ")
 
+    // Density slider: snaps to one of three discrete WeekDensity values.
+    const densityToSlider = (d: WeekDensity) => d === 'Comfortable' ? 0 : d === 'Compact' ? 50 : 100
+    const sliderToDensity = (v: number): WeekDensity => v < 25 ? 'Comfortable' : v < 75 ? 'Compact' : 'Dense'
+    const sliderValue = densityToSlider(weekDensity)
+    const navLabel = viewMode === 'week' ? 'week' : 'month'
+
     return (
       <div className="hidden lg:flex flex-col shrink-0 border-b border-gray-200 bg-white">
-        <div className="flex items-center justify-between px-4 h-16">
-          <div className="flex items-center gap-4">
-            <div className="w-[292px] shrink-0">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold leading-none mb-1">Operations Calendar</p>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-gray-900 leading-none">{monthLabel}</h1>
-                <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
-                  {calendarSummaryLabel}
-                </span>
-              </div>
-            </div>
-            
-            <div className="h-6 w-px bg-gray-200 mx-1" />
-            
-            <div className="flex items-center gap-1">
-              <button
-                onClick={goToToday}
-                className="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-              >
-                Today
-              </button>
-              <button onClick={() => navigate('prev')} className="w-8 h-8 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button onClick={() => navigate('next')} className="w-8 h-8 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
-                <ChevronRight className="w-5 h-5" />
-              </button>
-              <label className="relative ml-1 inline-flex h-8 items-center rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
-                <span className="sr-only">Jump to month</span>
-                <input
-                  type="month"
-                  aria-label="Jump to month"
-                  value={format(currentDate, 'yyyy-MM')}
-                  onChange={(event) => {
-                    if (!event.target.value) return
-                    const [year, month] = event.target.value.split('-').map(Number)
-                    setCurrentDate(new Date(year, month - 1, 1, 12))
-                  }}
-                  className="w-[116px] bg-transparent text-xs font-semibold text-gray-700 outline-none"
-                />
-              </label>
-            </div>
-            {isLoadingMore && <Loader2 className="w-4 h-4 animate-spin text-teal-600" />}
+        <div className="flex items-center px-5 h-14 gap-3 w-full">
+          {/* LEFT: Today + arrows + month label/picker */}
+          <button
+            onClick={goToToday}
+            className="px-3.5 py-1 text-xs font-medium text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-gray-300 rounded-full transition-colors"
+          >
+            Today
+          </button>
+
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => navigate('prev')}
+              title={`Previous ${navLabel}`}
+              aria-label={`Previous ${navLabel}`}
+              className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 rounded-md transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => navigate('next')}
+              title={`Next ${navLabel}`}
+              aria-label={`Next ${navLabel}`}
+              className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 rounded-md transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Week/Month toggle */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200">
-              {(['week', 'month'] as ViewMode[]).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                    viewMode === mode 
-                      ? 'bg-white text-gray-900 shadow-sm' 
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
-                  }`}
-                >
-                  {mode === 'week' ? 'Week' : 'Month'}
-                </button>
-              ))}
-            </div>
-
-            {viewMode === 'week' && (
-              <div className="hidden items-center bg-white p-0.5 rounded-lg border border-gray-200 lg:flex" title="Week density">
-                {(['Comfortable', 'Compact', 'Dense'] as WeekDensity[]).map(density => (
+          <div className="relative">
+            <button
+              onClick={() => {
+                setMonthPickerYear(currentDate.getFullYear())
+                setShowMonthPicker(!showMonthPicker)
+              }}
+              className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-[17px] font-bold text-gray-900 leading-none whitespace-nowrap">{monthLabel}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showMonthPicker ? 'rotate-180' : ''}`} />
+            </button>
+            {showMonthPicker && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-4 z-50 w-[280px]">
+                <div className="flex items-center justify-between mb-3">
                   <button
-                    key={density}
-                    type="button"
-                    aria-pressed={weekDensity === density}
-                    onClick={() => changeWeekDensity(density)}
-                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-all ${
-                      weekDensity === density
-                        ? 'bg-teal-50 text-teal-700 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                    }`}
+                    onClick={() => setMonthPickerYear(y => y - 1)}
+                    className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                    aria-label="Previous year"
                   >
-                    {density === 'Comfortable' ? 'Comfort' : density}
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
-                ))}
+                  <span className="text-[15px] font-bold text-gray-900">{monthPickerYear}</span>
+                  <button
+                    onClick={() => setMonthPickerYear(y => y + 1)}
+                    className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                    aria-label="Next year"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {MONTHS.map((m, mi) => {
+                    const isActive = currentDate.getMonth() === mi && currentDate.getFullYear() === monthPickerYear
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => selectMonth(mi)}
+                        className={`py-2 text-[13px] font-medium rounded-md transition-colors ${
+                          isActive ? 'bg-teal-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-3 pt-2 border-t border-gray-100 flex justify-end">
+                  <button
+                    onClick={() => { goToToday(); setShowMonthPicker(false) }}
+                    className="text-[12px] font-medium text-teal-700 hover:text-teal-800"
+                  >
+                    This {navLabel}
+                  </button>
+                </div>
               </div>
             )}
-            
-            <button
-              onClick={() => handleDateClick(currentDate)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors shadow-sm text-sm font-medium"
-            >
-              <Plus className="w-4 h-4" />
-              Add Job
-            </button>
+          </div>
 
-            <button
-              onClick={() => setFilterDrawerOpen(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-                filterCount > 0 
-                  ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100' 
-                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              Filters
-              {filterCount > 0 && (
-                <span className="flex items-center justify-center min-w-[20px] h-5 px-1 ml-0.5 bg-teal-600 text-white text-[10px] rounded-full">
-                  {filterCount}
-                </span>
-              )}
-            </button>
-            
-            {/* Overflow */}
-            <div className="relative" ref={overflowMenuRef}>
+          {isLoadingMore && <Loader2 className="w-4 h-4 animate-spin text-teal-600" />}
+
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+
+          {/* MIDDLE: Filters button + summary chip */}
+          <button
+            onClick={() => setFilterDrawerOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md border text-xs font-medium transition-colors ${
+              filterCount > 0
+                ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100'
+                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Filters
+            {filterCount > 0 && (
+              <span className="flex items-center justify-center min-w-[18px] h-4 px-1 bg-teal-600 text-white text-[10px] rounded-full font-semibold">
+                {filterCount}
+              </span>
+            )}
+          </button>
+
+          {calendarSummaryLabel && (
+            <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full whitespace-nowrap">
+              {calendarSummaryLabel}
+            </span>
+          )}
+
+          <div className="flex-1" />
+
+          {/* RIGHT: View toggle + density slider + Add Job + overflow */}
+          <div className="flex items-center bg-gray-100 rounded-md p-0.5">
+            {(['week', 'month'] as ViewMode[]).map(mode => (
               <button
-                onClick={() => setShowOverflowMenu(!showOverflowMenu)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded transition-all ${
+                  viewMode === mode
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
               >
-                <MoreHorizontal className="w-5 h-5" />
+                {mode === 'week' ? 'Week' : 'Month'}
               </button>
-              {showOverflowMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-50 w-48">
-                  <button
-                    onClick={() => {
-                      setIsSelectionMode(!isSelectionMode)
-                      if (isSelectionMode) clearSelection()
-                      setShowOverflowMenu(false)
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    {isSelectionMode ? 'Exit Bulk Edit' : 'Bulk Edit Jobs'}
-                  </button>
-                  {viewMode === 'week' && (
-                    <>
-                      <div className="h-px bg-gray-100 my-1" />
-                      <div className="px-4 py-1.5">
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Week Density</p>
-                        <div className="flex flex-col">
-                          {(['Comfortable', 'Compact', 'Dense'] as WeekDensity[]).map(d => (
-                            <button
-                              key={d}
-                              onClick={() => {
-                                changeWeekDensity(d)
-                                setShowOverflowMenu(false)
-                              }}
-                              className={`text-left px-2 py-1.5 text-xs rounded-md transition-colors ${
-                                weekDensity === d ? 'bg-teal-50 text-teal-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
-                              }`}
-                            >
-                              {d}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
+            ))}
+          </div>
+
+          {viewMode === 'week' && (
+            <div className="hidden xl:flex items-center gap-2" title={`Density: ${weekDensity}`}>
+              <span className="text-[9px] text-gray-300 leading-none">☰</span>
+              <div className="relative w-[88px] h-5 flex items-center cursor-pointer">
+                <div className="absolute inset-x-0 h-1 bg-gray-200 rounded-full" />
+                <div
+                  className="absolute h-1 bg-teal-600 rounded-full"
+                  style={{ width: `${sliderValue}%` }}
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={50}
+                  value={sliderValue}
+                  onChange={(e) => changeWeekDensity(sliderToDensity(Number(e.target.value)))}
+                  aria-label="Week density"
+                  className="absolute inset-0 w-full opacity-0 cursor-pointer"
+                />
+                <div
+                  className="absolute w-3.5 h-3.5 bg-white border-2 border-teal-600 rounded-full shadow-sm pointer-events-none transition-all"
+                  style={{ left: `calc(${sliderValue}% - 7px)` }}
+                />
+              </div>
+              <span className="text-[9px] text-gray-300 leading-none">≡</span>
             </div>
+          )}
+
+          <button
+            onClick={() => handleDateClick(currentDate)}
+            className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors text-[12px] font-semibold shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Job
+          </button>
+
+          <div className="relative" ref={overflowMenuRef}>
+            <button
+              onClick={() => setShowOverflowMenu(!showOverflowMenu)}
+              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors text-gray-500"
+              aria-label="More actions"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {showOverflowMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-50 w-48">
+                <button
+                  onClick={() => {
+                    setIsSelectionMode(!isSelectionMode)
+                    if (isSelectionMode) clearSelection()
+                    setShowOverflowMenu(false)
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  {isSelectionMode ? 'Exit Bulk Edit' : 'Bulk Edit Jobs'}
+                </button>
+                {viewMode === 'week' && (
+                  <>
+                    <div className="h-px bg-gray-100 my-1" />
+                    <div className="px-4 py-1.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Week Density</p>
+                      <div className="flex flex-col">
+                        {(['Comfortable', 'Compact', 'Dense'] as WeekDensity[]).map(d => (
+                          <button
+                            key={d}
+                            onClick={() => {
+                              changeWeekDensity(d)
+                              setShowOverflowMenu(false)
+                            }}
+                            className={`text-left px-2 py-1.5 text-xs rounded-md transition-colors ${
+                              weekDensity === d ? 'bg-teal-50 text-teal-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Active Filter Summary Row */}
         {filterCount > 0 && (
-          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs">
+          <div className="flex items-center justify-between px-5 py-1.5 bg-gray-50 border-t border-gray-100 text-xs">
             <div className="flex items-center gap-2 overflow-hidden text-gray-600">
               <span className="font-semibold text-gray-700 shrink-0">Filters:</span>
               <span className="truncate">{activeSummaryText}</span>
