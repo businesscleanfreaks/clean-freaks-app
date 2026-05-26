@@ -308,17 +308,20 @@ export function CompactCreateJobDialog({
             {clientMode === "existing" ? (
               <>
                 {selectedClient ? (
-                  <div className="flex items-start justify-between gap-2 rounded-lg border border-teal-100 bg-teal-50 px-3 py-2">
+                  <div className="flex items-start justify-between gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-slate-950">{selectedClient.name}</div>
-                      <div className="text-xs text-slate-500">{locations.length} location{locations.length === 1 ? "" : "s"}</div>
+                      <div className="truncate text-xs text-slate-500">
+                        {locations[0]?.address || `${locations.length} location${locations.length === 1 ? "" : "s"}`}
+                      </div>
                     </div>
                     <button
                       type="button"
+                      aria-label="Clear selected client"
                       onClick={resetClientChoice}
-                      className="text-xs font-semibold text-teal-700"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-teal-700 hover:bg-teal-100"
                     >
-                      Change
+                      <X className="h-3 w-3" />
                     </button>
                   </div>
                 ) : (
@@ -329,25 +332,29 @@ export function CompactCreateJobDialog({
                         autoFocus
                         value={search}
                         onChange={event => setSearch(event.target.value)}
-                        placeholder="Search clients..."
+                        placeholder="Search or type new client name..."
                         className="h-9 pl-8 text-sm"
                       />
                     </div>
                     <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white">
-                      {filteredClients.map(client => (
-                        <button
-                          key={client.id}
-                          type="button"
-                          onClick={() => chooseClient(client)}
-                          className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-slate-950">{client.name}</span>
-                            <span className="block text-xs text-slate-400">{client.locations?.length || 0} locations</span>
-                          </span>
-                          <Check className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-                        </button>
-                      ))}
+                      {filteredClients.map(client => {
+                        const firstLoc = client.locations?.[0]
+                        const subline = firstLoc?.address || client.phone || ""
+                        return (
+                          <button
+                            key={client.id}
+                            type="button"
+                            onClick={() => chooseClient(client)}
+                            className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-slate-950">{client.name}</span>
+                              {subline && <span className="block truncate text-xs text-slate-400">{subline}</span>}
+                            </span>
+                            <Check className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                          </button>
+                        )
+                      })}
                       {filteredClients.length === 0 && <div className="px-3 py-3 text-xs text-slate-400">No matching clients.</div>}
                     </div>
                     {typedClientName && !exactClientMatch && (
@@ -465,9 +472,20 @@ export function CompactCreateJobDialog({
 
             {timeMode === "specific" && <TimePicker value={startTime} onChange={setStartTime} />}
             {timeMode === "window" && (
-              <div className="grid grid-cols-2 gap-2">
-                <TimePicker value={startWindowBegin} onChange={setStartWindowBegin} />
-                <TimePicker value={startWindowEnd} onChange={setStartWindowEnd} />
+              <div className="flex items-center gap-2">
+                <Input
+                  value={startWindowBegin}
+                  onChange={event => setStartWindowBegin(event.target.value)}
+                  placeholder="9:00 AM"
+                  className="h-9 text-sm flex-1"
+                />
+                <span className="text-xs text-slate-400">to</span>
+                <Input
+                  value={startWindowEnd}
+                  onChange={event => setStartWindowEnd(event.target.value)}
+                  placeholder="12:00 PM"
+                  className="h-9 text-sm flex-1"
+                />
               </div>
             )}
           </section>

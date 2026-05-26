@@ -2299,7 +2299,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         <div>
           {viewMode === 'week' && (
             <div
-              className="animate-in"
+              key="week-view"
+              className="animate-in fade-in slide-in-from-bottom-1 duration-150"
               style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto' }}
             >
               {renderWeekView()}
@@ -2308,7 +2309,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
           {viewMode === 'month' && (
             <div
-              className="animate-in"
+              key="month-view"
+              className="animate-in fade-in slide-in-from-bottom-1 duration-150"
               style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: '0 12px 12px' }}
             >
               {(() => {
