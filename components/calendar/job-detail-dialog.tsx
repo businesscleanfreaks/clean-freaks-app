@@ -209,43 +209,76 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     if (!canUseQuickFixes) return null
 
     if (compact && !isMobile) {
-      const rowActions = [
+      // v5 layout: chip-style action buttons wrapping inline, instead of a stacked list.
+      // Special-situation actions (No Access) get a quieter outline. Recurring plan stays
+      // bundled in so users can change the schedule from the same row of chips.
+      const primaryChips = [
         ...quickActionButtons,
-        {
-          ...recurringPlanButton,
-          label: 'Change Schedule',
-        },
-        ...specialSituationButtons,
+        { ...recurringPlanButton, label: 'Change Schedule' },
       ]
+      const secondaryChips = specialSituationButtons
+
+      const chipBase: React.CSSProperties = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        height: '30px',
+        padding: '0 12px',
+        borderRadius: '999px',
+        fontSize: '12px',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        cursor: 'pointer',
+      }
 
       return (
-        <div className="overflow-hidden rounded-[10px]" style={{ border: '1px solid #E7E7E1', backgroundColor: '#FFFFFF' }}>
-          {rowActions.map((action, index) => {
-            const Icon = action.icon
-            return (
-              <button
-                key={action.key}
-                onClick={action.onClick}
-                disabled={action.disabled}
-                className="w-full text-left transition-colors hover:bg-[#FAFAF8] disabled:cursor-default disabled:opacity-45"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  minHeight: '38px',
-                  padding: '8px 12px',
-                  border: 'none',
-                  borderBottom: index === rowActions.length - 1 ? 'none' : '1px solid #F1F1EC',
-                  backgroundColor: 'transparent',
-                }}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0" style={{ color: action.disabled ? '#94A3B8' : '#0F766E' }} />
-                <span style={{ fontSize: '13px', fontWeight: 650, color: '#111111' }}>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {primaryChips.map((action) => {
+              const Icon = action.icon
+              return (
+                <button
+                  key={action.key}
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  className="transition-colors hover:bg-slate-50 disabled:cursor-default disabled:opacity-40"
+                  style={{
+                    ...chipBase,
+                    border: '1px solid #E2E8F0',
+                    background: '#FFFFFF',
+                    color: action.disabled ? '#94A3B8' : '#0F172A',
+                  }}
+                >
+                  <Icon className="h-3.5 w-3.5 flex-shrink-0" style={{ color: action.disabled ? '#94A3B8' : '#0F766E' }} />
                   {action.label}
-                </span>
-              </button>
-            )
-          })}
+                </button>
+              )
+            })}
+          </div>
+          {secondaryChips.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {secondaryChips.map((action) => {
+                const Icon = action.icon
+                return (
+                  <button
+                    key={action.key}
+                    onClick={action.onClick}
+                    disabled={action.disabled}
+                    className="transition-colors hover:bg-rose-50 disabled:cursor-default disabled:opacity-40"
+                    style={{
+                      ...chipBase,
+                      border: '1px solid #FECACA',
+                      background: '#FEF2F2',
+                      color: action.disabled ? '#94A3B8' : '#B91C1C',
+                    }}
+                  >
+                    <Icon className="h-3.5 w-3.5 flex-shrink-0" style={{ color: action.disabled ? '#94A3B8' : '#B91C1C' }} />
+                    {action.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       )
     }
