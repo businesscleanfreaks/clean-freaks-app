@@ -2101,36 +2101,43 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                 </div>
               </div>
             )}
-            {/* ── Header ── */}
+            {/* ── Header (v5 layout: status pill + recurring/one-time chip on one row, client name below) ── */}
             <div
-              className="text-center flex-shrink-0"
+              className="flex-shrink-0"
               style={{
                 borderBottom: '1px solid #F5F5F5',
-                paddingTop: isQuickFixMode ? '18px' : '22px',
-                paddingBottom: isQuickFixMode ? '14px' : '16px',
+                paddingTop: isQuickFixMode ? '16px' : '18px',
+                paddingBottom: isQuickFixMode ? '12px' : '14px',
                 paddingLeft: '20px',
                 paddingRight: '20px',
               }}
             >
               {!isQuickFixMode && (
-                <div className="flex justify-center" style={{ marginBottom: '12px' }}>
+                <div className="flex items-center gap-1.5" style={{ marginBottom: '6px' }}>
                   <span
-                    className="text-xs font-semibold tracking-wider uppercase px-3 py-1 rounded-full border"
+                    className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full"
                     style={{
                       backgroundColor: mobileStatus.bg,
                       color: mobileStatus.text,
-                      borderColor: mobileStatus.border,
+                      letterSpacing: '0.04em',
                     }}
                   >
                     {getMobileStatusLabel(job.status)}
                   </span>
+                  {job.scheduleId ? (
+                    <span className="text-[11px] text-gray-400">{job.location.name}</span>
+                  ) : (
+                    <span
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}
+                    >
+                      One-Time
+                    </span>
+                  )}
                 </div>
               )}
-              <p className="font-bold text-[#111111] leading-tight" style={{ fontSize: isQuickFixMode ? '20px' : '22px' }}>
+              <p className="font-bold text-[#0F172A] leading-tight tracking-tight" style={{ fontSize: isQuickFixMode ? '18px' : '19px' }}>
                 {job.location.client.name}
-              </p>
-              <p className="text-[#888888] mt-1" style={{ fontSize: isQuickFixMode ? '13px' : '14px' }}>
-                {job.location.name}
               </p>
             </div>
 
