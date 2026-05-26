@@ -108,7 +108,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     <Dialog open={props.open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="h-[min(94vh,860px)] w-[min(96vw,720px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
+        className="h-[min(94vh,900px)] w-[min(96vw,960px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
       >
         <DialogTitle className="sr-only">Invoice review for {client.name}</DialogTitle>
         <DialogDescription className="sr-only">
