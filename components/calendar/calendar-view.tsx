@@ -55,6 +55,127 @@ function getWorkerColor(cleanerName: string | null) {
   return COLOR_KEY_TO_TAILWIND[colorKey] || COLOR_KEY_TO_TAILWIND.default
 }
 
+// SearchSelect: combobox-style dropdown for the inline header filters (Team / Clients).
+// Per calendar_dev_notes.md item 2: replaces the side-panel filter drawer. Each dropdown has
+// a search input + filtered list of options. Click outside to close.
+type SearchSelectOption = { value: string; label: string; hex?: string }
+
+function SearchSelect({
+  defaultLabel,
+  selectedValue,
+  options,
+  onSelect,
+}: {
+  defaultLabel: string
+  selectedValue: string | null
+  options: SearchSelectOption[]
+  onSelect: (value: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const ref = useRef<HTMLDivElement | null>(null)
+  const selectedOption = selectedValue ? options.find(o => o.value === selectedValue) : null
+  const isActive = !!selectedOption
+  const filtered = query.trim() ? options.filter(o => o.label.toLowerCase().includes(query.toLowerCase())) : options
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => { setOpen(o => !o); setQuery('') }}
+        className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+          isActive
+            ? 'border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100'
+            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        {selectedOption?.hex && (
+          <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: selectedOption.hex, flexShrink: 0 }} />
+        )}
+        <span style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selectedOption ? selectedOption.label : defaultLabel}
+        </span>
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: isActive ? '#0D9488' : '#94A3B8' }} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            marginTop: 4,
+            background: '#fff',
+            border: '1px solid #E2E8F0',
+            borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+            width: 240,
+            zIndex: 50,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid #F1F5F9' }}>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search..."
+              autoFocus
+              style={{ width: '100%', padding: '5px 8px', borderRadius: 5, border: '1px solid #E2E8F0', fontSize: 11, outline: 'none', background: '#F8FAFC' }}
+            />
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            <button
+              onClick={() => { onSelect(null); setOpen(false); setQuery('') }}
+              style={{
+                display: 'flex', alignItems: 'center', width: '100%', padding: '7px 12px',
+                fontSize: 12, fontWeight: !selectedOption ? 600 : 400,
+                color: !selectedOption ? '#0D9488' : '#0F172A',
+                background: !selectedOption ? '#F0FDFA' : 'transparent',
+                border: 'none', cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              {defaultLabel}
+            </button>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '10px 12px', fontSize: 11, color: '#94A3B8', textAlign: 'center' }}>No results</div>
+            ) : filtered.map(o => {
+              const active = o.value === selectedValue
+              return (
+                <button
+                  key={o.value}
+                  onClick={() => { onSelect(o.value); setOpen(false); setQuery('') }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '7px 12px',
+                    fontSize: 12, fontWeight: active ? 600 : 400,
+                    color: active ? '#0D9488' : '#0F172A',
+                    background: active ? '#F0FDFA' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  {o.hex && (
+                    <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: o.hex, flexShrink: 0 }} />
+                  )}
+                  {o.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // NavArrow: prev/next button with a custom dark tooltip popup (not the browser title attribute).
 // Per calendar_dev_notes.md, browser tooltips are slow + ugly; this matches the JSX reference's
 // NavArrow component with a small triangle pointer.
@@ -1417,23 +1538,72 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
           <div className="w-px h-5 bg-gray-200 mx-1" />
 
-          {/* MIDDLE: Filters button + summary chip */}
-          <button
-            onClick={() => setFilterDrawerOpen(true)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md border text-xs font-medium transition-colors ${
-              filterCount > 0
-                ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100'
-                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            Filters
-            {filterCount > 0 && (
-              <span className="flex items-center justify-center min-w-[18px] h-4 px-1 bg-teal-600 text-white text-[10px] rounded-full font-semibold">
-                {filterCount}
-              </span>
-            )}
-          </button>
+          {/* MIDDLE: Inline searchable Team + Clients dropdowns (replaces side-panel drawer) */}
+          {(() => {
+            const teamOptions: SearchSelectOption[] = [
+              { value: '__unassigned__', label: 'Unassigned', hex: '#64748B' },
+              ...subcontractors.map(s => ({ value: s.id, label: s.name, hex: getCleanerColorInfo(s.name).hex })),
+            ]
+            const clientOptions: SearchSelectOption[] = clients.map(c => ({ value: c.id, label: c.name }))
+            // Selected team: single-select via this dropdown (special __unassigned__ = filter to only unassigned)
+            const selectedTeam = !isAllCleanersSelected
+              ? (selectedCleanerIds.size === 1 && !showUnassigned
+                  ? Array.from(selectedCleanerIds)[0]
+                  : selectedCleanerIds.size === 0 && showUnassigned
+                    ? '__unassigned__'
+                    : null)
+              : null
+            const selectedClientFromDropdown = filterBarClientIds.size === 1 ? Array.from(filterBarClientIds)[0] : null
+            const handleSelectTeam = (value: string | null) => {
+              if (value === null) {
+                setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
+                setShowUnassigned(true)
+              } else if (value === '__unassigned__') {
+                setSelectedCleanerIds(new Set())
+                setShowUnassigned(true)
+              } else {
+                setSelectedCleanerIds(new Set([value]))
+                setShowUnassigned(false)
+              }
+            }
+            const handleSelectClient = (value: string | null) => {
+              if (value === null) {
+                setFilterBarClientIds(new Set())
+              } else {
+                setFilterBarClientIds(new Set([value]))
+              }
+            }
+            return (
+              <>
+                <SearchSelect
+                  defaultLabel="Team"
+                  selectedValue={selectedTeam}
+                  options={teamOptions}
+                  onSelect={handleSelectTeam}
+                />
+                <SearchSelect
+                  defaultLabel="Clients"
+                  selectedValue={selectedClientFromDropdown}
+                  options={clientOptions}
+                  onSelect={handleSelectClient}
+                />
+                {filterCount > 0 && (
+                  <button
+                    onClick={() => {
+                      setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
+                      setShowUnassigned(true)
+                      setFilterBarClientIds(new Set())
+                    }}
+                    aria-label="Clear all filters"
+                    title="Clear all filters"
+                    className="flex h-6 w-6 items-center justify-center rounded-md text-red-500 hover:bg-red-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </>
+            )
+          })()}
 
           <div className="flex-1" />
 
