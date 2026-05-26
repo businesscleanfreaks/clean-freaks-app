@@ -2192,6 +2192,36 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
               </p>
             </div>
 
+            {/* v5 client notes yellow strip — surfaces client-level "always know this" info to the VA */}
+            {(() => {
+              const raw = job.location.client.notes
+              if (!raw) return null
+              // Strip the TRIAL CLIENT marker that AddClientWizard stamps in (it's metadata, not a real note)
+              const cleaned = raw
+                .replace(/^TRIAL CLIENT[^\n]*\n*/i, '')
+                .replace(/^\s*$/m, '')
+                .trim()
+              if (!cleaned) return null
+              return (
+                <div
+                  className="flex-shrink-0"
+                  style={{
+                    padding: '8px 20px',
+                    background: '#FFFBEB',
+                    borderTop: '1px solid #FEF3C7',
+                    borderBottom: '1px solid #FEF3C7',
+                  }}
+                >
+                  <p
+                    className="whitespace-pre-wrap"
+                    style={{ fontSize: '11.5px', color: '#92400E', lineHeight: 1.4 }}
+                  >
+                    {cleaned}
+                  </p>
+                </div>
+              )
+            })()}
+
             {/* ── Scrollable body ── */}
             <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-5 py-4 space-y-4" : "flex-1 px-5 py-4"}>
 
