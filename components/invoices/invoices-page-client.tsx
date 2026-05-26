@@ -835,6 +835,8 @@ export function InvoicesPageClient({
           {/* Candidate-based Review Queue (when candidates are loaded) */}
           {candidates.length > 0 && !candidatesLoading ? (
             <div className="space-y-4">
+              {/* Two-column kanban for Flat Rate + Per Clean (stacks to one column on narrow screens) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               {/* ── Flat Rate Section ── */}
               {flatRateCandidates.length > 0 && (
                 <div>
@@ -928,6 +930,7 @@ export function InvoicesPageClient({
                   </div>
                 </div>
               )}
+              </div>{/* /grid */}
 
               {/* ── Already Invoiced Section ── */}
               {existingCandidates.length > 0 && (
