@@ -544,9 +544,9 @@ export function InvoicesPageClient({
   }
 
   const tabs = [
-    { key: 'ready' as const,   label: 'Review',   count: reviewQueueCount },
-    { key: 'waiting' as const, label: 'Sent', count: waitingCount      },
-    { key: 'paid' as const,    label: 'Paid',    count: paidCount         },
+    { key: 'ready' as const,   label: 'Not Sent', count: reviewQueueCount },
+    { key: 'waiting' as const, label: 'Sent',     count: waitingCount     },
+    { key: 'paid' as const,    label: 'Paid',     count: paidCount        },
   ]
 
   const activeMonth = activeTab === 'ready' ? (displayMonth || format(new Date(), 'yyyy-MM')) : exportMonth
