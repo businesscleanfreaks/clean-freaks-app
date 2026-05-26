@@ -947,6 +947,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
   const renderDesktopOverviewSection = () => {
     const margin = (job.clientRate ?? 0) - (job.subcontractorRate ?? 0)
+    const addOnsTotal = (addOns || []).reduce((sum, a) => sum + (a.clientRate ?? 0), 0)
     const locationSummary = job.location.address
       ? `${job.location.name} - ${job.location.address}`
       : job.location.name || 'No location set'
@@ -962,15 +963,32 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-0 border-b border-[#EEF0F3]">
-          <div className="border-r border-[#EEF0F3] px-4 py-3">
-            {renderCompactFact('Client', formatCurrency(job.clientRate ?? 0))}
-          </div>
-          <div className="border-r border-[#EEF0F3] px-4 py-3">
-            {renderCompactFact('Cleaner', formatCurrency(job.subcontractorRate ?? 0))}
-          </div>
-          <div className="px-4 py-3">
-            {renderCompactFact('Margin', formatCurrency(margin), margin >= 0 ? 'profit' : 'default')}
+        {/* v5 compact pricing bar — inline Client | Pay | Margin | Add-ons */}
+        <div className="border-b border-[#EEF0F3] px-3 py-2">
+          <div className="flex items-center gap-3 rounded-md px-3 py-1.5" style={{ background: '#F8FAFC' }}>
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Client </span>
+              <span className="font-mono text-[14px] font-bold text-slate-900">{formatCurrency(job.clientRate ?? 0)}</span>
+            </div>
+            <span aria-hidden="true" className="h-4 w-px bg-slate-200" />
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Pay </span>
+              <span className="font-mono text-[14px] font-bold text-slate-900">{formatCurrency(job.subcontractorRate ?? 0)}</span>
+            </div>
+            <span aria-hidden="true" className="h-4 w-px bg-slate-200" />
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Margin </span>
+              <span className={`font-mono text-[14px] font-bold ${margin >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{formatCurrency(margin)}</span>
+            </div>
+            {addOnsTotal > 0 && (
+              <>
+                <span aria-hidden="true" className="h-4 w-px bg-slate-200" />
+                <div className="min-w-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Add-ons </span>
+                  <span className="font-mono text-[14px] font-bold text-slate-900">+{formatCurrency(addOnsTotal)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
