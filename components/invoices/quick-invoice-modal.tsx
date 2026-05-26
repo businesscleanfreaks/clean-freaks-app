@@ -94,7 +94,9 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     handleBatchSkip,
   } = useQuickInvoice(props)
 
-  const [emailExpanded, setEmailExpanded] = useState(false)
+  // v5 alignment: email form fields are visible by default in the split-panel modal so the VA
+  // sees To / CC / Subject / Message without an extra click. Still collapsible for tighter view.
+  const [emailExpanded, setEmailExpanded] = useState(true)
   const [editingLineItems, setEditingLineItems] = useState(false)
 
   const invoiceType = client.billingType === 'FLAT_RATE' ? 'Flat Rate' : 'Per Clean'

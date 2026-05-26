@@ -1126,13 +1126,25 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
 
     return (
       <div className="space-y-0 overflow-hidden rounded-[10px] bg-white" style={{ border: '1px solid #E4E7EC' }}>
+        {/* v5 click-to-edit — both Date and Time cells open the Move panel where the VA can pick a new
+            date/time. Visual cue on hover so users discover the affordance. */}
         <div className="grid grid-cols-2 gap-0 border-b border-[#EEF0F3]">
-          <div className="border-r border-[#EEF0F3] px-4 py-3">
+          <button
+            type="button"
+            onClick={canEditDateTime ? handleQuickFixMove : undefined}
+            disabled={!canEditDateTime}
+            className="text-left transition-colors hover:enabled:bg-[#FAFBFC] disabled:cursor-default border-r border-[#EEF0F3] px-4 py-3"
+          >
             {renderCompactFact('Date', format(displayDate, 'EEE, MMM d, yyyy'))}
-          </div>
-          <div className="px-4 py-3">
+          </button>
+          <button
+            type="button"
+            onClick={canEditDateTime ? handleQuickFixMove : undefined}
+            disabled={!canEditDateTime}
+            className="text-left transition-colors hover:enabled:bg-[#FAFBFC] disabled:cursor-default px-4 py-3"
+          >
             {renderCompactFact('Time', jobTimeDisplay)}
-          </div>
+          </button>
         </div>
 
         {/* v5 compact pricing bar — inline Client | Pay | Margin | Add-ons */}
@@ -1165,7 +1177,14 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         </div>
 
         <div className="grid grid-cols-[110px_1fr] gap-0 border-b border-[#EEF0F3]">
-          <div className="border-r border-[#EEF0F3] px-4 py-3">
+          {/* v5 click-to-edit Cleaner cell — opens the cleaner picker. Disabled if the cleaner is
+              already paid (locked) or the job is on a final invoice. */}
+          <button
+            type="button"
+            onClick={(hasFinalInvoice || job.subcontractorPaid || isSavingSubcontractor) ? undefined : handleQuickFixCleaner}
+            disabled={hasFinalInvoice || job.subcontractorPaid || isSavingSubcontractor}
+            className="text-left transition-colors hover:enabled:bg-[#FAFBFC] disabled:cursor-default border-r border-[#EEF0F3] px-4 py-3"
+          >
             {renderCompactFact(
               'Cleaner',
               job.subcontractor ? (
@@ -1176,7 +1195,7 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
               ) : 'Unassigned',
               job.subcontractor ? 'default' : 'muted'
             )}
-          </div>
+          </button>
           <div className="px-4 py-3">
             {renderCompactFact('Location', locationSummary)}
           </div>
