@@ -108,7 +108,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     <Dialog open={props.open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="h-[min(94vh,900px)] w-[min(96vw,960px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
+        className="h-[min(94vh,920px)] w-[min(96vw,1100px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
       >
         <DialogTitle className="sr-only">Invoice review for {client.name}</DialogTitle>
         <DialogDescription className="sr-only">
@@ -159,6 +159,10 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
           </div>
         </div>
 
+        {/* Split-panel body: left = email + line items + form, right = invoice preview.
+            Each side scrolls independently. Footer stays at the bottom full-width. */}
+        <div className="flex min-h-0 flex-1 lg:flex-row flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-r border-stone-200 bg-stone-50 lg:max-w-[460px]">
         <div className="border-b border-stone-200 bg-white px-5 py-2">
           <button
             type="button"
@@ -273,7 +277,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
         </div>
 
         {editingLineItems && (
-          <div className="max-h-[31vh] shrink-0 overflow-y-auto border-b border-stone-200 bg-white px-5 py-3">
+          <div className="shrink-0 border-b border-stone-200 bg-white px-5 py-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-400">Line Items</span>
               <button
@@ -368,8 +372,11 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
             </div>
           </div>
         )}
+        {/* /left column */}
+        </div>
 
-        <div className="flex-1 overflow-auto bg-stone-300/70 px-3 py-4 sm:px-4">
+        {/* Right column: invoice preview, fills remaining width on desktop */}
+        <div className="flex min-h-0 flex-1 overflow-auto bg-stone-300/70 px-3 py-4 sm:px-4">
           <div className="mx-auto flex min-h-full w-full max-w-[612px] items-start justify-center">
             {isGeneratingPreview ? (
               <div className="mt-24 rounded-lg bg-white px-10 py-8 text-center shadow-sm">
@@ -396,7 +403,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                   {previewError ? 'Preview did not generate' : 'Ready to preview'}
                 </p>
                 <p className={`mt-1 max-w-sm text-xs ${previewError ? 'text-red-600' : 'text-stone-500'}`}>
-                  {previewError || 'The preview should generate automatically.'}
+                  {previewError || 'The preview will appear here once line items are saved.'}
                 </p>
                 <Button
                   type="button"
@@ -411,6 +418,9 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
             )}
           </div>
         </div>
+        {/* /right column */}
+        </div>
+        {/* /split-panel body */}
 
         <div className="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5">
           {(isCreating || isSendingTest) && progress > 0 && (
