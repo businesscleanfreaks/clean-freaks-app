@@ -124,10 +124,10 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
               </div>
             </div>
           )}
-          {activeTab === 'billing' && <PlaceholderTab label="Billing" hint="Rate breakdown and recent invoices will live here. For now, edit rates from the Schedule tab." onJump={() => setActiveTab('schedule')} jumpLabel="Open Schedule tab" />}
-          {activeTab === 'contacts' && <PlaceholderTab label="Contacts" hint="Manage all contacts associated with this client. For now, the primary contact is editable in the contact bar on the Schedule tab." onJump={() => setActiveTab('schedule')} jumpLabel="Open Schedule tab" />}
-          {activeTab === 'access' && <PlaceholderTab label="Access" hint="Entry codes, alarm codes, and gate access info per location. For now, edit access info inline on each location card under the Schedule tab." onJump={() => setActiveTab('schedule')} jumpLabel="Open Schedule tab" />}
-          {activeTab === 'history' && <PlaceholderTab label="History" hint="Timeline of every event for this client — invoices, notes, status changes. For now, see recent jobs in the sidebar." onJump={() => setActiveTab('overview')} jumpLabel="Back to Overview" />}
+          {activeTab === 'billing' && <BillingTab state={state} onJumpToTab={setActiveTab} />}
+          {activeTab === 'contacts' && <ContactsTab state={state} onJumpToTab={setActiveTab} />}
+          {activeTab === 'access' && <AccessTab state={state} onJumpToTab={setActiveTab} />}
+          {activeTab === 'history' && <HistoryTab state={state} />}
         </div>
       </div>
     </>
@@ -254,6 +254,310 @@ function PlaceholderTab({ label, hint, onJump, jumpLabel }: { label: string; hin
         {jumpLabel}
       </button>
     </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Billing tab: per-location rate breakdown + recurring add-ons + recent invoices
+// ────────────────────────────────────────────────────────────────────────────
+
+function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToTab: (tab: CockpitTab) => void }) {
+  const { client } = state
+  const isFlat = client.billingType === 'FLAT_RATE'
+  const invoices = (client.invoices || []).slice().sort((a, b) =>
+    new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+  )
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">
+            Billing type · {isFlat ? 'Flat monthly rate' : 'Per clean'}
+          </span>
+          <button
+            onClick={() => onJumpToTab('schedule')}
+            className="text-[11px] font-semibold text-teal-700 hover:text-teal-800"
+          >
+            Edit on Schedule →
+          </button>
+        </div>
+        <div className="px-5 pb-4 space-y-2">
+          {client.locations.length === 0 && (
+            <p className="text-sm text-slate-500">No locations yet.</p>
+          )}
+          {client.locations.map(loc => {
+            const activeSchedules = (loc.schedules || []).filter(s => s.isActive)
+            const hasSchedule = activeSchedules.length > 0
+            return (
+              <div key={loc.id} className="rounded-md border border-slate-100 bg-slate-50/50 px-3 py-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[13px] font-semibold text-slate-900 truncate">{loc.name || loc.address?.split(',')[0] || 'Location'}</span>
+                  {!hasSchedule && <span className="text-[11px] text-slate-400">No active schedule</span>}
+                </div>
+                {activeSchedules.map(s => {
+                  const clientRate = s.defaultClientRate ?? 0
+                  const subRate = s.defaultSubcontractorRate ?? 0
+                  const margin = clientRate - subRate
+                  const suffix = s.clientPayType === 'FLAT_RATE' ? '/mo' : '/clean'
+                  const paySuffix = s.subcontractorPayType === 'FLAT_RATE' ? '/mo' : '/clean'
+                  return (
+                    <div key={s.id} className="grid grid-cols-3 gap-2 text-[12px] py-1">
+                      <div>
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-400">Client charge</span>
+                        <span className="font-mono font-semibold text-slate-900">{formatCurrency(clientRate)}{suffix}</span>
+                      </div>
+                      <div>
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-400">Cleaner pay</span>
+                        <span className="font-mono font-semibold text-slate-900">{formatCurrency(subRate)}{paySuffix}</span>
+                      </div>
+                      <div>
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-400">Margin</span>
+                        <span className={`font-mono font-semibold ${margin >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{formatCurrency(margin)}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+                {/* Recurring add-ons under this location's schedules */}
+                {activeSchedules.flatMap(s => (s.recurringAddOnServices || []).map(a => ({ ...a, scheduleId: s.id }))).length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-slate-200/70">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400 mb-1 block">Recurring add-ons</span>
+                    {activeSchedules.flatMap(s => (s.recurringAddOnServices || []).map(a => ({ ...a, scheduleId: s.id }))).map(addon => (
+                      <div key={addon.id} className="flex items-center justify-between text-[12px] py-0.5">
+                        <span className="truncate text-slate-700">{addon.description}</span>
+                        <span className="font-mono text-slate-600">+{formatCurrency(addon.clientRate)} / {addon.frequency?.toLowerCase().replace(/_/g, ' ') || 'each'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
+        <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Recent invoices</span>
+          <span className="text-[11px] text-slate-400">{invoices.length} total</span>
+        </div>
+        <div className="px-5 pb-4">
+          {invoices.length === 0 ? (
+            <p className="text-sm text-slate-500">No invoices yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {invoices.slice(0, 10).map(inv => (
+                <div key={inv.id} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-b-0">
+                  <span className="text-[12px] text-slate-600">{format(new Date(inv.dateCreated), 'MMM d, yyyy')}</span>
+                  <span className="text-[12px] font-mono font-semibold text-slate-900">{formatCurrency(inv.totalAmount)}</span>
+                  <span
+                    className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full"
+                    style={{
+                      background: inv.status === 'PAID' ? '#DCFCE7' : inv.status === 'SENT' ? '#DBEAFE' : '#FEF3C7',
+                      color: inv.status === 'PAID' ? '#15803D' : inv.status === 'SENT' ? '#1D4ED8' : '#92400E',
+                    }}
+                  >
+                    {inv.status.toLowerCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Contacts tab: communication + invoicing contacts
+// ────────────────────────────────────────────────────────────────────────────
+
+function ContactsTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToTab: (tab: CockpitTab) => void }) {
+  const { client } = state
+  const commName = client.communicationContactName || ''
+  const commPhone = client.communicationPhone || client.phone || ''
+  const commEmail = client.communicationEmail || ''
+  const invName = client.invoicingContactName || ''
+  const invPhone = client.invoicingPhone || ''
+  const invEmail = client.invoicingEmail || ''
+  const ccEmails = client.invoicingCcEmail || ''
+  const showInvoicingSeparately = !!(invEmail && invEmail !== commEmail) || !!(invName && invName !== commName)
+
+  const ContactCard = ({ title, name, phone, email, accentColor, hint }: { title: string; name: string; phone: string; email: string; accentColor: string; hint?: string }) => (
+    <div className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="inline-flex h-2 w-2 rounded-full" style={{ background: accentColor }} />
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">{title}</span>
+      </div>
+      {hint && <p className="text-[11px] text-slate-400 mb-2">{hint}</p>}
+      <div className="space-y-1.5">
+        <div className="text-[14px] font-semibold text-slate-900">{name || <span className="text-slate-400 font-normal italic">No name set</span>}</div>
+        <div className="text-[12px] text-slate-600">{phone || <span className="text-slate-300">— phone</span>}</div>
+        <div className="text-[12px] text-slate-600 break-all">{email || <span className="text-slate-300">— email</span>}</div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Contacts</span>
+        <button onClick={() => onJumpToTab('schedule')} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit →</button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <ContactCard
+          title="Primary contact"
+          name={commName}
+          phone={commPhone}
+          email={commEmail}
+          accentColor="#0D9488"
+          hint="Day-to-day point of contact for scheduling and questions."
+        />
+        {showInvoicingSeparately ? (
+          <ContactCard
+            title="Invoicing contact"
+            name={invName || commName}
+            phone={invPhone}
+            email={invEmail}
+            accentColor="#7C3AED"
+            hint="Used for invoice emails and billing matters."
+          />
+        ) : (
+          <div className="rounded-[10px] bg-slate-50 p-4 text-[12px] text-slate-500" style={{ border: '1px dashed #CBD5E1' }}>
+            <p className="font-semibold text-slate-600 mb-1">Invoicing uses the primary contact</p>
+            <p>No separate billing contact set. Edit on the Schedule tab to add a different invoicing email.</p>
+          </div>
+        )}
+      </div>
+
+      {ccEmails && (
+        <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
+          <span className="block text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400 mb-1">CC on invoices</span>
+          <p className="text-[13px] text-slate-700 break-words">{ccEmails}</p>
+        </section>
+      )}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Access tab: entry codes / access notes per location
+// ────────────────────────────────────────────────────────────────────────────
+
+function AccessTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToTab: (tab: CockpitTab) => void }) {
+  const { client } = state
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Access info · {client.locations.length} location{client.locations.length === 1 ? '' : 's'}</span>
+        <button onClick={() => onJumpToTab('schedule')} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit on Schedule →</button>
+      </div>
+      {client.locations.length === 0 && (
+        <p className="text-sm text-slate-500">No locations yet.</p>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {client.locations.map(loc => {
+          const hasAccess = loc.accessInfo && loc.accessInfo.trim().length > 0
+          return (
+            <div key={loc.id} className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
+              <div className="mb-2">
+                <p className="text-[14px] font-semibold text-slate-900">{loc.name || loc.address?.split(',')[0] || 'Location'}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{loc.address || 'No address'}</p>
+              </div>
+              <div className="rounded-md px-3 py-2.5" style={{ background: hasAccess ? '#F0FDFA' : '#FFFBEB', border: `1px solid ${hasAccess ? '#99F6E4' : '#FDE68A'}` }}>
+                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: hasAccess ? '#0F766E' : '#92400E' }}>
+                  {hasAccess ? '🔑 Access info' : '⚠ No access info yet'}
+                </span>
+                {hasAccess ? (
+                  <p className="text-[13px] text-slate-700 mt-1.5 whitespace-pre-wrap break-words">{loc.accessInfo}</p>
+                ) : (
+                  <p className="text-[12px] text-amber-800 mt-1.5">Add gate codes, key locations, alarm info, or any other instructions the cleaner needs.</p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// History tab: combined timeline of invoices + recent jobs
+// ────────────────────────────────────────────────────────────────────────────
+
+function HistoryTab({ state }: { state: ClientDetailState }) {
+  const { client, recentJobs } = state
+  type Event = { date: Date; kind: 'invoice' | 'job'; label: string; sub: string; statusColor: string; statusBg: string; statusLabel: string }
+  const events: Event[] = []
+  for (const inv of client.invoices || []) {
+    const date = new Date(inv.dateCreated)
+    const status = inv.status
+    events.push({
+      date,
+      kind: 'invoice',
+      label: `Invoice ${status === 'PAID' ? 'paid' : status === 'SENT' ? 'sent' : 'created'}`,
+      sub: formatCurrency(inv.totalAmount),
+      statusColor: status === 'PAID' ? '#15803D' : status === 'SENT' ? '#1D4ED8' : '#92400E',
+      statusBg: status === 'PAID' ? '#DCFCE7' : status === 'SENT' ? '#DBEAFE' : '#FEF3C7',
+      statusLabel: status.toLowerCase(),
+    })
+  }
+  for (const job of recentJobs || []) {
+    const date = new Date(job.date)
+    const status = job.status
+    events.push({
+      date,
+      kind: 'job',
+      label: `Clean ${status.toLowerCase()}`,
+      sub: job.location?.name || '',
+      statusColor: status === 'COMPLETED' ? '#15803D' : status === 'CANCELLED' ? '#B91C1C' : '#475569',
+      statusBg: status === 'COMPLETED' ? '#DCFCE7' : status === 'CANCELLED' ? '#FEE2E2' : '#F1F5F9',
+      statusLabel: status.toLowerCase(),
+    })
+  }
+  events.sort((a, b) => b.date.getTime() - a.date.getTime())
+
+  return (
+    <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
+      <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">History · {events.length} event{events.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="px-5 pb-4">
+        {events.length === 0 ? (
+          <p className="text-sm text-slate-500 py-4">No history yet. Once you send invoices or jobs run, they'll show up here.</p>
+        ) : (
+          <div className="space-y-2">
+            {events.slice(0, 50).map((ev, i) => (
+              <div key={i} className="flex items-start gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
+                <span className="text-[11px] text-slate-400 font-mono w-[78px] flex-shrink-0 pt-0.5">{format(ev.date, 'MMM d')}</span>
+                <span
+                  className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
+                  style={{ background: ev.statusBg, color: ev.statusColor }}
+                >
+                  {ev.kind === 'invoice' ? 'INV' : 'JOB'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-slate-900">{ev.label}</p>
+                  {ev.sub && <p className="text-[11px] text-slate-500 truncate">{ev.sub}</p>}
+                </div>
+                <span
+                  className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full flex-shrink-0"
+                  style={{ background: ev.statusBg, color: ev.statusColor }}
+                >
+                  {ev.statusLabel}
+                </span>
+              </div>
+            ))}
+            {events.length > 50 && (
+              <p className="text-[11px] text-slate-400 text-center pt-2">+{events.length - 50} older event{events.length - 50 === 1 ? '' : 's'}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
