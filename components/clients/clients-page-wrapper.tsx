@@ -54,6 +54,16 @@ interface ClientsPageWrapperProps {
 type ViewMode = "az" | "cleaner" | "map"
 type SortKey = "name" | "contact" | "cleaner" | "rate" | "schedule"
 type SortDir = "asc" | "desc"
+type ClientStatusBucket = "all" | "recurring" | "trial" | "one-time" | "paused" | "cancelled"
+
+const STATUS_TABS: { key: ClientStatusBucket; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "recurring", label: "Recurring" },
+  { key: "trial", label: "Trial" },
+  { key: "one-time", label: "One-Time" },
+  { key: "paused", label: "Paused" },
+  { key: "cancelled", label: "Cancelled" },
+]
 
 function getInitials(name: string): string {
   return name.split(/\s+/).filter(Boolean).map(w => w[0]).join("").toUpperCase().slice(0, 2)
@@ -141,14 +151,19 @@ function ClientRow({
           )}
         </div>
       </td>
-      <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
-        <span style={{ fontSize: 12, color: "#64748B" }}>{client.communicationContactName || "—"}</span>
+      <td style={{ padding: "6px 12px", whiteSpace: "nowrap", overflow: "hidden", maxWidth: 130 }}>
+        <span
+          title={client.communicationContactName || ""}
+          style={{ fontSize: 12, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block", paddingRight: 8 }}
+        >
+          {client.communicationContactName || "—"}
+        </span>
       </td>
       {showCleaner && (
         <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: cleanerHex, flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: "#64748B" }}>{client.cleanerDisplay || "Unassigned"}</span>
+            <span style={{ fontSize: 12, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.cleanerDisplay || "Unassigned"}</span>
           </div>
         </td>
       )}
@@ -285,7 +300,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [showWizard, setShowWizard] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
+  const [statusFilter, setStatusFilter] = useState<ClientStatusBucket>("all")
   const [viewMode, setViewMode] = useState<ViewMode>("az")
   const [sortKey, setSortKey] = useState<SortKey>("name")
   const [sortDir, setSortDir] = useState<SortDir>("asc")
@@ -296,16 +311,40 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
     if (prefillProspect) setShowWizard(true)
   }, [prefillProspect])
 
-  const stats = useMemo(() => ({
-    total: clients.length,
-    active: clients.filter(c => c.isActive).length,
-    inactive: clients.filter(c => !c.isActive).length,
-  }), [clients])
+  // Classify each client into exactly one bucket. Used both for the tab counts and the filter.
+  const classifyClient = (c: Client): ClientStatusBucket => {
+    if (!c.isActive) return "cancelled"
+    // Trial: marker stamped into notes by AddClientWizard (until we add a proper schema field)
+    if (c.notes && c.notes.trim().startsWith("TRIAL CLIENT")) return "trial"
+    // primaryFrequency is set by /api/clients/data only when an active schedule exists
+    if (c.primaryFrequency) return "recurring"
+    const hasHistoricalJobs = (c.locations || []).some(loc =>
+      (loc.jobs || []).some(j => !!j.date)
+    )
+    if (hasHistoricalJobs) return "one-time"
+    return "paused"
+  }
+
+  const buckets = useMemo(() => {
+    const counts: Record<ClientStatusBucket, number> = {
+      all: clients.length, recurring: 0, trial: 0, "one-time": 0, paused: 0, cancelled: 0,
+    }
+    const byClient = new Map<string, ClientStatusBucket>()
+    for (const c of clients) {
+      const b = classifyClient(c)
+      byClient.set(c.id, b)
+      counts[b]++
+    }
+    return { counts, byClient }
+  }, [clients])
+
+  const stats = buckets.counts
 
   const filtered = useMemo(() => {
     let list = clients
-    if (statusFilter === "active") list = list.filter(c => c.isActive)
-    else if (statusFilter === "inactive") list = list.filter(c => !c.isActive)
+    if (statusFilter !== "all") {
+      list = list.filter(c => buckets.byClient.get(c.id) === statusFilter)
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       list = list.filter(c =>
@@ -318,7 +357,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
       )
     }
     return list
-  }, [clients, statusFilter, searchQuery])
+  }, [clients, statusFilter, searchQuery, buckets])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -424,27 +463,30 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
 
       {/* LINE 2: tabs + view toggle */}
       <div style={{ padding: "10px 24px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #E2E8F0", flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "flex", gap: 16 }}>
-          {([
-            ["all", "All", stats.total],
-            ["active", "Active", stats.active],
-            ["inactive", "Inactive", stats.inactive],
-          ] as const).map(([k, l, n]) => (
-            <button
-              key={k}
-              onClick={() => setStatusFilter(k as "all" | "active" | "inactive")}
-              style={{
-                padding: "0 0 8px",
-                fontSize: 13,
-                background: "none", border: "none", cursor: "pointer",
-                fontWeight: statusFilter === k ? 600 : 400,
-                color: statusFilter === k ? "#0F172A" : "#94A3B8",
-                borderBottom: statusFilter === k ? "2px solid #0F172A" : "2px solid transparent",
-              }}
-            >
-              {l} {n}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          {STATUS_TABS.map(tab => {
+            const count = stats[tab.key]
+            const isActive = statusFilter === tab.key
+            // Hide buckets with 0 unless it's "All" (always shown)
+            if (tab.key !== "all" && count === 0) return null
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                style={{
+                  padding: "0 0 8px",
+                  fontSize: 13,
+                  background: "none", border: "none", cursor: "pointer",
+                  fontWeight: isActive ? 600 : 400,
+                  color: isActive ? "#0F172A" : "#94A3B8",
+                  borderBottom: isActive ? "2px solid #0F172A" : "2px solid transparent",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {tab.label} {count}
+              </button>
+            )
+          })}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
           <span style={{ fontSize: 11, color: "#94A3B8" }}>View:</span>
