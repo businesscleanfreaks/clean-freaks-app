@@ -557,7 +557,10 @@ export function AddClientWizard({
   const [direction, setDirection] = useState(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [sourceProspectId, setSourceProspectId] = useState<string | null>(null)
-  const [clientType, setClientType] = useState<'RECURRING' | 'ONE_TIME'>('RECURRING')
+  const [clientType, setClientType] = useState<'RECURRING' | 'TRIAL' | 'ONE_TIME'>('RECURRING')
+  const [trialDuration, setTrialDuration] = useState<'1wk' | '2wk' | '3wk' | '1mo'>('1mo')
+  const [trialProposedRateMode, setTrialProposedRateMode] = useState<'same' | 'custom'>('same')
+  const [trialProposedRate, setTrialProposedRate] = useState('')
 
   // Step 1: Client Info
   const [clientName, setClientName] = useState('')
@@ -784,7 +787,7 @@ export function AddClientWizard({
     if (invoicingCcEmail && !isValidEmailList(invoicingCcEmail)) {
       submitErrors.invoicingCcEmail = 'Invalid CC email format'
     }
-    if (clientType === 'RECURRING') {
+    if ((clientType === 'RECURRING' || clientType === 'TRIAL')) {
       if (!isFixedMonthlyFrequency(frequency) && daysOfWeek.length === 0) {
         submitErrors.daysOfWeek = 'Select at least one schedule day'
       }
@@ -831,6 +834,19 @@ export function AddClientWizard({
     }, 5000)
 
     try {
+      // For TRIAL clients, prepend a structured note describing the trial parameters so the
+      // info is searchable on the client profile until we add proper trial fields to the schema.
+      const trialNoteBlock = clientType === 'TRIAL'
+        ? [
+            'TRIAL CLIENT',
+            `Duration: ${trialDuration}`,
+            trialProposedRateMode === 'custom' && trialProposedRate
+              ? `Proposed rate (if converted): $${trialProposedRate}`
+              : 'Proposed rate: same as trial rate',
+          ].join(' | ')
+        : null
+      const composedNotes = [trialNoteBlock, notes].filter(Boolean).join('\n\n') || null
+
       // Step 1: Create client
       const clientRes = await fetch('/api/clients', {
         method: 'POST',
@@ -848,7 +864,7 @@ export function AddClientWizard({
           billingType,
           cleanerPayType,
           startDate: startDate || null,
-          notes: notes || null,
+          notes: composedNotes,
           sourceProspectId,
         }),
       })
@@ -885,7 +901,7 @@ export function AddClientWizard({
           logger.debug(`[wizard] Location created in ${Math.round(performance.now() - t1)}ms`)
 
           // Step 3: Create schedule + jobs (this is the slow part)
-          const canCreateSchedule = clientType === 'RECURRING' && (isFixedMonthlyFrequency(frequency) ? true : daysOfWeek.length > 0)
+          const canCreateSchedule = (clientType === 'RECURRING' || clientType === 'TRIAL') && (isFixedMonthlyFrequency(frequency) ? true : daysOfWeek.length > 0)
           if (canCreateSchedule && clientRate) {
             const t2 = performance.now()
             setSubmitProgress('Setting up schedule...')
@@ -967,7 +983,7 @@ export function AddClientWizard({
             })
             if (!locRes.ok) return
             const loc = await locRes.json()
-            if (clientType === 'RECURRING' && extraLoc.sameSchedule) {
+            if ((clientType === 'RECURRING' || clientType === 'TRIAL') && extraLoc.sameSchedule) {
               if ((isFixedMonthlyFrequency(frequency) || daysOfWeek.length > 0) && clientRate) {
                 const schedulePayload: Record<string, unknown> = {
                   locationId: loc.id,
@@ -994,7 +1010,7 @@ export function AddClientWizard({
                   body: JSON.stringify(schedulePayload),
                 })
               }
-            } else if (clientType === 'RECURRING') {
+            } else if ((clientType === 'RECURRING' || clientType === 'TRIAL')) {
               if ((isFixedMonthlyFrequency(extraLoc.frequency) || extraLoc.daysOfWeek.length > 0) && extraLoc.clientRate) {
                 const schedulePayload: Record<string, unknown> = {
                   locationId: loc.id,
@@ -1029,7 +1045,7 @@ export function AddClientWizard({
 
       // Step 6: Create trial / intro clean one-off job — use primaryLocationId directly
       // instead of re-fetching from API (saves a round trip)
-      if (clientType === 'RECURRING' && firstCleanDate && primaryLocationId) {
+      if ((clientType === 'RECURRING' || clientType === 'TRIAL') && firstCleanDate && primaryLocationId) {
         try {
           await fetch('/api/jobs', {
             method: 'POST',
@@ -1119,7 +1135,7 @@ export function AddClientWizard({
       >
         <div style={{ padding: '16px 22px 12px', borderBottom: '1px solid #F1F5F9', position: 'relative', flexShrink: 0 }}>
           <h2 id="add-client-title" style={{ fontSize: '19px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-            Add New Client
+            {clientType === 'TRIAL' ? 'Add Trial Client' : 'Add New Client'}
           </h2>
           <p style={{ margin: '3px 42px 0 0', color: '#64748B', fontSize: '12px', lineHeight: 1.35 }}>
             Client, location, schedule, pricing, contacts, and add-ons in one pass.
@@ -1151,43 +1167,109 @@ export function AddClientWizard({
           <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
             <StepLabel text="Client" />
             <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '7px', padding: '2px', marginBottom: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setClientType('RECURRING')}
-                style={{
-                  flex: 1,
-                  height: '30px',
-                  border: 'none',
-                  borderRadius: '5px',
-                  background: clientType === 'RECURRING' ? 'white' : 'transparent',
-                  boxShadow: clientType === 'RECURRING' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  color: clientType === 'RECURRING' ? '#0F172A' : '#94A3B8',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Recurring
-              </button>
-              <button
-                type="button"
-                onClick={() => setClientType('ONE_TIME')}
-                style={{
-                  flex: 1,
-                  height: '30px',
-                  border: 'none',
-                  borderRadius: '5px',
-                  background: clientType === 'ONE_TIME' ? 'white' : 'transparent',
-                  boxShadow: clientType === 'ONE_TIME' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  color: clientType === 'ONE_TIME' ? '#0F172A' : '#94A3B8',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                One-Time
-              </button>
+              {([
+                ['RECURRING', 'Recurring'],
+                ['TRIAL', 'Trial'],
+                ['ONE_TIME', 'One-Time'],
+              ] as const).map(([k, l]) => {
+                const isActive = clientType === k
+                const isTrialBtn = k === 'TRIAL'
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setClientType(k)}
+                    style={{
+                      flex: 1,
+                      height: '30px',
+                      border: 'none',
+                      borderRadius: '5px',
+                      background: isActive ? (isTrialBtn ? '#FEF3C7' : 'white') : 'transparent',
+                      boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                      color: isActive ? (isTrialBtn ? '#92400E' : '#0F172A') : '#94A3B8',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {l}
+                  </button>
+                )
+              })}
             </div>
+
+            {clientType === 'TRIAL' && (
+              <div style={{ padding: '10px 12px', background: '#FFFBEB', borderRadius: 8, border: '1px solid #FDE68A', marginBottom: 10 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Trial Duration</p>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {(['1wk', '2wk', '3wk', '1mo'] as const).map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setTrialDuration(d)}
+                        style={{
+                          flex: 1,
+                          padding: '5px 0',
+                          borderRadius: 5,
+                          fontSize: 11,
+                          fontWeight: trialDuration === d ? 700 : 500,
+                          cursor: 'pointer',
+                          border: trialDuration === d ? '2px solid #D97706' : '1px solid #FDE68A',
+                          color: trialDuration === d ? '#92400E' : '#B45309',
+                          background: trialDuration === d ? '#FEF3C7' : 'transparent',
+                        }}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Proposed Rate (if converted)</p>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {(['same', 'custom'] as const).map(mode => {
+                      const active = trialProposedRateMode === mode
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTrialProposedRateMode(mode)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            fontSize: 11, fontWeight: 500,
+                            cursor: 'pointer',
+                            color: active ? '#92400E' : '#94A3B8',
+                            background: 'none', border: 'none', padding: 0,
+                          }}
+                        >
+                          <span style={{
+                            width: 14, height: 14, borderRadius: '50%',
+                            border: `2px solid ${active ? '#D97706' : '#CBD5E1'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {active && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#D97706' }} />}
+                          </span>
+                          {mode === 'same' ? 'Same as trial rate' : 'Different rate'}
+                        </button>
+                      )
+                    })}
+                    {trialProposedRateMode === 'custom' && (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={trialProposedRate}
+                        onChange={e => setTrialProposedRate(e.target.value)}
+                        placeholder="0.00"
+                        style={{ width: 100, padding: '4px 8px', borderRadius: 5, border: '1px solid #FDE68A', fontSize: 12, background: 'white', color: '#92400E', outline: 'none' }}
+                      />
+                    )}
+                  </div>
+                  <p style={{ fontSize: 10, color: '#B45309', marginTop: 4, fontStyle: 'italic' }}>Optional — can be set later if youre not sure yet</p>
+                </div>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(150px, 0.8fr)', gap: '8px' }}>
               <div>
                 <StepLabel text="Name" />
@@ -1288,7 +1370,7 @@ export function AddClientWizard({
             <FieldError msg={errors.invoicingEmail || errors.invoicingCcEmail} />
           </section>
 
-          {clientType === 'RECURRING' && (
+          {(clientType === 'RECURRING' || clientType === 'TRIAL') && (
             <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
               <StepLabel text="Schedule and Pricing" />
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(140px, 0.7fr)', gap: '10px', marginBottom: '10px' }}>
@@ -1437,13 +1519,13 @@ export function AddClientWizard({
           <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
               <StepLabel text="Add-ons and Notes" />
-              {clientType === 'RECURRING' && (
+              {(clientType === 'RECURRING' || clientType === 'TRIAL') && (
                 <button type="button" onClick={() => addAddOn()} style={{ border: 'none', background: 'none', color: '#0D9488', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                   + Add service
                 </button>
               )}
             </div>
-            {clientType === 'RECURRING' && addOns.length > 0 && (
+            {(clientType === 'RECURRING' || clientType === 'TRIAL') && addOns.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
                 {addOns.map(addOn => (
                   <div key={addOn.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 96px 96px 120px auto', gap: '6px', alignItems: 'center' }}>
@@ -1507,9 +1589,9 @@ export function AddClientWizard({
             }}
           >
             {isSubmitting ? (
-              <>{submitProgress || 'Creating...'} <ActionSpinner size={15} color="white" /></>
+              <>{submitProgress || (clientType === 'TRIAL' ? 'Starting trial...' : 'Creating...')} <ActionSpinner size={15} color="white" /></>
             ) : (
-              'Create Client'
+              clientType === 'TRIAL' ? 'Start Trial' : clientType === 'ONE_TIME' ? 'Add Client' : 'Create Client'
             )}
           </button>
         </div>
