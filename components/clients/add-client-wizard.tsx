@@ -107,12 +107,28 @@ function isFixedMonthlyFrequency(frequency: string) {
   return frequency === 'MONTHLY' || frequency === '2X_MONTHLY'
 }
 
-function buildMonthlyPattern(frequency: string, monthlyDay: number, monthlyDays?: number[]) {
+function buildMonthlyPattern(
+  frequency: string,
+  monthlyDay: number,
+  monthlyDays?: number[],
+  monthlyMode?: 'date' | 'weekday',
+  monthlyWeekdays?: Array<{ ordinal: number; weekday: number }>,
+) {
   if (frequency === '2X_MONTHLY') {
+    if (monthlyMode === 'weekday' && monthlyWeekdays && monthlyWeekdays.length > 0) {
+      // NTH_WEEKDAY pattern: e.g. 1st Tue + 3rd Tue
+      const first = monthlyWeekdays[0]
+      const weeks = monthlyWeekdays.map(w => (w.ordinal >= 5 ? 'last' : w.ordinal))
+      return JSON.stringify({ type: 'NTH_WEEKDAY', weekday: first.weekday, weeks })
+    }
     return JSON.stringify({ type: 'FIXED_DATES', dates: normalizeTwiceMonthlyDays(monthlyDays) })
   }
 
   if (frequency === 'MONTHLY') {
+    if (monthlyMode === 'weekday' && monthlyWeekdays && monthlyWeekdays.length > 0) {
+      const w = monthlyWeekdays[0]
+      return JSON.stringify({ type: 'NTH_WEEKDAY', weekday: w.weekday, weeks: [w.ordinal >= 5 ? 'last' : w.ordinal] })
+    }
     return JSON.stringify({ type: 'FIXED_DATES', dates: [clampDayOfMonth(monthlyDay)] })
   }
 
@@ -141,6 +157,77 @@ function getScheduleTimeError(
 }
 
 // ── Shared sub-components ────────────────────────────────────────────────────
+
+// Picker for NTH_WEEKDAY monthly patterns — e.g. "1st Tuesday and 3rd Tuesday of each month".
+// `slots` is 1 for MONTHLY, 2 for 2X_MONTHLY. The weekday is shared across all rows because the
+// underlying NTH_WEEKDAY pattern in lib/regenerate-schedule-jobs.ts uses a single weekday with
+// multiple ordinals (weeks[]).
+const ORDINAL_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 1, label: '1st' },
+  { value: 2, label: '2nd' },
+  { value: 3, label: '3rd' },
+  { value: 4, label: '4th' },
+  { value: 5, label: 'Last' },
+]
+const WEEKDAY_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' }, { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' }, { value: 6, label: 'Sat' }, { value: 0, label: 'Sun' },
+]
+
+function MonthlyWeekdayPicker({
+  slots,
+  value,
+  onChange,
+}: {
+  slots: 1 | 2
+  value: Array<{ ordinal: number; weekday: number }>
+  onChange: (next: Array<{ ordinal: number; weekday: number }>) => void
+}) {
+  const sharedWeekday = value[0]?.weekday ?? 1
+  const ensureSlots = (arr: Array<{ ordinal: number; weekday: number }>) => {
+    const out = arr.slice(0, slots)
+    while (out.length < slots) out.push({ ordinal: out.length === 0 ? 1 : 3, weekday: sharedWeekday })
+    // Force same weekday across rows
+    return out.map(row => ({ ...row, weekday: sharedWeekday }))
+  }
+  const rows = ensureSlots(value)
+  const setOrdinal = (idx: number, ordinal: number) => {
+    const next = rows.map((r, i) => i === idx ? { ...r, ordinal } : r)
+    onChange(next)
+  }
+  const setWeekday = (weekday: number) => {
+    onChange(rows.map(r => ({ ...r, weekday })))
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {rows.map((row, idx) => (
+        <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <select
+            value={row.ordinal}
+            onChange={e => setOrdinal(idx, parseInt(e.target.value) || 1)}
+            style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 12, outline: 'none', background: '#fff', color: '#0F172A', flex: 1 }}
+          >
+            {ORDINAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select
+            value={row.weekday}
+            onChange={e => setWeekday(parseInt(e.target.value) || 0)}
+            style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 12, outline: 'none', background: '#fff', color: '#0F172A', flex: 1 }}
+          >
+            {WEEKDAY_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+          </select>
+        </div>
+      ))}
+      <div style={{ fontSize: 10.5, color: '#0D9488', fontWeight: 500 }}>
+        {rows.map(r => {
+          const ord = ORDINAL_OPTIONS.find(o => o.value === r.ordinal)?.label || ''
+          const wd = WEEKDAY_OPTIONS.find(w => w.value === r.weekday)?.label || ''
+          return `${ord} ${wd}`
+        }).join(' & ')} of each month
+      </div>
+    </div>
+  )
+}
 
 function DayPicker({ selected, onChange }: { selected: number[]; onChange: (d: number[]) => void }) {
   const toggle = (day: number) => {
@@ -586,6 +673,15 @@ export function AddClientWizard({
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([])
   const [monthlyDay, setMonthlyDay] = useState(1)
   const [monthlyDays, setMonthlyDays] = useState<number[]>([1, 15])
+  // Monthly schedule mode: 'date' = 1st/15th of month, 'weekday' = 1st Tue / 3rd Tue, etc.
+  const [monthlyMode, setMonthlyMode] = useState<'date' | 'weekday'>('date')
+  // For weekday mode: [{ordinal: 1, weekday: 2}, ...]
+  // ordinal: 1..4 for 1st/2nd/3rd/4th, 5 = "Last"
+  // weekday: 0..6 (Sun..Sat) — same as daysOfWeek values
+  const [monthlyWeekdays, setMonthlyWeekdays] = useState<Array<{ ordinal: number; weekday: number }>>([
+    { ordinal: 1, weekday: 1 },
+    { ordinal: 3, weekday: 1 },
+  ])
   const [timeType, setTimeType] = useState<'SPECIFIC' | 'WINDOW'>('WINDOW')
   const [startTime, setStartTime] = useState('')
   const [startWindowBegin, setStartWindowBegin] = useState('09:00')
@@ -920,7 +1016,7 @@ export function AddClientWizard({
               startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
               startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
             }
-            const monthlyPattern = buildMonthlyPattern(frequency, monthlyDay, monthlyDays)
+            const monthlyPattern = buildMonthlyPattern(frequency, monthlyDay, monthlyDays, monthlyMode, monthlyWeekdays)
             if (monthlyPattern) {
               schedPayload.monthlyPattern = monthlyPattern
             }
@@ -1000,7 +1096,7 @@ export function AddClientWizard({
                   startWindowBegin: timeType === 'WINDOW' ? startWindowBegin : null,
                   startWindowEnd: timeType === 'WINDOW' ? startWindowEnd : null,
                 }
-                const monthlyPattern = buildMonthlyPattern(frequency, monthlyDay, monthlyDays)
+                const monthlyPattern = buildMonthlyPattern(frequency, monthlyDay, monthlyDays, monthlyMode, monthlyWeekdays)
                 if (monthlyPattern) {
                   schedulePayload.monthlyPattern = monthlyPattern
                 }
@@ -1381,24 +1477,55 @@ export function AddClientWizard({
                 <div>
                   {isFixedMonthlyFrequency(frequency) ? (
                     <>
-                      <StepLabel text={frequency === '2X_MONTHLY' ? 'Days of month' : 'Day of month'} />
-                      {frequency === '2X_MONTHLY' ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                          {[0, 1].map(index => (
-                            <CleanInput
-                              key={index}
-                              value={String(normalizeTwiceMonthlyDays(monthlyDays)[index])}
-                              onChange={v => {
-                                const next = [...normalizeTwiceMonthlyDays(monthlyDays)]
-                                next[index] = clampDayOfMonth(parseInt(v) || 1)
-                                setMonthlyDays(normalizeTwiceMonthlyDays(next))
-                              }}
-                              type="number"
-                            />
-                          ))}
-                        </div>
+                      <StepLabel text="Schedule by" />
+                      <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 6, padding: 2, marginBottom: 6 }}>
+                        {(['date', 'weekday'] as const).map(mode => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setMonthlyMode(mode)}
+                            style={{
+                              flex: 1,
+                              padding: '5px 8px',
+                              borderRadius: 4,
+                              border: 'none',
+                              cursor: 'pointer',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              background: monthlyMode === mode ? '#fff' : 'transparent',
+                              color: monthlyMode === mode ? '#0F172A' : '#94A3B8',
+                              boxShadow: monthlyMode === mode ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                            }}
+                          >
+                            {mode === 'date' ? 'Date' : 'Weekday'}
+                          </button>
+                        ))}
+                      </div>
+                      {monthlyMode === 'date' ? (
+                        frequency === '2X_MONTHLY' ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                            {[0, 1].map(index => (
+                              <CleanInput
+                                key={index}
+                                value={String(normalizeTwiceMonthlyDays(monthlyDays)[index])}
+                                onChange={v => {
+                                  const next = [...normalizeTwiceMonthlyDays(monthlyDays)]
+                                  next[index] = clampDayOfMonth(parseInt(v) || 1)
+                                  setMonthlyDays(normalizeTwiceMonthlyDays(next))
+                                }}
+                                type="number"
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <CleanInput value={String(monthlyDay)} onChange={v => setMonthlyDay(clampDayOfMonth(parseInt(v) || 1))} type="number" />
+                        )
                       ) : (
-                        <CleanInput value={String(monthlyDay)} onChange={v => setMonthlyDay(clampDayOfMonth(parseInt(v) || 1))} type="number" />
+                        <MonthlyWeekdayPicker
+                          slots={frequency === '2X_MONTHLY' ? 2 : 1}
+                          value={monthlyWeekdays}
+                          onChange={setMonthlyWeekdays}
+                        />
                       )}
                     </>
                   ) : (
