@@ -1,6 +1,6 @@
 "use client"
 
-import { type ReactNode } from "react"
+import { type ReactNode, useState, useRef, useEffect } from "react"
 import {
   Dialog,
   DialogContent,
@@ -42,6 +42,21 @@ interface JobDetailDialogProps {
 export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: JobDetailDialogProps) {
   // All state and handlers are in the custom hook — see use-job-detail.ts
   const state = job ? useJobDetail({ job, open, onOpenChange, subcontractors }) : null
+  // v5 Problem menu (lives in the dialog, not the hook, since it's purely UI state)
+  const [problemMenuOpen, setProblemMenuOpen] = useState(false)
+  const problemMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!problemMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (problemMenuRef.current && !problemMenuRef.current.contains(e.target as Node)) {
+        setProblemMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [problemMenuOpen])
+  // Close the menu when the dialog itself opens/closes
+  useEffect(() => { if (!open) setProblemMenuOpen(false) }, [open])
 
   if (!job || !state) return null
 
@@ -150,13 +165,8 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       disabled: !canEditDateTime,
       onClick: handleQuickFixMove,
     },
-    {
-      key: 'skip',
-      label: 'Skip This Clean',
-      icon: XCircle,
-      disabled: !canApplyOutcome,
-      onClick: () => openOutcomeQuickFix('skipped'),
-    },
+    // 'skip' chip removed in v5 — Skip lives inside the Problem menu now (alongside No Access,
+    // Cancel This Clean, and Cancel Service) so all four sit-out / cancel paths are one entry point.
     {
       key: 'cleaner',
       label: 'Change Cleaner',
@@ -195,15 +205,15 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     onClick: handleQuickFixSchedule,
   }
 
-  const specialSituationButtons = [
-    {
-      key: 'no-access',
-      label: 'No Access / No Show',
-      icon: XCircle,
-      disabled: !canApplyOutcome,
-      onClick: () => openOutcomeQuickFix('no-access'),
-    },
-  ]
+  // No standalone secondary chips — the v5 layout consolidates Skip / No Access / Cancel This Clean /
+  // Cancel Service under a single red "Problem" chip rendered separately in renderQuickFixSection.
+  const specialSituationButtons: Array<{
+    key: string
+    label: string
+    icon: typeof XCircle
+    disabled: boolean
+    onClick: () => void
+  }> = []
 
   const renderQuickFixSection = (isMobile: boolean, compact = false) => {
     if (!canUseQuickFixes) return null
@@ -231,6 +241,40 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         cursor: 'pointer',
       }
 
+      // Suppress the unused secondaryChips alias — the v5 layout uses the Problem button below instead.
+      void secondaryChips
+      const problemOptions = [
+        {
+          key: 'skipped',
+          label: 'Skipped',
+          sub: "Clean didn't happen",
+          disabled: !canApplyOutcome,
+          onClick: () => { setProblemMenuOpen(false); openOutcomeQuickFix('skipped') },
+        },
+        {
+          key: 'no-access',
+          label: 'No Access / No Show',
+          sub: "Couldn't get in",
+          disabled: !canApplyOutcome,
+          onClick: () => { setProblemMenuOpen(false); openOutcomeQuickFix('no-access') },
+        },
+        {
+          key: 'cancel-clean',
+          label: 'Cancel This Clean',
+          sub: 'Mark this clean as cancelled',
+          disabled: !canApplyOutcome || job.status === 'CANCELLED',
+          onClick: () => { setProblemMenuOpen(false); handleOpenCancellationSheet() },
+        },
+        {
+          key: 'cancel-service',
+          label: 'Cancel Service',
+          sub: 'End all future recurring cleans',
+          danger: true,
+          disabled: !job.scheduleId || !job.schedule,
+          onClick: () => { setProblemMenuOpen(false); handleQuickFixSchedule() },
+        },
+      ]
+
       return (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-1.5">
@@ -254,31 +298,58 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
                 </button>
               )
             })}
-          </div>
-          {secondaryChips.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {secondaryChips.map((action) => {
-                const Icon = action.icon
-                return (
-                  <button
-                    key={action.key}
-                    onClick={action.onClick}
-                    disabled={action.disabled}
-                    className="transition-colors hover:bg-rose-50 disabled:cursor-default disabled:opacity-40"
-                    style={{
-                      ...chipBase,
-                      border: '1px solid #FECACA',
-                      background: '#FEF2F2',
-                      color: action.disabled ? '#94A3B8' : '#B91C1C',
-                    }}
-                  >
-                    <Icon className="h-3.5 w-3.5 flex-shrink-0" style={{ color: action.disabled ? '#94A3B8' : '#B91C1C' }} />
-                    {action.label}
-                  </button>
-                )
-              })}
+
+            {/* Problem chip — consolidates Skip / No Access / Cancel This Clean / Cancel Service */}
+            <div className="relative" ref={problemMenuRef}>
+              <button
+                onClick={() => setProblemMenuOpen(v => !v)}
+                className="transition-colors hover:bg-rose-100"
+                style={{
+                  ...chipBase,
+                  border: '1px solid #FECACA',
+                  background: problemMenuOpen ? '#FEE2E2' : '#FEF2F2',
+                  color: '#B91C1C',
+                }}
+              >
+                <XCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#B91C1C' }} />
+                Problem
+              </button>
+              {problemMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 z-50 mt-1 min-w-[260px] overflow-hidden rounded-xl bg-white shadow-xl"
+                  style={{ border: '1px solid #E2E8F0' }}
+                >
+                  {problemOptions.map((opt, idx) => (
+                    <button
+                      key={opt.key}
+                      onClick={opt.onClick}
+                      disabled={opt.disabled}
+                      className="block w-full text-left transition-colors hover:bg-slate-50 disabled:cursor-default disabled:opacity-45"
+                      style={{
+                        padding: '10px 14px',
+                        borderTop: idx === 0 ? 'none' : '1px solid #F1F5F9',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          color: opt.danger ? '#B91C1C' : '#0F172A',
+                        }}
+                      >
+                        {opt.label}
+                      </span>
+                      <span style={{ display: 'block', fontSize: '11px', color: '#94A3B8', marginTop: 1 }}>
+                        {opt.sub}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       )
     }
