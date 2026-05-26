@@ -22,9 +22,9 @@ export type CalendarJob = JobWithFullRelations & {
 
 export type OutcomeType = 'skipped' | 'no-access' | 're-clean'
 export type OutcomeAmountMode = 'normal' | 'partial' | 'none'
-export type QuickFixPanel = 'move' | 'cleaner' | 'client-rate' | 'cleaner-pay' | 'addon' | 'outcome' | 'schedule' | null
+export type QuickFixPanel = 'move' | 'cleaner' | 'client-rate' | 'cleaner-pay' | 'addon' | 'outcome' | 'schedule' | 'convert' | null
 export type QuickFixScope = 'single' | 'future' | 'all'
-export type ScopeDialogAction = Exclude<QuickFixPanel, 'outcome' | 'schedule' | null>
+export type ScopeDialogAction = Exclude<QuickFixPanel, 'outcome' | 'schedule' | 'convert' | null>
 export type DesktopSection = 'actions' | 'details' | 'more'
 
 type UndoJobPayload = {
@@ -109,6 +109,12 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const [outcomeNote, setOutcomeNote] = useState('')
   const [isSavingOutcome, setIsSavingOutcome] = useState(false)
   const [activeQuickFixPanel, setActiveQuickFixPanel] = useState<QuickFixPanel>(null)
+  // Convert-to-One-Time draft state — separate from the regular rate edits because the convert
+  // flow runs against a different API endpoint and also changes the assigned cleaner.
+  const [convertClientRate, setConvertClientRate] = useState('')
+  const [convertSubcontractorRate, setConvertSubcontractorRate] = useState('')
+  const [convertSubcontractorId, setConvertSubcontractorId] = useState<string>('unassigned')
+  const [isConvertingToOneTime, setIsConvertingToOneTime] = useState(false)
   const [scopeDialogAction, setScopeDialogAction] = useState<ScopeDialogAction | null>(null)
   const [scopeChoice, setScopeChoice] = useState<QuickFixScope>('single')
   const [showDetails, setShowDetails] = useState(false)
@@ -1058,6 +1064,69 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     setActiveQuickFixPanel('schedule')
   }
 
+  // ── Convert to One-Time ─────────────────────────────────────────────────────────────────
+  // Opens the convert sub-panel. Pre-fills with current rates and cleaner so the VA just clicks
+  // "Convert" if nothing needs to change. Refuses if the job is finalized.
+  const handleQuickFixConvert = () => {
+    if (!job.scheduleId || !job.schedule) return
+    if (hasFinalInvoice || job.subcontractorPaid) return
+    setActiveInlinePicker(null)
+    setIsSelectingCleaner(false)
+    setIsEditingRates(false)
+    setIsAddingAddOn(false)
+    setShowCancellationSheet(false)
+    setShowOutcomeSheet(false)
+    setScopeDialogAction(null)
+    setConvertClientRate(String(Number(job.clientRate || 0)))
+    setConvertSubcontractorRate(String(Number(job.subcontractorRate || 0)))
+    setConvertSubcontractorId(job.subcontractorId || 'unassigned')
+    setActiveQuickFixPanel('convert')
+  }
+
+  const handleConfirmConvert = async () => {
+    if (isConvertingToOneTime) return
+    const nextClientRate = parseFloat(convertClientRate)
+    const nextSubRate = parseFloat(convertSubcontractorRate)
+    if (isNaN(nextClientRate) || nextClientRate < 0 || isNaN(nextSubRate) || nextSubRate < 0) {
+      showError('Enter valid rates before converting.')
+      return
+    }
+    const confirmed = await confirmJobEdit(
+      'Convert this clean to one-time?',
+      'This will permanently end the recurring schedule from this date forward and remove all uninvoiced future cleans. This cannot be undone.'
+    )
+    if (!confirmed) return
+
+    setIsConvertingToOneTime(true)
+    try {
+      const subId = convertSubcontractorId === 'unassigned' ? null : convertSubcontractorId
+      const response = await fetch(`/api/jobs/${job.id}/convert-to-one-time`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientRate: nextClientRate,
+          subcontractorRate: nextSubRate,
+          subcontractorId: subId,
+        }),
+      })
+      if (!response.ok) {
+        await showApiError(response, 'Failed to convert clean')
+        return
+      }
+      const result = await response.json()
+      const removed = result?.futureJobsRemoved ?? 0
+      showSuccess(`Converted to one-time${removed > 0 ? ` · ${removed} future clean${removed === 1 ? '' : 's'} removed` : ''}`)
+      setActiveQuickFixPanel(null)
+      onOpenChange(false)
+      // Refresh calendar / page data so the converted job and the cleared future cleans are visible
+      try { (globalThis as any)?.window && (await import('swr')).mutate('/api/calendar/data') } catch { /* noop */ }
+    } catch {
+      showError('Failed to convert clean. Please try again.')
+    } finally {
+      setIsConvertingToOneTime(false)
+    }
+  }
+
   const handleSaveRatesSingle = async () => {
     const newClientRate = parseFloat(draftClientRate)
     const newSubRate = parseFloat(draftSubcontractorRate)
@@ -1518,7 +1587,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
       closeQuickEdit()
       return
     }
-    if (canShowFutureScope && activeQuickFixPanel && activeQuickFixPanel !== 'outcome' && activeQuickFixPanel !== 'schedule') {
+    if (canShowFutureScope && activeQuickFixPanel && activeQuickFixPanel !== 'outcome' && activeQuickFixPanel !== 'schedule' && activeQuickFixPanel !== 'convert') {
       setScopeChoice('single')
       setScopeDialogAction(activeQuickFixPanel)
       return
@@ -1836,6 +1905,11 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     handleOpenRateEditor,
     handleQuickFixMove, handleQuickFixCleaner, handleQuickFixClientRate,
     handleQuickFixCleanerPay, handleQuickFixAddOn, handleQuickFixSchedule,
+    handleQuickFixConvert, handleConfirmConvert,
+    convertClientRate, setConvertClientRate,
+    convertSubcontractorRate, setConvertSubcontractorRate,
+    convertSubcontractorId, setConvertSubcontractorId,
+    isConvertingToOneTime,
     handleSaveRates, handleSaveRatesSingle, handleSaveRatesFuture,
     handleSaveClientRateSingle, handleSaveClientRateFuture,
     handleSaveCleanerPaySingle, handleSaveCleanerPayFuture,

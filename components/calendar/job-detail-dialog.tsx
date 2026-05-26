@@ -132,6 +132,11 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
     handleOpenRateEditor,
     handleQuickFixMove, handleQuickFixCleaner, handleQuickFixClientRate,
     handleQuickFixCleanerPay, handleQuickFixAddOn, handleQuickFixSchedule,
+    handleQuickFixConvert, handleConfirmConvert,
+    convertClientRate, setConvertClientRate,
+    convertSubcontractorRate, setConvertSubcontractorRate,
+    convertSubcontractorId, setConvertSubcontractorId,
+    isConvertingToOneTime,
     handleSaveRates, handleSaveRatesSingle, handleSaveRatesFuture,
     handleSaveClientRateSingle, handleSaveClientRateFuture,
     handleSaveCleanerPaySingle, handleSaveCleanerPayFuture,
@@ -165,6 +170,15 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
       disabled: !canEditDateTime,
       onClick: handleQuickFixMove,
     },
+    // Convert to One-Time chip — only shown for recurring jobs. Ends the schedule and detaches
+    // this job as a standalone. Disabled if the clean is finalized (invoiced/paid).
+    ...(job.scheduleId && job.schedule ? [{
+      key: 'convert',
+      label: 'Convert to One-Time',
+      icon: Sparkles,
+      disabled: hasFinalInvoice || job.subcontractorPaid,
+      onClick: handleQuickFixConvert,
+    }] : []),
     // 'skip' chip removed in v5 — Skip lives inside the Problem menu now (alongside No Access,
     // Cancel This Clean, and Cancel Service) so all four sit-out / cancel paths are one entry point.
     {
@@ -542,6 +556,10 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
         title: 'Change Schedule Going Forward',
         description: 'Change the recurring plan starting with this clean.',
       },
+      convert: {
+        title: 'Convert to One-Time',
+        description: 'Keep this clean as a standalone job and end the recurring schedule.',
+      },
     }[activeQuickFixPanel]
 
     const renderQuickFixFooter = (
@@ -913,6 +931,89 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
               }}
               onCancel={() => setActiveQuickFixPanel(null)}
             />
+          </div>
+        )}
+
+        {/* Convert to One-Time — ends the recurring schedule and detaches this job as standalone */}
+        {activeQuickFixPanel === 'convert' && (
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-3">
+            <div
+              className="rounded-[10px] p-3"
+              style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}
+            >
+              <p style={{ fontSize: '12px', fontWeight: 700, color: '#991B1B', marginBottom: '4px' }}>
+                All future recurring cleans will be removed
+              </p>
+              <p style={{ fontSize: '12px', color: '#7F1D1D', lineHeight: 1.4 }}>
+                This clean becomes standalone with its own rates and (optionally) a different cleaner.
+                Future uninvoiced cleans on this recurring schedule will be deleted. This can&apos;t be undone.
+              </p>
+            </div>
+
+            <div>
+              <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Client rate (this clean)</Label>
+              <div className="relative">
+                <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={convertClientRate}
+                  onChange={e => setConvertClientRate(e.target.value)}
+                  className="h-10 pl-7 text-sm"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cleaner pay (this clean)</Label>
+              <div className="relative">
+                <Coins className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={convertSubcontractorRate}
+                  onChange={e => setConvertSubcontractorRate(e.target.value)}
+                  className="h-10 pl-7 text-sm"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Assigned cleaner</Label>
+              <Select value={convertSubcontractorId} onValueChange={setConvertSubcontractorId}>
+                <SelectTrigger className="h-10 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned"><span className="text-amber-700">Unassigned</span></SelectItem>
+                  {activeSubcontractors.map(cleaner => (
+                    <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setActiveQuickFixPanel(null)}
+                disabled={isConvertingToOneTime}
+                className="rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmConvert}
+                disabled={isConvertingToOneTime}
+                className="rounded-md px-4 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: '#DC2626' }}
+              >
+                {isConvertingToOneTime ? 'Converting…' : 'Convert & Remove Future Cleans'}
+              </button>
+            </div>
           </div>
         )}
       </div>
