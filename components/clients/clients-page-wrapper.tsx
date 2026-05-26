@@ -561,27 +561,6 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
         )}
       </div>
 
-      {/* Mobile FAB */}
-      <button
-        onClick={() => setShowWizard(true)}
-        className="sm:hidden"
-        style={{
-          position: "fixed",
-          bottom: 90,
-          right: 20,
-          width: 56, height: 56,
-          borderRadius: "50%",
-          backgroundColor: "#0F172A",
-          color: "white",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 4px 12px rgba(15,23,42,0.35)",
-          border: "none", cursor: "pointer", zIndex: 40,
-        }}
-        aria-label="Add client"
-      >
-        <Plus style={{ width: 24, height: 24 }} />
-      </button>
-
       <AddClientWizard
         isOpen={showWizard}
         initialData={prefillProspect ? {

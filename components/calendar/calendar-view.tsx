@@ -176,6 +176,52 @@ function SearchSelect({
   )
 }
 
+// HeaderSearch: expandable search icon → input. Sits next to the filter dropdowns in the
+// calendar header per Josh's feedback ("still missing the search function right next to the filters").
+function HeaderSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+  }, [open])
+
+  if (open || value) {
+    return (
+      <div className="flex items-center gap-1" style={{ animation: 'fadeIn 100ms ease' }}>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onBlur={() => { if (!value) setOpen(false) }}
+          placeholder="Search jobs..."
+          className="w-[160px] rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 outline-none focus:border-gray-400"
+        />
+        {value && (
+          <button
+            onClick={() => { onChange(''); setOpen(false) }}
+            aria-label="Clear search"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={() => setOpen(true)}
+      aria-label="Search jobs"
+      title="Search"
+      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+    >
+      <Search className="h-3.5 w-3.5" />
+    </button>
+  )
+}
+
 // NavArrow: prev/next button with a custom dark tooltip popup (not the browser title attribute).
 // Per calendar_dev_notes.md, browser tooltips are slow + ugly; this matches the JSX reference's
 // NavArrow component with a small triangle pointer.
@@ -865,22 +911,31 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     return ids
   }, [clientSearchQuery, clients])
 
+  const [headerSearch, setHeaderSearch] = useState('')
   const filteredJobs = useMemo(() => {
+    const q = headerSearch.trim().toLowerCase()
     return jobs.filter(job => {
       if (selectedClientId && job.location.client.id !== selectedClientId) return false
       if (selectedSubcontractorId && job.subcontractor?.id !== selectedSubcontractorId) return false
-      
+
       if (job.subcontractor) {
         if (!selectedCleanerIds.has(job.subcontractor.id)) return false
       } else {
         if (!showUnassigned) return false
       }
-      
+
       if (filterBarClientIds.size > 0 && !filterBarClientIds.has(job.location.client.id)) return false
-      
+
+      if (q) {
+        const clientName = job.location.client.name?.toLowerCase() || ''
+        const locName = job.location.name?.toLowerCase() || ''
+        const cleanerName = job.subcontractor?.name?.toLowerCase() || ''
+        if (!clientName.includes(q) && !locName.includes(q) && !cleanerName.includes(q)) return false
+      }
+
       return true
     })
-  }, [jobs, selectedClientId, selectedSubcontractorId, selectedCleanerIds, filterBarClientIds, showUnassigned])
+  }, [jobs, selectedClientId, selectedSubcontractorId, selectedCleanerIds, filterBarClientIds, showUnassigned, headerSearch])
 
   const dimmedClientIds = matchingClientIds
 
@@ -1601,6 +1656,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
+                <HeaderSearch
+                  value={headerSearch}
+                  onChange={setHeaderSearch}
+                />
               </>
             )
           })()}
@@ -1624,47 +1683,53 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             ))}
           </div>
 
-          {viewMode === 'week' && (
-            <div className="hidden xl:flex items-center gap-2" title={`Density: ${weekDensity}`}>
-              <span className="text-[9px] text-gray-300 leading-none">☰</span>
+          {/* Density slider — always rendered to reserve space so the Week/Month toggle and
+              Add Job button don't shift when switching views. Visibility is hidden in month view. */}
+          <div
+            className="hidden xl:flex items-center gap-2"
+            title={`Density: ${weekDensity}`}
+            style={{ visibility: viewMode === 'week' ? 'visible' : 'hidden' }}
+            aria-hidden={viewMode !== 'week'}
+          >
+            <span className="text-[9px] text-gray-300 leading-none">☰</span>
+            <div
+              className="relative w-[88px] h-5 flex items-center cursor-pointer"
+              onMouseDown={() => {
+                if (viewMode !== 'week') return
+                // Prevent text selection / grabbing cursor while dragging the slider.
+                document.body.style.userSelect = 'none'
+                document.body.style.cursor = 'grabbing'
+                const onUp = () => {
+                  document.body.style.userSelect = ''
+                  document.body.style.cursor = ''
+                  window.removeEventListener('mouseup', onUp)
+                }
+                window.addEventListener('mouseup', onUp)
+              }}
+            >
+              <div className="absolute inset-x-0 h-1 bg-gray-200 rounded-full" />
               <div
-                className="relative w-[88px] h-5 flex items-center cursor-pointer"
-                onMouseDown={() => {
-                  // Prevent text selection / grabbing cursor while dragging the slider.
-                  // Per calendar_dev_notes.md item 7.
-                  document.body.style.userSelect = 'none'
-                  document.body.style.cursor = 'grabbing'
-                  const onUp = () => {
-                    document.body.style.userSelect = ''
-                    document.body.style.cursor = ''
-                    window.removeEventListener('mouseup', onUp)
-                  }
-                  window.addEventListener('mouseup', onUp)
-                }}
-              >
-                <div className="absolute inset-x-0 h-1 bg-gray-200 rounded-full" />
-                <div
-                  className="absolute h-1 bg-teal-600 rounded-full"
-                  style={{ width: `${sliderValue}%` }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={50}
-                  value={sliderValue}
-                  onChange={(e) => changeWeekDensity(sliderToDensity(Number(e.target.value)))}
-                  aria-label="Week density"
-                  className="absolute inset-0 w-full opacity-0 cursor-pointer"
-                />
-                <div
-                  className="absolute w-3.5 h-3.5 bg-white border-2 border-teal-600 rounded-full shadow-sm pointer-events-none transition-all"
-                  style={{ left: `calc(${sliderValue}% - 7px)` }}
-                />
-              </div>
-              <span className="text-[9px] text-gray-300 leading-none">≡</span>
+                className="absolute h-1 bg-teal-600 rounded-full"
+                style={{ width: `${sliderValue}%` }}
+              />
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={50}
+                value={sliderValue}
+                onChange={(e) => changeWeekDensity(sliderToDensity(Number(e.target.value)))}
+                aria-label="Week density"
+                disabled={viewMode !== 'week'}
+                className="absolute inset-0 w-full opacity-0 cursor-pointer"
+              />
+              <div
+                className="absolute w-3.5 h-3.5 bg-white border-2 border-teal-600 rounded-full shadow-sm pointer-events-none transition-all"
+                style={{ left: `calc(${sliderValue}% - 7px)` }}
+              />
             </div>
-          )}
+            <span className="text-[9px] text-gray-300 leading-none">≡</span>
+          </div>
 
           <button
             onClick={() => handleDateClick(currentDate)}
@@ -1674,7 +1739,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             Add Job
           </button>
 
-          <div className="relative" ref={overflowMenuRef}>
+          {/* Three-dots overflow menu removed per Josh's feedback. Bulk Edit can be re-added
+              later as a more discoverable affordance if needed. */}
+          {false && <div className="relative" ref={overflowMenuRef}>
             <button
               onClick={() => setShowOverflowMenu(!showOverflowMenu)}
               className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors text-gray-500"
@@ -1720,7 +1787,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 )}
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
         {/* Active Filter Summary Row */}
