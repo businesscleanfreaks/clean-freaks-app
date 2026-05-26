@@ -55,6 +55,65 @@ function getWorkerColor(cleanerName: string | null) {
   return COLOR_KEY_TO_TAILWIND[colorKey] || COLOR_KEY_TO_TAILWIND.default
 }
 
+// NavArrow: prev/next button with a custom dark tooltip popup (not the browser title attribute).
+// Per calendar_dev_notes.md, browser tooltips are slow + ugly; this matches the JSX reference's
+// NavArrow component with a small triangle pointer.
+function NavArrow({ direction, label, onClick }: { direction: 'prev' | 'next'; label: string; onClick: () => void }) {
+  const [hover, setHover] = useState(false)
+  const Icon = direction === 'prev' ? ChevronLeft : ChevronRight
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex' }}>
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onFocus={() => setHover(true)}
+        onBlur={() => setHover(false)}
+        aria-label={label}
+        className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 rounded-md transition-colors"
+      >
+        <Icon className="w-4 h-4" />
+      </button>
+      {hover && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            marginTop: 8,
+            padding: '4px 10px',
+            borderRadius: 6,
+            background: '#1E293B',
+            color: '#F8FAFC',
+            fontSize: 11,
+            fontWeight: 500,
+            whiteSpace: 'nowrap',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 60,
+            pointerEvents: 'none',
+          }}
+        >
+          {label}
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: -3,
+              left: '50%',
+              transform: 'translateX(-50%) rotate(45deg)',
+              width: 7,
+              height: 7,
+              background: '#1E293B',
+            }}
+          />
+        </span>
+      )}
+    </span>
+  )
+}
+
 export function CalendarView({ jobs: initialJobs, clients, subcontractors }: CalendarViewProps) {
   const searchParams = useSearchParams()
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -1292,22 +1351,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           </button>
 
           <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => navigate('prev')}
-              title={`Previous ${navLabel}`}
-              aria-label={`Previous ${navLabel}`}
-              className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 rounded-md transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => navigate('next')}
-              title={`Next ${navLabel}`}
-              aria-label={`Next ${navLabel}`}
-              className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 rounded-md transition-colors"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <NavArrow direction="prev" label={`Previous ${navLabel}`} onClick={() => navigate('prev')} />
+            <NavArrow direction="next" label={`Next ${navLabel}`} onClick={() => navigate('next')} />
           </div>
 
           <div className="relative">
@@ -1390,12 +1435,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             )}
           </button>
 
-          {calendarSummaryLabel && (
-            <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full whitespace-nowrap">
-              {calendarSummaryLabel}
-            </span>
-          )}
-
           <div className="flex-1" />
 
           {/* RIGHT: View toggle + density slider + Add Job + overflow */}
@@ -1418,7 +1457,21 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           {viewMode === 'week' && (
             <div className="hidden xl:flex items-center gap-2" title={`Density: ${weekDensity}`}>
               <span className="text-[9px] text-gray-300 leading-none">☰</span>
-              <div className="relative w-[88px] h-5 flex items-center cursor-pointer">
+              <div
+                className="relative w-[88px] h-5 flex items-center cursor-pointer"
+                onMouseDown={() => {
+                  // Prevent text selection / grabbing cursor while dragging the slider.
+                  // Per calendar_dev_notes.md item 7.
+                  document.body.style.userSelect = 'none'
+                  document.body.style.cursor = 'grabbing'
+                  const onUp = () => {
+                    document.body.style.userSelect = ''
+                    document.body.style.cursor = ''
+                    window.removeEventListener('mouseup', onUp)
+                  }
+                  window.addEventListener('mouseup', onUp)
+                }}
+              >
                 <div className="absolute inset-x-0 h-1 bg-gray-200 rounded-full" />
                 <div
                   className="absolute h-1 bg-teal-600 rounded-full"
@@ -1668,14 +1721,25 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           <div className="grid flex-1 grid-cols-7">
             {days.map(day => {
               const isTodayDate = isToday(day)
+              // Per calendar_dev_notes.md: today is a teal circle on the date number only,
+              // NOT a full-column dark background (which washed out the job block colors).
               return (
-                <div key={day.toString()} className={`border-r border-gray-200 py-2 text-center last:border-r-0 ${isTodayDate ? 'bg-gray-950' : ''}`}>
-                  <div className={`text-[10px] font-bold uppercase tracking-[0.08em] ${isTodayDate ? 'text-white/55' : 'text-gray-400'}`}>
+                <div key={day.toString()} className="border-r border-gray-200 py-2 text-center last:border-r-0">
+                  <div className={`text-[10px] font-bold uppercase tracking-[0.08em] ${isTodayDate ? 'text-teal-600' : 'text-gray-400'}`}>
                     {format(day, 'EEE')}
                   </div>
-                  <div className={`mt-0.5 text-lg font-bold ${isTodayDate ? 'text-white' : 'text-gray-950'}`}>
-                    {format(day, 'd')}
-                  </div>
+                  {isTodayDate ? (
+                    <span
+                      className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full text-base font-bold"
+                      style={{ backgroundColor: '#0D9488', color: '#FFFFFF' }}
+                    >
+                      {format(day, 'd')}
+                    </span>
+                  ) : (
+                    <div className="mt-0.5 text-lg font-bold text-gray-950">
+                      {format(day, 'd')}
+                    </div>
+                  )}
                 </div>
               )
             })}

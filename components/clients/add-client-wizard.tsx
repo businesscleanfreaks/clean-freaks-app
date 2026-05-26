@@ -147,24 +147,24 @@ function DayPicker({ selected, onChange }: { selected: number[]; onChange: (d: n
     onChange(selected.includes(day) ? selected.filter(d => d !== day) : [...selected, day].sort())
   }
   return (
-    <div style={{ display: 'flex', gap: '8px' }}>
+    <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
       {DAYS.map((d, idx) => (
         <button
           key={idx}
           type="button"
           onClick={() => toggle(idx)}
           style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
+            flex: 1,
+            minWidth: 0,
+            height: '32px',
+            borderRadius: '6px',
             border: 'none',
             cursor: 'pointer',
-            fontSize: '13px',
+            fontSize: '12px',
             fontWeight: 600,
-            backgroundColor: selected.includes(idx) ? '#00A896' : '#F5F5F5',
-            color: selected.includes(idx) ? 'white' : '#888888',
+            backgroundColor: selected.includes(idx) ? '#00A896' : '#F1F5F9',
+            color: selected.includes(idx) ? 'white' : '#94A3B8',
             transition: 'all 0.15s ease',
-            flexShrink: 0,
           }}
         >
           {d}

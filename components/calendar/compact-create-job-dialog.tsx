@@ -288,16 +288,9 @@ export function CompactCreateJobDialog({
   return (
     <Dialog open={open} onOpenChange={value => !value && close()}>
       <DialogContent hideClose className="max-h-[92vh] max-w-[400px] overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
-              <CalendarDays className="h-4 w-4" />
-            </div>
-            <div>
-              <DialogTitle className="text-lg font-bold tracking-tight text-slate-950">Add Job</DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">Client, schedule, rates, and notes in one quick pass.</DialogDescription>
-            </div>
-          </div>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+          <DialogTitle className="text-[19px] font-bold tracking-tight text-slate-950">Add Job</DialogTitle>
+          <DialogDescription className="sr-only">Add a new job: pick client, schedule, rates, and notes in one quick pass.</DialogDescription>
           <button aria-label="Close add job" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X className="h-4 w-4" />
           </button>
@@ -479,37 +472,41 @@ export function CompactCreateJobDialog({
             )}
           </section>
 
-          <section className="grid grid-cols-3 gap-2">
-            <div className="col-span-3">
+          <section className="space-y-2">
+            <div>
               <Label className="mb-1 block text-[11px] text-slate-500">Assigned to</Label>
               <Select value={subcontractorId} onValueChange={setSubcontractorId}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectTrigger className={`h-9 text-sm ${subcontractorId === "unassigned" ? "text-amber-700" : ""}`}><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  <SelectItem value="unassigned"><span className="text-amber-700">Unassigned</span></SelectItem>
                   {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label className="mb-1 block text-[11px] text-slate-500">Client rate *</Label>
-              <div className="relative">
-                <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <Input type="number" min="0" step="0.01" value={clientRate} onChange={event => setClientRate(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="mb-1 block text-[11px] text-slate-500">Client rate *</Label>
+                <div className="relative">
+                  <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <Input type="number" min="0" step="0.01" value={clientRate} onChange={event => setClientRate(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+                </div>
+              </div>
+              <div>
+                <Label className="mb-1 block text-[11px] text-slate-500">Cleaner pay *</Label>
+                <div className="relative">
+                  <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+                </div>
               </div>
             </div>
-            <div>
-              <Label className="mb-1 block text-[11px] text-slate-500">Cleaner pay *</Label>
-              <div className="relative">
-                <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+            {(Number(clientRate) > 0 || Number(cleanerPay) > 0) && (
+              <div className="text-right text-[11px]">
+                <span className="text-slate-400">Margin: </span>
+                <span className={`font-mono font-bold ${profit < 0 ? "text-red-600" : "text-emerald-700"}`}>
+                  ${profit.toFixed(2)}
+                </span>
               </div>
-            </div>
-            <div className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1">
-              <Label className="block text-[11px] text-emerald-700">Margin</Label>
-              <div className={`truncate font-mono text-sm font-bold ${profit < 0 ? "text-red-600" : "text-emerald-700"}`}>
-                ${profit.toFixed(2)}
-              </div>
-            </div>
+            )}
           </section>
 
           {isTrial && (
@@ -566,11 +563,19 @@ export function CompactCreateJobDialog({
           )}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-slate-100 bg-white px-5 py-3">
-          <Button type="button" variant="outline" className="h-10 flex-1" onClick={close}>Cancel</Button>
-          <Button type="button" className="h-10 flex-1 bg-teal-600 hover:bg-teal-700" disabled={!canCreate || loading} onClick={createJob}>
-            {loading ? "Adding..." : "Add Job"}
-          </Button>
+        <div className="border-t border-slate-100 bg-white px-5 py-3">
+          <button
+            type="button"
+            disabled={!canCreate || loading}
+            onClick={createJob}
+            className={`w-full h-11 rounded-md text-[14px] font-bold transition-colors ${
+              canCreate && !loading
+                ? "bg-slate-900 text-white hover:bg-slate-800"
+                : "bg-slate-200 text-slate-400 cursor-not-allowed"
+            }`}
+          >
+            {loading ? "Adding..." : isTrial ? "Schedule Trial" : "Schedule Job"}
+          </button>
         </div>
       </DialogContent>
     </Dialog>
