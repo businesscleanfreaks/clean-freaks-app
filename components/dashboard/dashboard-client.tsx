@@ -99,10 +99,12 @@ export function DashboardClient() {
   const [sortBy, setSortBy] = useState<SortKey>('periodRevenue')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [showSettings, setShowSettings] = useState(false)
-  const [overhead, setOverhead] = useState(800)
-  const [marketing, setMarketing] = useState(1800)
-  const [vaCost, setVaCost] = useState(1800)
-  const [taxRate, setTaxRate] = useState(15)
+  // Default these to 0 so Net Profit ≈ Gross Profit on first load instead of a misleading
+  // negative number. Grace/Josh fill them in below with their real monthly business expenses.
+  const [overhead, setOverhead] = useState(0)
+  const [marketing, setMarketing] = useState(0)
+  const [vaCost, setVaCost] = useState(0)
+  const [taxRate, setTaxRate] = useState(0)
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth()

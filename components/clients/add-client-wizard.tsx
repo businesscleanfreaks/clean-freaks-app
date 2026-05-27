@@ -1165,6 +1165,33 @@ export function AddClientWizard({
         }
       }
 
+      // Step 7: For ONE_TIME client type, create a single standalone job using the rates/cleaner
+      // entered in the "One-Time Job Details" section. Date defaults to startDate (which the UI
+      // labels as "Job Date" in this mode).
+      if (clientType === 'ONE_TIME' && primaryLocationId && startDate && parseFloat(clientRate) > 0) {
+        try {
+          await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              locationId: primaryLocationId,
+              date: startDate,
+              startTime: startTime || null,
+              startWindowBegin: null,
+              startWindowEnd: null,
+              clientRate: parseFloat(clientRate) || 0,
+              subcontractorRate: parseFloat(subcontractorRate) || 0,
+              subcontractorId: subcontractorId || null,
+              scheduleId: null,
+              isTrial: false,
+              trialNotes: null,
+            }),
+          })
+        } catch (err) {
+          logger.error('Error creating one-time job:', err)
+        }
+      }
+
       logger.debug(`[wizard] Total creation time: ${Math.round(performance.now() - t0)}ms`)
 
       // Success — navigate and close
@@ -1465,6 +1492,78 @@ export function AddClientWizard({
             )}
             <FieldError msg={errors.invoicingEmail || errors.invoicingCcEmail} />
           </section>
+
+          {/* One-Time job details — when the client type is ONE_TIME, capture the same fields the
+              VA would otherwise have to add in a follow-up Add Job step. On submit, this section
+              creates a standalone job alongside the client + location. */}
+          {clientType === 'ONE_TIME' && (
+            <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+              <StepLabel text="One-Time Job Details" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                <div>
+                  <StepLabel text="Job Date" />
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={e => setStartDate(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', color: '#0F172A' }}
+                  />
+                </div>
+                <div>
+                  <StepLabel text="Start Time" />
+                  <input
+                    type="time"
+                    value={startTime || '09:00'}
+                    onChange={e => setStartTime(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', color: '#0F172A' }}
+                  />
+                </div>
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <StepLabel text="Assigned Cleaner" />
+                <select
+                  value={subcontractorId || ''}
+                  onChange={e => setSubcontractorId(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', background: '#fff', color: subcontractorId ? '#0F172A' : '#D97706' }}
+                >
+                  <option value="">Unassigned</option>
+                  {subcontractors.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <StepLabel text="Client Rate *" />
+                  <CleanInput
+                    value={clientRate}
+                    onChange={v => { setClientRate(v); setErrors(e => ({ ...e, clientRate: '' })) }}
+                    placeholder="$0.00"
+                    type="number"
+                    error={!!errors.clientRate}
+                  />
+                </div>
+                <div>
+                  <StepLabel text="Cleaner Pay" />
+                  <CleanInput
+                    value={subcontractorRate}
+                    onChange={v => { setSubcontractorRate(v); setErrors(e => ({ ...e, subcontractorRate: '' })) }}
+                    placeholder="$0.00"
+                    type="number"
+                    error={!!errors.subcontractorRate}
+                  />
+                </div>
+              </div>
+              {(parseFloat(clientRate) > 0 || parseFloat(subcontractorRate) > 0) && (
+                <div style={{ textAlign: 'right', fontSize: '11px', marginTop: '6px' }}>
+                  <span style={{ color: '#94A3B8' }}>Margin: </span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: margin >= 0 ? '#16A34A' : '#DC2626' }}>
+                    ${margin.toFixed(2)}
+                  </span>
+                </div>
+              )}
+            </section>
+          )}
 
           {(clientType === 'RECURRING' || clientType === 'TRIAL') && (
             <section style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
