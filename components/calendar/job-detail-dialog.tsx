@@ -39,9 +39,28 @@ interface JobDetailDialogProps {
   subcontractors: Subcontractor[]
 }
 
-export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: JobDetailDialogProps) {
-  // All state and handlers are in the custom hook — see use-job-detail.ts
-  const state = job ? useJobDetail({ job, open, onOpenChange, subcontractors }) : null
+// Outer wrapper: guards the null-job case BEFORE any hooks run, so the inner component can
+// always call its hooks unconditionally. Without this split, the React hook order changes
+// when `job` toggles between truthy and null, which crashes the dialog at runtime.
+export function JobDetailDialog(props: JobDetailDialogProps) {
+  if (!props.job) return null
+  // Narrowed copy: the inner component only mounts when job is non-null, so its hooks can
+  // be called unconditionally without violating React's rules-of-hooks.
+  return (
+    <JobDetailDialogInner
+      job={props.job}
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      subcontractors={props.subcontractors}
+    />
+  )
+}
+
+type JobDetailDialogInnerProps = Omit<JobDetailDialogProps, 'job'> & { job: NonNullable<JobDetailDialogProps['job']> }
+function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDetailDialogInnerProps) {
+  // All state and handlers are in the custom hook — see use-job-detail.ts.
+  // Now called unconditionally because the outer wrapper guarantees `job` is non-null.
+  const state = useJobDetail({ job, open, onOpenChange, subcontractors })
   // v5 Problem menu (lives in the dialog, not the hook, since it's purely UI state)
   const [problemMenuOpen, setProblemMenuOpen] = useState(false)
   const problemMenuRef = useRef<HTMLDivElement | null>(null)
@@ -57,8 +76,6 @@ export function JobDetailDialog({ job, open, onOpenChange, subcontractors }: Job
   }, [problemMenuOpen])
   // Close the menu when the dialog itself opens/closes
   useEffect(() => { if (!open) setProblemMenuOpen(false) }, [open])
-
-  if (!job || !state) return null
 
   // Filter archived cleaners from assignment dropdowns, but always include the currently assigned one
   const activeSubcontractors = subcontractors.filter(s => (s as any).isActive !== false || s.id === job.subcontractor?.id)

@@ -287,8 +287,8 @@ export function CompactCreateJobDialog({
 
   return (
     <Dialog open={open} onOpenChange={value => !value && close()}>
-      <DialogContent hideClose className="max-h-[92vh] max-w-[400px] overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+      <DialogContent hideClose className="flex flex-col max-h-[92vh] max-w-[400px] overflow-hidden p-0">
+        <div className="flex-shrink-0 flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <DialogTitle className="text-[19px] font-bold tracking-tight text-slate-950">Add Job</DialogTitle>
           <DialogDescription className="sr-only">Add a new job: pick client, schedule, rates, and notes in one quick pass.</DialogDescription>
           <button aria-label="Close add job" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
@@ -296,7 +296,7 @@ export function CompactCreateJobDialog({
           </button>
         </div>
 
-        <div className="max-h-[calc(92vh-140px)] space-y-3 overflow-y-auto px-5 py-4">
+        <div className="flex-1 min-h-0 space-y-3 overflow-y-auto px-5 py-4">
           <section className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Client</Label>
@@ -473,19 +473,9 @@ export function CompactCreateJobDialog({
             {timeMode === "specific" && <TimePicker value={startTime} onChange={setStartTime} />}
             {timeMode === "window" && (
               <div className="flex items-center gap-2">
-                <Input
-                  value={startWindowBegin}
-                  onChange={event => setStartWindowBegin(event.target.value)}
-                  placeholder="9:00 AM"
-                  className="h-9 text-sm flex-1"
-                />
+                <div className="flex-1"><TimePicker value={startWindowBegin} onChange={setStartWindowBegin} /></div>
                 <span className="text-xs text-slate-400">to</span>
-                <Input
-                  value={startWindowEnd}
-                  onChange={event => setStartWindowEnd(event.target.value)}
-                  placeholder="12:00 PM"
-                  className="h-9 text-sm flex-1"
-                />
+                <div className="flex-1"><TimePicker value={startWindowEnd} onChange={setStartWindowEnd} /></div>
               </div>
             )}
           </section>
@@ -581,7 +571,7 @@ export function CompactCreateJobDialog({
           )}
         </div>
 
-        <div className="border-t border-slate-100 bg-white px-5 py-3">
+        <div className="flex-shrink-0 border-t border-slate-100 bg-white px-5 py-3">
           <button
             type="button"
             disabled={!canCreate || loading}
