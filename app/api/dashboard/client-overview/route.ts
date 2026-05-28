@@ -137,8 +137,13 @@ export async function GET(request: NextRequest) {
           customDates: projectableSchedule.customDates,
           excludedDates: projectableSchedule.excludedDates,
         })
-        const clientPayType = schedule.clientPayType || 'PER_CLEAN'
-        const subPayType = schedule.subcontractorPayType || 'PER_CLEAN'
+        // Fall back to the client-level pay type when the schedule-level field is missing.
+        // Without this, legacy schedules that pre-date the schedule-level pay-type column
+        // default to PER_CLEAN, which multiplies a stored monthly amount by the average
+        // occurrences-per-month — wildly overstating either revenue or cost and making
+        // Net Profit look hugely negative on the dashboard.
+        const clientPayType = schedule.clientPayType || client.billingType || 'PER_CLEAN'
+        const subPayType = schedule.subcontractorPayType || client.cleanerPayType || 'PER_CLEAN'
 
         // ── AVG Base Revenue ──
         if (clientPayType === 'FLAT_RATE') {

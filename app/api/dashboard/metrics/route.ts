@@ -138,7 +138,10 @@ export async function GET(request: Request) {
       
       const isRecurring = jobs[0].scheduleId !== null
       const schedule = jobs[0].schedule
-      const clientPayType = schedule?.clientPayType || 'PER_CLEAN'
+      const client = jobs[0].location.client
+      // Fall back to client-level billingType so legacy schedules without the field don't
+      // misclassify as PER_CLEAN (which inflates costs and zeroes the dashboard's Net Profit).
+      const clientPayType = schedule?.clientPayType || client?.billingType || 'PER_CLEAN'
 
       if (clientPayType === 'FLAT_RATE' && isRecurring) {
         const firstJob = jobs[0]
@@ -213,7 +216,9 @@ export async function GET(request: Request) {
       
       const isRecurring = jobs[0].scheduleId !== null
       const unpaidSchedule = jobs[0].schedule
-      const subPayType = unpaidSchedule?.subcontractorPayType || 'PER_CLEAN'
+      const unpaidClient = jobs[0].location.client
+      // Same fallback — schedule-level pay type isn't always populated on older schedules.
+      const subPayType = unpaidSchedule?.subcontractorPayType || unpaidClient?.cleanerPayType || 'PER_CLEAN'
 
       if (subPayType === 'FLAT_RATE' && isRecurring) {
         const firstJob = jobs[0]

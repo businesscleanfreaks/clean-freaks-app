@@ -64,7 +64,8 @@ export async function GET(request: NextRequest) {
         if (groupedJobs.length === 0) return
         const isRecurring = groupedJobs[0].scheduleId !== null
         const schedule = groupedJobs[0].schedule
-        const clientPayType = schedule?.clientPayType || 'PER_CLEAN'
+        const client = groupedJobs[0].location.client
+        const clientPayType = schedule?.clientPayType || client?.billingType || 'PER_CLEAN'
 
         // Revenue: base rates
         if (clientPayType === 'FLAT_RATE' && isRecurring) {
@@ -98,7 +99,8 @@ export async function GET(request: NextRequest) {
         if (groupedJobs.length === 0) return
         const isRecurring = groupedJobs[0].scheduleId !== null
         const schedule = groupedJobs[0].schedule
-        const subPayType = schedule?.subcontractorPayType || 'PER_CLEAN'
+        const client = groupedJobs[0].location.client
+        const subPayType = schedule?.subcontractorPayType || client?.cleanerPayType || 'PER_CLEAN'
 
         if (subPayType === 'FLAT_RATE' && isRecurring) {
           totalWorkerPayments += groupedJobs[0].subcontractorRate || 0
