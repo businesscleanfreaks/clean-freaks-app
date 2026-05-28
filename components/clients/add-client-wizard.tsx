@@ -1001,11 +1001,29 @@ export function AddClientWizard({
           if (canCreateSchedule && clientRate) {
             const t2 = performance.now()
             setSubmitProgress('Setting up schedule...')
+
+            // For trial clients, compute an explicit endDate from the trial duration so the schedule
+            // doesn't keep generating jobs past the trial window. Modern Animal hit this because the
+            // trial said "May 19 – Jun 19" but the schedule had no endDate, so jobs generated for
+            // the default 3-month projection horizon.
+            let computedEndDate: string | null = null
+            if (clientType === 'TRIAL') {
+              const baseDateStr = startDate || new Date().toISOString().slice(0, 10)
+              const baseDate = new Date(baseDateStr + 'T12:00:00')
+              const trialEnd = new Date(baseDate)
+              if (trialDuration === '1wk') trialEnd.setDate(trialEnd.getDate() + 7)
+              else if (trialDuration === '2wk') trialEnd.setDate(trialEnd.getDate() + 14)
+              else if (trialDuration === '3wk') trialEnd.setDate(trialEnd.getDate() + 21)
+              else trialEnd.setMonth(trialEnd.getMonth() + 1) // '1mo'
+              computedEndDate = trialEnd.toISOString().slice(0, 10)
+            }
+
             const schedPayload: Record<string, unknown> = {
               locationId: loc.id,
               frequency,
               daysOfWeek: isFixedMonthlyFrequency(frequency) ? null : JSON.stringify(daysOfWeek),
               startDate: startDate || new Date().toISOString(),
+              endDate: computedEndDate,
               defaultClientRate: parseFloat(clientRate) || 0,
               defaultSubcontractorRate: parseFloat(subcontractorRate) || 0,
               clientPayType: billingType,
