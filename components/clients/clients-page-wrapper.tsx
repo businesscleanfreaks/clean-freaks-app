@@ -4,8 +4,10 @@ import { useState, useMemo, useEffect, useRef } from "react"
 import { mutate } from "swr"
 import { useRouter } from "next/navigation"
 import { AddClientWizard } from "./add-client-wizard"
-import { Plus, Search as SearchIcon, ChevronRight, X as XIcon, MapPin } from "lucide-react"
+import { Plus, Search as SearchIcon, ChevronRight, X as XIcon, MapPin, Trash2 } from "lucide-react"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
+import { useConfirm } from "@/hooks/use-confirm"
+import { showSuccess, showError, showApiError } from "@/lib/toast"
 
 interface Location {
   id: string
@@ -103,11 +105,13 @@ function ClientRow({
   showCleaner,
   zebra,
   onOpen,
+  onDelete,
 }: {
   client: Client
   showCleaner: boolean
   zebra: boolean
   onOpen: (id: string) => void
+  onDelete: (client: Client) => void
 }) {
   const [hovered, setHovered] = useState(false)
   const cleanerHex = getCleanerColorInfo(client.cleanerDisplay && client.cleanerDisplay !== "Unassigned" && client.cleanerDisplay !== "Mixed" ? client.cleanerDisplay : null).hex
@@ -174,7 +178,26 @@ function ClientRow({
         </div>
       </td>
       <td style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
-        <span style={{ fontSize: 12, color: "#64748B" }}>{client.scheduleText || "—"}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+          <span style={{ fontSize: 12, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis" }}>{client.scheduleText || "—"}</span>
+          <button
+            type="button"
+            aria-label={`Delete ${client.name}`}
+            title="Delete client"
+            onClick={(e) => { e.stopPropagation(); onDelete(client) }}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0, width: 24, height: 24, borderRadius: 5, border: "none",
+              background: "transparent", color: "#CBD5E1", cursor: "pointer",
+              opacity: hovered ? 1 : 0, pointerEvents: hovered ? "auto" : "none",
+              transition: "opacity 0.1s, color 0.1s, background 0.1s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "#DC2626"; e.currentTarget.style.background = "#FEF2F2" }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "#CBD5E1"; e.currentTarget.style.background = "transparent" }}
+          >
+            <Trash2 style={{ width: 13, height: 13 }} />
+          </button>
+        </div>
       </td>
     </tr>
   )
@@ -298,6 +321,7 @@ function MapView({ clients, onOpen }: { clients: Client[]; onOpen: (id: string) 
 
 export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrapperProps) {
   const router = useRouter()
+  const { confirm, ConfirmDialog } = useConfirm()
   const [searchQuery, setSearchQuery] = useState("")
   const [showWizard, setShowWizard] = useState(false)
   const [statusFilter, setStatusFilter] = useState<ClientStatusBucket>("all")
@@ -392,6 +416,35 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
   const toggleCollapse = (n: string) => setCollapsedCleaners(prev => ({ ...prev, [n]: !prev[n] }))
 
   const openClient = (id: string) => router.push(`/clients/${id}`)
+
+  const handleDeleteClient = async (client: Client) => {
+    const confirmed = await confirm({
+      title: "Delete Client Permanently?",
+      description: `Permanently delete "${client.name}"? This cannot be undone — its schedules, generated jobs, and any draft invoices are removed. (Clients with sent/paid invoices or payment history can't be deleted; archive those instead.)`,
+      confirmText: "Delete Permanently",
+      cancelText: "Cancel",
+      variant: "destructive",
+    })
+    if (!confirmed) return
+    try {
+      const res = await fetch(`/api/clients/${client.id}`, { method: "DELETE" })
+      if (res.status === 409) {
+        showError(`"${client.name}" has sent/paid invoices or payment history. Archive it instead, or void that history first.`)
+        return
+      }
+      if (!res.ok) {
+        await showApiError(res, "Failed to delete client")
+        return
+      }
+      showSuccess(`Deleted "${client.name}"`)
+      mutate("/api/clients/data")
+      mutate("/api/dashboard-stats")
+      mutate("/api/calendar/data")
+      router.refresh()
+    } catch {
+      showError("Failed to delete client. Please try again.")
+    }
+  }
 
   const Chev = ({ k }: { k: SortKey }) => sortKey === k ? (
     <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ transform: sortDir === "desc" ? "rotate(180deg)" : "none", transition: "transform 0.12s", marginLeft: 2 }}>
@@ -556,7 +609,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
               </thead>
               <tbody>
                 {sorted.map((c, i) => (
-                  <ClientRow key={c.id} client={c} showCleaner zebra={i % 2 === 1} onOpen={openClient} />
+                  <ClientRow key={c.id} client={c} showCleaner zebra={i % 2 === 1} onOpen={openClient} onDelete={handleDeleteClient} />
                 ))}
               </tbody>
             </table>
@@ -589,7 +642,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
                       </colgroup>
                       <tbody>
                         {cls.map((c, i) => (
-                          <ClientRow key={c.id} client={c} showCleaner={false} zebra={i % 2 === 1} onOpen={openClient} />
+                          <ClientRow key={c.id} client={c} showCleaner={false} zebra={i % 2 === 1} onOpen={openClient} onDelete={handleDeleteClient} />
                         ))}
                       </tbody>
                     </table>
@@ -624,6 +677,8 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
           router.push(`/clients/${clientId}`)
         }}
       />
+
+      <ConfirmDialog />
     </div>
   )
 }
