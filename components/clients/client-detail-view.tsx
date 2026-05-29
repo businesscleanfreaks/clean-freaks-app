@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import useSWR from "swr"
 import { useClientDetail } from "./use-client-detail"
 import { ClientDetailHeader } from "./client-detail-header"
 import { ClientDetailLocations } from "./client-detail-locations"
@@ -9,6 +10,9 @@ import { ClientDetailModals } from "./client-detail-modals"
 import { format } from "date-fns"
 import { formatCurrency } from "@/lib/utils"
 import type { ClientWithDetails } from "@/lib/types"
+import { ClientNotesPanel, OpenIssuesEditor, WhatToKnow, type ClientNote } from "./client-notes-panel"
+
+const notesFetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error("Failed"); return r.json() })
 
 interface ClientDetailViewProps {
   client: ClientWithDetails
@@ -92,8 +96,8 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
                   <button
                     key={tab.key}
                     onClick={() => setActiveTab(tab.key)}
-                    className={`relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
-                      isActive ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'
+                    className={`relative px-4 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors ${
+                      isActive ? 'text-zinc-900' : 'text-zinc-400 hover:text-zinc-600'
                     }`}
                   >
                     {tab.label}
@@ -142,6 +146,9 @@ type ClientDetailState = ReturnType<typeof useClientDetail>
 
 function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToTab: (tab: CockpitTab) => void }) {
   const { client, nextClean, locationCount } = state
+  const { data: notesData, mutate: mutateNotes } = useSWR<ClientNote[]>(`/api/clients/${client.id}/notes`, notesFetcher, { revalidateOnFocus: false })
+  const notes = notesData || []
+  const pinnedNotes = notes.filter(n => n.isPinned)
   const primaryLocation = client.locations[0]
   const primarySchedule = primaryLocation?.schedules?.find(s => s.isActive)
   const cleanerName = primarySchedule?.subcontractor?.name || 'Unassigned'
@@ -166,7 +173,7 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
         {/* Snapshot card */}
         <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Client overview</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Client overview</span>
             <button
               onClick={() => onJumpToTab('schedule')}
               className="text-[11px] font-semibold text-teal-700 hover:text-teal-800"
@@ -184,43 +191,17 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
             <SnapRow label="Locations" value={`${locationCount} · ${locationsLine}`} />
             <SnapRow label="Access info" value={hasAccessInfo ? '✓ Saved' : '— Not set'} muted={!hasAccessInfo} />
           </div>
-          <div className="px-5 pb-4" />
-        </section>
-
-        {/* Quick links into existing experience */}
-        <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
-          <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400 mb-3">Quick actions</p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onJumpToTab('schedule')}
-              className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Edit locations / schedule
-            </button>
-            <button
-              onClick={() => onJumpToTab('billing')}
-              className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              View billing
-            </button>
-            <button
-              onClick={() => onJumpToTab('access')}
-              className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Access info
-            </button>
-            <button
-              onClick={() => onJumpToTab('history')}
-              className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              History
-            </button>
+          <div className="px-5 pb-4">
+            <OpenIssuesEditor clientId={client.id} initial={client.openIssues || []} />
+            <WhatToKnow pinned={pinnedNotes} />
           </div>
         </section>
+
       </div>
 
-      {/* Right rail: existing job feed */}
+      {/* Right rail: notes + job feed */}
       <div className="lg:sticky lg:top-4 lg:self-start">
+        <ClientNotesPanel clientId={client.id} notes={notes} onChange={mutateNotes} />
         <ClientDetailJobFeed state={state} />
       </div>
     </div>
@@ -229,11 +210,11 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
 
 function SnapRow({ label, value, highlight, muted }: { label: string; value: string; highlight?: boolean; muted?: boolean }) {
   return (
-    <div className="flex items-center px-5 py-2.5 border-b border-slate-100 last:border-b-0">
-      <span className="text-[12px] text-slate-400 w-[130px] flex-shrink-0">{label}</span>
+    <div className="flex items-start px-5 py-1.5 border-b last:border-b-0" style={{ borderColor: '#F4F4F5' }}>
+      <span className="text-[12px] text-zinc-400 w-[140px] flex-shrink-0 pt-px">{label}</span>
       <span
-        className="text-[13px] font-medium truncate"
-        style={{ color: muted ? '#9CA3AF' : highlight ? '#0F766E' : '#0F172A', fontWeight: highlight ? 600 : 500 }}
+        className="text-[13px] font-semibold"
+        style={{ color: muted ? '#A1A1AA' : highlight ? '#0D9488' : '#18181B' }}
         title={value}
       >
         {value}
@@ -272,7 +253,7 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
     <div className="space-y-4">
       <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
             Billing type · {isFlat ? 'Flat monthly rate' : 'Per clean'}
           </span>
           <button
@@ -338,7 +319,7 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
 
       <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
         <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Recent invoices</span>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Recent invoices</span>
           <span className="text-[11px] text-slate-400">{invoices.length} total</span>
         </div>
         <div className="px-5 pb-4">
@@ -402,7 +383,7 @@ function ContactsTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Contacts</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Contacts</span>
         <button onClick={() => onJumpToTab('schedule')} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit →</button>
       </div>
 
@@ -434,7 +415,7 @@ function ContactsTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
 
       {ccEmails && (
         <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
-          <span className="block text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400 mb-1">CC on invoices</span>
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400 mb-1">CC on invoices</span>
           <p className="text-[13px] text-slate-700 break-words">{ccEmails}</p>
         </section>
       )}
@@ -451,7 +432,7 @@ function AccessTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToT
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Access info · {client.locations.length} location{client.locations.length === 1 ? '' : 's'}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Access info · {client.locations.length} location{client.locations.length === 1 ? '' : 's'}</span>
         <button onClick={() => onJumpToTab('schedule')} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit on Schedule →</button>
       </div>
       {client.locations.length === 0 && (
@@ -523,7 +504,7 @@ function HistoryTab({ state }: { state: ClientDetailState }) {
   return (
     <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
       <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">History · {events.length} event{events.length === 1 ? '' : 's'}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">History · {events.length} event{events.length === 1 ? '' : 's'}</span>
       </div>
       <div className="px-5 pb-4">
         {events.length === 0 ? (

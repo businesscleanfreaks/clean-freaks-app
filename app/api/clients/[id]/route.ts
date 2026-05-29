@@ -88,6 +88,9 @@ async function getClientWithDetails(id: string) {
         },
         take: 10,
       },
+      clientNotes: {
+        orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+      },
       _count: {
         select: {
           locations: true,

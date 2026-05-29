@@ -22,6 +22,7 @@ model Client {
   invoicingContactName     String?    // Optional name of the person for invoicing emails
   invoicingPhone           String?    // Phone number for the invoicing contact
   notes                    String?
+  openIssues               String[]   @default([]) // Overview "Open Issues" — short unresolved-issue strings
   billingType         String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN
   cleanerPayType      String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid)
   invoiceFrequency    String     @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
@@ -54,12 +55,29 @@ model Client {
   messages            Message[]
   inboxContacts       InboxContact[]
   contacts            ClientContact[]
+  clientNotes         ClientNote[]
   emailMessages       EmailMessage[]
   convertedProspects  Prospect[]
 
   @@index([isActive])
   @@index([billingType])
   @@map("clients")
+}
+
+model ClientNote {
+  id        String   @id @default(uuid())
+  clientId  String
+  text      String
+  category  String   @default("General") // General, Scheduling, Billing, Access, Complaint, Cleaner Note, Client Preference
+  author    String?
+  isPinned  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("client_notes")
 }
 
 model Location {

@@ -31,6 +31,7 @@ export const createClientSchema = z.object({
   startDate: z.string().or(z.date()).optional().nullable(), // When the client relationship started
   notes: z.string().max(5000, 'Notes too long').optional().nullable(),
   isActive: z.boolean().optional(),
+  openIssues: z.array(z.string().max(500, 'Issue too long')).optional(),
   sourceProspectId: z.string().uuid('Invalid prospect ID').optional().nullable(),
   locations: z.array(z.object({
     name: z.string().min(1, 'Location name is required').max(200, 'Location name too long'),
