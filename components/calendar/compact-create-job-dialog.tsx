@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
 import { CalendarDays, Check, DollarSign, MapPin, Search, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
@@ -36,6 +36,32 @@ const jobTypes: Array<{ value: JobType; label: string }> = [
   { value: "move_in_out", label: "Move in/out" },
   { value: "event", label: "Event" },
 ]
+
+// Trials are short recurring runs, so only weekly-based cadences make sense here.
+type TrialDuration = "1wk" | "2wk" | "3wk" | "1mo"
+const trialFrequencies: Array<{ value: string; label: string }> = [
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "BI_WEEKLY", label: "Every 2 wks" },
+  { value: "EVERY_3_WEEKS", label: "Every 3 wks" },
+  { value: "EVERY_4_WEEKS", label: "Every 4 wks" },
+]
+const trialDurations: Array<{ value: TrialDuration; label: string }> = [
+  { value: "1wk", label: "1 week" },
+  { value: "2wk", label: "2 weeks" },
+  { value: "3wk", label: "3 weeks" },
+  { value: "1mo", label: "1 month" },
+]
+// getUTCDay() order: 0 = Sunday … 6 = Saturday (matches calculateScheduleDates)
+const dayLetters = ["S", "M", "T", "W", "T", "F", "S"]
+
+function addTrialDuration(start: Date, duration: TrialDuration): Date {
+  const end = new Date(start)
+  if (duration === "1wk") end.setDate(end.getDate() + 7)
+  else if (duration === "2wk") end.setDate(end.getDate() + 14)
+  else if (duration === "3wk") end.setDate(end.getDate() + 21)
+  else end.setMonth(end.getMonth() + 1)
+  return end
+}
 
 function initialLocationIds(client?: ClientListItem) {
   return client?.locations?.length === 1 ? [client.locations[0].id] : []
@@ -82,7 +108,14 @@ export function CompactCreateJobDialog({
   const [showNotes, setShowNotes] = useState(false)
   const [notes, setNotes] = useState("")
   const [trialNotes, setTrialNotes] = useState("")
+  const [trialFrequency, setTrialFrequency] = useState("WEEKLY")
+  const [trialDaysOfWeek, setTrialDaysOfWeek] = useState<number[]>([])
+  const [trialDuration, setTrialDuration] = useState<TrialDuration>("2wk")
   const [loading, setLoading] = useState(false)
+  // Dropdown stays hidden until the user clicks/types in the search input — matches the JSX
+  // mockup so the form doesn't feel cluttered when no client is selected yet.
+  const [dropOpen, setDropOpen] = useState(false)
+  const clientPickerRef = useRef<HTMLDivElement | null>(null)
 
   const activeCleaners = useMemo(
     () => subcontractors.filter(subcontractor => subcontractor.isActive !== false),
@@ -109,9 +142,12 @@ export function CompactCreateJobDialog({
     (timeMode === "specific" ? !!startTime : !!startWindowBegin && !!startWindowEnd)
 
   const profit = (Number(clientRate) || 0) - (Number(cleanerPay) || 0)
+  // Trials become a short recurring schedule, so they need at least one weekday picked.
+  const trialReady = !isTrial || trialDaysOfWeek.length > 0
   const canCreate =
     !!jobDate &&
     hasValidTime &&
+    trialReady &&
     Number(clientRate) >= 0 &&
     Number(cleanerPay) >= 0 &&
     clientRate !== "" &&
@@ -144,7 +180,23 @@ export function CompactCreateJobDialog({
     setShowNotes(false)
     setNotes("")
     setTrialNotes("")
+    setTrialFrequency("WEEKLY")
+    setTrialDaysOfWeek([])
+    setTrialDuration("2wk")
+    setDropOpen(false)
   }, [clients, open, preSelectedClientId, selectedDate, selectedTime])
+
+  // Close the client dropdown when clicking outside the picker container.
+  useEffect(() => {
+    if (!dropOpen) return
+    function handleClickOutside(event: MouseEvent) {
+      if (clientPickerRef.current && !clientPickerRef.current.contains(event.target as Node)) {
+        setDropOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [dropOpen])
 
   const applyScheduleDefaults = (
     locationIds: string[],
@@ -183,6 +235,7 @@ export function CompactCreateJobDialog({
     setSelectedLocationIds(nextLocationIds)
     applyScheduleDefaults(nextLocationIds, { sourceLocations: client.locations })
     setSearch("")
+    setDropOpen(false)
   }
 
   const useTypedClientAsOneTime = () => {
@@ -192,6 +245,7 @@ export function CompactCreateJobDialog({
     setSelectedClientId("")
     setSelectedLocationIds([])
     setSearch("")
+    setDropOpen(false)
   }
 
   const resetClientChoice = () => {
@@ -233,6 +287,13 @@ export function CompactCreateJobDialog({
       let locationIds = selectedLocationIds
 
       if (clientMode === "one-time") {
+        const cleanLabel = jobTypes.find(type => type.value === jobType)?.label || "clean"
+        const trialLabel = trialDurations.find(option => option.value === trialDuration)?.label || trialDuration
+        // Mark trial clients in notes so the clients list classifies them into the Trial bucket.
+        const oneTimeNotes = isTrial
+          ? `TRIAL CLIENT — ${trialLabel} trial${trialNotes.trim() ? `\n${trialNotes.trim()}` : ""}`
+          : `One-time ${cleanLabel} job`
+
         const clientResponse = await fetch("/api/clients", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -243,7 +304,7 @@ export function CompactCreateJobDialog({
             invoicingEmail: oneTimeEmail.trim() || null,
             billingType: "PER_CLEAN",
             cleanerPayType: "PER_CLEAN",
-            notes: `One-time ${jobTypes.find(type => type.value === jobType)?.label || "clean"} job`,
+            notes: oneTimeNotes,
             locations: [{ name: "Primary", address: oneTimeAddress.trim() }],
           }),
         })
@@ -251,6 +312,41 @@ export function CompactCreateJobDialog({
         if (!clientResponse.ok) throw new Error((await clientResponse.json()).error || "Failed to add one-time client")
         const newClient = await clientResponse.json()
         locationIds = [newClient.locations[0].id]
+      }
+
+      if (isTrial) {
+        // A trial is a short recurring schedule with a hard endDate so jobs don't project past
+        // the trial window (the bug Modern Animal hit). The schedule POST auto-generates its jobs.
+        const endDate = format(addTrialDuration(jobDate, trialDuration), "yyyy-MM-dd")
+        await Promise.all(locationIds.map(async locationId => {
+          const response = await fetch("/api/schedules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              locationId,
+              frequency: trialFrequency,
+              daysOfWeek: JSON.stringify(trialDaysOfWeek),
+              startDate: format(jobDate, "yyyy-MM-dd"),
+              endDate,
+              defaultClientRate: Number(clientRate),
+              defaultSubcontractorRate: Number(cleanerPay),
+              clientPayType: "PER_CLEAN",
+              subcontractorPayType: "PER_CLEAN",
+              subcontractorId: subcontractorId === "unassigned" ? null : subcontractorId,
+              timeType: timeMode === "specific" ? "SPECIFIC" : "WINDOW",
+              startTime: timeMode === "specific" ? startTime || null : null,
+              startWindowBegin: timeMode === "window" ? startWindowBegin || null : null,
+              startWindowEnd: timeMode === "window" ? startWindowEnd || null : null,
+            }),
+          })
+
+          if (!response.ok) throw new Error((await response.json()).error || "Failed to create trial schedule")
+        }))
+
+        showSuccess(locationIds.length > 1 ? `${locationIds.length} trials scheduled` : "Trial scheduled")
+        refreshCalendarData()
+        close()
+        return
       }
 
       await Promise.all(locationIds.map(async locationId => {
@@ -325,47 +421,56 @@ export function CompactCreateJobDialog({
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div ref={clientPickerRef} className="relative space-y-1.5">
                     <div className="relative">
                       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                       <Input
                         autoFocus
                         value={search}
-                        onChange={event => setSearch(event.target.value)}
+                        onClick={() => setDropOpen(true)}
+                        onFocus={() => setDropOpen(true)}
+                        onChange={event => {
+                          setSearch(event.target.value)
+                          setDropOpen(true)
+                        }}
                         placeholder="Search or type new client name..."
                         className="h-9 pl-8 text-sm"
                       />
                     </div>
-                    <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white">
-                      {filteredClients.map(client => {
-                        const firstLoc = client.locations?.[0]
-                        const subline = firstLoc?.address || client.phone || ""
-                        return (
+                    {dropOpen && (
+                      <div className="absolute left-0 right-0 top-full z-30 mt-1 space-y-1.5">
+                        <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-md">
+                          {filteredClients.map(client => {
+                            const firstLoc = client.locations?.[0]
+                            const subline = firstLoc?.address || client.phone || ""
+                            return (
+                              <button
+                                key={client.id}
+                                type="button"
+                                onClick={() => chooseClient(client)}
+                                className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+                              >
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-medium text-slate-950">{client.name}</span>
+                                  {subline && <span className="block truncate text-xs text-slate-400">{subline}</span>}
+                                </span>
+                                <Check className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                              </button>
+                            )
+                          })}
+                          {filteredClients.length === 0 && <div className="px-3 py-3 text-xs text-slate-400">No matching clients.</div>}
+                        </div>
+                        {typedClientName && !exactClientMatch && (
                           <button
-                            key={client.id}
                             type="button"
-                            onClick={() => chooseClient(client)}
-                            className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+                            onClick={useTypedClientAsOneTime}
+                            className="flex w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100"
                           >
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium text-slate-950">{client.name}</span>
-                              {subline && <span className="block truncate text-xs text-slate-400">{subline}</span>}
-                            </span>
-                            <Check className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                            <span className="min-w-0 truncate">Use "{typedClientName}" as a one-time client</span>
+                            <Check className="h-3.5 w-3.5 shrink-0" />
                           </button>
-                        )
-                      })}
-                      {filteredClients.length === 0 && <div className="px-3 py-3 text-xs text-slate-400">No matching clients.</div>}
-                    </div>
-                    {typedClientName && !exactClientMatch && (
-                      <button
-                        type="button"
-                        onClick={useTypedClientAsOneTime}
-                        className="flex w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-900 hover:bg-amber-100"
-                      >
-                        <span className="min-w-0 truncate">Use "{typedClientName}" as a one-time client</span>
-                        <Check className="h-3.5 w-3.5 shrink-0" />
-                      </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -424,13 +529,21 @@ export function CompactCreateJobDialog({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="mb-1 block text-[11px] text-slate-500">Job type</Label>
-                <Select value={isTrial ? "trial" : "one-time"} onValueChange={value => setIsTrial(value === "trial")}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="one-time">One-time</SelectItem>
-                    <SelectItem value="trial">Trial</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex h-9 rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
+                  {([
+                    { trial: false, label: "One-Time" },
+                    { trial: true, label: "Trial" },
+                  ] as const).map(option => (
+                    <button
+                      key={option.label}
+                      type="button"
+                      onClick={() => setIsTrial(option.trial)}
+                      className={`flex-1 rounded transition-colors ${isTrial === option.trial ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
                 <Label className="mb-1 block text-[11px] text-slate-500">Clean type</Label>
@@ -518,15 +631,92 @@ export function CompactCreateJobDialog({
           </section>
 
           {isTrial && (
-            <section className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial notes</Label>
-              <textarea
-                value={trialNotes}
-                onChange={event => setTrialNotes(event.target.value)}
-                placeholder="Entry details, expectations, special prep..."
-                rows={2}
-                className="w-full resize-none rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none"
-              />
+            <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div>
+                <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial length</Label>
+                <div className="flex gap-1.5">
+                  {trialDurations.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setTrialDuration(option.value)}
+                      className={`flex-1 rounded-md border px-1 py-1.5 text-[12px] font-semibold transition-colors ${
+                        trialDuration === option.value
+                          ? "border-amber-500 bg-amber-100 text-amber-900"
+                          : "border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                {jobDate && (
+                  <p className="mt-1 text-[10.5px] font-medium text-amber-700">
+                    Runs {format(jobDate, "MMM d")} → {format(addTrialDuration(jobDate, trialDuration), "MMM d")}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Frequency</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {trialFrequencies.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setTrialFrequency(option.value)}
+                      className={`rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${
+                        trialFrequency === option.value
+                          ? "border-amber-500 bg-amber-100 text-amber-900"
+                          : "border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Days</Label>
+                <div className="flex gap-1">
+                  {dayLetters.map((letter, index) => {
+                    const selected = trialDaysOfWeek.includes(index)
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() =>
+                          setTrialDaysOfWeek(current =>
+                            current.includes(index)
+                              ? current.filter(day => day !== index)
+                              : [...current, index].sort((a, b) => a - b)
+                          )
+                        }
+                        className={`flex h-8 flex-1 items-center justify-center rounded-md text-[12px] font-bold transition-colors ${
+                          selected ? "bg-amber-500 text-white" : "border border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
+                        }`}
+                      >
+                        {letter}
+                      </button>
+                    )
+                  })}
+                </div>
+                {trialDaysOfWeek.length === 0 && (
+                  <p className="mt-1 text-[10.5px] font-medium text-amber-700">Pick at least one day for the trial visits.</p>
+                )}
+              </div>
+
+              <div>
+                <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial notes</Label>
+                <textarea
+                  value={trialNotes}
+                  onChange={event => setTrialNotes(event.target.value)}
+                  placeholder="Entry details, expectations, special prep..."
+                  rows={2}
+                  className="w-full resize-none rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none"
+                />
+              </div>
             </section>
           )}
 
