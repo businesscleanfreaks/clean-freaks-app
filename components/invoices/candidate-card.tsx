@@ -1,14 +1,5 @@
 "use client"
 
-import { useState } from "react"
-import { formatCurrency } from "@/lib/utils"
-import {
-  AlertTriangle,
-  ChevronDown,
-  MailX,
-} from "lucide-react"
-import Link from "next/link"
-
 export interface InvoiceCandidate {
   candidateId: string
   clientId: string
@@ -40,282 +31,160 @@ export interface InvoiceCandidate {
   jobIds: string[]
 }
 
+// ── Shared design tokens (match invoices_page (1).jsx reference) ──
+export const MO = "'JetBrains Mono', monospace"
+export const TEAL = '#0D9488'
+
+export type InvoiceUiStatus = 'Not Sent' | 'Sent' | 'Paid'
+export type InvoiceDisplayType = 'Flat Rate' | 'Per Clean' | 'One-Time'
+
+// Card border, left-dot, status-pill bg, and card bg keyed by UI status
+export const sBrd: Record<InvoiceUiStatus, string> = { 'Not Sent': '#E2E8F0', Sent: '#93C5FD', Paid: '#86EFAC' }
+export const sDot: Record<InvoiceUiStatus, string> = { 'Not Sent': '#D97706', Sent: '#2563EB', Paid: '#16A34A' }
+export const sPBg: Record<InvoiceUiStatus, string> = { 'Not Sent': '#FFFBEB', Sent: '#DBEAFE', Paid: '#DCFCE7' }
+export const cBg: Record<InvoiceUiStatus, string> = { 'Not Sent': '#fff', Sent: '#F8FAFF', Paid: '#F7FDF9' }
+// Billing-cadence color coding for the "Invoiced" metadata column
+export const bC: Record<string, string> = { Monthly: '#64748B', Weekly: '#2563EB', 'After Clean': '#D97706' }
+
+// Whole-dollar money used on cards/headers (matches the reference's $c helper)
+export function money0(n: number): string {
+  return '$' + Math.round(n).toLocaleString('en-US')
+}
+
 interface CandidateCardProps {
   candidate: InvoiceCandidate
-  onReview: (candidate: InvoiceCandidate) => void
-  selectable?: boolean
-  selected?: boolean
-  onToggleSelect?: (candidateId: string) => void
-  canSelectNonActionable?: boolean
+  uiStatus: InvoiceUiStatus
+  freqLabel: string
+  billingLabel: string
+  selected: boolean
+  selectable: boolean
+  active?: boolean
+  onOpen: (candidate: InvoiceCandidate) => void
+  onToggleSelect: (candidateId: string) => void
+  onMarkPaid?: (candidate: InvoiceCandidate) => void
 }
 
-function getExceptionLabel(exception: InvoiceCandidate['exceptions'][number]) {
-  if (exception.type === 'SKIPPED') return exception.message.replace('clean was skipped', 'skipped')
-  if (exception.type === 'MISSING_EMAIL') return 'No email on file'
-
-  if (exception.type === 'PRICE_CHANGE') {
-    const match = exception.message.match(/Rate override on (.*?): \$(.*?) vs schedule \$(.*)/)
-    if (match) return `${match[1]}: Billed $${match[2]} instead of regular $${match[3]}.`
-  }
-
-  return exception.message
-}
-
-function getLineItemLabel(item: InvoiceCandidate['lineItems'][number]) {
-  if (item.sourceType === 'ADD_ON' || item.sourceType === 'RECURRING_ADD_ON') {
-    return item.locationName ? `${item.description} - ${item.locationName}` : item.description
-  }
-  return item.description
-}
-
-export function CandidateCard({ candidate, onReview, selectable, selected, onToggleSelect, canSelectNonActionable }: CandidateCardProps) {
-  const [expanded, setExpanded] = useState(false)
-  const hasExceptions = candidate.exceptions.length > 0
-  const isActionable = candidate.status === 'READY' || candidate.status === 'NEEDS_ATTENTION'
-  const hasExisting = !!candidate.existingInvoiceId
-  const isFlatRate = candidate.billingType === 'FLAT_RATE'
-  const isPerClean = !isFlatRate
-  const showNoChanges = isFlatRate && isActionable && !hasExceptions
-  const visibleExceptions = candidate.exceptions.slice(0, 2)
-  const statusSummary = candidate.scheduleSummary
-  const canExpand = isPerClean && candidate.lineItems.length > 0
-  const existingStatusLabel = candidate.existingInvoiceStatus === 'DRAFT'
-    ? 'Draft exists'
-    : candidate.existingInvoiceStatus === 'MARKED_INVOICED'
-      ? 'Marked invoiced'
-    : candidate.existingInvoiceStatus === 'SENT'
-      ? 'Sent'
-      : candidate.existingInvoiceStatus === 'PAID'
-        ? 'Paid'
-        : 'Already invoiced'
-  const showSelectionCheckbox = selectable && (isActionable || canSelectNonActionable)
-
-  // Highlight flat-rate rows that have exceptions (changed rows) with a soft yellow background per spec
-  const highlightChanged = isFlatRate && hasExceptions && isActionable
-  const restingBg = highlightChanged ? '#FFFBEB' : 'white'
-  const hoverBg = highlightChanged ? '#FEF3C7' : '#FAFAFA'
-  const selectedBg = highlightChanged ? '#FEF3C7' : 'rgba(0,168,150,0.06)'
+export function CandidateCard({
+  candidate,
+  uiStatus,
+  freqLabel,
+  billingLabel,
+  selected,
+  selectable,
+  active,
+  onOpen,
+  onToggleSelect,
+  onMarkPaid,
+}: CandidateCardProps) {
+  const isNotSent = uiStatus === 'Not Sent'
+  const showCheckbox = isNotSent && selectable
+  const hasFlags = candidate.exceptions.length > 0
+  const cleansLabel = candidate.jobCount > 0 ? String(candidate.jobCount) : '—'
 
   return (
     <div
+      onClick={() => onOpen(candidate)}
       style={{
-        backgroundColor: selected ? selectedBg : restingBg,
-        borderBottom: '1px solid #F1F5F9',
-        borderLeft: highlightChanged ? '3px solid #FDE68A' : '3px solid transparent',
-        transition: 'background-color 120ms',
+        background: cBg[uiStatus],
+        borderRadius: 6,
+        border: active ? `2px solid ${TEAL}` : `1px solid ${sBrd[uiStatus]}`,
+        borderLeft: `3px solid ${sDot[uiStatus]}`,
+        padding: '8px 10px',
+        cursor: 'pointer',
+        transition: 'box-shadow 0.1s',
       }}
-      onMouseEnter={e => {
-        if (isActionable && !selected) e.currentTarget.style.backgroundColor = hoverBg
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.backgroundColor = selected ? selectedBg : restingBg
-      }}
+      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)' }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '8px 12px',
-          cursor: isActionable ? 'pointer' : 'default',
-        }}
-        onClick={() => isActionable && onReview(candidate)}
-      >
-        {showSelectionCheckbox && (
+      {/* Row 1: checkbox/dot · client name · flag · amount */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {showCheckbox && (
           <button
             type="button"
             aria-label={selected ? 'Deselect invoice' : 'Select invoice'}
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleSelect?.(candidate.candidateId)
-            }}
+            onClick={e => { e.stopPropagation(); onToggleSelect(candidate.candidateId) }}
             style={{
-              width: '18px',
-              height: '18px',
-              borderRadius: '5px',
-              flexShrink: 0,
-              border: selected ? '2px solid #00A896' : '2px solid #D1D5DB',
-              backgroundColor: selected ? '#00A896' : 'white',
+              all: 'unset',
+              width: 14,
+              height: 14,
+              borderRadius: 3,
+              border: selected ? 'none' : '1.5px solid #D0D5DD',
+              background: selected ? TEAL : 'transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              transition: 'all 120ms',
-            }}
-          >
-            {selected && <span style={{ color: 'white', fontSize: '12px', lineHeight: 1, fontWeight: 700 }}>✓</span>}
-          </button>
-        )}
-
-        {canExpand ? (
-          <button
-            type="button"
-            aria-label={expanded ? 'Collapse invoice details' : 'Expand invoice details'}
-            onClick={(e) => {
-              e.stopPropagation()
-              setExpanded(current => !current)
-            }}
-            style={{
-              width: '18px',
-              height: '18px',
-              border: 'none',
-              background: 'transparent',
-              padding: 0,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
               flexShrink: 0,
             }}
           >
-            <ChevronDown
-              style={{
-                width: '15px',
-                height: '15px',
-                color: '#94A3B8',
-                transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-                transition: 'transform 120ms',
-              }}
-            />
+            {selected && (
+              <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+                <path d="M2.5 6L5 8.5 9.5 3.5" />
+              </svg>
+            )}
           </button>
-        ) : (
-          // Empty placeholder so flat-rate rows align with per-clean rows that have a chevron
-          <span aria-hidden="true" style={{ width: '18px', height: '18px', flexShrink: 0 }} />
         )}
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-            <span
-              style={{
-                fontSize: '15px',
-                fontWeight: 800,
-                color: '#111111',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {candidate.clientName}
-            </span>
-            {!candidate.hasEmail && (
-              <span title="No email on file" style={{ flexShrink: 0, display: 'flex' }}>
-                <MailX style={{ width: '14px', height: '14px', color: '#F59E0B' }} />
-              </span>
-            )}
-          </div>
-
-          <div
-            style={{
-              fontSize: '11px',
-              color: '#7C8798',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              flexWrap: 'wrap',
-            }}
+        {!isNotSent && (
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: sDot[uiStatus], flexShrink: 0 }} />
+        )}
+        {isNotSent && !selectable && (
+          <span aria-hidden="true" style={{ width: 14, height: 14, flexShrink: 0 }} />
+        )}
+        <span
+          style={{
+            flex: 1,
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#0F172A',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {candidate.clientName}
+        </span>
+        {hasFlags && (
+          <span
+            title={candidate.exceptions.map(e => e.message).join('\n')}
+            style={{ fontSize: 7, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: '#FEF2F2', color: '#DC2626', flexShrink: 0 }}
           >
-            {statusSummary && <span>{statusSummary}</span>}
-            {showNoChanges && (
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '3px',
-                color: '#047857',
-                backgroundColor: '#ECFDF5',
-                border: '1px solid #A7F3D0',
-                fontWeight: 700,
-                fontSize: '11px',
-                padding: '1px 7px',
-                borderRadius: '10px',
-              }}>
-                No changes ✓
-              </span>
-            )}
-            {!isActionable && hasExisting && (
-              <>
-                {statusSummary && <span style={{ color: '#CBD5E1' }}>·</span>}
-                <span style={{ color: '#64748B', fontWeight: 600 }}>{existingStatusLabel}</span>
-              </>
-            )}
-          </div>
-
-          {hasExceptions && isActionable && (
-            <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '7px' }}>
-              {visibleExceptions.map((ex, idx) => (
-                <span
-                  key={`${ex.type}-${idx}`}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    color: '#92400E',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                  }}
-                >
-                  <AlertTriangle style={{ width: '11px', height: '11px' }} />
-                  {getExceptionLabel(ex)}
-                </span>
-              ))}
-              {candidate.exceptions.length > visibleExceptions.length && (
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#92400E' }}>
-                  +{candidate.exceptions.length - visibleExceptions.length} more
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div style={{ textAlign: 'right', flexShrink: 0, minWidth: '92px' }}>
-          <span style={{ fontSize: '16px', fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
-            {formatCurrency(candidate.total)}
+            !
           </span>
-        </div>
-
-        {hasExisting ? (
-          <Link
-            href={`/invoices/${candidate.existingInvoiceId}`}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              padding: '4px 0',
-              fontSize: '12px',
-              fontWeight: 600,
-              color: '#0F766E',
-              textDecoration: 'none',
-              flexShrink: 0,
-            }}
-          >
-            Open
-          </Link>
-        ) : null}
+        )}
+        <span style={{ fontSize: 12, fontWeight: 700, fontFamily: MO, color: '#0F172A', flexShrink: 0 }}>
+          {money0(candidate.total)}
+        </span>
       </div>
 
-      {expanded && canExpand && (
-        <div style={{ padding: '0 12px 10px 58px' }}>
-          <div style={{ borderTop: '1px solid #F1F5F9' }}>
-            {candidate.lineItems.map((item, index) => (
-              <div
-                key={`${item.sourceType}-${item.sourceId || item.jobId || index}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  padding: '7px 0',
-                  borderBottom: index === candidate.lineItems.length - 1 ? 'none' : '1px solid #F8FAFC',
-                }}
-              >
-                <span style={{ minWidth: 0, fontSize: '12px', color: '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {getLineItemLabel(item)}
-                </span>
-                <span style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#111827', fontVariantNumeric: 'tabular-nums' }}>
-                  {formatCurrency(item.price)}
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* Row 2: Schedule · Invoiced · Cleans · [Paid] · status pill */}
+      <div style={{ display: 'flex', gap: 0, marginTop: 5, marginLeft: showCheckbox ? 20 : 14, alignItems: 'flex-end' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 7, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Schedule</div>
+          <div style={{ fontSize: 10, color: '#0F172A', fontWeight: 500 }}>{freqLabel}</div>
         </div>
-      )}
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 7, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Invoiced</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: bC[billingLabel] || '#64748B' }}>{billingLabel}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 7, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Cleans</div>
+          <div style={{ fontSize: 10, color: '#0F172A', fontWeight: 500 }}>{cleansLabel}</div>
+        </div>
+        <div style={{ marginLeft: 'auto', paddingLeft: 6, display: 'flex', gap: 3, alignItems: 'center' }}>
+          {uiStatus === 'Sent' && onMarkPaid && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onMarkPaid(candidate) }}
+              style={{ all: 'unset', fontSize: 8, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#16A34A', color: '#fff', cursor: 'pointer' }}
+            >
+              Paid
+            </button>
+          )}
+          <span style={{ fontSize: 8, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: sPBg[uiStatus], color: sDot[uiStatus] }}>
+            {uiStatus}
+          </span>
+        </div>
+      </div>
     </div>
   )
 }

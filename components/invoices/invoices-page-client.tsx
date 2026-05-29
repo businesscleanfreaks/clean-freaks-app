@@ -1,29 +1,20 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { formatCurrency } from "@/lib/utils"
-import {
-  CheckCircle2,
-  Clock,
-  ChevronRight,
-  Zap,
-  Search,
-  AlertCircle,
-  CheckCheck,
-  X,
-  Download,
-  RotateCcw,
-} from "lucide-react"
-import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { addMonths, format, startOfMonth, endOfMonth } from "date-fns"
+import { formatCurrency } from "@/lib/utils"
+import { showSuccess, showError, showApiError } from "@/lib/toast"
 import { QuickInvoiceModal } from "./quick-invoice-modal"
-import { CandidateCard, type InvoiceCandidate } from "./candidate-card"
-import { useConfirm } from "@/hooks/use-confirm"
-import { showApiError } from "@/lib/toast"
-
-function getJobSummary(entry: ClientEntry): string {
-  return entry.invoiceFrequency || `${entry.jobs.length} clean${entry.jobs.length === 1 ? '' : 's'}`
-}
+import {
+  CandidateCard,
+  money0,
+  MO,
+  TEAL,
+  sDot,
+  type InvoiceCandidate,
+  type InvoiceUiStatus,
+} from "./candidate-card"
 
 interface ReadyToBillJob {
   id: string
@@ -86,41 +77,6 @@ interface ClientEntry {
   scheduledJobs: number
 }
 
-// Calculate the total amount for a client's jobs in a specific month
-function calculateMonthTotal(entry: ClientEntry, month: string): number {
-  const monthJobs = entry.jobs.filter(j => format(new Date(j.date), 'yyyy-MM') === month)
-  if (monthJobs.length === 0) return 0
-
-  if (entry.billingType === 'FLAT_RATE') {
-    const scheduleRates = new Map<string, number>()
-    const scheduleAddOns = new Map<string, number>()
-    let oneOffTotal = 0
-
-    monthJobs.forEach(job => {
-      if (job.scheduleId) {
-        if (!scheduleRates.has(job.scheduleId)) {
-          scheduleRates.set(job.scheduleId, job.schedule?.defaultClientRate ?? job.clientRate)
-          const addOnTotal = (job.schedule?.recurringAddOnServices || []).reduce((sum, a) => sum + a.clientRate, 0)
-          scheduleAddOns.set(job.scheduleId, addOnTotal)
-        }
-      } else {
-        oneOffTotal += job.clientRate
-      }
-      ;(job.addOnServices || []).forEach(a => { oneOffTotal += a.clientRate })
-    })
-
-    return Array.from(scheduleRates.values()).reduce((s, r) => s + r, 0)
-      + Array.from(scheduleAddOns.values()).reduce((s, r) => s + r, 0)
-      + oneOffTotal
-  }
-
-  // PER_CLEAN
-  return monthJobs.reduce((sum, job) => {
-    const addOns = (job.addOnServices || []).reduce((s, a) => s + a.clientRate, 0)
-    return sum + job.clientRate + addOns
-  }, 0)
-}
-
 interface InvoicesPageClientProps {
   flatRateClients: ClientEntry[]
   perCleanClients: ClientEntry[]
@@ -142,1254 +98,560 @@ interface InvoicesPageClientProps {
   olderUninvoiced?: { count: number; months: string[] } | null
 }
 
+// ── Display helpers (adapt server candidates → prototype's card model) ──
+type DisplayType = 'Flat Rate' | 'Per Clean' | 'One-Time'
+
+interface DisplayCandidate {
+  candidate: InvoiceCandidate
+  uiStatus: InvoiceUiStatus
+  displayType: DisplayType
+  freqLabel: string
+  billingLabel: string
+  email?: string
+}
+
+// Client.invoiceFrequency enum → the prototype's "Invoiced" cadence labels
+const CADENCE_LABEL: Record<string, string> = {
+  AFTER_EACH_CLEAN: 'After Clean',
+  BI_WEEKLY: 'Weekly',
+  END_OF_MONTH: 'Monthly',
+  CUSTOM: 'Custom',
+}
+
+const STATUS_ORDER: Record<InvoiceUiStatus, number> = { 'Not Sent': 0, Sent: 1, Paid: 2 }
+
+function deriveUiStatus(status: InvoiceCandidate['status']): InvoiceUiStatus {
+  if (status === 'SENT') return 'Sent'
+  if (status === 'PAID') return 'Paid'
+  return 'Not Sent' // READY, NEEDS_ATTENTION, DRAFT_EXISTS
+}
+
+function deriveDisplayType(c: InvoiceCandidate): DisplayType {
+  if (c.billingType === 'FLAT_RATE') return 'Flat Rate'
+  // Per-clean family: distinguish one-off work (no recurring schedule) from recurring per-clean.
+  if (c.lineItems.length > 0) {
+    const anyScheduled = c.lineItems.some(li => !!li.scheduleId)
+    return anyScheduled ? 'Per Clean' : 'One-Time'
+  }
+  // Existing-invoice rows carry no line items — fall back to Per Clean to avoid
+  // mis-bucketing recurring clients into the One-Time column.
+  return 'Per Clean'
+}
+
+function deriveFreqLabel(c: InvoiceCandidate, displayType: DisplayType): string {
+  const s = (c.scheduleSummary || '').trim()
+  if (s && s !== 'No active schedule') return s
+  if (displayType === 'One-Time') return 'One-time'
+  return '—'
+}
+
 export function InvoicesPageClient({
   flatRateClients,
   perCleanClients,
-  totalReadyToBill,
-  draftsCount,
-  waitingCount,
-  paidCount,
-  readyCount,
-  invoices,
   onDataChange,
-  hasMore,
-  loadingMore,
-  onLoadMore,
   displayMonth,
   onDisplayMonthChange,
   candidates = [],
-  candidateStats,
   candidatesLoading,
-  olderUninvoiced,
 }: InvoicesPageClientProps) {
-  const [activeTab, setActiveTab] = useState<'ready' | 'waiting' | 'paid'>('ready')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [quickInvoiceOpen, setQuickInvoiceOpen] = useState(false)
+  const router = useRouter()
+  const [search, setSearch] = useState('')
+  const [fStatus, setFStatus] = useState<'All' | InvoiceUiStatus>('All')
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  const [confirmSend, setConfirmSend] = useState<'sel' | null>(null)
+  const [markingPaid, setMarkingPaid] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+
+  // Invoice review modal (the detail/edit/send surface — reuses the tested flow)
   const [selectedClient, setSelectedClient] = useState<ClientEntry | null>(null)
   const [selectedClientIndex, setSelectedClientIndex] = useState(0)
+  const [quickInvoiceOpen, setQuickInvoiceOpen] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
-  const { confirm, ConfirmDialog } = useConfirm()
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set())
-  const [markingInvoiced, setMarkingInvoiced] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
-  const [exportMonth, setExportMonth] = useState(format(new Date(), 'yyyy-MM'))
-  const [candidateSelectionMode, setCandidateSelectionMode] = useState(false)
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
-  const [selectedExistingCandidateIds, setSelectedExistingCandidateIds] = useState<Set<string>>(new Set())
-  const [returningToReview, setReturningToReview] = useState(false)
+  const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null)
+  // Batch-send queue: the selected candidates, walked in order by the modal's ‹ ›
+  const [batchQueue, setBatchQueue] = useState<InvoiceCandidate[]>([])
+  const [batchPos, setBatchPos] = useState(0)
 
+  // Ordered list of clients with billable jobs (for the review modal + navigation)
+  const navClients = useMemo(
+    () => [...flatRateClients, ...perCleanClients].sort((a, b) => a.client.name.localeCompare(b.client.name)),
+    [flatRateClients, perCleanClients]
+  )
+
+  // clientId → invoice cadence + email (candidates don't carry these directly)
+  const clientInfo = useMemo(() => {
+    const m = new Map<string, { freq?: string; email?: string }>()
+    ;[...flatRateClients, ...perCleanClients].forEach(e => {
+      m.set(e.client.id, {
+        freq: e.invoiceFrequency,
+        email: e.client.invoicingEmail || e.client.communicationEmail || undefined,
+      })
+    })
+    return m
+  }, [flatRateClients, perCleanClients])
+
+  const displayCandidates = useMemo<DisplayCandidate[]>(() => {
+    return candidates.map(c => {
+      const uiStatus = deriveUiStatus(c.status)
+      const displayType = deriveDisplayType(c)
+      const freqLabel = deriveFreqLabel(c, displayType)
+      const info = clientInfo.get(c.clientId)
+      const billingLabel = displayType === 'One-Time'
+        ? 'After Clean'
+        : (info?.freq ? (CADENCE_LABEL[info.freq] || 'Monthly') : 'Monthly')
+      return { candidate: c, uiStatus, displayType, freqLabel, billingLabel, email: info?.email }
+    })
+  }, [candidates, clientInfo])
+
+  // Three-stat totals (computed across all candidates, regardless of filter)
+  const stats = useMemo(() => {
+    let notSent = 0, sent = 0, paid = 0
+    displayCandidates.forEach(d => {
+      if (d.uiStatus === 'Sent') sent += d.candidate.total
+      else if (d.uiStatus === 'Paid') paid += d.candidate.total
+      else notSent += d.candidate.total
+    })
+    return { notSent, sent, paid }
+  }, [displayCandidates])
+
+  // Status-filter + search, split into the three columns
+  const { flatList, perList, otList } = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const matches = (d: DisplayCandidate) =>
+      (fStatus === 'All' || d.uiStatus === fStatus) &&
+      (!q || d.candidate.clientName.toLowerCase().includes(q))
+    const sortFn = (a: DisplayCandidate, b: DisplayCandidate) =>
+      STATUS_ORDER[a.uiStatus] - STATUS_ORDER[b.uiStatus] ||
+      a.candidate.clientName.localeCompare(b.candidate.clientName)
+    const visible = displayCandidates.filter(matches)
+    return {
+      flatList: visible.filter(d => d.displayType === 'Flat Rate').sort(sortFn),
+      perList: visible.filter(d => d.displayType === 'Per Clean').sort(sortFn),
+      otList: visible.filter(d => d.displayType === 'One-Time').sort(sortFn),
+    }
+  }, [displayCandidates, fStatus, search])
+
+  const selectedList = useMemo(
+    () => displayCandidates.filter(d => sel.has(d.candidate.candidateId)),
+    [displayCandidates, sel]
+  )
+  const selTotal = selectedList.reduce((s, d) => s + d.candidate.total, 0)
+
+  // ── Selection ──
+  const toggleSelect = (id: string) => setSel(s => {
+    const n = new Set(s)
+    if (n.has(id)) n.delete(id)
+    else n.add(id)
+    return n
+  })
+
+  const selectColumn = (list: DisplayCandidate[]) => {
+    const ids = list.filter(d => d.uiStatus === 'Not Sent').map(d => d.candidate.candidateId)
+    if (ids.length === 0) return
+    setSel(prev => {
+      const n = new Set(prev)
+      const allSelected = ids.every(id => n.has(id))
+      if (allSelected) ids.forEach(id => n.delete(id))
+      else ids.forEach(id => n.add(id))
+      return n
+    })
+  }
+
+  // ── Review modal ──
+  const openReviewModal = (candidate: InvoiceCandidate, batch: boolean) => {
+    const matchingClient = navClients.find(c => c.client.id === candidate.clientId)
+    if (!matchingClient) {
+      showError('Unable to open this client for review.')
+      return
+    }
+    const candidateJobIds = new Set(candidate.jobIds || [])
+    const candidateScheduleIds = new Set(
+      candidate.lineItems.map(item => item.scheduleId).filter(Boolean) as string[]
+    )
+    const scopedJobs = matchingClient.jobs.filter(job =>
+      candidateJobIds.has(job.id) ||
+      (job.scheduleId ? candidateScheduleIds.has(job.scheduleId) : false)
+    )
+    const entryForModal: ClientEntry = {
+      ...matchingClient,
+      client: { ...matchingClient.client, name: candidate.clientName },
+      jobs: scopedJobs.length > 0 ? scopedJobs : matchingClient.jobs,
+    }
+    const idx = navClients.findIndex(c => c.client.id === candidate.clientId)
+    setSelectedClient(entryForModal)
+    setSelectedClientIndex(idx >= 0 ? idx : 0)
+    setBatchMode(batch)
+    setActiveCandidateId(candidate.candidateId)
+    setQuickInvoiceOpen(true)
+  }
+
+  const openDetail = (candidate: InvoiceCandidate) => {
+    // Existing invoices (draft / sent / paid) have their own detail page.
+    if (candidate.existingInvoiceId) {
+      router.push(`/invoices/${candidate.existingInvoiceId}`)
+      return
+    }
+    openReviewModal(candidate, false)
+  }
+
+  const handleNextClient = () => {
+    // Batch send: advance through the selected queue (candidate-scoped), not all clients.
+    if (batchMode) {
+      const next = batchPos + 1
+      if (next < batchQueue.length) {
+        setBatchPos(next)
+        openReviewModal(batchQueue[next], true)
+      }
+      return
+    }
+    const next = selectedClientIndex + 1
+    if (next < navClients.length) {
+      setSelectedClient(navClients[next])
+      setSelectedClientIndex(next)
+    }
+  }
+
+  const handlePreviousClient = () => {
+    if (batchMode) {
+      const prev = batchPos - 1
+      if (prev >= 0) {
+        setBatchPos(prev)
+        openReviewModal(batchQueue[prev], true)
+      }
+      return
+    }
+    const prev = selectedClientIndex - 1
+    if (prev >= 0) {
+      setSelectedClient(navClients[prev])
+      setSelectedClientIndex(prev)
+    }
+  }
+
+  // ── Send (confirmation gate → tested review/send modal) ──
+  // Builds a queue from the current selection and opens the modal on the first
+  // item in batch mode; the modal's ‹ › then walks only the selected invoices.
+  const executeSend = () => {
+    setConfirmSend(null)
+    const queue = selectedList.map(d => d.candidate)
+    if (queue.length === 0) return
+    setBatchQueue(queue)
+    setBatchPos(0)
+    openReviewModal(queue[0], true)
+  }
+
+  // ── Mark paid ──
+  const markCandidatePaid = async (candidate: InvoiceCandidate) => {
+    if (!candidate.existingInvoiceId) {
+      showError('Create and send this invoice before marking it paid.')
+      return
+    }
+    try {
+      const res = await fetch(`/api/invoices/${candidate.existingInvoiceId}/mark-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentMethod: 'MANUAL', paymentNotes: 'Marked as paid from review queue' }),
+      })
+      if (!res.ok) {
+        await showApiError(res, 'Failed to mark invoice as paid')
+        return
+      }
+      showSuccess('Invoice marked as paid')
+      onDataChange()
+    } catch {
+      showError('Failed to mark invoice as paid')
+    }
+  }
+
+  const markSelectedPaid = async () => {
+    const withInvoice = selectedList.filter(d => d.candidate.existingInvoiceId)
+    if (withInvoice.length === 0) {
+      showError('Selected items need an invoice before they can be marked paid.')
+      return
+    }
+    setMarkingPaid(true)
+    try {
+      const results = await Promise.allSettled(
+        withInvoice.map(d =>
+          fetch(`/api/invoices/${d.candidate.existingInvoiceId}/mark-paid`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentMethod: 'MANUAL', paymentNotes: 'Marked as paid from review queue' }),
+          })
+        )
+      )
+      const ok = results.filter(r => r.status === 'fulfilled' && (r.value as Response).ok).length
+      const skipped = selectedList.length - withInvoice.length
+      if (ok > 0) {
+        showSuccess(`${ok} invoice${ok > 1 ? 's' : ''} marked as paid${skipped > 0 ? ` · ${skipped} skipped (no invoice yet)` : ''}`)
+      } else {
+        showError('Failed to mark invoices as paid')
+      }
+      setSel(new Set())
+      onDataChange()
+    } finally {
+      setMarkingPaid(false)
+    }
+  }
+
+  // ── CSV export (month-scoped) ──
   const handleBulkExport = async () => {
     setIsExporting(true)
     try {
-      const statusMap: Record<string, string> = { waiting: 'SENT', paid: 'PAID' }
-      const statusParam = statusMap[activeTab] || 'all'
-
-      // Determine date range from month filter
-      const monthValue = activeTab === 'ready' ? (displayMonth || 'all') : exportMonth
-      let dateParams = ''
-      if (monthValue && monthValue !== 'all') {
-        const monthDate = new Date(monthValue + '-01')
-        const start = format(startOfMonth(monthDate), 'yyyy-MM-dd')
-        const end = format(endOfMonth(monthDate), 'yyyy-MM-dd')
-        dateParams = `&start=${start}&end=${end}`
-      }
-
-      const res = await fetch(`/api/invoices/bulk-export?status=${statusParam}${dateParams}`)
+      const statusParam = fStatus === 'Sent' ? 'SENT' : fStatus === 'Paid' ? 'PAID' : 'all'
+      const base = displayMonth && displayMonth !== 'all' ? displayMonth : format(new Date(), 'yyyy-MM')
+      const monthDate = new Date(`${base}-01T00:00:00`)
+      const start = format(startOfMonth(monthDate), 'yyyy-MM-dd')
+      const end = format(endOfMonth(monthDate), 'yyyy-MM-dd')
+      const res = await fetch(`/api/invoices/bulk-export?status=${statusParam}&start=${start}&end=${end}`)
       if (!res.ok) throw new Error('Export failed')
       const blob = await res.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const monthLabel = monthValue !== 'all' ? `_${monthValue}` : ''
-      a.download = `Invoices_${statusParam}${monthLabel}_${new Date().toISOString().split('T')[0]}.csv`
+      a.download = `Invoices_${statusParam}_${base}_${new Date().toISOString().split('T')[0]}.csv`
       document.body.appendChild(a)
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
     } catch {
-      const { showError } = await import('@/lib/toast')
       showError('Failed to export invoices')
     } finally {
       setIsExporting(false)
     }
   }
 
-  // All clients from API (unfiltered)
-  const allReadyClients = useMemo(
-    () => [...flatRateClients, ...perCleanClients],
-    [flatRateClients, perCleanClients]
-  )
+  // ── Month picker ──
+  const baseMonth = displayMonth && displayMonth !== 'all' ? displayMonth : format(new Date(), 'yyyy-MM')
+  const monthLabel = format(new Date(`${baseMonth}-01T00:00:00`), 'MMMM yyyy')
+  const shiftMonth = (delta: number) =>
+    onDisplayMonthChange?.(format(addMonths(new Date(`${baseMonth}-01T00:00:00`), delta), 'yyyy-MM'))
 
-  // Filter clients by displayMonth and recalculate amounts
-  const monthFilteredClients = useMemo(() => {
-    if (!displayMonth || displayMonth === 'all') {
-      return allReadyClients
-    }
-    return allReadyClients
-      .map(entry => {
-        const monthJobs = entry.jobs.filter(j => format(new Date(j.date), 'yyyy-MM') === displayMonth)
-        if (monthJobs.length === 0) return null
-        return {
-          ...entry,
-          jobs: monthJobs,
-          totalAmount: calculateMonthTotal(entry, displayMonth),
-          completedJobs: monthJobs.filter(j => j.status === 'COMPLETED').length,
-          scheduledJobs: monthJobs.filter(j => j.status !== 'COMPLETED').length,
-        }
-      })
-      .filter((e): e is ClientEntry => e !== null)
-  }, [allReadyClients, displayMonth])
-
-  const filteredReadyCount = monthFilteredClients.length
-  const filteredTotalReadyToBill = useMemo(() => {
-    return monthFilteredClients.reduce((sum, e) => sum + e.totalAmount, 0)
-  }, [monthFilteredClients])
-
-  // Apply search on top of month-filtered clients
-  const filteredClients = useMemo(() => {
-    if (!searchQuery.trim()) return monthFilteredClients
-    const q = searchQuery.toLowerCase()
-    return monthFilteredClients.filter(entry =>
-      entry.client.name.toLowerCase().includes(q)
+  // ── Column renderer ──
+  const renderColumn = (title: DisplayType, list: DisplayCandidate[]) => {
+    const total = list.reduce((s, d) => s + d.candidate.total, 0)
+    const nsIds = list.filter(d => d.uiStatus === 'Not Sent').map(d => d.candidate.candidateId)
+    const allChecked = nsIds.length > 0 && nsIds.every(id => sel.has(id))
+    const isOneTime = title === 'One-Time'
+    return (
+      <div key={title} style={{ flex: isOneTime ? '0 0 auto' : 1, minWidth: isOneTime ? 200 : 0 }}>
+        {/* Column header bar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #E2E8F0' }}>
+          {nsIds.length > 0 && (
+            <button
+              type="button"
+              aria-label={`Select all ${title} invoices`}
+              onClick={() => selectColumn(list)}
+              style={{ all: 'unset', width: 14, height: 14, borderRadius: 3, border: allChecked ? 'none' : '1.5px solid #D0D5DD', background: allChecked ? TEAL : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              {allChecked && (
+                <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+                  <path d="M2.5 6L5 8.5 9.5 3.5" />
+                </svg>
+              )}
+            </button>
+          )}
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#0F172A' }}>{title}</span>
+          <span style={{ fontSize: 10, color: '#94A3B8', background: '#F1F5F9', padding: '0 6px', borderRadius: 8 }}>{list.length}</span>
+          <span style={{ fontSize: 11, fontFamily: MO, fontWeight: 600, color: '#64748B', marginLeft: 'auto' }}>{money0(total)}</span>
+        </div>
+        {/* Cards */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {list.length > 0 ? (
+            list.map(d => (
+              <CandidateCard
+                key={d.candidate.candidateId}
+                candidate={d.candidate}
+                uiStatus={d.uiStatus}
+                freqLabel={d.freqLabel}
+                billingLabel={d.billingLabel}
+                selected={sel.has(d.candidate.candidateId)}
+                selectable
+                active={activeCandidateId === d.candidate.candidateId}
+                onOpen={openDetail}
+                onToggleSelect={toggleSelect}
+                onMarkPaid={markCandidatePaid}
+              />
+            ))
+          ) : (
+            <div style={{ padding: '20px 10px', textAlign: 'center', fontSize: 11, color: '#CBD5E1', background: '#fff', borderRadius: 6, border: '1px dashed #E2E8F0' }}>
+              No invoices
+            </div>
+          )}
+        </div>
+      </div>
     )
-  }, [monthFilteredClients, searchQuery])
-
-  const filteredInvoices = useMemo(() => {
-    let inv = invoices.filter((i) => {
-      if (activeTab === 'waiting') return i.status === 'SENT'
-      if (activeTab === 'paid') return i.status === 'PAID'
-      return false
-    })
-    // Apply month filter on non-ready tabs
-    if (exportMonth && exportMonth !== 'all') {
-      inv = inv.filter((i) => {
-        const invoiceMonth = format(new Date(i.dateCreated), 'yyyy-MM')
-        return invoiceMonth === exportMonth
-      })
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
-      inv = inv.filter((i) =>
-        i.client?.name?.toLowerCase().includes(q) ||
-        i.invoiceNumber?.toLowerCase().includes(q)
-      )
-    }
-    return inv
-  }, [invoices, activeTab, searchQuery, exportMonth])
-
-  const handleQuickInvoice = (entry: ClientEntry) => {
-    // Pass ALL jobs for this client (from unfiltered list) so modal can switch months
-    const fullEntry = allReadyClients.find(c => c.client.id === entry.client.id) || entry
-    const isScopedCandidate =
-      entry.jobs.length !== fullEntry.jobs.length ||
-      entry.client.name !== fullEntry.client.name
-    const entryForModal = isScopedCandidate ? entry : fullEntry
-    const idx = monthFilteredClients.findIndex(c => c.client.id === entry.client.id)
-    setSelectedClient(entryForModal)
-    setSelectedClientIndex(idx >= 0 ? idx : 0)
-    setQuickInvoiceOpen(true)
-  }
-
-  const handleNextClient = () => {
-    const nextIndex = selectedClientIndex + 1
-    if (nextIndex < monthFilteredClients.length) {
-      const nextFiltered = monthFilteredClients[nextIndex]
-      const fullEntry = allReadyClients.find(c => c.client.id === nextFiltered.client.id) || nextFiltered
-      setSelectedClient(fullEntry)
-      setSelectedClientIndex(nextIndex)
-    }
-  }
-
-  const handlePreviousClient = () => {
-    const prevIndex = selectedClientIndex - 1
-    if (prevIndex >= 0) {
-      const prevFiltered = monthFilteredClients[prevIndex]
-      const fullEntry = allReadyClients.find(c => c.client.id === prevFiltered.client.id) || prevFiltered
-      setSelectedClient(fullEntry)
-      setSelectedClientIndex(prevIndex)
-    }
-  }
-
-  const handleQuickInvoiceSuccess = () => {
-    onDataChange()
-  }
-
-  const handleMarkAsInvoiced = async () => {
-    if (selectedJobIds.size === 0) return
-
-    const confirmed = await confirm({
-      title: "Mark Jobs as Invoiced?",
-      description: `Mark ${selectedJobIds.size} selected job(s) as already invoiced? This will remove them from the ready-to-bill list.`,
-      confirmText: "Mark as Invoiced",
-      cancelText: "Cancel",
-    })
-
-    if (!confirmed) return
-
-    setMarkingInvoiced(true)
-    try {
-      const response = await fetch('/api/jobs/bulk-update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobIds: Array.from(selectedJobIds),
-          invoiced: true,
-        }),
-      })
-
-      if (!response.ok) {
-        await showApiError(response, 'Failed to mark jobs as invoiced')
-        setMarkingInvoiced(false)
-        return
-      }
-
-      const { showSuccess } = await import('@/lib/toast')
-      showSuccess(`${selectedJobIds.size} job(s) marked as invoiced`)
-      setSelectedJobIds(new Set())
-      setSelectionMode(false)
-      onDataChange()
-    } catch (error) {
-      const { showError } = await import('@/lib/toast')
-      showError('Failed to mark jobs as invoiced. Please try again.')
-    } finally {
-      setMarkingInvoiced(false)
-    }
-  }
-
-  const toggleAllJobsForClient = (entry: ClientEntry) => {
-    const clientJobIds = new Set(entry.jobs.map((job) => job.id))
-    const allSelected = Array.from(clientJobIds).every(id => selectedJobIds.has(id))
-
-    setSelectedJobIds(prev => {
-      const newSet = new Set(prev)
-      if (allSelected) {
-        clientJobIds.forEach(id => newSet.delete(id))
-      } else {
-        clientJobIds.forEach(id => newSet.add(id))
-      }
-      return newSet
-    })
-  }
-
-  const exitSelectionMode = () => {
-    setSelectionMode(false)
-    setSelectedJobIds(new Set())
-  }
-
-  const selectedJobCount = selectedJobIds.size
-
-  // Use candidate counts when available, fallback to legacy counts
-  const reviewQueueCount = candidateStats
-    ? candidateStats.readyCount + candidateStats.attentionCount + (candidateStats.draftCount || 0)
-    : filteredReadyCount
-  const reviewQueueTotal = candidateStats
-    ? candidateStats.readyTotal
-    : filteredTotalReadyToBill
-
-  // Separate candidates by status for rendering
-  const readyCandidates = candidates.filter(c => c.status === 'READY')
-  const attentionCandidates = candidates.filter(c => c.status === 'NEEDS_ATTENTION')
-  const existingCandidates = candidates.filter(c => c.status === 'DRAFT_EXISTS' || c.status === 'SENT' || c.status === 'PAID')
-  const resettableExistingCandidates = useMemo(
-    () => existingCandidates.filter(c => c.existingInvoiceStatus === 'DRAFT' || c.existingInvoiceStatus === 'MARKED_INVOICED'),
-    [existingCandidates]
-  )
-
-  // Split actionable candidates (READY + NEEDS_ATTENTION) by billing type
-  const actionableCandidates = useMemo(() => [...readyCandidates, ...attentionCandidates], [readyCandidates, attentionCandidates])
-  const flatRateCandidates = useMemo(() => actionableCandidates.filter(c => c.billingType === 'FLAT_RATE'), [actionableCandidates])
-  const perCleanCandidates = useMemo(() => actionableCandidates.filter(c => c.billingType !== 'FLAT_RATE'), [actionableCandidates])
-  const cleanFlatRateCandidates = useMemo(
-    () => flatRateCandidates.filter(c => c.status === 'READY' && c.exceptions.length === 0),
-    [flatRateCandidates]
-  )
-  const flaggedFlatRateCandidates = useMemo(
-    () => flatRateCandidates.filter(c => c.status !== 'READY' || c.exceptions.length > 0),
-    [flatRateCandidates]
-  )
-
-  const toggleCandidateSelection = (clientId: string) => {
-    setSelectedCandidateIds(prev => {
-      const next = new Set(prev)
-      if (next.has(clientId)) {
-        next.delete(clientId)
-      } else {
-        next.add(clientId)
-      }
-      return next
-    })
-  }
-
-  const selectAllCandidates = () => {
-    setSelectedCandidateIds(new Set(actionableCandidates.map(c => c.candidateId)))
-  }
-
-  const selectCleanFlatRateCandidates = () => {
-    setCandidateSelectionMode(true)
-    setSelectedCandidateIds(new Set(cleanFlatRateCandidates.map(c => c.candidateId)))
-  }
-
-  const clearCandidateSelection = () => {
-    setSelectedCandidateIds(new Set())
-  }
-
-  const toggleExistingCandidateSelection = (candidateId: string) => {
-    setSelectedExistingCandidateIds(prev => {
-      const next = new Set(prev)
-      if (next.has(candidateId)) {
-        next.delete(candidateId)
-      } else {
-        next.add(candidateId)
-      }
-      return next
-    })
-  }
-
-  const toggleAllResettableExisting = () => {
-    const resettableIds = resettableExistingCandidates.map(c => c.candidateId)
-    const allSelected = resettableIds.length > 0 && resettableIds.every(id => selectedExistingCandidateIds.has(id))
-    setSelectedExistingCandidateIds(allSelected ? new Set() : new Set(resettableIds))
-  }
-
-  const handleReturnSelectedToReview = async () => {
-    const selected = existingCandidates.filter(c => selectedExistingCandidateIds.has(c.candidateId))
-    if (selected.length === 0) return
-
-    const confirmed = await confirm({
-      title: 'Return selected to Review?',
-      description: `This will delete draft invoices or undo manual "already invoiced" marks for ${selected.length} item${selected.length === 1 ? '' : 's'}. Sent and paid invoices stay protected.`,
-      confirmText: 'Return to Review',
-      cancelText: 'Cancel',
-    })
-
-    if (!confirmed) return
-
-    setReturningToReview(true)
-    try {
-      const response = await fetch('/api/invoices/bulk-return-to-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: selected.map(candidate => ({
-            invoiceId: candidate.existingInvoiceStatus === 'DRAFT' ? candidate.existingInvoiceId : undefined,
-            jobIds: candidate.existingInvoiceStatus === 'MARKED_INVOICED' ? candidate.jobIds : [],
-          })),
-        }),
-      })
-
-      if (!response.ok) {
-        await showApiError(response, 'Failed to return selected items to Review')
-        return
-      }
-
-      const result = await response.json().catch(() => ({}))
-      const { showSuccess, showWarning } = await import('@/lib/toast')
-      showSuccess(result.message || 'Selected items returned to Review')
-      if (result.skippedInvoices?.length) {
-        showWarning(`${result.skippedInvoices.length} sent/paid invoice${result.skippedInvoices.length === 1 ? '' : 's'} were left alone.`)
-      }
-      setSelectedExistingCandidateIds(new Set())
-      onDataChange()
-    } catch {
-      const { showError } = await import('@/lib/toast')
-      showError('Failed to return selected items to Review. Please try again.')
-    } finally {
-      setReturningToReview(false)
-    }
-  }
-
-  const exitCandidateSelectionMode = () => {
-    setCandidateSelectionMode(false)
-    setSelectedCandidateIds(new Set())
-    setSelectedExistingCandidateIds(new Set())
-  }
-
-  const handleBatchReviewSelected = () => {
-    // Start batch mode with the first selected candidate
-    const selectedList = actionableCandidates.filter(c => selectedCandidateIds.has(c.candidateId))
-    if (selectedList.length === 0) return
-    const firstCandidate = selectedList[0]
-    const matchingClient = allReadyClients.find(c => c.client.id === firstCandidate.clientId)
-    if (matchingClient) {
-      const idx = monthFilteredClients.findIndex(c => c.client.id === firstCandidate.clientId)
-      setSelectedClient(matchingClient)
-      setSelectedClientIndex(idx >= 0 ? idx : 0)
-      setBatchMode(true)
-      setQuickInvoiceOpen(true)
-    }
-  }
-
-  const handleCandidateReview = (candidate: InvoiceCandidate) => {
-    // Find matching client in the legacy data to open QuickInvoice modal
-    const matchingClient = allReadyClients.find(c => c.client.id === candidate.clientId)
-    if (matchingClient) {
-      const candidateJobIds = new Set(candidate.jobIds || [])
-      const candidateScheduleIds = new Set(
-        candidate.lineItems.map(item => item.scheduleId).filter(Boolean) as string[]
-      )
-      const scopedJobs = matchingClient.jobs.filter(job =>
-        candidateJobIds.has(job.id) ||
-        (job.scheduleId ? candidateScheduleIds.has(job.scheduleId) : false)
-      )
-      handleQuickInvoice({
-        ...matchingClient,
-        client: {
-          ...matchingClient.client,
-          name: candidate.clientName,
-        },
-        jobs: scopedJobs.length > 0 ? scopedJobs : matchingClient.jobs,
-      })
-    }
-  }
-
-  const tabs = [
-    { key: 'ready' as const,   label: 'Not Sent', count: reviewQueueCount },
-    { key: 'waiting' as const, label: 'Sent',     count: waitingCount     },
-    { key: 'paid' as const,    label: 'Paid',     count: paidCount        },
-  ]
-
-  const activeMonth = activeTab === 'ready' ? (displayMonth || format(new Date(), 'yyyy-MM')) : exportMonth
-  const activeMonthLabel = activeMonth === 'all'
-    ? 'All'
-    : format(new Date(`${activeMonth}-01T00:00:00`), 'MMM yyyy')
-  const shiftActiveMonth = (delta: number) => {
-    const base = activeMonth === 'all' ? new Date() : new Date(`${activeMonth}-01T00:00:00`)
-    const next = format(addMonths(base, delta), 'yyyy-MM')
-    if (activeTab === 'ready') {
-      onDisplayMonthChange?.(next)
-    } else {
-      setExportMonth(next)
-    }
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 py-6" style={{ maxWidth: '1080px', margin: '0 auto' }}>
-      {/* Page Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4" style={{ marginBottom: '18px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111111', lineHeight: '1.2' }}>
-          Invoices
-        </h1>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => shiftActiveMonth(-1)}
-              aria-label="Previous month"
-              style={{
-                width: '30px', height: '30px', borderRadius: '7px',
-                border: '1px solid #E5E7EB', backgroundColor: 'white',
-                color: '#64748B', fontSize: '17px', cursor: 'pointer',
-              }}
-            >
-              ‹
-            </button>
-            <div style={{
-              minWidth: '128px', height: '30px', borderRadius: '7px',
-              border: '1px solid #E5E7EB', backgroundColor: 'white',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '13px', fontWeight: 700, color: '#111827',
-            }}>
-              {activeMonthLabel}
+    <div style={{ fontFamily: "'Outfit',-apple-system,sans-serif", background: '#F1F5F9', minHeight: '100vh', padding: '20px 28px' }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');@keyframes ti{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}@keyframes fadeIn{from{opacity:0;transform:scale(0.98)}to{opacity:1;transform:scale(1)}}`}</style>
+
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        {/* ── Header: title + month picker + three-stat totals ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F172A' }}>Invoices</h1>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #E2E8F0', borderRadius: 7, padding: '3px 10px', marginTop: 4, background: '#fff' }}>
+              <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" style={{ all: 'unset', fontSize: 14, lineHeight: 1, color: '#94A3B8', cursor: 'pointer', padding: '0 2px' }}>‹</button>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', minWidth: 86, textAlign: 'center' }}>{monthLabel}</span>
+              <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month" style={{ all: 'unset', fontSize: 14, lineHeight: 1, color: '#94A3B8', cursor: 'pointer', padding: '0 2px' }}>›</button>
             </div>
-            <button
-              onClick={() => shiftActiveMonth(1)}
-              aria-label="Next month"
-              style={{
-                width: '30px', height: '30px', borderRadius: '7px',
-                border: '1px solid #E5E7EB', backgroundColor: 'white',
-                color: '#64748B', fontSize: '17px', cursor: 'pointer',
-              }}
-            >
-              ›
-            </button>
           </div>
-          {activeTab === 'ready' && !candidatesLoading && (
-            <div style={{ textAlign: 'right', minWidth: '120px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', color: '#94A3B8', textTransform: 'uppercase' }}>
-                To invoice
+          <div style={{ display: 'flex', gap: 20 }}>
+            {([['Not Sent', stats.notSent, '#D97706'], ['Sent', stats.sent, '#2563EB'], ['Paid', stats.paid, '#16A34A']] as const).map(([label, amount, color]) => (
+              <div key={label} style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 8, fontWeight: 600, color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: MO, color }}>{money0(amount)}</div>
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
-                {formatCurrency(reviewQueueTotal)}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center" style={{ borderBottom: '1px solid #EEEEEE', marginBottom: '16px' }}>
-        {tabs.map(tab => {
-          const isActive = activeTab === tab.key
-          return (
-            <button
-              key={tab.key}
-              onClick={() => { setActiveTab(tab.key); setSearchQuery('') }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '10px 16px',
-                marginBottom: '-1px',
-                background: 'none',
-                border: 'none',
-                borderBottom: isActive ? '2px solid #00A896' : '2px solid transparent',
-                color: isActive ? '#111111' : '#888888',
-                fontWeight: isActive ? 600 : 400,
-                fontSize: '14px',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'color 150ms',
-              }}
-            >
-              {tab.label}
-              <span style={{
-                fontSize: '11px', fontWeight: 600,
-                padding: '2px 6px', borderRadius: '10px',
-                backgroundColor: isActive ? 'rgba(0,168,150,0.15)' : '#F5F5F5',
-                color: isActive ? '#00A896' : '#888888',
-              }}>
-                {tab.count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Search + Actions Bar */}
-      <div className="flex items-center gap-3" style={{ marginBottom: '12px' }}>
-        <div className="flex-1 relative">
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-            style={{ width: '16px', height: '16px', color: '#BBBBBB' }}
-          />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder={activeTab === 'ready' ? 'Search clients...' : 'Search invoices...'}
-            style={{
-              width: '100%',
-              padding: '9px 12px 9px 38px',
-              fontSize: '14px',
-              color: '#111111',
-              backgroundColor: '#F7F7F7',
-              border: '1px solid transparent',
-              borderRadius: '10px',
-              outline: 'none',
-              transition: 'border-color 150ms, background-color 150ms',
-            }}
-            onFocus={e => { e.currentTarget.style.borderColor = '#00A896'; e.currentTarget.style.backgroundColor = '#FFFFFF' }}
-            onBlur={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.backgroundColor = '#F7F7F7' }}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-              style={{ color: '#BBBBBB', background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
-            >
-              <X style={{ width: '14px', height: '14px' }} />
-            </button>
-          )}
-        </div>
-
-        {activeTab === 'ready' && (
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {candidates.length > 0 && !candidatesLoading ? (
-              selectedCandidateIds.size > 0 ? (
-                <>
-                  <button
-                    onClick={clearCandidateSelection}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '13px', fontWeight: 500,
-                      color: '#64748B',
-                      backgroundColor: 'transparent',
-                      border: '1px solid #E5E7EB',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Clear
-                  </button>
-                  <button
-                    onClick={handleBatchReviewSelected}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '8px 14px',
-                      fontSize: '13px', fontWeight: 600,
-                      color: 'white',
-                      backgroundColor: '#00A896',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Zap style={{ width: '14px', height: '14px' }} />
-                    Review {selectedCandidateIds.size}
-                  </button>
-                </>
-              ) : null
-            ) : selectionMode ? (
-              <>
-                {selectedJobCount > 0 && (
-                  <button
-                    onClick={handleMarkAsInvoiced}
-                    disabled={markingInvoiced}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '8px 14px',
-                      fontSize: '13px', fontWeight: 600,
-                      color: 'white',
-                      backgroundColor: '#F59E0B',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: markingInvoiced ? 'not-allowed' : 'pointer',
-                      opacity: markingInvoiced ? 0.5 : 1,
-                      transition: 'background-color 150ms',
-                    }}
-                  >
-                    <CheckCheck style={{ width: '14px', height: '14px' }} />
-                    {markingInvoiced ? 'Marking...' : `Mark ${selectedJobCount} Invoiced`}
-                  </button>
-                )}
-                <button
-                  onClick={exitSelectionMode}
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: '13px', fontWeight: 500,
-                    color: '#00A896',
-                    backgroundColor: 'transparent',
-                    border: '1px solid #00A896',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Done
-                </button>
-              </>
-            ) : (
-              <>
-                {filteredReadyCount > 0 && (
-                  <button
-                    onClick={() => setSelectionMode(true)}
-                    style={{
-                      padding: '8px 14px',
-                      fontSize: '13px', fontWeight: 500,
-                      color: '#888888',
-                      backgroundColor: 'transparent',
-                      border: '1px solid #DDDDDD',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'border-color 150ms',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#BBBBBB' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#DDDDDD' }}
-                  >
-                    Select
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {activeTab !== 'ready' && (
-          <button
-            onClick={handleBulkExport}
-            disabled={isExporting}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '8px 14px',
-              fontSize: '13px', fontWeight: 600,
-              color: '#00A896',
-              backgroundColor: 'transparent',
-              border: '1px solid #00A896',
-              borderRadius: '8px',
-              cursor: isExporting ? 'not-allowed' : 'pointer',
-              opacity: isExporting ? 0.5 : 1,
-              transition: 'background-color 150ms',
-              flexShrink: 0,
-            }}
-          >
-            <Download style={{ width: '14px', height: '14px' }} />
-            {isExporting ? 'Exporting...' : 'Download CSV'}
-          </button>
-        )}
-      </div>
-
-      {/* Ready Tab: Summary */}
-      {activeTab === 'ready' && candidatesLoading && (
-        <div
-          className="flex items-center justify-between"
-          style={{ padding: '0 4px', marginBottom: '12px' }}
-        >
-          <div className="flex items-center gap-2">
-            <span style={{ fontSize: '18px', fontWeight: 600, color: '#64748B' }}>
-              Loading invoices...
-            </span>
+            ))}
           </div>
         </div>
-      )}
 
-      {/* READY TAB: Review Queue */}
-      {activeTab === 'ready' && (
-        <>
-          {/* Candidate-based Review Queue (when candidates are loaded) */}
-          {candidates.length > 0 && !candidatesLoading ? (
-            <div className="space-y-4">
-              {/* Two-column kanban for Flat Rate + Per Clean (stacks to one column on narrow screens) */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-              {/* ── Flat Rate Section ── */}
-              {flatRateCandidates.length > 0 && (
-                <div>
-                  <div className="mb-2 px-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div style={{
-                        fontSize: '12px', fontWeight: 800,
-                        color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.06em',
-                      }}>
-                        Flat Rate
-                      </div>
-                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#6B7280' }}>
-                        {flatRateCandidates.length} client{flatRateCandidates.length !== 1 ? 's' : ''}
-                      </span>
-                      <span style={{ color: '#CBD5E1', fontSize: '12px' }}>·</span>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#4F46E5' }}>
-                        {formatCurrency(flatRateCandidates.reduce((s, c) => s + c.total, 0))}
-                      </span>
-                      {cleanFlatRateCandidates.length > 0 && (
-                        <button
-                          onClick={selectCleanFlatRateCandidates}
-                          style={{
-                            marginLeft: 'auto',
-                            padding: '5px 10px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            color: '#4F46E5',
-                            backgroundColor: 'white',
-                            border: '1px solid #C7D2FE',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Select all unchanged
-                        </button>
-                      )}
-                    </div>
-                    <p style={{ marginTop: '4px', fontSize: '12px', color: '#64748B' }}>
-                      Same every month unless something changed
-                    </p>
-                  </div>
-                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
-                    {[...flaggedFlatRateCandidates, ...cleanFlatRateCandidates].map(c => (
-                      <CandidateCard
-                        key={c.candidateId}
-                        candidate={c}
-                        onReview={handleCandidateReview}
-                        selectable={true}
-                        selected={selectedCandidateIds.has(c.candidateId)}
-                        onToggleSelect={toggleCandidateSelection}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Per Clean Section ── */}
-              {perCleanCandidates.length > 0 && (
-                <div>
-                  <div className="mb-2 px-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div style={{
-                        fontSize: '12px', fontWeight: 800,
-                        color: '#15803D', textTransform: 'uppercase', letterSpacing: '0.06em',
-                      }}>
-                        Per Clean
-                      </div>
-                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#6B7280' }}>
-                        {perCleanCandidates.length} client{perCleanCandidates.length !== 1 ? 's' : ''}
-                      </span>
-                      <span style={{ color: '#CBD5E1', fontSize: '12px' }}>·</span>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#15803D' }}>
-                        {formatCurrency(perCleanCandidates.reduce((s, c) => s + c.total, 0))}
-                      </span>
-                    </div>
-                    <p style={{ marginTop: '4px', fontSize: '12px', color: '#64748B' }}>
-                      Amount varies - verify before sending
-                    </p>
-                  </div>
-                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
-                    {perCleanCandidates.map(c => (
-                      <CandidateCard
-                        key={c.candidateId}
-                        candidate={c}
-                        onReview={handleCandidateReview}
-                        selectable={true}
-                        selected={selectedCandidateIds.has(c.candidateId)}
-                        onToggleSelect={toggleCandidateSelection}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              </div>{/* /grid */}
-
-              {/* ── Already Invoiced Section ── */}
-              {existingCandidates.length > 0 && (
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
-                    <div className="flex items-center gap-2">
-                      <h3 style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Already Invoiced
-                      </h3>
-                      <span style={{
-                        fontSize: '11px', fontWeight: 600, color: '#6B7280',
-                        backgroundColor: '#F3F4F6', padding: '1px 6px', borderRadius: '8px',
-                      }}>
-                        {existingCandidates.length}
-                      </span>
-                    </div>
-                    {resettableExistingCandidates.length > 0 && (
-                      <div className="ml-auto flex items-center gap-2">
-                        <button
-                          onClick={toggleAllResettableExisting}
-                          disabled={returningToReview}
-                          style={{
-                            padding: '5px 10px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            color: '#64748B',
-                            backgroundColor: 'white',
-                            border: '1px solid #E5E7EB',
-                            borderRadius: '8px',
-                            cursor: returningToReview ? 'not-allowed' : 'pointer',
-                            opacity: returningToReview ? 0.6 : 1,
-                          }}
-                        >
-                          {resettableExistingCandidates.every(c => selectedExistingCandidateIds.has(c.candidateId)) ? 'Clear resettable' : 'Select resettable'}
-                        </button>
-                        {selectedExistingCandidateIds.size > 0 && (
-                          <button
-                            onClick={handleReturnSelectedToReview}
-                            disabled={returningToReview}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '5px 10px',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                              color: 'white',
-                              backgroundColor: '#0F766E',
-                              border: 'none',
-                              borderRadius: '8px',
-                              cursor: returningToReview ? 'not-allowed' : 'pointer',
-                              opacity: returningToReview ? 0.7 : 1,
-                            }}
-                          >
-                            <RotateCcw style={{ width: '13px', height: '13px' }} />
-                            {returningToReview ? 'Returning...' : `Return ${selectedExistingCandidateIds.size} to Review`}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
-                    {existingCandidates.map(c => (
-                      <CandidateCard
-                        key={c.existingInvoiceId || c.candidateId}
-                        candidate={c}
-                        onReview={handleCandidateReview}
-                        selectable={c.existingInvoiceStatus === 'DRAFT' || c.existingInvoiceStatus === 'MARKED_INVOICED'}
-                        canSelectNonActionable
-                        selected={selectedExistingCandidateIds.has(c.candidateId)}
-                        onToggleSelect={toggleExistingCandidateSelection}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Empty state when all are invoiced */}
-              {readyCandidates.length === 0 && attentionCandidates.length === 0 && (
-                <div
-                  className="flex flex-col items-center justify-center py-16"
-                  style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
-                >
-                  <CheckCircle2 style={{ width: '40px', height: '40px', color: '#00A896', marginBottom: '12px' }} />
-                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>All invoiced!</p>
-                  <p style={{ fontSize: '14px', color: '#888888' }}>
-                    No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${activeMonthLabel}` : ''}.
-                  </p>
-                  {draftsCount > 0 && (
-                    <p style={{ fontSize: '13px', color: '#00A896', marginTop: '8px', fontWeight: 500 }}>
-                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} in Review
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* ── Sticky Batch Selection Bar ── */}
-              {(candidateSelectionMode || selectedCandidateIds.size > 0) && (
-                <div
-                  style={{
-                    position: 'sticky',
-                    bottom: '0',
-                    zIndex: 20,
-                    margin: '0 -16px',
-                    padding: '12px 20px',
-                    backgroundColor: 'rgba(255,255,255,0.97)',
-                    borderTop: '1px solid #E5E7EB',
-                    backdropFilter: 'blur(8px)',
-                    boxShadow: '0 -4px 20px rgba(0,0,0,0.08)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    animation: 'slideUp 200ms ease-out',
-                  }}
-                >
-                  <style>{`@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#111111' }}>
-                      {selectedCandidateIds.size} selected
-                    </span>
-                    <span style={{ color: '#DDDDDD' }}>·</span>
-                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#00A896' }}>
-                      {formatCurrency(actionableCandidates.filter(c => selectedCandidateIds.has(c.candidateId)).reduce((s, c) => s + c.total, 0))}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (selectedCandidateIds.size === actionableCandidates.length) {
-                        clearCandidateSelection()
-                      } else {
-                        selectAllCandidates()
-                      }
-                    }}
-                    style={{
-                      padding: '7px 14px', fontSize: '13px', fontWeight: 500,
-                      color: '#555555', backgroundColor: '#F5F5F5',
-                      border: '1px solid #E5E7EB', borderRadius: '8px',
-                      cursor: 'pointer', transition: 'background-color 120ms',
-                    }}
-                  >
-                    {selectedCandidateIds.size === actionableCandidates.length ? 'Clear All' : 'Select All'}
-                  </button>
-                  {cleanFlatRateCandidates.length > 0 && (
-                    <button
-                      onClick={selectCleanFlatRateCandidates}
-                      style={{
-                        padding: '7px 14px', fontSize: '13px', fontWeight: 500,
-                        color: '#4F46E5', backgroundColor: '#EEF2FF',
-                        border: '1px solid #C7D2FE', borderRadius: '8px',
-                        cursor: 'pointer', transition: 'background-color 120ms',
-                      }}
-                    >
-                      Select unchanged
-                    </button>
-                  )}
-                  <button
-                    onClick={exitCandidateSelectionMode}
-                    style={{
-                      padding: '7px 14px', fontSize: '13px', fontWeight: 500,
-                      color: '#555555', backgroundColor: '#F5F5F5',
-                      border: '1px solid #E5E7EB', borderRadius: '8px',
-                      cursor: 'pointer', transition: 'background-color 120ms',
-                    }}
-                  >
-                    Done
-                  </button>
-                  <button
-                    onClick={handleBatchReviewSelected}
-                    disabled={selectedCandidateIds.size === 0}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '8px 18px', fontSize: '13px', fontWeight: 600,
-                      color: 'white', backgroundColor: '#00A896',
-                      border: 'none', borderRadius: '8px',
-                      cursor: selectedCandidateIds.size === 0 ? 'not-allowed' : 'pointer',
-                      opacity: selectedCandidateIds.size === 0 ? 0.5 : 1,
-                      transition: 'background-color 150ms',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#008F7E' }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#00A896' }}
-                  >
-                    <Zap style={{ width: '14px', height: '14px' }} />
-                    Review Selected
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : candidatesLoading ? (
-            /* Loading skeleton for candidates */
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <div
-                  key={i}
-                  style={{
-                    height: '64px', borderRadius: '12px',
-                    backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6',
-                    animation: 'pulse 1.5s ease-in-out infinite',
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            /* Fallback: legacy client list when candidates aren't available */
-            <>
-              {filteredReadyCount === 0 && !searchQuery ? (
-                <div
-                  className="flex flex-col items-center justify-center py-16"
-                  style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
-                >
-                  <CheckCircle2 style={{ width: '40px', height: '40px', color: '#00A896', marginBottom: '12px' }} />
-                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>All invoiced!</p>
-                  <p style={{ fontSize: '14px', color: '#888888' }}>No uninvoiced clients remaining{displayMonth && displayMonth !== 'all' ? ` for ${activeMonthLabel}` : ''}.</p>
-                  {draftsCount > 0 && (
-                    <p style={{ fontSize: '13px', color: '#00A896', marginTop: '8px', fontWeight: 500 }}>
-                      {draftsCount} draft invoice{draftsCount !== 1 ? 's' : ''} in Review
-                    </p>
-                  )}
-                </div>
-              ) : filteredClients.length === 0 && searchQuery ? (
-                <div
-                  className="flex flex-col items-center justify-center py-16"
-                  style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px' }}
-                >
-                  <Search style={{ width: '40px', height: '40px', color: '#DDDDDD', marginBottom: '12px' }} />
-                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>No results</p>
-                  <p style={{ fontSize: '14px', color: '#888888' }}>No clients match &ldquo;{searchQuery}&rdquo;</p>
-                </div>
-              ) : (
-                <div style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px', overflow: 'hidden' }}>
-                  {filteredClients.map((entry, idx) => {
-                    const hasEmail = !!entry.client.invoicingEmail || !!entry.client.communicationEmail
-                    const isLast = idx === filteredClients.length - 1
-                    const jobSummary = getJobSummary(entry)
-
-                    const clientJobIds = entry.jobs.map((job) => job.id)
-                    const allSelected = selectionMode && clientJobIds.length > 0 && clientJobIds.every((id: string) => selectedJobIds.has(id))
-                    const someSelected = selectionMode && clientJobIds.some((id: string) => selectedJobIds.has(id))
-
-                    return (
-                      <div
-                        key={entry.client.id}
-                        onClick={() => {
-                          if (selectionMode) {
-                            toggleAllJobsForClient(entry)
-                          } else {
-                            handleQuickInvoice(entry)
-                          }
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          padding: '14px 16px',
-                          cursor: 'pointer',
-                          borderBottom: isLast ? 'none' : '1px solid #F3F3F3',
-                          transition: 'background-color 80ms',
-                          backgroundColor: allSelected ? 'rgba(0,168,150,0.04)' : 'white',
-                        }}
-                        onMouseEnter={e => { if (!allSelected) e.currentTarget.style.backgroundColor = '#FAFAFA' }}
-                        onMouseLeave={e => { if (!allSelected) e.currentTarget.style.backgroundColor = allSelected ? 'rgba(0,168,150,0.04)' : 'white' }}
-                      >
-                        {selectionMode && (
-                          <div
-                            style={{
-                              width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0,
-                              border: allSelected ? '2px solid #00A896' : someSelected ? '2px solid #00A896' : '2px solid #DDDDDD',
-                              backgroundColor: allSelected ? '#00A896' : someSelected ? 'rgba(0,168,150,0.15)' : 'white',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              transition: 'all 120ms',
-                            }}
-                          >
-                            {allSelected && <span style={{ color: 'white', fontSize: '12px', lineHeight: 1, fontWeight: 700 }}>✓</span>}
-                            {someSelected && !allSelected && <span style={{ color: '#00A896', fontSize: '10px', lineHeight: 1, fontWeight: 700 }}>–</span>}
-                          </div>
-                        )}
-
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                            <span style={{
-                              fontSize: '15px', fontWeight: 600, color: '#111111',
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              {entry.client.name}
-                            </span>
-                            {!hasEmail && (
-                              <span title="No email on file" style={{ flexShrink: 0, display: 'flex' }}>
-                                <AlertCircle style={{ width: '14px', height: '14px', color: '#F59E0B' }} />
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#777777', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{
-                              padding: 0, borderRadius: 0,
-                              fontSize: '12px', fontWeight: 500,
-                              backgroundColor: 'transparent',
-                              color: '#777777',
-                            }}>
-                              {jobSummary}
-                            </span>
-                            {!hasEmail && <span style={{ color: '#DDDDDD' }}>·</span>}
-                            {!hasEmail && <span style={{ color: '#92400E', fontWeight: 600 }}>Email needed</span>}
-                          </div>
-                        </div>
-
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <span style={{ fontSize: '15px', fontWeight: 700, color: '#111111' }}>
-                            {formatCurrency(entry.totalAmount)}
-                          </span>
-                        </div>
-
-                        {!selectionMode && (
-                          <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC', flexShrink: 0 }} />
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </>
-      )}
-      {/* Sent / Paid tabs */}
-      {activeTab !== 'ready' && (
-        <div style={{ backgroundColor: 'white', border: '1px solid #EEEEEE', borderRadius: '12px', overflow: 'hidden' }}>
-          {filteredInvoices.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              {activeTab === 'waiting' && (
-                <>
-                  <Clock style={{ width: '40px', height: '40px', color: '#DDDDDD', marginBottom: '12px' }} />
-                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>
-                    {searchQuery ? 'No results' : 'No pending payments'}
-                  </p>
-                  <p style={{ fontSize: '14px', color: '#888888' }}>
-                    {searchQuery ? `No invoices match "${searchQuery}"` : 'All invoices have been paid!'}
-                  </p>
-                </>
-              )}
-              {activeTab === 'paid' && (
-                <>
-                  <CheckCircle2 style={{ width: '40px', height: '40px', color: '#DDDDDD', marginBottom: '12px' }} />
-                  <p style={{ fontSize: '16px', fontWeight: 600, color: '#111111', marginBottom: '4px' }}>
-                    {searchQuery ? 'No results' : 'No paid invoices yet'}
-                  </p>
-                  <p style={{ fontSize: '14px', color: '#888888' }}>
-                    {searchQuery ? `No invoices match "${searchQuery}"` : 'Paid invoices will appear here'}
-                  </p>
-                </>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* Table Header */}
-              <div
-                className="hidden sm:grid gap-4 items-center"
-                style={{
-                  gridTemplateColumns: 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) 28px',
-                  padding: '8px 16px',
-                  backgroundColor: '#FAFAFA',
-                  borderBottom: '1px solid #EEEEEE',
-                  fontSize: '11px', fontWeight: 600, color: '#999999',
-                  textTransform: 'uppercase' as const,
-                  letterSpacing: '0.5px',
-                }}
-              >
-                <div>Invoice</div>
-                <div>Client</div>
-                <div style={{ textAlign: 'right' }}>Date</div>
-                <div style={{ textAlign: 'right' }}>Amount</div>
-                <div></div>
-              </div>
-
-              {/* Invoice Rows */}
-              {filteredInvoices.map((invoice, idx) => {
-                const isLast = idx === filteredInvoices.length - 1 && !hasMore
+        {/* ── Filter row: pill tabs + search + selection/export ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 2, background: '#fff', borderRadius: 6, padding: 2, border: '1px solid #E2E8F0' }}>
+              {(['All', 'Not Sent', 'Sent', 'Paid'] as const).map(s => {
+                const isActive = fStatus === s
+                let bg = 'transparent'
+                let color = '#94A3B8'
+                let boxShadow = 'none'
+                if (isActive) {
+                  if (s === 'All') { bg = '#0F172A'; color = '#fff' }
+                  else { color = sDot[s]; boxShadow = `inset 0 -2px 0 ${sDot[s]}` }
+                }
                 return (
-                  <div
-                    key={invoice.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'minmax(70px, auto) 1fr minmax(60px, auto) minmax(80px, auto) 28px',
-                      gap: '16px',
-                      alignItems: 'center',
-                      padding: '10px 16px',
-                      borderBottom: isLast ? 'none' : '1px solid #F3F3F3',
-                      transition: 'background-color 80ms',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#FAFAFA' }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white' }}
-                  >
-                    <Link href={`/invoices/${invoice.id}`} className="contents group">
-                      <div>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#111111' }}>
-                          #{invoice.invoiceNumber}
-                        </span>
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <span style={{ fontSize: '14px', color: '#555555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                          {invoice.client?.name}
-                        </span>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: '12px', color: '#999999' }}>
-                          {format(new Date(invoice.dateCreated), "MMM d")}
-                        </span>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: '14px', fontWeight: 600, color: '#111111' }}>
-                          {formatCurrency(invoice.totalAmount)}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <ChevronRight style={{ width: '16px', height: '16px', color: '#CCCCCC' }} />
-                      </div>
-                    </Link>
-                  </div>
+                  <button key={s} type="button" onClick={() => setFStatus(s)} style={{ all: 'unset', padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: bg, color, boxShadow }}>
+                    {s}
+                  </button>
                 )
               })}
+            </div>
+            <div style={{ position: 'relative' }}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)' }}>
+                <circle cx="7" cy="7" r="4.5" />
+                <path d="M10.5 10.5L14 14" />
+              </svg>
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search clients..."
+                style={{ width: 170, padding: '5px 8px 5px 26px', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 11, outline: 'none', color: '#0F172A', background: '#fff' }}
+              />
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {sel.size > 0 && (
+              <button type="button" onClick={() => setSel(new Set())} style={{ all: 'unset', fontSize: 10, color: '#94A3B8', cursor: 'pointer' }}>
+                {sel.size} selected · Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleBulkExport}
+              disabled={isExporting}
+              style={{ all: 'unset', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#64748B', cursor: isExporting ? 'default' : 'pointer', opacity: isExporting ? 0.5 : 1 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13h10" />
+              </svg>
+              {isExporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          </div>
+        </div>
 
-              {/* Load More Button */}
-              {hasMore && onLoadMore && (
-                <div
-                  style={{
-                    padding: '12px 16px',
-                    borderTop: '1px solid #F3F3F3',
-                    textAlign: 'center',
-                  }}
-                >
-                  <button
-                    onClick={onLoadMore}
-                    disabled={loadingMore}
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      color: loadingMore ? '#BBBBBB' : '#00A896',
-                      background: 'none',
-                      border: 'none',
-                      cursor: loadingMore ? 'not-allowed' : 'pointer',
-                      padding: '4px 12px',
-                    }}
-                  >
-                    {loadingMore ? 'Loading...' : 'Load more invoices'}
-                  </button>
+        {/* ── Three columns ── */}
+        {candidatesLoading ? (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{ flex: i === 2 ? '0 0 auto' : 1, minWidth: i === 2 ? 200 : 0 }}>
+                <div style={{ height: 33, marginBottom: 8, borderRadius: 6, background: '#fff', border: '1px solid #E2E8F0' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {[0, 1, 2].map(j => (
+                    <div key={j} style={{ height: 52, borderRadius: 6, background: '#fff', border: '1px solid #E2E8F0', opacity: 0.7 }} />
+                  ))}
                 </div>
-              )}
-            </>
-          )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            {renderColumn('Flat Rate', flatList)}
+            {renderColumn('Per Clean', perList)}
+            {renderColumn('One-Time', otList)}
+          </div>
+        )}
+      </div>
+
+      {/* ── Floating action bar ── */}
+      {sel.size > 0 && !confirmSend && (
+        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 12, background: '#0F172A', padding: '10px 20px', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.25)', zIndex: 100, animation: 'ti 0.15s ease' }}>
+          <span style={{ fontSize: 13, color: '#fff', fontWeight: 500 }}>{sel.size} invoice{sel.size > 1 ? 's' : ''} selected</span>
+          <span style={{ fontSize: 14, fontFamily: MO, fontWeight: 700, color: TEAL }}>{formatCurrency(selTotal)}</span>
+          <div style={{ width: 1, height: 20, background: '#334155' }} />
+          <button type="button" onClick={() => setConfirmSend('sel')} style={{ all: 'unset', padding: '6px 18px', borderRadius: 6, fontSize: 13, fontWeight: 700, background: TEAL, color: '#fff', cursor: 'pointer' }}>
+            Send {sel.size}
+          </button>
+          <button type="button" onClick={markSelectedPaid} disabled={markingPaid} style={{ all: 'unset', padding: '6px 18px', borderRadius: 6, fontSize: 13, fontWeight: 700, background: '#16A34A', color: '#fff', cursor: markingPaid ? 'default' : 'pointer', opacity: markingPaid ? 0.6 : 1 }}>
+            Mark Paid
+          </button>
+          <button type="button" onClick={() => setSel(new Set())} style={{ all: 'unset', fontSize: 12, color: '#94A3B8', cursor: 'pointer', padding: '4px 8px' }}>
+            Clear
+          </button>
         </div>
       )}
 
-      {/* Invoice Modal (single + batch mode) */}
+      {/* ── Send confirmation overlay ── */}
+      {confirmSend && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }} onClick={() => setConfirmSend(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, padding: '24px 28px', maxWidth: 420, width: '90%', boxShadow: '0 16px 48px rgba(0,0,0,0.15)', animation: 'fadeIn 0.12s ease' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+              Send {sel.size} invoice{sel.size > 1 ? 's' : ''}?
+            </div>
+            <div style={{ fontSize: 13, color: '#64748B', lineHeight: 1.5, marginBottom: 6 }}>
+              <span>
+                You&rsquo;re about to review and send <strong>{sel.size} invoice{sel.size > 1 ? 's' : ''}</strong> totaling{' '}
+                <strong style={{ fontFamily: MO }}>{formatCurrency(selTotal)}</strong> to:
+              </span>
+              <div style={{ marginTop: 8, maxHeight: 120, overflowY: 'auto', padding: '6px 10px', background: '#F8FAFC', borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                {selectedList.map(d => (
+                  <div key={d.candidate.candidateId} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '3px 0', borderBottom: '1px solid #F1F5F9' }}>
+                    <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.candidate.clientName}</span>
+                    <span style={{ color: d.candidate.hasEmail ? '#94A3B8' : '#DC2626', fontSize: 11, flexShrink: 0 }}>
+                      {d.email || (d.candidate.hasEmail ? '' : 'no email')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: '#D97706', background: '#FFFBEB', padding: '6px 10px', borderRadius: 6, marginTop: 10, marginBottom: 14 }}>
+              ⚠️ This action will send real emails to real clients. Please double check before confirming.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setConfirmSend(null)} style={{ all: 'unset', padding: '8px 20px', borderRadius: 6, fontSize: 13, fontWeight: 600, color: '#64748B', cursor: 'pointer', border: '1px solid #E2E8F0' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={executeSend} style={{ all: 'unset', padding: '8px 20px', borderRadius: 6, fontSize: 13, fontWeight: 700, background: TEAL, color: '#fff', cursor: 'pointer' }}>
+                Review &amp; Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Review / send modal (single + batch) ── */}
       {selectedClient && (
         <QuickInvoiceModal
           key={selectedClient.client.id}
           open={quickInvoiceOpen}
           onOpenChange={(open) => {
             setQuickInvoiceOpen(open)
-            if (!open) setBatchMode(false)
+            if (!open) {
+              // Closing after a batch run (or cancelling one) clears the selection.
+              if (batchMode) setSel(new Set())
+              setBatchMode(false)
+              setActiveCandidateId(null)
+            }
           }}
           client={{
             id: selectedClient.client.id,
@@ -1401,15 +663,22 @@ export function InvoicesPageClient({
           }}
           jobs={selectedClient.jobs}
           initialMonth={displayMonth}
-          onSuccess={handleQuickInvoiceSuccess}
-          onNext={selectedClientIndex < monthFilteredClients.length - 1 ? handleNextClient : undefined}
-          onPrevious={selectedClientIndex > 0 ? handlePreviousClient : undefined}
-          currentIndex={selectedClientIndex}
-          totalCount={monthFilteredClients.length}
+          onSuccess={onDataChange}
+          onNext={
+            batchMode
+              ? (batchPos < batchQueue.length - 1 ? handleNextClient : undefined)
+              : (selectedClientIndex < navClients.length - 1 ? handleNextClient : undefined)
+          }
+          onPrevious={
+            batchMode
+              ? (batchPos > 0 ? handlePreviousClient : undefined)
+              : (selectedClientIndex > 0 ? handlePreviousClient : undefined)
+          }
+          currentIndex={batchMode ? batchPos : selectedClientIndex}
+          totalCount={batchMode ? batchQueue.length : navClients.length}
           batchMode={batchMode}
         />
       )}
-      <ConfirmDialog />
     </div>
   )
 }
