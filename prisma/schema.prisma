@@ -304,6 +304,9 @@ model Vendor {
   name      String   @unique
   phone     String?
   email     String?
+  zelle     String?
+  services  String[] @default([])
+  contacts  Json?    // Array of { name, phone, email } — multi-contact support
   notes     String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

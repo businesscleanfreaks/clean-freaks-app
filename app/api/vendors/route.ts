@@ -5,10 +5,19 @@ import { z } from "zod"
 
 export const dynamic = 'force-dynamic'
 
+const vendorContactSchema = z.object({
+  name: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().optional().nullable(),
+})
+
 const createVendorSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   phone: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable(),
+  email: z.string().optional().nullable(),
+  zelle: z.string().optional().nullable(),
+  services: z.array(z.string()).optional(),
+  contacts: z.array(vendorContactSchema).optional(),
   notes: z.string().optional().nullable(),
 })
 
@@ -87,8 +96,21 @@ export async function GET() {
       )
       const lastPayment = vendor.payments[0] || null
 
+      // Multi-contact support with back-compat: fall back to legacy phone/email
+      // when no structured contacts have been saved yet.
+      const rawContacts = Array.isArray(vendor.contacts)
+        ? (vendor.contacts as Array<{ name?: string; phone?: string; email?: string }>)
+        : []
+      const contacts = rawContacts.length > 0
+        ? rawContacts.map(c => ({ name: c.name || '', phone: c.phone || '', email: c.email || '' }))
+        : (vendor.phone || vendor.email)
+          ? [{ name: '', phone: vendor.phone || '', email: vendor.email || '' }]
+          : []
+
       return {
         ...vendor,
+        contacts,
+        services: vendor.services || [],
         createdAt: vendor.createdAt.toISOString(),
         updatedAt: vendor.updatedAt.toISOString(),
         owedAmount,
@@ -148,11 +170,18 @@ export async function POST(request: Request) {
       )
     }
 
+    const cleanContacts = (result.data.contacts || [])
+      .map(c => ({ name: c.name || '', phone: c.phone || '', email: c.email || '' }))
+      .filter(c => c.name || c.phone || c.email)
+
     const vendor = await prisma.vendor.create({
       data: {
         name: result.data.name,
         phone: result.data.phone || null,
         email: result.data.email || null,
+        zelle: result.data.zelle || null,
+        services: result.data.services || [],
+        contacts: cleanContacts.length > 0 ? cleanContacts : undefined,
         notes: result.data.notes || null,
       },
     })

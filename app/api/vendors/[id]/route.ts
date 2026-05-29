@@ -66,10 +66,27 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    const allowedFields = ['name', 'phone', 'email', 'notes', 'isActive']
+    const allowedFields = ['name', 'phone', 'email', 'zelle', 'notes', 'isActive']
     const data: Record<string, unknown> = {}
     for (const field of allowedFields) {
       if (field in body) data[field] = body[field]
+    }
+
+    // services: array of service-type strings
+    if ('services' in body && Array.isArray(body.services)) {
+      data.services = body.services.filter((s: unknown) => typeof s === 'string')
+    }
+
+    // contacts: array of { name, phone, email }, blanks dropped
+    if ('contacts' in body) {
+      const raw = Array.isArray(body.contacts) ? body.contacts : []
+      data.contacts = raw
+        .map((c: { name?: string; phone?: string; email?: string }) => ({
+          name: c?.name || '',
+          phone: c?.phone || '',
+          email: c?.email || '',
+        }))
+        .filter((c: { name: string; phone: string; email: string }) => c.name || c.phone || c.email)
     }
 
     const vendor = await prisma.vendor.update({
