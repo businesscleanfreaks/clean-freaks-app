@@ -114,8 +114,8 @@ function DetailRow({
 }) {
   const content = (
     <>
-      <span className="w-24 flex-shrink-0 text-xs font-normal lowercase text-slate-400">{label}</span>
-      <span className={`min-w-0 flex-1 text-sm font-semibold ${wrapValue ? 'whitespace-normal break-words leading-snug' : 'truncate'} ${muted ? 'text-slate-400' : 'text-slate-800'}`}>{value}</span>
+      <span className="w-24 flex-shrink-0 text-[11px] font-medium text-zinc-400">{label}</span>
+      <span className={`min-w-0 flex-1 text-sm font-semibold ${wrapValue ? 'whitespace-normal break-words leading-snug' : 'truncate'} ${muted ? 'text-zinc-400' : 'text-zinc-800'}`}>{value}</span>
       {children}
     </>
   )
@@ -707,6 +707,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                         </div>
                       </div>
                     )}
+                    <div className="px-3.5 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Pricing</div>
                     <DetailRow
                       label="Client Billing"
                       value={editingClientRate ? (
@@ -779,9 +780,9 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                     />
                     <DetailRow
                       label="Margin"
-                      value={`${formatCurrency(profit)}/mo`}
-                      muted={profit < 0}
+                      value={<span style={{ fontFamily: "'Geist Mono', monospace", color: profit >= 0 ? '#16A34A' : '#DC2626' }}>{`${formatCurrency(profit)}/mo`}</span>}
                     />
+                    <div className="px-3.5 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Assignment</div>
                     <div data-dropdown-menu>
                       <DetailRow
                         label="Cleaner"
@@ -811,6 +812,7 @@ export function ClientDetailLocations({ state }: ClientDetailLocationsProps) {
                         </div>
                       )}
                     </div>
+                    <div className="px-3.5 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Access</div>
                     <DetailRow
                       label="Entry Codes"
                       value={editingAccessInfo ? (
