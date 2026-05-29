@@ -12,8 +12,23 @@ import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
 import type { ClientWithDetails } from "@/lib/types"
 import { ClientNotesPanel, OpenIssuesEditor, WhatToKnow, type ClientNote } from "./client-notes-panel"
+import { ContactsSection } from "./contacts-section"
 
 const notesFetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error("Failed"); return r.json() })
+
+const TRIAL_DURATION_LABEL: Record<string, string> = { '1wk': '1 week', '2wk': '2 weeks', '3wk': '3 weeks', '1mo': '1 month' }
+
+// Trial clients store their parameters as a "TRIAL CLIENT" note block from the Add Client wizard.
+function parseTrialDetails(notes: string | null | undefined): { duration?: string; proposedRate?: string } | null {
+  if (!notes || !notes.toUpperCase().includes('TRIAL CLIENT')) return null
+  const out: { duration?: string; proposedRate?: string } = {}
+  for (const raw of notes.split('\n')) {
+    const l = raw.trim()
+    if (/^duration:/i.test(l)) out.duration = l.replace(/^duration:/i, '').trim()
+    else if (/^proposed rate/i.test(l)) out.proposedRate = l.replace(/^proposed rate[^:]*:/i, '').trim()
+  }
+  return out
+}
 
 interface ClientDetailViewProps {
   client: ClientWithDetails
@@ -132,8 +147,8 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
             </div>
           )}
           {activeTab === 'billing' && <BillingTab state={state} onJumpToTab={setActiveTab} />}
-          {activeTab === 'contacts' && <ContactsTab state={state} onJumpToTab={setActiveTab} />}
-          {activeTab === 'access' && <AccessTab state={state} onJumpToTab={setActiveTab} />}
+          {activeTab === 'contacts' && <ContactsTab state={state} />}
+          {activeTab === 'access' && <AccessTab state={state} />}
           {activeTab === 'scope' && <ScopeTab state={state} />}
           {activeTab === 'history' && <HistoryTab state={state} />}
         </div>
@@ -153,6 +168,7 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
   const { data: notesData, mutate: mutateNotes } = useSWR<ClientNote[]>(`/api/clients/${client.id}/notes`, notesFetcher, { revalidateOnFocus: false })
   const notes = notesData || []
   const pinnedNotes = notes.filter(n => n.isPinned)
+  const trial = parseTrialDetails(client.notes)
   const primaryLocation = client.locations[0]
   const primarySchedule = primaryLocation?.schedules?.find(s => s.isActive)
   const cleanerName = primarySchedule?.subcontractor?.name || 'Unassigned'
@@ -196,6 +212,16 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
             <SnapRow label="Access info" value={hasAccessInfo ? '✓ Saved' : '— Not set'} muted={!hasAccessInfo} />
           </div>
           <div className="px-5 pb-4">
+            {trial && (
+              <div style={{ marginBottom: 12, padding: '10px 14px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8 }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#2563EB', marginBottom: 6 }}>Trial Details</div>
+                <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[12px]">
+                  {trial.duration && <div><span className="text-slate-400">Duration </span><span className="font-medium text-slate-900">{TRIAL_DURATION_LABEL[trial.duration] || trial.duration}</span></div>}
+                  {trial.proposedRate && <div><span className="text-slate-400">Proposed rate </span><span className="font-medium text-slate-900">{trial.proposedRate}</span></div>}
+                  {!trial.duration && !trial.proposedRate && <div className="text-slate-500">Trial in progress</div>}
+                </div>
+              </div>
+            )}
             <OpenIssuesEditor clientId={client.id} initial={client.openIssues || []} />
             <WhatToKnow pinned={pinnedNotes} />
           </div>
@@ -380,65 +406,12 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
 // Contacts tab: communication + invoicing contacts
 // ────────────────────────────────────────────────────────────────────────────
 
-function ContactsTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToTab: (tab: CockpitTab) => void }) {
+function ContactsTab({ state }: { state: ClientDetailState }) {
   const { client } = state
-  const commName = client.communicationContactName || ''
-  const commPhone = client.communicationPhone || client.phone || ''
-  const commEmail = client.communicationEmail || ''
-  const invName = client.invoicingContactName || ''
-  const invPhone = client.invoicingPhone || ''
-  const invEmail = client.invoicingEmail || ''
   const ccEmails = client.invoicingCcEmail || ''
-  const showInvoicingSeparately = !!(invEmail && invEmail !== commEmail) || !!(invName && invName !== commName)
-
-  const ContactCard = ({ title, name, phone, email, accentColor, hint }: { title: string; name: string; phone: string; email: string; accentColor: string; hint?: string }) => (
-    <div className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="inline-flex h-2 w-2 rounded-full" style={{ background: accentColor }} />
-        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">{title}</span>
-      </div>
-      {hint && <p className="text-[11px] text-slate-400 mb-2">{hint}</p>}
-      <div className="space-y-1.5">
-        <div className="text-[14px] font-semibold text-slate-900">{name || <span className="text-slate-400 font-normal italic">No name set</span>}</div>
-        <div className="text-[12px] text-slate-600">{phone || <span className="text-slate-300">— phone</span>}</div>
-        <div className="text-[12px] text-slate-600 break-all">{email || <span className="text-slate-300">— email</span>}</div>
-      </div>
-    </div>
-  )
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Contacts</span>
-        <button onClick={() => onJumpToTab('schedule')} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit →</button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <ContactCard
-          title="Primary contact"
-          name={commName}
-          phone={commPhone}
-          email={commEmail}
-          accentColor="#0D9488"
-          hint="Day-to-day point of contact for scheduling and questions."
-        />
-        {showInvoicingSeparately ? (
-          <ContactCard
-            title="Invoicing contact"
-            name={invName || commName}
-            phone={invPhone}
-            email={invEmail}
-            accentColor="#7C3AED"
-            hint="Used for invoice emails and billing matters."
-          />
-        ) : (
-          <div className="rounded-[10px] bg-slate-50 p-4 text-[12px] text-slate-500" style={{ border: '1px dashed #CBD5E1' }}>
-            <p className="font-semibold text-slate-600 mb-1">Invoicing uses the primary contact</p>
-            <p>No separate billing contact set. Edit on the Schedule tab to add a different invoicing email.</p>
-          </div>
-        )}
-      </div>
-
+      <ContactsSection clientId={client.id} />
       {ccEmails && (
         <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
           <span className="block text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400 mb-1">CC on invoices</span>
@@ -453,39 +426,100 @@ function ContactsTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
 // Access tab: entry codes / access notes per location
 // ────────────────────────────────────────────────────────────────────────────
 
-function AccessTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToTab: (tab: CockpitTab) => void }) {
+function AccessTab({ state }: { state: ClientDetailState }) {
   const { client } = state
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Access info · {client.locations.length} location{client.locations.length === 1 ? '' : 's'}</span>
-        <button onClick={() => onJumpToTab('schedule')} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit on Schedule →</button>
       </div>
       {client.locations.length === 0 && (
         <p className="text-sm text-slate-500">No locations yet.</p>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {client.locations.map(loc => {
-          const hasAccess = loc.accessInfo && loc.accessInfo.trim().length > 0
-          return (
-            <div key={loc.id} className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
-              <div className="mb-2">
-                <p className="text-[14px] font-semibold text-slate-900">{loc.name || loc.address?.split(',')[0] || 'Location'}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">{loc.address || 'No address'}</p>
-              </div>
-              <div className="rounded-md px-3 py-2.5" style={{ background: hasAccess ? '#F0FDFA' : '#FFFBEB', border: `1px solid ${hasAccess ? '#99F6E4' : '#FDE68A'}` }}>
-                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: hasAccess ? '#0F766E' : '#92400E' }}>
-                  {hasAccess ? '🔑 Access info' : '⚠ No access info yet'}
-                </span>
-                {hasAccess ? (
-                  <p className="text-[13px] text-slate-700 mt-1.5 whitespace-pre-wrap break-words">{loc.accessInfo}</p>
-                ) : (
-                  <p className="text-[12px] text-amber-800 mt-1.5">Add gate codes, key locations, alarm info, or any other instructions the cleaner needs.</p>
-                )}
-              </div>
+        {client.locations.map(loc => (
+          <AccessLocationCard key={loc.id} location={loc} onSaved={() => state.router.refresh()} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AccessLocationCard({ location, onSaved }: { location: ClientWithDetails['locations'][number]; onSaved: () => void }) {
+  const [revealed, setRevealed] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(location.accessInfo || '')
+  const [saving, setSaving] = useState(false)
+  const hasAccess = !!(location.accessInfo && location.accessInfo.trim().length > 0)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/locations/${location.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessInfo: value }),
+      })
+      if (!res.ok) { await showApiError(res, 'Failed to save access info'); return }
+      showSuccess('Access info saved')
+      setEditing(false)
+      onSaved()
+    } catch { showError('Failed to save access info') } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[14px] font-semibold text-slate-900">{location.name || location.address?.split(',')[0] || 'Location'}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">{location.address || 'No address'}</p>
+        </div>
+        {!editing && (
+          <button onClick={() => { setValue(location.accessInfo || ''); setRevealed(true); setEditing(true) }} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800 flex-shrink-0">Edit</button>
+        )}
+      </div>
+      <div className="rounded-md px-3 py-2.5" style={{ background: hasAccess ? '#F0FDFA' : '#FFFBEB', border: `1px solid ${hasAccess ? '#99F6E4' : '#FDE68A'}` }}>
+        {editing ? (
+          <>
+            <textarea
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              rows={4}
+              autoFocus
+              placeholder="Gate codes, alarm, lockbox, parking, entry instructions…"
+              className="w-full rounded-md px-2 py-1.5 text-[13px] outline-none resize-y bg-white"
+              style={{ border: '1px solid #99F6E4', minHeight: 84, lineHeight: 1.5 }}
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <button onClick={() => { setEditing(false); setValue(location.accessInfo || '') }} className="text-[11px] font-semibold text-slate-500 px-2 py-1">Cancel</button>
+              <button onClick={save} disabled={saving} className="text-[11px] font-semibold text-white px-3 py-1 rounded-md disabled:opacity-60" style={{ background: '#0D9488' }}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
-          )
-        })}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: hasAccess ? '#0F766E' : '#92400E' }}>
+                {hasAccess ? '🔑 Access info' : '⚠ No access info yet'}
+              </span>
+              {hasAccess && (
+                <button onClick={() => setRevealed(r => !r)} className="text-[10px] font-semibold text-teal-700 hover:text-teal-800 flex-shrink-0">{revealed ? 'Hide' : 'Reveal'}</button>
+              )}
+            </div>
+            {hasAccess ? (
+              <p
+                className="text-[13px] text-slate-700 mt-1.5 whitespace-pre-wrap break-words transition-all"
+                style={{ filter: revealed ? 'none' : 'blur(5px)', userSelect: revealed ? 'auto' : 'none' }}
+              >
+                {location.accessInfo}
+              </p>
+            ) : (
+              <p className="text-[12px] text-amber-800 mt-1.5">
+                Add gate codes, key locations, alarm info, or any other instructions the cleaner needs.{' '}
+                <button onClick={() => { setValue(''); setEditing(true) }} className="font-semibold underline">Add now</button>
+              </p>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
