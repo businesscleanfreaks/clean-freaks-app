@@ -149,6 +149,7 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
     client,
   } = state
   const [locationFilter, setLocationFilter] = useState("all")
+  const [showAll, setShowAll] = useState(false)
 
   const locationOptions = useMemo(() => {
     return (client.locations || []).map((location) => ({
@@ -162,6 +163,9 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
     return upcomingJobs.filter((job) => job.location.id === locationFilter)
   }, [upcomingJobs, locationFilter])
 
+  // Show only the next few by default; "Show all" expands (cockpit density, dev-note #13)
+  const visibleJobs = showAll ? displayJobs : displayJobs.slice(0, 6)
+
   const groupedJobs = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -174,7 +178,7 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
       | { type: "job"; key: string; job: JobWithLocation }
     > = []
 
-    displayJobs.forEach((job) => {
+    visibleJobs.forEach((job) => {
       const jobDate = new Date(job.date)
       const day = new Date(jobDate)
       day.setHours(0, 0, 0, 0)
@@ -194,7 +198,7 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
     })
 
     return groups
-  }, [displayJobs])
+  }, [visibleJobs])
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
@@ -221,7 +225,8 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
       </div>
 
       {displayJobs.length > 0 ? (
-        <div className="max-h-[640px] divide-y divide-gray-50 overflow-y-auto">
+        <>
+        <div className="max-h-[560px] divide-y divide-gray-50 overflow-y-auto">
           {groupedJobs.map((item) => {
             if (item.type === "date") {
               return (
@@ -247,6 +252,15 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
             )
           })}
         </div>
+        {displayJobs.length > 6 && (
+          <button
+            onClick={() => setShowAll((s) => !s)}
+            className="w-full border-t border-gray-100 px-4 py-2 text-[12px] font-semibold text-teal-700 hover:bg-gray-50"
+          >
+            {showAll ? "Show less" : `Show all ${displayJobs.length}`}
+          </button>
+        )}
+        </>
       ) : (
         <div className="py-12 text-center">
           <p className="text-sm text-slate-500">

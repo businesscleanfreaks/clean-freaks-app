@@ -38,6 +38,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
 
   const [showOverflow, setShowOverflow] = useState(false)
   const isPauseAction = isTogglingPause ? pauseResumeAction === 'pause' : isActive
+  const isTrial = (client.notes || '').toUpperCase().includes('TRIAL CLIENT')
 
   return (
     <>
@@ -65,6 +66,11 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
                   <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-gray-400'}`} />
                   {isActive ? 'Active' : 'Paused'}
                 </span>
+                {isTrial && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                    TRIAL
+                  </span>
+                )}
                 <span>{client.billingType === 'FLAT_RATE' ? 'Monthly flat rate' : 'Per clean'}</span>
                 <span className="text-zinc-300">·</span>
                 <span>{locationCount} location{locationCount !== 1 ? 's' : ''}</span>

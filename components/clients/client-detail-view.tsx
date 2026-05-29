@@ -9,6 +9,7 @@ import { ClientDetailContactSummary, ClientDetailSidebar, ClientDetailJobFeed } 
 import { ClientDetailModals } from "./client-detail-modals"
 import { format } from "date-fns"
 import { formatCurrency } from "@/lib/utils"
+import { showSuccess, showError, showApiError } from "@/lib/toast"
 import type { ClientWithDetails } from "@/lib/types"
 import { ClientNotesPanel, OpenIssuesEditor, WhatToKnow, type ClientNote } from "./client-notes-panel"
 
@@ -19,7 +20,7 @@ interface ClientDetailViewProps {
   onDataChange?: () => void
 }
 
-type CockpitTab = 'overview' | 'schedule' | 'billing' | 'contacts' | 'access' | 'history'
+type CockpitTab = 'overview' | 'schedule' | 'billing' | 'contacts' | 'access' | 'scope' | 'history'
 
 const TABS: { key: CockpitTab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -27,6 +28,7 @@ const TABS: { key: CockpitTab; label: string }[] = [
   { key: 'billing', label: 'Billing' },
   { key: 'contacts', label: 'Contacts' },
   { key: 'access', label: 'Access' },
+  { key: 'scope', label: 'Scope' },
   { key: 'history', label: 'History' },
 ]
 
@@ -80,10 +82,11 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
 
   return (
     <>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');`}</style>
       <ConfirmDialog />
       <ClientDetailModals state={state} />
 
-      <div style={{ minHeight: '100vh', background: '#FAFAF9', overscrollBehavior: 'none' }}>
+      <div style={{ minHeight: '100vh', background: '#FAFAF9', overscrollBehavior: 'none', fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
         <ClientDetailHeader state={state} />
 
         {/* Cockpit Tabs */}
@@ -131,6 +134,7 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
           {activeTab === 'billing' && <BillingTab state={state} onJumpToTab={setActiveTab} />}
           {activeTab === 'contacts' && <ContactsTab state={state} onJumpToTab={setActiveTab} />}
           {activeTab === 'access' && <AccessTab state={state} onJumpToTab={setActiveTab} />}
+          {activeTab === 'scope' && <ScopeTab state={state} />}
           {activeTab === 'history' && <HistoryTab state={state} />}
         </div>
       </div>
@@ -249,6 +253,19 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
     new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
   )
 
+  const markInvoicePaid = async (id: string) => {
+    try {
+      const res = await fetch(`/api/invoices/${id}/mark-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentMethod: 'MANUAL', paymentNotes: 'Marked paid from client profile' }),
+      })
+      if (!res.ok) { await showApiError(res, 'Failed to mark invoice paid'); return }
+      showSuccess('Invoice marked as paid')
+      state.router.refresh()
+    } catch { showError('Failed to mark invoice paid') }
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
@@ -328,14 +345,23 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
           ) : (
             <div className="space-y-1">
               {invoices.slice(0, 10).map(inv => (
-                <div key={inv.id} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-b-0">
-                  <span className="text-[12px] text-slate-600">{format(new Date(inv.dateCreated), 'MMM d, yyyy')}</span>
-                  <span className="text-[12px] font-mono font-semibold text-slate-900">{formatCurrency(inv.totalAmount)}</span>
+                <div key={inv.id} className="flex items-center gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
+                  <span className="text-[12px] text-slate-600 w-[104px] flex-shrink-0">{format(new Date(inv.dateCreated), 'MMM d, yyyy')}</span>
+                  <span className="text-[12px] font-mono font-semibold text-slate-900 flex-1">{formatCurrency(inv.totalAmount)}</span>
+                  {inv.status !== 'PAID' && inv.status !== 'VOID' && (
+                    <button
+                      onClick={() => markInvoicePaid(inv.id)}
+                      className="text-[10px] font-semibold px-2.5 py-1 rounded-md text-white hover:opacity-90 transition-opacity flex-shrink-0"
+                      style={{ background: '#16A34A' }}
+                    >
+                      Mark Paid
+                    </button>
+                  )}
                   <span
-                    className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full"
+                    className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full flex-shrink-0"
                     style={{
-                      background: inv.status === 'PAID' ? '#DCFCE7' : inv.status === 'SENT' ? '#DBEAFE' : '#FEF3C7',
-                      color: inv.status === 'PAID' ? '#15803D' : inv.status === 'SENT' ? '#1D4ED8' : '#92400E',
+                      background: inv.status === 'PAID' ? '#DCFCE7' : inv.status === 'SENT' ? '#DBEAFE' : inv.status === 'VOID' ? '#F1F5F9' : '#FEF3C7',
+                      color: inv.status === 'PAID' ? '#15803D' : inv.status === 'SENT' ? '#1D4ED8' : inv.status === 'VOID' ? '#64748B' : '#92400E',
                     }}
                   >
                     {inv.status.toLowerCase()}
@@ -461,6 +487,70 @@ function AccessTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToT
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Scope tab: scope document link + quick scope notes
+// ────────────────────────────────────────────────────────────────────────────
+
+function ScopeTab({ state }: { state: ClientDetailState }) {
+  const { client } = state
+  const [editing, setEditing] = useState(false)
+  const [notes, setNotes] = useState(client.scopeNotes || '')
+  const [docUrl, setDocUrl] = useState(client.scopeDocUrl || '')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/clients/${client.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scopeNotes: notes || null, scopeDocUrl: docUrl || null }),
+      })
+      if (!res.ok) { await showApiError(res, 'Failed to save scope'); return }
+      showSuccess('Scope saved')
+      setEditing(false)
+      state.router.refresh()
+    } catch { showError('Failed to save scope') } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Scope Document</span>
+        {client.scopeDocUrl && !editing ? (
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <a href={client.scopeDocUrl} target="_blank" rel="noopener noreferrer" className="text-[13px] font-medium text-teal-700 hover:text-teal-800 break-all">Open scope document →</a>
+            <button onClick={() => setEditing(true)} className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-600 flex-shrink-0">Edit</button>
+          </div>
+        ) : editing ? (
+          <input value={docUrl} onChange={e => setDocUrl(e.target.value)} placeholder="Paste a link to the scope PDF (Canva, Drive, …)" className="mt-2 w-full rounded-md px-3 py-2 text-[13px] outline-none" style={{ border: '1px solid #E4E4E7' }} />
+        ) : (
+          <p className="mt-2 text-[13px] text-zinc-400">No scope document linked. <button onClick={() => setEditing(true)} className="font-semibold text-teal-700">Add a link</button></p>
+        )}
+      </section>
+
+      <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Quick Scope Notes</span>
+          {!editing && <button onClick={() => setEditing(true)} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit</button>}
+        </div>
+        {editing ? (
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={6} placeholder="Tasks, frequency, exclusions, preferences…" className="mt-2 w-full rounded-md px-3 py-2 text-[13px] outline-none resize-y" style={{ border: '1px solid #E4E4E7', minHeight: 120, lineHeight: 1.5 }} />
+        ) : (
+          <p className="mt-2 text-[13px] whitespace-pre-wrap" style={{ color: client.scopeNotes ? '#18181B' : '#A1A1AA', lineHeight: 1.6 }}>{client.scopeNotes || 'No scope notes yet. Click Edit to add cleaning tasks, frequency, exclusions, and preferences.'}</p>
+        )}
+      </section>
+
+      {editing && (
+        <div className="flex justify-end gap-2">
+          <button onClick={() => { setEditing(false); setNotes(client.scopeNotes || ''); setDocUrl(client.scopeDocUrl || '') }} className="px-4 py-1.5 text-[12px] font-semibold rounded-md text-zinc-500" style={{ border: '1px solid #E4E4E7' }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="px-4 py-1.5 text-[12px] font-semibold rounded-md text-white disabled:opacity-60" style={{ background: '#0D9488' }}>{saving ? 'Saving…' : 'Save scope'}</button>
+        </div>
+      )}
     </div>
   )
 }

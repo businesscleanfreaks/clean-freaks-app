@@ -32,6 +32,8 @@ export const createClientSchema = z.object({
   notes: z.string().max(5000, 'Notes too long').optional().nullable(),
   isActive: z.boolean().optional(),
   openIssues: z.array(z.string().max(500, 'Issue too long')).optional(),
+  scopeNotes: z.string().max(5000, 'Scope notes too long').optional().nullable(),
+  scopeDocUrl: z.string().max(2000, 'Link too long').optional().nullable(),
   sourceProspectId: z.string().uuid('Invalid prospect ID').optional().nullable(),
   locations: z.array(z.object({
     name: z.string().min(1, 'Location name is required').max(200, 'Location name too long'),

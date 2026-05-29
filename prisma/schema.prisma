@@ -23,6 +23,8 @@ model Client {
   invoicingPhone           String?    // Phone number for the invoicing contact
   notes                    String?
   openIssues               String[]   @default([]) // Overview "Open Issues" — short unresolved-issue strings
+  scopeNotes               String?    // Scope tab — quick scope notes
+  scopeDocUrl              String?    // Scope tab — link to the scope document (Canva/Drive PDF)
   billingType         String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN
   cleanerPayType      String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid)
   invoiceFrequency    String     @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
