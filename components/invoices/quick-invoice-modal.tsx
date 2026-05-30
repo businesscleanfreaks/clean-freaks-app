@@ -110,7 +110,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
     <Dialog open={props.open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="h-[min(94vh,920px)] w-[min(96vw,1100px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
+        className="h-[min(95vh,960px)] w-[min(97vw,1280px)] max-w-none rounded-xl border border-stone-200 bg-stone-50 p-0 gap-0 flex flex-col overflow-hidden shadow-2xl"
       >
         <DialogTitle className="sr-only">Invoice review for {client.name}</DialogTitle>
         <DialogDescription className="sr-only">
@@ -164,7 +164,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
         {/* Split-panel body: left = email + line items + form, right = invoice preview.
             Each side scrolls independently. Footer stays at the bottom full-width. */}
         <div className="flex min-h-0 flex-1 lg:flex-row flex-col">
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-r border-stone-200 bg-stone-50 lg:max-w-[460px]">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-r border-stone-200 bg-stone-50 lg:max-w-[540px]">
         <div className="border-b border-stone-200 bg-white px-5 py-2">
           <button
             type="button"
@@ -378,47 +378,43 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
         </div>
 
         {/* Right column: invoice preview, fills remaining width on desktop */}
-        <div className="flex min-h-0 flex-1 overflow-auto bg-stone-300/70 px-3 py-4 sm:px-4">
-          <div className="mx-auto flex min-h-full w-full max-w-[612px] items-start justify-center">
-            {isGeneratingPreview ? (
-              <div className="mt-24 rounded-lg bg-white px-10 py-8 text-center shadow-sm">
-                <ActionSpinner size={40} color="#0d9488" className="mx-auto mb-4" />
-                <p className="font-semibold text-stone-700">Generating preview...</p>
-                <p className="mt-1 text-xs text-stone-500">This usually takes a few seconds.</p>
-              </div>
-            ) : previewPdfUrl ? (
-              <div className="h-[792px] w-full overflow-hidden bg-white shadow-xl">
-                <iframe
-                  src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                  className="h-full w-full border-0"
-                  title="Invoice Preview"
-                />
-              </div>
-            ) : (
-              <div className={`mt-24 rounded-lg border bg-white px-10 py-8 text-center shadow-sm ${previewError ? 'border-red-200' : 'border-stone-200'}`}>
-                {previewError ? (
-                  <AlertCircle className="mx-auto mb-4 h-10 w-10 text-red-400" />
-                ) : (
-                  <Eye className="mx-auto mb-4 h-10 w-10 text-stone-300" />
-                )}
-                <p className="font-semibold text-stone-700">
-                  {previewError ? 'Preview did not generate' : 'Ready to preview'}
-                </p>
-                <p className={`mt-1 max-w-sm text-xs ${previewError ? 'text-red-600' : 'text-stone-500'}`}>
-                  {previewError || 'The preview will appear here once line items are saved.'}
-                </p>
-                <Button
-                  type="button"
-                  onClick={() => handleGeneratePreview()}
-                  disabled={isGeneratingPreview || lineItems.length === 0}
-                  className="mt-4 h-8 bg-teal-700 text-xs hover:bg-teal-800"
-                >
-                  <Eye className="mr-2 h-3.5 w-3.5" />
-                  {previewError ? 'Try again' : 'Generate now'}
-                </Button>
-              </div>
-            )}
-          </div>
+        <div className="flex min-h-0 flex-1 overflow-hidden bg-stone-100 p-2 sm:p-3">
+          {isGeneratingPreview ? (
+            <div className="m-auto rounded-lg bg-white px-10 py-8 text-center shadow-sm">
+              <ActionSpinner size={40} color="#0d9488" className="mx-auto mb-4" />
+              <p className="font-semibold text-stone-700">Generating preview...</p>
+              <p className="mt-1 text-xs text-stone-500">This usually takes a few seconds.</p>
+            </div>
+          ) : previewPdfUrl ? (
+            <iframe
+              src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+              className="h-full w-full rounded-md border-0 bg-white shadow-xl"
+              title="Invoice Preview"
+            />
+          ) : (
+            <div className={`m-auto rounded-lg border bg-white px-10 py-8 text-center shadow-sm ${previewError ? 'border-red-200' : 'border-stone-200'}`}>
+              {previewError ? (
+                <AlertCircle className="mx-auto mb-4 h-10 w-10 text-red-400" />
+              ) : (
+                <Eye className="mx-auto mb-4 h-10 w-10 text-stone-300" />
+              )}
+              <p className="font-semibold text-stone-700">
+                {previewError ? 'Preview did not generate' : 'Ready to preview'}
+              </p>
+              <p className={`mt-1 max-w-sm text-xs ${previewError ? 'text-red-600' : 'text-stone-500'}`}>
+                {previewError || 'The preview will appear here once line items are saved.'}
+              </p>
+              <Button
+                type="button"
+                onClick={() => handleGeneratePreview()}
+                disabled={isGeneratingPreview || lineItems.length === 0}
+                className="mt-4 h-8 bg-teal-700 text-xs hover:bg-teal-800"
+              >
+                <Eye className="mr-2 h-3.5 w-3.5" />
+                {previewError ? 'Try again' : 'Generate now'}
+              </Button>
+            </div>
+          )}
         </div>
         {/* /right column */}
         </div>
