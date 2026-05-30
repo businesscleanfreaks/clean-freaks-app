@@ -30,6 +30,8 @@ import {
 import { refreshCalendarData } from "./calendar-client"
 import { useJobDetail, type CalendarJob, type OutcomeType, type OutcomeAmountMode } from "./use-job-detail"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
+import useSWR from "swr"
+import { fetcher } from "@/lib/fetcher"
 import type { Subcontractor, AddOnService } from "@/types"
 
 interface JobDetailDialogProps {
@@ -79,6 +81,11 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
 
   // Filter archived cleaners from assignment dropdowns, but always include the currently assigned one
   const activeSubcontractors = subcontractors.filter(s => (s as any).isActive !== false || s.id === job.subcontractor?.id)
+
+  // Vendors for the add-on "Performed by" selector. A vendor add-on is payable via the
+  // vendor list (AddOnService.vendorId); "Cleaner" means the job's primary cleaner.
+  const { data: vendorData } = useSWR<Array<{ id: string; name: string }>>(open ? '/api/vendors' : null, fetcher)
+  const addOnVendors = vendorData || []
 
   const {
     ConfirmDialog,
@@ -847,6 +854,20 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
                   placeholder="Cleaner pay"
                   className="text-sm"
                 />
+              </div>
+              <div>
+                <Label className="mb-1 block text-[11px] text-stone-500">Performed by</Label>
+                <select
+                  value={newAddOn.vendorId || ''}
+                  onChange={(e) => setNewAddOn({ ...newAddOn, vendorId: e.target.value })}
+                  className="h-9 w-full rounded-md border border-stone-200 bg-white px-2 text-sm text-stone-800 outline-none focus:border-teal-500"
+                >
+                  <option value="">Cleaner (same as job)</option>
+                  {addOnVendors.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-stone-400">Pick a vendor to bill their pay through the vendor list.</p>
               </div>
             </div>
             {renderQuickFixFooter(

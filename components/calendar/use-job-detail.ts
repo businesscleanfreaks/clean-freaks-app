@@ -69,7 +69,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
   const [isSavingAddOn, setIsSavingAddOn] = useState(false)
   const [deletingAddOnId, setDeletingAddOnId] = useState<string | null>(null)
   const [editingAddOnId, setEditingAddOnId] = useState<string | null>(null)
-  const [newAddOn, setNewAddOn] = useState({ description: '', clientRate: '', subcontractorRate: '' })
+  const [newAddOn, setNewAddOn] = useState<{ description: string; clientRate: string; subcontractorRate: string; vendorId?: string }>({ description: '', clientRate: '', subcontractorRate: '' })
   const [editingAddOn, setEditingAddOn] = useState({ description: '', clientRate: '', subcontractorRate: '' })
 
   // Mobile-specific state
@@ -1385,6 +1385,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
           description: newAddOn.description,
           clientRate: parseFloat(newAddOn.clientRate),
           subcontractorRate: parseFloat(newAddOn.subcontractorRate || '0'),
+          vendorId: newAddOn.vendorId || null,
         }),
       })
       if (!response.ok) {
@@ -1436,6 +1437,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
           description: newAddOn.description,
           clientRate,
           subcontractorRate,
+          vendorId: newAddOn.vendorId || null,
         }),
       })
       if (!currentResponse.ok) {
@@ -1452,6 +1454,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
           subcontractorRate,
           frequency: job.schedule.frequency,
           isRecurring: true,
+          vendorId: newAddOn.vendorId || null,
         }),
       })
       if (!recurringResponse.ok) {
