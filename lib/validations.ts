@@ -34,6 +34,7 @@ export const createClientSchema = z.object({
   openIssues: z.array(z.string().max(500, 'Issue too long')).optional(),
   scopeNotes: z.string().max(5000, 'Scope notes too long').optional().nullable(),
   scopeDocUrl: z.string().max(2000, 'Link too long').optional().nullable(),
+  scopeStructured: z.record(z.string().max(5000)).optional(), // JSONB { tasks, frequency, exclusions, preferences } — sent as an object, never null
   sourceProspectId: z.string().uuid('Invalid prospect ID').optional().nullable(),
   locations: z.array(z.object({
     name: z.string().min(1, 'Location name is required').max(200, 'Location name too long'),
@@ -51,6 +52,7 @@ export const createLocationSchema = z.object({
   name: z.string().min(1, 'Location name is required').max(200),
   address: z.string().min(1, 'Address is required').max(500, 'Address too long'),
   accessInfo: z.string().max(2000, 'Access info too long').optional().nullable(), // Gate codes, key locations, entry instructions
+  accessFields: z.record(z.string().max(2000)).optional(), // JSONB { entry, alarm, gate, lockbox, parking, notes } — sent as an object, never null
 })
 
 export const updateLocationSchema = createLocationSchema.omit({ clientId: true }).partial()

@@ -496,20 +496,37 @@ function AccessTab({ state }: { state: ClientDetailState }) {
   )
 }
 
+const ACCESS_FIELDS: Array<{ key: string; label: string; sensitive?: boolean }> = [
+  { key: 'entry', label: 'Entry' },
+  { key: 'alarm', label: 'Alarm Code', sensitive: true },
+  { key: 'gate', label: 'Gate Code', sensitive: true },
+  { key: 'lockbox', label: 'Lockbox', sensitive: true },
+  { key: 'parking', label: 'Parking' },
+  { key: 'notes', label: 'Notes' },
+]
+
 function AccessLocationCard({ location, onSaved }: { location: ClientWithDetails['locations'][number]; onSaved: () => void }) {
+  const stored = (location.accessFields as unknown as Record<string, string> | null) || {}
+  const hasStructured = Object.values(stored).some(v => (v || '').trim())
+  // Backward-compat: if no structured fields yet but legacy free-text accessInfo exists, surface it as Notes.
+  const initial: Record<string, string> = {
+    entry: stored.entry || '', alarm: stored.alarm || '', gate: stored.gate || '',
+    lockbox: stored.lockbox || '', parking: stored.parking || '',
+    notes: stored.notes || (!hasStructured ? (location.accessInfo || '') : ''),
+  }
   const [revealed, setRevealed] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(location.accessInfo || '')
+  const [fields, setFields] = useState<Record<string, string>>(initial)
   const [saving, setSaving] = useState(false)
-  const hasAccess = !!(location.accessInfo && location.accessInfo.trim().length > 0)
+  const hasAccess = ACCESS_FIELDS.some(f => (initial[f.key] || '').trim())
 
   const save = async () => {
     setSaving(true)
     try {
       const res = await fetch(`/api/locations/${location.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessInfo: value }),
+        body: JSON.stringify({ accessFields: fields }),
       })
       if (!res.ok) { await showApiError(res, 'Failed to save access info'); return }
       showSuccess('Access info saved')
@@ -526,52 +543,43 @@ function AccessLocationCard({ location, onSaved }: { location: ClientWithDetails
           <p className="text-[11px] text-slate-500 mt-0.5">{location.address || 'No address'}</p>
         </div>
         {!editing && (
-          <button onClick={() => { setValue(location.accessInfo || ''); setRevealed(true); setEditing(true) }} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800 flex-shrink-0">Edit</button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {hasAccess && <button onClick={() => setRevealed(r => !r)} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">{revealed ? 'Hide' : 'Reveal'}</button>}
+            <button onClick={() => { setFields(initial); setRevealed(true); setEditing(true) }} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit</button>
+          </div>
         )}
       </div>
-      <div className="rounded-md px-3 py-2.5" style={{ background: hasAccess ? '#F0FDFA' : '#FFFBEB', border: `1px solid ${hasAccess ? '#99F6E4' : '#FDE68A'}` }}>
-        {editing ? (
-          <>
-            <textarea
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              rows={4}
-              autoFocus
-              placeholder="Gate codes, alarm, lockbox, parking, entry instructions…"
-              className="w-full rounded-md px-2 py-1.5 text-[13px] outline-none resize-y bg-white"
-              style={{ border: '1px solid #99F6E4', minHeight: 84, lineHeight: 1.5 }}
-            />
-            <div className="flex justify-end gap-2 mt-2">
-              <button onClick={() => { setEditing(false); setValue(location.accessInfo || '') }} className="text-[11px] font-semibold text-slate-500 px-2 py-1">Cancel</button>
-              <button onClick={save} disabled={saving} className="text-[11px] font-semibold text-white px-3 py-1 rounded-md disabled:opacity-60" style={{ background: '#0D9488' }}>{saving ? 'Saving…' : 'Save'}</button>
+      {editing ? (
+        <div className="space-y-2">
+          {ACCESS_FIELDS.map(f => (
+            <div key={f.key}>
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{f.label}</label>
+              <input value={fields[f.key]} onChange={e => setFields(s => ({ ...s, [f.key]: e.target.value }))} className="mt-0.5 w-full rounded-md px-2 py-1.5 text-[13px] text-slate-900 outline-none" style={{ border: '1px solid #E4E4E7' }} />
             </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: hasAccess ? '#0F766E' : '#92400E' }}>
-                {hasAccess ? '🔑 Access info' : '⚠ No access info yet'}
-              </span>
-              {hasAccess && (
-                <button onClick={() => setRevealed(r => !r)} className="text-[10px] font-semibold text-teal-700 hover:text-teal-800 flex-shrink-0">{revealed ? 'Hide' : 'Reveal'}</button>
-              )}
+          ))}
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={() => { setEditing(false); setFields(initial) }} className="text-[11px] font-semibold text-slate-500 px-2 py-1">Cancel</button>
+            <button onClick={save} disabled={saving} className="text-[11px] font-semibold text-white px-3 py-1 rounded-md disabled:opacity-60" style={{ background: '#0D9488' }}>{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      ) : hasAccess ? (
+        <div className="rounded-md px-3 py-2.5 space-y-1.5" style={{ background: '#F0FDFA', border: '1px solid #99F6E4' }}>
+          {ACCESS_FIELDS.filter(f => (initial[f.key] || '').trim()).map(f => (
+            <div key={f.key} className="flex gap-2">
+              <span className="w-[80px] flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 pt-0.5">{f.label}</span>
+              <span className="flex-1 text-[13px] text-slate-800 break-words transition-all" style={f.sensitive && !revealed ? { filter: 'blur(5px)', userSelect: 'none' } : undefined}>{initial[f.key]}</span>
             </div>
-            {hasAccess ? (
-              <p
-                className="text-[13px] text-slate-700 mt-1.5 whitespace-pre-wrap break-words transition-all"
-                style={{ filter: revealed ? 'none' : 'blur(5px)', userSelect: revealed ? 'auto' : 'none' }}
-              >
-                {location.accessInfo}
-              </p>
-            ) : (
-              <p className="text-[12px] text-amber-800 mt-1.5">
-                Add gate codes, key locations, alarm info, or any other instructions the cleaner needs.{' '}
-                <button onClick={() => { setValue(''); setEditing(true) }} className="font-semibold underline">Add now</button>
-              </p>
-            )}
-          </>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-md px-3 py-2.5" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+          <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#92400E' }}>⚠ No access info yet</span>
+          <p className="text-[12px] text-amber-800 mt-1.5">
+            Add entry, alarm, gate, lockbox, parking, and any notes the cleaner needs.{' '}
+            <button onClick={() => { setFields(initial); setEditing(true) }} className="font-semibold underline">Add now</button>
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -580,12 +588,32 @@ function AccessLocationCard({ location, onSaved }: { location: ClientWithDetails
 // Scope tab: scope document link + quick scope notes
 // ────────────────────────────────────────────────────────────────────────────
 
+const SCOPE_SECTIONS: Array<{ key: string; label: string; placeholder: string }> = [
+  { key: 'tasks', label: 'Tasks', placeholder: 'One task per line — e.g.\nVacuum all carpets\nWipe counters & sinks\nEmpty all trash' },
+  { key: 'frequency', label: 'Frequency', placeholder: 'One per line — e.g.\nRestrooms: every visit\nFridge interior: monthly' },
+  { key: 'exclusions', label: 'Exclusions', placeholder: 'One per line — e.g.\nExterior windows\nDishes / laundry' },
+  { key: 'preferences', label: 'Preferences', placeholder: 'One per line — e.g.\nUse unscented products\nText when finished' },
+]
+
 function ScopeTab({ state }: { state: ClientDetailState }) {
   const { client } = state
+  const stored = (client.scopeStructured as unknown as Record<string, string> | null) || {}
+  const hasStructured = SCOPE_SECTIONS.some(s => (stored[s.key] || '').trim())
+  // Backward-compat: if no structured scope yet but a legacy free-text note exists, seed Tasks with it.
+  const buildInitial = (): Record<string, string> => ({
+    tasks: stored.tasks || (!hasStructured ? (client.scopeNotes || '') : ''),
+    frequency: stored.frequency || '',
+    exclusions: stored.exclusions || '',
+    preferences: stored.preferences || '',
+  })
+
   const [editing, setEditing] = useState(false)
-  const [notes, setNotes] = useState(client.scopeNotes || '')
   const [docUrl, setDocUrl] = useState(client.scopeDocUrl || '')
+  const [fields, setFields] = useState<Record<string, string>>(buildInitial())
   const [saving, setSaving] = useState(false)
+
+  const reset = () => { setDocUrl(client.scopeDocUrl || ''); setFields(buildInitial()) }
+  const startEdit = () => { reset(); setEditing(true) }
 
   const save = async () => {
     setSaving(true)
@@ -593,7 +621,7 @@ function ScopeTab({ state }: { state: ClientDetailState }) {
       const res = await fetch(`/api/clients/${client.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scopeNotes: notes || null, scopeDocUrl: docUrl || null }),
+        body: JSON.stringify({ scopeDocUrl: docUrl || null, scopeStructured: fields }),
       })
       if (!res.ok) { await showApiError(res, 'Failed to save scope'); return }
       showSuccess('Scope saved')
@@ -602,37 +630,55 @@ function ScopeTab({ state }: { state: ClientDetailState }) {
     } catch { showError('Failed to save scope') } finally { setSaving(false) }
   }
 
+  const initialView = buildInitial()
+  const anyContent = SCOPE_SECTIONS.some(s => (initialView[s.key] || '').trim())
+
   return (
     <div className="space-y-4">
+      {/* Scope document link */}
       <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Scope Document</span>
-        {client.scopeDocUrl && !editing ? (
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <a href={client.scopeDocUrl} target="_blank" rel="noopener noreferrer" className="text-[13px] font-medium text-teal-700 hover:text-teal-800 break-all">Open scope document →</a>
-            <button onClick={() => setEditing(true)} className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-600 flex-shrink-0">Edit</button>
-          </div>
-        ) : editing ? (
-          <input value={docUrl} onChange={e => setDocUrl(e.target.value)} placeholder="Paste a link to the scope PDF (Canva, Drive, …)" className="mt-2 w-full rounded-md px-3 py-2 text-[13px] outline-none" style={{ border: '1px solid #E4E4E7' }} />
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Scope Document</span>
+          {!editing && <button onClick={startEdit} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit</button>}
+        </div>
+        {editing ? (
+          <input value={docUrl} onChange={e => setDocUrl(e.target.value)} placeholder="Paste a link to the scope PDF (Canva, Drive, …)" className="mt-2 w-full rounded-md px-3 py-2 text-[13px] text-slate-900 outline-none" style={{ border: '1px solid #E4E4E7' }} />
+        ) : client.scopeDocUrl ? (
+          <a href={client.scopeDocUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block text-[13px] font-medium text-teal-700 hover:text-teal-800 break-all">Open scope document →</a>
         ) : (
-          <p className="mt-2 text-[13px] text-zinc-400">No scope document linked. <button onClick={() => setEditing(true)} className="font-semibold text-teal-700">Add a link</button></p>
+          <p className="mt-2 text-[13px] text-zinc-400">No scope document linked.</p>
         )}
       </section>
 
-      <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Quick Scope Notes</span>
-          {!editing && <button onClick={() => setEditing(true)} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">Edit</button>}
-        </div>
-        {editing ? (
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={6} placeholder="Tasks, frequency, exclusions, preferences…" className="mt-2 w-full rounded-md px-3 py-2 text-[13px] outline-none resize-y" style={{ border: '1px solid #E4E4E7', minHeight: 120, lineHeight: 1.5 }} />
-        ) : (
-          <p className="mt-2 text-[13px] whitespace-pre-wrap" style={{ color: client.scopeNotes ? '#18181B' : '#A1A1AA', lineHeight: 1.6 }}>{client.scopeNotes || 'No scope notes yet. Click Edit to add cleaning tasks, frequency, exclusions, and preferences.'}</p>
+      {/* Structured scope sections */}
+      <section className="rounded-[10px] bg-white p-4 space-y-4" style={{ border: '1px solid #E4E4E7' }}>
+        {SCOPE_SECTIONS.map(s => {
+          const lines = (initialView[s.key] || '').split('\n').map(l => l.trim()).filter(Boolean)
+          return (
+            <div key={s.key}>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400 mb-1.5">{s.label}</div>
+              {editing ? (
+                <textarea value={fields[s.key]} onChange={e => setFields(f => ({ ...f, [s.key]: e.target.value }))} rows={3} placeholder={s.placeholder} className="w-full rounded-md px-3 py-2 text-[13px] text-slate-900 outline-none resize-y" style={{ border: '1px solid #E4E4E7', lineHeight: 1.5 }} />
+              ) : lines.length > 0 ? (
+                <ul className="space-y-1">
+                  {lines.map((line, i) => (
+                    <li key={i} className="flex gap-2 text-[13px] text-slate-800"><span className="text-zinc-300 leading-5">•</span><span className="leading-5">{line}</span></li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[12px] text-zinc-400">—</p>
+              )}
+            </div>
+          )
+        })}
+        {!editing && !anyContent && (
+          <button onClick={startEdit} className="text-[12px] font-semibold text-teal-700">+ Add scope details</button>
         )}
       </section>
 
       {editing && (
         <div className="flex justify-end gap-2">
-          <button onClick={() => { setEditing(false); setNotes(client.scopeNotes || ''); setDocUrl(client.scopeDocUrl || '') }} className="px-4 py-1.5 text-[12px] font-semibold rounded-md text-zinc-500" style={{ border: '1px solid #E4E4E7' }}>Cancel</button>
+          <button onClick={() => { setEditing(false); reset() }} className="px-4 py-1.5 text-[12px] font-semibold rounded-md text-zinc-500" style={{ border: '1px solid #E4E4E7' }}>Cancel</button>
           <button onClick={save} disabled={saving} className="px-4 py-1.5 text-[12px] font-semibold rounded-md text-white disabled:opacity-60" style={{ background: '#0D9488' }}>{saving ? 'Saving…' : 'Save scope'}</button>
         </div>
       )}

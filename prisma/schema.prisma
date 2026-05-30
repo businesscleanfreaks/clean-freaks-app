@@ -25,6 +25,7 @@ model Client {
   openIssues               String[]   @default([]) // Overview "Open Issues" — short unresolved-issue strings
   scopeNotes               String?    // Scope tab — quick scope notes
   scopeDocUrl              String?    // Scope tab — link to the scope document (Canva/Drive PDF)
+  scopeStructured          Json?      // Scope tab — { tasks, frequency, exclusions, preferences } (each multiline text)
   billingType         String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN
   cleanerPayType      String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid)
   invoiceFrequency    String     @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
@@ -87,7 +88,8 @@ model Location {
   clientId   String
   address    String
   name       String
-  accessInfo String?    // Gate codes, key locations, entry instructions, etc.
+  accessInfo String?    // Gate codes, key locations, entry instructions, etc. (legacy free-text)
+  accessFields Json?    // Access tab — { entry, alarm, gate, lockbox, parking, notes }
   latitude   Float?
   longitude  Float?
   createdAt  DateTime   @default(now())
