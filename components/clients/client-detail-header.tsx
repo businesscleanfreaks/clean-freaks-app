@@ -8,8 +8,11 @@ import { formatCurrency } from "@/lib/utils"
 import { formatDateOnly } from "@/lib/date-only"
 import {
   Calendar, ArrowLeft,
-  PauseCircle, PlayCircle, MoreHorizontal, Archive, Trash2,
+  PauseCircle, PlayCircle, MoreHorizontal, Archive, Trash2, Plus, X,
 } from "lucide-react"
+import { useSWRConfig } from "swr"
+import { NOTE_CATEGORIES } from "./client-notes-panel"
+import { showSuccess, showError, showApiError } from "@/lib/toast"
 import type { ClientDetailState } from "./use-client-detail"
 
 interface ClientDetailHeaderProps {
@@ -39,6 +42,29 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
   const [showOverflow, setShowOverflow] = useState(false)
   const isPauseAction = isTogglingPause ? pauseResumeAction === 'pause' : isActive
   const isTrial = (client.notes || '').toUpperCase().includes('TRIAL CLIENT')
+
+  // "+ Add Note" header action — composes a note and refreshes the Overview Notes panel.
+  const { mutate: globalMutate } = useSWRConfig()
+  const [showNoteComposer, setShowNoteComposer] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [noteCategory, setNoteCategory] = useState('General')
+  const [savingNote, setSavingNote] = useState(false)
+
+  const saveNote = async () => {
+    if (!noteText.trim() || savingNote) return
+    setSavingNote(true)
+    try {
+      const res = await fetch(`/api/clients/${client.id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: noteText.trim(), category: noteCategory }),
+      })
+      if (!res.ok) { await showApiError(res, 'Failed to add note'); return }
+      showSuccess('Note added')
+      globalMutate(`/api/clients/${client.id}/notes`)
+      setNoteText(''); setNoteCategory('General'); setShowNoteComposer(false)
+    } catch { showError('Failed to add note') } finally { setSavingNote(false) }
+  }
 
   return (
     <>
@@ -106,11 +132,11 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
       <div className="bg-white border-b border-gray-200 px-4 sm:px-7 pt-1 pb-3">
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setShowAdditionalServiceChoice(true)}
+            onClick={() => setShowNoteComposer(true)}
             className="px-4 py-1.5 text-[12px] font-semibold rounded-md text-white transition-opacity hover:opacity-90"
             style={{ background: '#0D9488' }}
           >
-            Add Add-on
+            + Add Note
           </button>
           <button
             onClick={() => setEditing(true)}
@@ -133,6 +159,14 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowOverflow(false)} />
                 <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[200px]">
+                  <button
+                    onClick={() => { setShowOverflow(false); setShowAdditionalServiceChoice(true) }}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <Plus className="w-4 h-4 text-gray-400" />
+                    Add add-on
+                  </button>
+                  <div className="my-1 border-t border-gray-100" />
                   <button
                     onClick={() => { setShowOverflow(false); handleTogglePause() }}
                     disabled={isTogglingPause}
@@ -169,6 +203,34 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
           </div>
         </div>
       </div>
+
+      {showNoteComposer && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/30 px-4 pt-24" onClick={() => setShowNoteComposer(false)}>
+          <div onClick={e => e.stopPropagation()} className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">Add note</h3>
+              <button onClick={() => setShowNoteComposer(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+            </div>
+            <textarea
+              autoFocus
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              rows={3}
+              placeholder="What should the team know about this client?"
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-500"
+            />
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <select value={noteCategory} onChange={e => setNoteCategory(e.target.value)} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-slate-700 outline-none">
+                {NOTE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div className="flex gap-2">
+                <button onClick={() => setShowNoteComposer(false)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                <button onClick={saveNote} disabled={!noteText.trim() || savingNote} className="rounded-md px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: '#0D9488' }}>{savingNote ? 'Saving…' : 'Add note'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

@@ -644,37 +644,47 @@ function ScopeTab({ state }: { state: ClientDetailState }) {
 // History tab: combined timeline of invoices + recent jobs
 // ────────────────────────────────────────────────────────────────────────────
 
+type HistoryEvent = { date: Date; kind: 'invoice' | 'job'; label: string; sub: string; statusColor: string; statusBg: string; statusLabel: string; isVoid: boolean }
+
 function HistoryTab({ state }: { state: ClientDetailState }) {
   const { client, recentJobs } = state
-  type Event = { date: Date; kind: 'invoice' | 'job'; label: string; sub: string; statusColor: string; statusBg: string; statusLabel: string }
-  const events: Event[] = []
+  const events: HistoryEvent[] = []
   for (const inv of client.invoices || []) {
-    const date = new Date(inv.dateCreated)
     const status = inv.status
     events.push({
-      date,
+      date: new Date(inv.dateCreated),
       kind: 'invoice',
-      label: `Invoice ${status === 'PAID' ? 'paid' : status === 'SENT' ? 'sent' : 'created'}`,
+      label: `Invoice ${status === 'PAID' ? 'paid' : status === 'SENT' ? 'sent' : status === 'VOID' ? 'voided' : 'created'}`,
       sub: formatCurrency(inv.totalAmount),
-      statusColor: status === 'PAID' ? '#15803D' : status === 'SENT' ? '#1D4ED8' : '#92400E',
-      statusBg: status === 'PAID' ? '#DCFCE7' : status === 'SENT' ? '#DBEAFE' : '#FEF3C7',
+      statusColor: status === 'PAID' ? '#15803D' : status === 'SENT' ? '#1D4ED8' : status === 'VOID' ? '#6B7280' : '#92400E',
+      statusBg: status === 'PAID' ? '#DCFCE7' : status === 'SENT' ? '#DBEAFE' : status === 'VOID' ? '#F1F5F9' : '#FEF3C7',
       statusLabel: status.toLowerCase(),
+      isVoid: status === 'VOID',
     })
   }
   for (const job of recentJobs || []) {
-    const date = new Date(job.date)
     const status = job.status
     events.push({
-      date,
+      date: new Date(job.date),
       kind: 'job',
       label: `Clean ${status.toLowerCase()}`,
       sub: job.location?.name || '',
       statusColor: status === 'COMPLETED' ? '#15803D' : status === 'CANCELLED' ? '#B91C1C' : '#475569',
       statusBg: status === 'COMPLETED' ? '#DCFCE7' : status === 'CANCELLED' ? '#FEE2E2' : '#F1F5F9',
       statusLabel: status.toLowerCase(),
+      isVoid: false,
     })
   }
   events.sort((a, b) => b.date.getTime() - a.date.getTime())
+
+  // Group same-day events under one date header
+  const groups: Array<{ key: string; date: Date; events: HistoryEvent[] }> = []
+  for (const ev of events) {
+    const key = format(ev.date, 'yyyy-MM-dd')
+    const g = groups.find(x => x.key === key)
+    if (g) g.events.push(ev)
+    else groups.push({ key, date: ev.date, events: [ev] })
+  }
 
   return (
     <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
@@ -685,35 +695,50 @@ function HistoryTab({ state }: { state: ClientDetailState }) {
         {events.length === 0 ? (
           <p className="text-sm text-slate-500 py-4">No history yet. Once you send invoices or jobs run, they'll show up here.</p>
         ) : (
-          <div className="space-y-2">
-            {events.slice(0, 50).map((ev, i) => (
-              <div key={i} className="flex items-start gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
-                <span className="text-[11px] text-slate-400 font-mono w-[78px] flex-shrink-0 pt-0.5">{format(ev.date, 'MMM d')}</span>
-                <span
-                  className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
-                  style={{ background: ev.statusBg, color: ev.statusColor }}
-                >
-                  {ev.kind === 'invoice' ? 'INV' : 'JOB'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-medium text-slate-900">{ev.label}</p>
-                  {ev.sub && <p className="text-[11px] text-slate-500 truncate">{ev.sub}</p>}
-                </div>
-                <span
-                  className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full flex-shrink-0"
-                  style={{ background: ev.statusBg, color: ev.statusColor }}
-                >
-                  {ev.statusLabel}
-                </span>
-              </div>
-            ))}
-            {events.length > 50 && (
-              <p className="text-[11px] text-slate-400 text-center pt-2">+{events.length - 50} older event{events.length - 50 === 1 ? '' : 's'}</p>
+          <div className="space-y-3">
+            {groups.slice(0, 30).map(g => <HistoryDay key={g.key} date={g.date} events={g.events} />)}
+            {groups.length > 30 && (
+              <p className="text-[11px] text-slate-400 text-center pt-1">+{groups.length - 30} earlier day{groups.length - 30 === 1 ? '' : 's'}</p>
             )}
           </div>
         )}
       </div>
     </section>
+  )
+}
+
+function HistoryDay({ date, events }: { date: Date; events: HistoryEvent[] }) {
+  const [expandVoid, setExpandVoid] = useState(false)
+  const voided = events.filter(e => e.isVoid)
+  const collapseVoid = voided.length >= 3 && !expandVoid
+  const rows = collapseVoid ? events.filter(e => !e.isVoid) : events
+
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold text-zinc-500">{format(date, 'EEE, MMM d, yyyy')}</p>
+      <div className="space-y-1">
+        {rows.map((ev, i) => {
+          const t = ev.kind === 'invoice'
+            ? { bg: '#FEF3C7', color: '#92400E', label: 'INV' }
+            : { bg: '#CCFBF1', color: '#0F766E', label: 'JOB' }
+          return (
+            <div key={i} className="flex items-center gap-3 py-1">
+              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: t.bg, color: t.color }}>{t.label}</span>
+              <div className="min-w-0 flex-1">
+                <span className="text-[13px] font-medium text-slate-900">{ev.label}</span>
+                {ev.sub && <span className="text-[11px] text-slate-500"> · {ev.sub}</span>}
+              </div>
+              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: ev.statusBg, color: ev.statusColor }}>{ev.statusLabel}</span>
+            </div>
+          )
+        })}
+        {collapseVoid && (
+          <button onClick={() => setExpandVoid(true)} className="text-[11px] font-semibold text-teal-700 hover:text-teal-800">
+            + Show {voided.length} voided invoices
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 
