@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TimePicker } from "@/components/ui/time-picker"
 import { showError, showSuccess } from "@/lib/toast"
+import useSWR from "swr"
+import { fetcher } from "@/lib/fetcher"
 import type { ClientListItem, SubcontractorSummary } from "@/lib/types"
 
 interface CompactCreateJobDialogProps {
@@ -117,10 +119,18 @@ export function CompactCreateJobDialog({
   const [dropOpen, setDropOpen] = useState(false)
   const clientPickerRef = useRef<HTMLDivElement | null>(null)
 
+  // Add-ons attached to this job on creation (e.g. a vendor-performed window clean)
+  const [addOns, setAddOns] = useState<Array<{ description: string; vendorId: string; clientRate: string; subcontractorRate: string }>>([])
+  const [addingAddOn, setAddingAddOn] = useState(false)
+  const [addOnDraft, setAddOnDraft] = useState({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' })
+
   const activeCleaners = useMemo(
     () => subcontractors.filter(subcontractor => subcontractor.isActive !== false),
     [subcontractors]
   )
+  // Vendors for the add-on "Performed by" selector (vendor add-ons are payable via the vendor list)
+  const { data: vendorData } = useSWR<Array<{ id: string; name: string }>>(open ? '/api/vendors' : null, fetcher)
+  const addOnVendors = vendorData || []
   const selectedClient = clients.find(client => client.id === selectedClientId)
   const locations = selectedClient?.locations || []
   const typedClientName = search.trim()
@@ -183,6 +193,9 @@ export function CompactCreateJobDialog({
     setTrialFrequency("WEEKLY")
     setTrialDaysOfWeek([])
     setTrialDuration("2wk")
+    setAddOns([])
+    setAddingAddOn(false)
+    setAddOnDraft({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' })
     setDropOpen(false)
   }, [clients, open, preSelectedClientId, selectedDate, selectedTime])
 
@@ -369,6 +382,24 @@ export function CompactCreateJobDialog({
         })
 
         if (!response.ok) throw new Error((await response.json()).error || "Failed to create job")
+
+        // Attach any add-ons to the created job. A vendor add-on becomes payable via the vendor list.
+        if (addOns.length > 0) {
+          const createdJob = await response.json()
+          for (const ao of addOns) {
+            await fetch("/api/add-on-services", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                jobId: createdJob.id,
+                description: ao.description,
+                clientRate: parseFloat(ao.clientRate) || 0,
+                subcontractorRate: parseFloat(ao.subcontractorRate) || 0,
+                vendorId: ao.vendorId || null,
+              }),
+            })
+          }
+        }
       }))
 
       showSuccess(locationIds.length > 1 ? `${locationIds.length} jobs added` : "Job added")
@@ -627,6 +658,67 @@ export function CompactCreateJobDialog({
               </div>
             )}
           </section>
+
+          {!isTrial && (
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] text-slate-500">Add-ons</Label>
+                {!addingAddOn && (
+                  <button
+                    type="button"
+                    onClick={() => { setAddOnDraft({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' }); setAddingAddOn(true) }}
+                    className="text-[11px] font-semibold text-teal-700 hover:text-teal-800"
+                  >
+                    + Add
+                  </button>
+                )}
+              </div>
+              {addOns.map((ao, i) => {
+                const m = (parseFloat(ao.clientRate) || 0) - (parseFloat(ao.subcontractorRate) || 0)
+                const perf = ao.vendorId ? (addOnVendors.find(v => v.id === ao.vendorId)?.name || 'Vendor') : 'Cleaner (same as job)'
+                return (
+                  <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-[12px] font-medium text-slate-800">{ao.description}</div>
+                      <div className="truncate text-[10.5px] text-slate-400">{perf}</div>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-2 font-mono text-[11px]">
+                      <span className={m >= 0 ? 'text-emerald-700' : 'text-red-600'}>${m.toFixed(0)}</span>
+                      <button type="button" aria-label="Remove add-on" onClick={() => setAddOns(addOns.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-500">×</button>
+                    </div>
+                  </div>
+                )
+              })}
+              {addingAddOn && (
+                <div className="space-y-2 rounded-md border border-teal-200 bg-teal-50/60 p-2.5">
+                  <Input value={addOnDraft.description} onChange={e => setAddOnDraft({ ...addOnDraft, description: e.target.value })} placeholder="Add-on name (e.g. Window cleaning)" className="h-8 text-sm" />
+                  <select
+                    value={addOnDraft.vendorId}
+                    onChange={e => setAddOnDraft({ ...addOnDraft, vendorId: e.target.value })}
+                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none focus:border-teal-500"
+                  >
+                    <option value="">Performed by: Cleaner (same as job)</option>
+                    {addOnVendors.map(v => <option key={v.id} value={v.id}>Performed by: {v.name}</option>)}
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input type="number" min="0" step="0.01" value={addOnDraft.clientRate} onChange={e => setAddOnDraft({ ...addOnDraft, clientRate: e.target.value })} placeholder="We charge" className="h-8 text-sm" />
+                    <Input type="number" min="0" step="0.01" value={addOnDraft.subcontractorRate} onChange={e => setAddOnDraft({ ...addOnDraft, subcontractorRate: e.target.value })} placeholder="We pay" className="h-8 text-sm" />
+                  </div>
+                  <div className="flex justify-end gap-3 pt-0.5">
+                    <button type="button" onClick={() => setAddingAddOn(false)} className="text-[11px] text-slate-400 hover:text-slate-600">Cancel</button>
+                    <button
+                      type="button"
+                      disabled={!addOnDraft.description.trim() || !addOnDraft.clientRate}
+                      onClick={() => { setAddOns([...addOns, addOnDraft]); setAddingAddOn(false) }}
+                      className="rounded-md bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           {isTrial && (
             <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
