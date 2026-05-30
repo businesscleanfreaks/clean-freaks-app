@@ -5,7 +5,7 @@ import useSWR from "swr"
 import { useClientDetail } from "./use-client-detail"
 import { ClientDetailHeader } from "./client-detail-header"
 import { ClientDetailLocations } from "./client-detail-locations"
-import { ClientDetailContactSummary, ClientDetailSidebar, ClientDetailJobFeed } from "./client-detail-sidebar"
+import { ClientDetailSidebar, ClientDetailJobFeed } from "./client-detail-sidebar"
 import { ClientDetailModals } from "./client-detail-modals"
 import { format } from "date-fns"
 import { formatCurrency } from "@/lib/utils"
@@ -137,7 +137,6 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
           {activeTab === 'schedule' && (
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4">
               <div className="space-y-4 order-2 lg:order-1">
-                <ClientDetailContactSummary state={state} />
                 <ClientDetailLocations state={state} />
                 <ClientDetailSidebar state={state} />
               </div>
@@ -227,6 +226,8 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
           </div>
         </section>
 
+        <OverviewJobHistory client={client} />
+
       </div>
 
       {/* Right rail: notes + job feed */}
@@ -235,6 +236,56 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
         <ClientDetailJobFeed state={state} />
       </div>
     </div>
+  )
+}
+
+// One-Time Services & Job History — recent standalone (non-recurring) cleans for this client.
+function OverviewJobHistory({ client }: { client: ClientWithDetails }) {
+  const [showAll, setShowAll] = useState(false)
+  const jobs = client.locations
+    .flatMap(loc => (loc.jobs || []).map(j => ({ ...j, locationName: loc.name || loc.address?.split(',')[0] || 'Location' })))
+    .filter(j => !j.scheduleId)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+  if (jobs.length === 0) return null
+  const visible = showAll ? jobs : jobs.slice(0, 3)
+
+  return (
+    <section className="rounded-[10px] bg-white p-4" style={{ border: '1px solid #E4E4E7' }}>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">One-Time Services &amp; Job History</span>
+        <span className="text-[11px] text-zinc-400">{jobs.length}</span>
+      </div>
+      <div className="space-y-1.5">
+        {visible.map(j => {
+          const margin = (j.clientRate ?? 0) - (j.subcontractorRate ?? 0)
+          const sc = j.status === 'COMPLETED'
+            ? { bg: '#DCFCE7', text: '#15803D' }
+            : j.status === 'CANCELLED'
+              ? { bg: '#FEE2E2', text: '#B91C1C' }
+              : { bg: '#F1F5F9', text: '#475569' }
+          return (
+            <div key={j.id} className="flex items-center gap-2.5 rounded-md px-2.5 py-2" style={{ border: '1px solid #F1F5F9' }}>
+              <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase" style={{ background: '#EFF6FF', color: '#2563EB' }}>One-Time</span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12.5px] font-semibold text-zinc-800">{j.locationName}</div>
+                <div className="truncate text-[11px] text-zinc-400">{format(new Date(j.date), 'MMM d, yyyy')}{j.subcontractor?.name ? ' · ' + j.subcontractor.name : ''}</div>
+              </div>
+              <div className="flex-shrink-0 text-right">
+                <div className="font-mono text-[12.5px] font-semibold text-zinc-800">{formatCurrency(j.clientRate ?? 0)}</div>
+                <div className="font-mono text-[10.5px]" style={{ color: margin >= 0 ? '#16A34A' : '#DC2626' }}>{formatCurrency(margin)}</div>
+              </div>
+              <span className="flex-shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase" style={{ background: sc.bg, color: sc.text }}>{j.status.toLowerCase()}</span>
+            </div>
+          )
+        })}
+      </div>
+      {jobs.length > 3 && (
+        <button onClick={() => setShowAll(s => !s)} className="mt-2 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
+          {showAll ? 'Show less' : `Show all ${jobs.length}`}
+        </button>
+      )}
+    </section>
   )
 }
 

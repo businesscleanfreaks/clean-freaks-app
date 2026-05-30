@@ -77,39 +77,14 @@ export function ClientDetailContactSummary({ state }: ClientDetailSidebarProps) 
 }
 
 export function ClientDetailSidebar({ state }: ClientDetailSidebarProps) {
-  const { client, isActive } = state
-
+  const { client } = state
+  // Archive / Delete moved to the header "⋯" menu — only the notes strip remains here.
+  if (!client.notes) return null
   return (
-    <>
-      {client.notes && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">Notes</p>
-          <p className="text-sm italic text-amber-950">&quot;{client.notes}&quot;</p>
-        </div>
-      )}
-
-      <div id="client-remove-section" className="pt-1 flex flex-col gap-2 scroll-mt-28">
-        {state.clientHasHistory ? (
-          <button
-            onClick={state.handleArchiveClient}
-            disabled={!isActive || state.isArchivingClient}
-            className="flex items-center gap-2 text-sm text-amber-600 transition-colors hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-            {state.isArchivingClient ? "Archiving..." : "Archive Client"}
-          </button>
-        ) : (
-          <button
-            onClick={state.handleDeleteClient}
-            disabled={state.isDeletingClient}
-            className="flex items-center gap-2 text-sm text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-            {state.isDeletingClient ? "Deleting..." : "Delete Permanently"}
-          </button>
-        )}
-      </div>
-    </>
+    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">Notes</p>
+      <p className="text-sm italic text-amber-950">&quot;{client.notes}&quot;</p>
+    </div>
   )
 }
 
