@@ -189,7 +189,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
   const quickActionButtons = [
     {
       key: 'move',
-      label: 'Move Clean',
+      label: 'Reschedule Clean',
       icon: CalendarIcon,
       disabled: !canEditDateTime,
       onClick: handleQuickFixMove,
@@ -553,7 +553,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
 
     const panelMeta = {
       move: {
-        title: 'Move Clean',
+        title: 'Reschedule Clean',
         description: 'Pick a new date or time.',
       },
       cleaner: {
@@ -1141,13 +1141,13 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
         {label}
       </p>
       <p
-        className="truncate"
         title={typeof value === 'string' ? value : undefined}
         style={{
           fontSize: '15px',
           fontWeight: 700,
           color: tone === 'muted' ? '#6B7280' : tone === 'profit' ? '#0D9488' : '#111827',
           lineHeight: 1.25,
+          overflowWrap: 'anywhere',
         }}
       >
         {value}
