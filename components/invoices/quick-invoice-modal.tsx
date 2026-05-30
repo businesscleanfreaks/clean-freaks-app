@@ -195,7 +195,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                           onCheckedChange={() => toggleRecipient(email)}
                           className="h-3.5 w-3.5 data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
                         />
-                        <span className="truncate">{email}</span>
+                        <span className="break-all">{email}</span>
                       </label>
                     ))
                   )}
@@ -221,7 +221,7 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                 </Button>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2 lg:grid-cols-2">
                 <div>
                   <Label className="text-[11px] font-medium text-stone-400">CC</Label>
                   <Input
@@ -421,16 +421,15 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
         {/* /split-panel body */}
 
         <div className="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5">
-          {(isCreating || isSendingTest) && progress > 0 && (
+          {(isCreating || isSendingTest) ? (
+            // While an action runs, show ONLY the progress indicator — not the full button row
+            // (dimming all four buttons at once made it look like every action was triggered).
             <ProgressBar
               value={progress}
               showLabel
-              label={progressStep || 'Processing...'}
-              className="mb-3"
+              label={progressStep || 'Processing…'}
             />
-          )}
-
-          {batchMode ? (
+          ) : batchMode ? (
             <div className="flex items-center justify-between">
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isCreating}>
                 Cancel

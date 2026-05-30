@@ -520,8 +520,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
           {STATUS_TABS.map(tab => {
             const count = stats[tab.key]
             const isActive = statusFilter === tab.key
-            // Hide buckets with 0 unless it's "All" (always shown)
-            if (tab.key !== "all" && count === 0) return null
+            // Always show every bucket tab (even 0-count) so the VA can see all segments exist
             return (
               <button
                 key={tab.key}
