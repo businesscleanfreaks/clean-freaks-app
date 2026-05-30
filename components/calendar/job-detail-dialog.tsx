@@ -186,6 +186,21 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
   const clientBillingType = job.location.client.billingType
   const clientCleanerPayType = job.location.client.cleanerPayType
 
+  // Status-line schedule summary (e.g. "Weekly · Thu") for recurring jobs — the handoff wants the
+  // schedule here, not the location (location lives only in the info card's Location cell).
+  const scheduleLine = (() => {
+    if (!recurringScheduleRecord) return null
+    const FREQ: Record<string, string> = { WEEKLY: 'Weekly', BI_WEEKLY: 'Bi-weekly', EVERY_3_WEEKS: 'Every 3 wks', EVERY_4_WEEKS: 'Every 4 wks', EVERY_6_WEEKS: 'Every 6 wks', MONTHLY: 'Monthly' }
+    const label = FREQ[recurringScheduleRecord.frequency] || recurringScheduleRecord.frequency
+    let days = ''
+    try {
+      const arr = JSON.parse((recurringScheduleRecord.daysOfWeek as string) || '[]')
+      const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      if (Array.isArray(arr) && arr.length) days = arr.map((d: number) => names[d]).join(', ')
+    } catch { /* ignore */ }
+    return days ? `${label} · ${days}` : label
+  })()
+
   const quickActionButtons = [
     {
       key: 'move',
@@ -225,13 +240,6 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
       icon: Coins,
       disabled: !canEditRates,
       onClick: handleQuickFixCleanerPay,
-    },
-    {
-      key: 'addon',
-      label: 'Add Add-on',
-      icon: Plus,
-      disabled: hasFinalInvoice,
-      onClick: handleQuickFixAddOn,
     },
   ]
 
@@ -1314,9 +1322,14 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
         )}
 
         <div>
-          <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-            Add-ons
-          </p>
+          <div className="mb-2 flex items-center justify-between">
+            <p style={{ fontSize: '11px', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Add-ons
+            </p>
+            {!hasFinalInvoice && (
+              <button type="button" onClick={handleQuickFixAddOn} className="text-[12px] font-bold text-teal-700 hover:text-teal-800">+ Add</button>
+            )}
+          </div>
           {addOns.length === 0 ? (
             <p style={{ fontSize: '13px', color: '#6B7280' }}>No add-ons on this clean.</p>
           ) : (
@@ -2148,9 +2161,9 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
               </div>
             )}
 
-              {/* Location subtitle */}
+              {/* Schedule subtitle (location lives in the info card) */}
               <p className="text-[#888888] mt-1" style={{ fontSize: isQuickFixMode ? '14px' : '15px' }}>
-                {job.location.name}
+                {scheduleLine || (job.scheduleId ? job.location.name : 'One-Time')}
               </p>
             </div>
 
@@ -2405,7 +2418,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
                     {getMobileStatusLabel(job.status)}
                   </span>
                   {job.scheduleId ? (
-                    <span className="text-[11px] text-gray-400">{job.location.name}</span>
+                    <span className="text-[11px] text-gray-400">{scheduleLine || job.location.name}</span>
                   ) : (
                     <span
                       className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
