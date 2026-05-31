@@ -268,25 +268,13 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
       // v5 layout: chip-style action buttons wrapping inline, instead of a stacked list.
       // Special-situation actions (No Access) get a quieter outline. Recurring plan stays
       // bundled in so users can change the schedule from the same row of chips.
+      // Order follows job_detail_clean.jsx: Reschedule · Change Schedule · Convert · Change Cleaner · Change Client Price · Change Cleaner Pay.
       const primaryChips = [
-        ...quickActionButtons,
+        quickActionButtons[0],
         { ...recurringPlanButton, label: 'Change Schedule' },
+        ...quickActionButtons.slice(1),
       ]
       const secondaryChips = specialSituationButtons
-
-      const chipBase: React.CSSProperties = {
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        height: '30px',
-        padding: '0 12px',
-        borderRadius: '999px',
-        fontSize: '12px',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-        cursor: 'pointer',
-      }
-
       // Suppress the unused secondaryChips alias — the v5 layout uses the Problem button below instead.
       void secondaryChips
       const problemOptions = [
@@ -322,8 +310,9 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
       ]
 
       return (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="space-y-3">
+          {/* Peer edit actions — tidy 2-column grid (job_detail_clean.jsx) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {primaryChips.map((action) => {
               const Icon = action.icon
               return (
@@ -331,70 +320,85 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
                   key={action.key}
                   onClick={action.onClick}
                   disabled={action.disabled}
-                  className="transition-colors hover:bg-slate-50 disabled:cursor-default disabled:opacity-40"
+                  className="transition-colors hover:bg-slate-50 hover:border-slate-300 disabled:cursor-default disabled:opacity-40"
                   style={{
-                    ...chipBase,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 9,
+                    padding: '10px 13px',
+                    borderRadius: 9,
                     border: '1px solid #E2E8F0',
                     background: '#FFFFFF',
+                    fontSize: 13,
+                    fontWeight: 600,
                     color: action.disabled ? '#94A3B8' : '#0F172A',
+                    cursor: action.disabled ? 'default' : 'pointer',
+                    textAlign: 'left',
                   }}
                 >
-                  <Icon className="h-3.5 w-3.5 flex-shrink-0" style={{ color: action.disabled ? '#94A3B8' : '#0F766E' }} />
+                  <Icon className="h-[15px] w-[15px] flex-shrink-0" style={{ color: action.disabled ? '#94A3B8' : '#0D9488' }} />
                   {action.label}
                 </button>
               )
             })}
+          </div>
 
-            {/* Problem chip — consolidates Skip / No Access / Cancel This Clean / Cancel Service */}
-            <div className="relative" ref={problemMenuRef}>
-              <button
-                onClick={() => setProblemMenuOpen(v => !v)}
-                className="transition-colors hover:bg-rose-100"
-                style={{
-                  ...chipBase,
-                  border: '1px solid #FECACA',
-                  background: problemMenuOpen ? '#FEE2E2' : '#FEF2F2',
-                  color: '#B91C1C',
-                }}
+          {/* Destructive — quiet, separated, single path. Keeps the consolidated Problem menu
+              (Skip / No Access / Cancel This Clean / Cancel Service); opens upward since it sits at the bottom. */}
+          <div className="relative" ref={problemMenuRef} style={{ paddingTop: 12, borderTop: '1px solid #F1F5F9' }}>
+            <button
+              onClick={() => setProblemMenuOpen(v => !v)}
+              className="transition-colors hover:bg-rose-50"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: problemMenuOpen ? '#FEF2F2' : 'transparent',
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: '#DC2626',
+                cursor: 'pointer',
+              }}
+            >
+              <XCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#DC2626' }} />
+              Problem / Cancel this clean
+            </button>
+            {problemMenuOpen && (
+              <div
+                role="menu"
+                className="absolute left-0 bottom-full z-50 mb-1 min-w-[260px] overflow-hidden rounded-xl bg-white shadow-xl"
+                style={{ border: '1px solid #E2E8F0' }}
               >
-                <XCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#B91C1C' }} />
-                Problem
-              </button>
-              {problemMenuOpen && (
-                <div
-                  role="menu"
-                  className="absolute right-0 z-50 mt-1 min-w-[260px] overflow-hidden rounded-xl bg-white shadow-xl"
-                  style={{ border: '1px solid #E2E8F0' }}
-                >
-                  {problemOptions.map((opt, idx) => (
-                    <button
-                      key={opt.key}
-                      onClick={opt.onClick}
-                      disabled={opt.disabled}
-                      className="block w-full text-left transition-colors hover:bg-slate-50 disabled:cursor-default disabled:opacity-45"
+                {problemOptions.map((opt, idx) => (
+                  <button
+                    key={opt.key}
+                    onClick={opt.onClick}
+                    disabled={opt.disabled}
+                    className="block w-full text-left transition-colors hover:bg-slate-50 disabled:cursor-default disabled:opacity-45"
+                    style={{
+                      padding: '10px 14px',
+                      borderTop: idx === 0 ? 'none' : '1px solid #F1F5F9',
+                    }}
+                  >
+                    <span
                       style={{
-                        padding: '10px 14px',
-                        borderTop: idx === 0 ? 'none' : '1px solid #F1F5F9',
+                        display: 'block',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: opt.danger ? '#B91C1C' : '#0F172A',
                       }}
                     >
-                      <span
-                        style={{
-                          display: 'block',
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          color: opt.danger ? '#B91C1C' : '#0F172A',
-                        }}
-                      >
-                        {opt.label}
-                      </span>
-                      <span style={{ display: 'block', fontSize: '11px', color: '#94A3B8', marginTop: 1 }}>
-                        {opt.sub}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                      {opt.label}
+                    </span>
+                    <span style={{ display: 'block', fontSize: '11px', color: '#94A3B8', marginTop: 1 }}>
+                      {opt.sub}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )
