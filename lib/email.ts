@@ -1,9 +1,12 @@
 /**
  * Email Service Abstraction Layer
- * Supports Gmail (nodemailer) and Resend - easy to switch between providers
+ * Supports Gmail (nodemailer) and Resend (REST API) — provider + credentials are
+ * resolved at send time from getEmailConfig() (Settings → Email DB row, with env
+ * fallback), so the sending account can be changed in-app without a redeploy.
  */
 
 import nodemailer from 'nodemailer'
+import { getEmailConfig, type EmailConfig } from '@/lib/email-settings'
 
 export interface EmailOptions {
   to: string | string[]
@@ -29,43 +32,23 @@ export interface EmailResult {
  * Send an email using the configured provider
  */
 export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
-  const provider = process.env.EMAIL_PROVIDER || 'gmail'
-  const enableSending = process.env.ENABLE_EMAIL_SENDING === 'true'
-  const allowRealEmails = process.env.ALLOW_REAL_CLIENT_EMAILS === 'true'
+  const config = await getEmailConfig()
 
-  // CRITICAL SAFETY CHECK: Force test mode if safety flags not set
-  if (!allowRealEmails || !enableSending) {
+  // CRITICAL SAFETY CHECK: don't send to real clients unless both flags are on.
+  if (!config.allowRealClientEmails || !config.enableSending) {
     console.log('[EMAIL] SAFETY: Real client emails disabled. Email would have been sent:')
     console.log('  To:', options.to)
     console.log('  Subject:', options.subject)
-    console.log('  Provider:', provider)
-    console.log('  [SAFETY] Redirecting to TEST_EMAIL instead')
+    console.log('  Provider:', config.provider)
+    console.log('  [SAFETY] Not sending (enable in Settings → Email)')
     return {
       success: true,
       messageId: 'safety-test-mode-' + Date.now(),
     }
   }
 
-  // Safety check: If sending is disabled, just log and return success
-  if (!enableSending) {
-    console.log('[EMAIL] Sending is DISABLED. Email would have been sent:')
-    console.log('  To:', options.to)
-    console.log('  Subject:', options.subject)
-    console.log('  Provider:', provider)
-    return {
-      success: true,
-      messageId: 'test-mode-' + Date.now(),
-    }
-  }
-
   try {
-    if (provider === 'gmail') {
-      return await sendViaGmail(options)
-    } else if (provider === 'resend') {
-      return await sendViaResend(options)
-    } else {
-      throw new Error(`Unknown email provider: ${provider}`)
-    }
+    return await dispatch(config.provider, options, config)
   } catch (error) {
     console.error('[EMAIL] Send failed:', error)
     return {
@@ -75,33 +58,37 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
   }
 }
 
+function dispatch(provider: string, options: EmailOptions, config: EmailConfig): Promise<EmailResult> {
+  if (provider === 'gmail') return sendViaGmail(options, config)
+  if (provider === 'resend') return sendViaResend(options, config)
+  throw new Error(`Unknown email provider: ${provider}`)
+}
+
 /**
- * Send email via Gmail using Nodemailer
+ * Send email via Gmail / Google Workspace using Nodemailer + an App Password
  */
-async function sendViaGmail(options: EmailOptions): Promise<EmailResult> {
-  const user = process.env.GMAIL_USER
-  const pass = process.env.GMAIL_APP_PASSWORD
+async function sendViaGmail(options: EmailOptions, config: EmailConfig): Promise<EmailResult> {
+  const user = config.gmailUser
+  const pass = config.gmailAppPassword
 
   if (!user || !pass) {
-    throw new Error('Gmail credentials not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD in .env.local')
+    throw new Error('Gmail credentials not configured. Add a sending address and App Password in Settings → Email.')
   }
 
-  // Create transporter
   const transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: {
-      user,
-      pass,
-    },
+    auth: { user, pass },
   })
 
-  // Send email (use invoices@ alias for FROM address if using admin@ for auth)
-  const fromAddress = user === 'admin@thecleanfreaks.co'
-    ? 'invoices@thecleanfreaks.co'
-    : user
+  // Prefer an explicit From address; otherwise reuse the auth user (mapping the
+  // legacy admin@ login to the invoices@ alias for backwards compatibility).
+  const fromAddress =
+    config.fromEmail ||
+    (user === 'admin@thecleanfreaks.co' ? 'invoices@thecleanfreaks.co' : user)
+  const fromName = config.fromName || 'Clean Freaks'
 
   const info = await transporter.sendMail({
-    from: `Clean Freaks <${fromAddress}>`,
+    from: `${fromName} <${fromAddress}>`,
     to: options.to,
     cc: options.cc,
     subject: options.subject,
@@ -119,52 +106,87 @@ async function sendViaGmail(options: EmailOptions): Promise<EmailResult> {
 }
 
 /**
- * Send email via Resend (placeholder for future implementation)
+ * Send email via Resend's REST API (no SDK dependency). The From address must be
+ * on a domain verified in the Resend dashboard.
  */
-async function sendViaResend(options: EmailOptions): Promise<EmailResult> {
-  const apiKey = process.env.RESEND_API_KEY
+async function sendViaResend(options: EmailOptions, config: EmailConfig): Promise<EmailResult> {
+  const apiKey = config.resendApiKey
 
   if (!apiKey) {
-    throw new Error('Resend API key not configured. Set RESEND_API_KEY in .env.local')
+    throw new Error('Resend API key not configured. Add it in Settings → Email.')
+  }
+  if (!config.fromEmail) {
+    throw new Error('A "From" email on your verified Resend domain is required. Set it in Settings → Email.')
   }
 
-  // This would use the Resend SDK
-  // For now, throw error as it's not implemented yet
-  throw new Error('Resend provider not yet implemented. Install resend package: npm install resend')
+  // Resend wants attachment bytes inline as base64.
+  const attachments = options.attachments
+    ? await Promise.all(
+        options.attachments.map(async (a) => {
+          let content = ''
+          if (a.href) {
+            const r = await fetch(a.href)
+            content = Buffer.from(await r.arrayBuffer()).toString('base64')
+          } else if (a.path) {
+            const fs = await import('fs/promises')
+            content = (await fs.readFile(a.path)).toString('base64')
+          }
+          return { filename: a.filename, content }
+        })
+      )
+    : undefined
 
-  // Future implementation:
-  // const { Resend } = await import('resend')
-  // const resend = new Resend(apiKey)
-  //
-  // const result = await resend.emails.send({
-  //   from: `Clean Freaks <${process.env.EMAIL_FROM || 'invoices@thecleanfreaks.co'}>`,
-  //   to: options.to,
-  //   subject: options.subject,
-  //   html: options.html,
-  //   attachments: options.attachments,
-  // })
-  //
-  // return {
-  //   success: true,
-  //   messageId: result.id,
-  // }
+  const toArr = Array.isArray(options.to) ? options.to : [options.to]
+  const ccArr = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: `${config.fromName || 'Clean Freaks'} <${config.fromEmail}>`,
+      to: toArr,
+      cc: ccArr,
+      subject: options.subject,
+      html: options.html,
+      text: options.text || stripHtml(options.html),
+      attachments,
+    }),
+  })
+
+  const data = (await res.json().catch(() => ({}))) as { id?: string; message?: string; name?: string }
+  if (!res.ok) {
+    throw new Error(data?.message || data?.name || `Resend API error (${res.status})`)
+  }
+
+  console.log('[EMAIL] Resend sent successfully:', data?.id)
+  return {
+    success: true,
+    messageId: data?.id,
+  }
 }
 
 /**
- * Send a test email to the configured test address
- * Test emails bypass the ALLOW_REAL_CLIENT_EMAILS check since they're always safe
+ * Send a test email to the configured test address.
+ * Test emails bypass the ALLOW_REAL_CLIENT_EMAILS check since they only ever go
+ * to the operator's own test inbox — but still require sending to be enabled.
  */
-export async function sendTestEmail(options: Omit<EmailOptions, 'to'>): Promise<EmailResult> {
-  const testEmail = process.env.TEST_EMAIL
-  const enableSending = process.env.ENABLE_EMAIL_SENDING === 'true'
-  const provider = process.env.EMAIL_PROVIDER || 'gmail'
+export async function sendTestEmail(
+  options: Omit<EmailOptions, 'to'>,
+  opts?: { force?: boolean },
+): Promise<EmailResult> {
+  const config = await getEmailConfig()
 
-  if (!testEmail) {
-    throw new Error('Test email not configured. Set TEST_EMAIL in .env.local')
+  if (!config.testEmail) {
+    throw new Error('Test email address not set. Add one in Settings → Email.')
   }
 
-  if (!enableSending) {
-    console.log('[EMAIL] Test email sending is DISABLED. Would have sent to:', testEmail)
+  // The Settings "Send test" passes force:true so credentials can be verified
+  // before the master switch is flipped on (test mail only goes to testEmail).
+  if (!config.enableSending && !opts?.force) {
+    console.log('[EMAIL] Test email sending is DISABLED. Would have sent to:', config.testEmail)
     return {
       success: true,
       messageId: 'test-mode-disabled-' + Date.now(),
@@ -172,26 +194,14 @@ export async function sendTestEmail(options: Omit<EmailOptions, 'to'>): Promise<
     }
   }
 
-  console.log('[EMAIL] Sending test email to:', testEmail)
+  console.log('[EMAIL] Sending test email to:', config.testEmail)
 
-  // For test emails, we bypass the ALLOW_REAL_CLIENT_EMAILS check
-  // and send directly using the provider
   try {
-    if (provider === 'gmail') {
-      return await sendViaGmail({
-        ...options,
-        to: testEmail,
-        subject: `[TEST] ${options.subject}`,
-      })
-    } else if (provider === 'resend') {
-      return await sendViaResend({
-        ...options,
-        to: testEmail,
-        subject: `[TEST] ${options.subject}`,
-      })
-    } else {
-      throw new Error(`Unknown email provider: ${provider}`)
-    }
+    return await dispatch(config.provider, {
+      ...options,
+      to: config.testEmail,
+      subject: `[TEST] ${options.subject}`,
+    }, config)
   } catch (error) {
     console.error('[EMAIL] Test email send failed:', error)
     return {

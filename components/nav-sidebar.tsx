@@ -9,6 +9,7 @@ import {
   FileText,
   UserCog,
   Package,
+  Settings,
   LogOut,
   Sparkles,
   ChevronUp,
@@ -53,6 +54,12 @@ const sections: NavSection[] = [
       { name: "Invoices",  href: "/invoices",       icon: FileText  },
       { name: "Cleaners",  href: "/subcontractors", icon: UserCog, tooltip: "nav-subcontractors" },
       { name: "Vendors",   href: "/vendors",        icon: Package },
+    ],
+  },
+  {
+    label: "SYSTEM",
+    items: [
+      { name: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ]

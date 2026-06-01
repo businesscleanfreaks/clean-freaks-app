@@ -371,6 +371,25 @@ model VendorPaymentLineItem {
   @@map("vendor_payment_line_items")
 }
 
+// Singleton row holding the in-app email configuration (Settings → Email).
+// Secret fields (gmailAppPassword, resendApiKey) are stored AES-256-GCM encrypted.
+model EmailSettings {
+  id                    String   @id @default(uuid())
+  provider              String   @default("gmail") // "gmail" | "resend"
+  fromName              String?  // display name, e.g. "The Clean Freaks"
+  fromEmail             String?  // sending address, e.g. invoicing@thecleanfreaks.co
+  gmailUser             String?  // Gmail/Workspace login (often == fromEmail)
+  gmailAppPassword      String?  // ENCRYPTED 16-char App Password
+  resendApiKey          String?  // ENCRYPTED Resend API key
+  testEmail             String?  // where "Send test" goes
+  enableSending         Boolean  @default(false) // master switch
+  allowRealClientEmails Boolean  @default(false) // safety: allow sending to real clients
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("email_settings")
+}
+
 model Expense {
   id            String        @id @default(uuid())
   date          DateTime
