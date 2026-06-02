@@ -650,9 +650,13 @@ export function WorkersPageWrapper({
                   }
                   if (!res.ok) throw new Error("Failed to delete")
                   showSuccess("Cleaner permanently deleted")
+                  // Optimistic removal is authoritative for a permanent delete.
+                  // Do NOT revalidate the list here — an immediate refetch can
+                  // read stale data over the pooler and bring the row back (the
+                  // bug Josh hit). SWR revalidates fresh on the next load.
                   removeCleanerFromCache(confirmDeleteId)
                   setConfirmDeleteId(null)
-                  onDataChange()
+                  globalMutate("/api/dashboard-stats")
                 } catch {
                   showError("Failed to delete cleaner")
                 } finally {

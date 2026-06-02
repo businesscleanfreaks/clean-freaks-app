@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { addMonths, format, startOfMonth, endOfMonth } from "date-fns"
 import { formatCurrency } from "@/lib/utils"
@@ -160,6 +161,12 @@ export function InvoicesPageClient({
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [confirmSend, setConfirmSend] = useState<'sel' | null>(null)
   const [markingPaid, setMarkingPaid] = useState(false)
+  const [markingSent, setMarkingSent] = useState(false)
+  // Portal target — the floating bar renders into document.body so it isn't
+  // trapped by the page's transformed `.animate-in` wrapper (which would pin a
+  // position:fixed element to the content bottom instead of the viewport).
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   const [isExporting, setIsExporting] = useState(false)
 
   // Invoice review modal (the detail/edit/send surface — reuses the tested flow)
@@ -339,14 +346,54 @@ export function InvoicesPageClient({
     openReviewModal(queue[0], true)
   }
 
-  // ── Mark paid ──
-  const markCandidatePaid = async (candidate: InvoiceCandidate) => {
-    if (!candidate.existingInvoiceId) {
-      showError('Create and send this invoice before marking it paid.')
-      return
+  // ── Ensure an invoice record exists for a candidate ──
+  // Used by "Mark Sent" / "Mark Paid" so invoices handled outside the app can be
+  // recorded. Reuses the exact creation path the Send flow uses:
+  // POST /api/invoices (previewOnly → VOID) then finalize (→ DRAFT + marks jobs invoiced).
+  const ensureInvoiceId = async (candidate: InvoiceCandidate): Promise<string | null> => {
+    if (candidate.existingInvoiceId) return candidate.existingInvoiceId
+    if (!candidate.jobIds || candidate.jobIds.length === 0) {
+      showError(`${candidate.clientName}: open and send this one manually (no billable cleans to record).`)
+      return null
     }
+    const res = await fetch('/api/invoices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: candidate.clientId,
+        jobIds: candidate.jobIds,
+        previewOnly: true,
+        showPaymentOptions: true,
+        lineItems: candidate.lineItems.map(li => ({
+          description: li.description,
+          amount: li.quantity * li.price,
+          jobId: li.jobId || null,
+          addOnServiceId: li.sourceType === 'ADD_ON' ? (li.sourceId || null) : null,
+          serviceDate: new Date().toISOString(),
+        })),
+      }),
+    })
+    if (res.status === 409) {
+      // An invoice already exists for these jobs/period — use it.
+      const body = await res.json().catch(() => null)
+      const existingId = body?.existingInvoice?.id
+      if (existingId) return existingId
+    }
+    if (!res.ok) {
+      await showApiError(res, `Failed to create invoice for ${candidate.clientName}`)
+      return null
+    }
+    const inv = await res.json()
+    await fetch(`/api/invoices/${inv.id}/finalize`, { method: 'POST' })
+    return inv.id as string
+  }
+
+  // ── Mark paid (creates the invoice first if it was handled outside the app) ──
+  const markCandidatePaid = async (candidate: InvoiceCandidate) => {
     try {
-      const res = await fetch(`/api/invoices/${candidate.existingInvoiceId}/mark-paid`, {
+      const invoiceId = await ensureInvoiceId(candidate)
+      if (!invoiceId) return
+      const res = await fetch(`/api/invoices/${invoiceId}/mark-paid`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paymentMethod: 'MANUAL', paymentNotes: 'Marked as paid from review queue' }),
@@ -363,26 +410,24 @@ export function InvoicesPageClient({
   }
 
   const markSelectedPaid = async () => {
-    const withInvoice = selectedList.filter(d => d.candidate.existingInvoiceId)
-    if (withInvoice.length === 0) {
-      showError('Selected items need an invoice before they can be marked paid.')
-      return
-    }
+    if (selectedList.length === 0) return
     setMarkingPaid(true)
     try {
       const results = await Promise.allSettled(
-        withInvoice.map(d =>
-          fetch(`/api/invoices/${d.candidate.existingInvoiceId}/mark-paid`, {
+        selectedList.map(async d => {
+          const invoiceId = await ensureInvoiceId(d.candidate)
+          if (!invoiceId) throw new Error('no-invoice')
+          const res = await fetch(`/api/invoices/${invoiceId}/mark-paid`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ paymentMethod: 'MANUAL', paymentNotes: 'Marked as paid from review queue' }),
           })
-        )
+          if (!res.ok) throw new Error('failed')
+        })
       )
-      const ok = results.filter(r => r.status === 'fulfilled' && (r.value as Response).ok).length
-      const skipped = selectedList.length - withInvoice.length
+      const ok = results.filter(r => r.status === 'fulfilled').length
       if (ok > 0) {
-        showSuccess(`${ok} invoice${ok > 1 ? 's' : ''} marked as paid${skipped > 0 ? ` · ${skipped} skipped (no invoice yet)` : ''}`)
+        showSuccess(`${ok} invoice${ok > 1 ? 's' : ''} marked as paid`)
       } else {
         showError('Failed to mark invoices as paid')
       }
@@ -390,6 +435,34 @@ export function InvoicesPageClient({
       onDataChange()
     } finally {
       setMarkingPaid(false)
+    }
+  }
+
+  // ── Mark sent (records invoices sent to clients outside the app) ──
+  const markSelectedSent = async () => {
+    // Only act on Not-Sent selections (Sent/Paid are already handled).
+    const targets = selectedList.filter(d => d.uiStatus === 'Not Sent')
+    if (targets.length === 0) return
+    setMarkingSent(true)
+    try {
+      const results = await Promise.allSettled(
+        targets.map(async d => {
+          const invoiceId = await ensureInvoiceId(d.candidate)
+          if (!invoiceId) throw new Error('no-invoice')
+          const res = await fetch(`/api/invoices/${invoiceId}/mark-sent`, { method: 'POST' })
+          if (!res.ok) throw new Error('failed')
+        })
+      )
+      const ok = results.filter(r => r.status === 'fulfilled').length
+      if (ok > 0) {
+        showSuccess(`${ok} invoice${ok > 1 ? 's' : ''} marked as sent`)
+      } else {
+        showError('Failed to mark invoices as sent')
+      }
+      setSel(new Set())
+      onDataChange()
+    } finally {
+      setMarkingSent(false)
     }
   }
 
@@ -584,21 +657,28 @@ export function InvoicesPageClient({
       </div>
 
       {/* ── Floating action bar ── */}
-      {sel.size > 0 && !confirmSend && (
-        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 12, background: '#0F172A', padding: '10px 20px', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.25)', zIndex: 100, animation: 'ti 0.15s ease' }}>
+      {/* Portaled to <body> so the position:fixed bar is anchored to the viewport,
+          not the transformed `.animate-in` page wrapper (which previously pushed it
+          to the bottom of the content, requiring a scroll to see it). */}
+      {mounted && sel.size > 0 && !confirmSend && createPortal(
+        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 12, background: '#0F172A', padding: '10px 20px', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.25)', zIndex: 1000, animation: 'ti 0.15s ease', maxWidth: 'calc(100vw - 32px)', flexWrap: 'wrap', justifyContent: 'center' }}>
           <span style={{ fontSize: 13, color: '#fff', fontWeight: 500 }}>{sel.size} invoice{sel.size > 1 ? 's' : ''} selected</span>
           <span style={{ fontSize: 14, fontFamily: MO, fontWeight: 700, color: TEAL }}>{formatCurrency(selTotal)}</span>
           <div style={{ width: 1, height: 20, background: '#334155' }} />
           <button type="button" onClick={() => setConfirmSend('sel')} style={{ all: 'unset', padding: '6px 18px', borderRadius: 6, fontSize: 13, fontWeight: 700, background: TEAL, color: '#fff', cursor: 'pointer' }}>
             Send {sel.size}
           </button>
-          <button type="button" onClick={markSelectedPaid} disabled={markingPaid} style={{ all: 'unset', padding: '6px 18px', borderRadius: 6, fontSize: 13, fontWeight: 700, background: '#16A34A', color: '#fff', cursor: markingPaid ? 'default' : 'pointer', opacity: markingPaid ? 0.6 : 1 }}>
-            Mark Paid
+          <button type="button" title="Record as sent without emailing — for invoices you sent outside the app" onClick={markSelectedSent} disabled={markingSent || markingPaid} style={{ all: 'unset', padding: '6px 18px', borderRadius: 6, fontSize: 13, fontWeight: 700, background: '#2563EB', color: '#fff', cursor: markingSent ? 'default' : 'pointer', opacity: markingSent ? 0.6 : 1 }}>
+            {markingSent ? 'Marking…' : 'Mark Sent'}
+          </button>
+          <button type="button" onClick={markSelectedPaid} disabled={markingPaid || markingSent} style={{ all: 'unset', padding: '6px 18px', borderRadius: 6, fontSize: 13, fontWeight: 700, background: '#16A34A', color: '#fff', cursor: markingPaid ? 'default' : 'pointer', opacity: markingPaid ? 0.6 : 1 }}>
+            {markingPaid ? 'Marking…' : 'Mark Paid'}
           </button>
           <button type="button" onClick={() => setSel(new Set())} style={{ all: 'unset', fontSize: 12, color: '#94A3B8', cursor: 'pointer', padding: '4px 8px' }}>
             Clear
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Send confirmation overlay ── */}
