@@ -546,7 +546,7 @@ export function useQuickInvoice({
       setEmailSubject('Invoice from Clean Freaks')
       const totalAmountStr = formatCurrency(generatedItems.reduce((sum, item) => sum + item.amount, 0))
       const dueDateStr = dueDate ? format(dueDate, 'MMMM d, yyyy') : null
-      setEmailMessage(getDefaultEmailMessage({ totalAmount: totalAmountStr, dueDate: dueDateStr }))
+      setEmailMessage(getDefaultEmailMessage({ clientName: client.name, totalAmount: totalAmountStr, dueDate: dueDateStr }))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, jobs, client.billingType, client.invoicingEmail, client.invoicingCcEmail, client.communicationEmail, client.id, initialMonth, getMonthJobs, invoiceInputKey])
@@ -580,6 +580,7 @@ export function useQuickInvoice({
     const totalAmountStr = formatCurrency(items.reduce((sum, item) => sum + item.amount, 0))
     const dueDate = dateDue ? new Date(dateDue + 'T12:00:00') : null
     setEmailMessage(getDefaultEmailMessage({
+      clientName: client.name,
       totalAmount: totalAmountStr,
       dueDate: dueDate ? format(dueDate, 'MMMM d, yyyy') : null,
     }))

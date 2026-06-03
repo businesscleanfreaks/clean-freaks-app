@@ -43,19 +43,23 @@ export function generateInvoiceEmail({
   showPaymentOptions?: boolean
 }): string {
   const dueLine = dueDate ? `<p>Payment is due by <strong>${dueDate}</strong>.</p>` : ''
-  const messageLine = customMessage ? `<p>${customMessage.replace(/\n/g, '<br>')}</p>` : ''
   const paymentSection = showPaymentOptions
     ? `<p><a href="${invoiceUrl}" style="display:inline-block;padding:12px 24px;background:#0d9488;color:white;text-decoration:none;border-radius:8px;font-weight:600;">View Invoice</a></p>`
     : `<p><a href="${invoiceUrl}">View Invoice ${invoiceNumber}</a></p>`
+
+  // A custom message is the complete body (it already has its own greeting,
+  // due line, and sign-off), so don't prepend another greeting or due line —
+  // that was producing a doubled "Hi …" and duplicate "Payment is due …".
+  const bodyContent = customMessage
+    ? `<p>${customMessage.replace(/\n/g, '<br>')}</p>`
+    : `<p>Hi ${clientName},</p><p>Please find your invoice for <strong>${totalAmount}</strong>.</p>${dueLine}`
 
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
 <body style="font-family:system-ui,-apple-system,sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px;">
   <h2 style="color:#0d9488;">Invoice ${invoiceNumber}</h2>
-  <p>Hi ${clientName},</p>
-  ${messageLine || `<p>Please find your invoice for <strong>${totalAmount}</strong>.</p>`}
-  ${dueLine}
+  ${bodyContent}
   ${paymentSection}
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
   <p style="color:#9ca3af;font-size:13px;">Clean Freaks</p>
