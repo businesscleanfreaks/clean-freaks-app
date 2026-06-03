@@ -217,6 +217,8 @@ model Invoice {
   status        String        @default("DRAFT") // DRAFT, SENT, PAID
   pdfPath       String?
   pdfUrl        String?       // Public URL to PDF
+  pdfCache      Bytes?        // Cached rendered PDF bytes (served when pdfFingerprint matches)
+  pdfFingerprint String?      // sha256 of the content the cached PDF was built from
   notes         String?
   dateSent      DateTime?     // When email was sent
   sentTo        String?       // Email address sent to

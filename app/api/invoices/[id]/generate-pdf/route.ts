@@ -6,9 +6,115 @@ import { InvoicePDF } from '@/components/invoices/invoice-pdf'
 import type { LogoSettings } from '@/components/invoices/invoice-pdf'
 import { logger } from '@/lib/logger'
 import type { InvoiceWithRelations } from '@/types'
+import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
+// Bump when invoice-pdf.tsx (the template) changes, to invalidate every cached PDF.
+const PDF_TEMPLATE_VERSION = 'v2-grouped'
+
+interface PdfFingerprintSource {
+  invoiceNumber: string | null
+  totalAmount: number
+  dateDue: Date | null
+  dateCreated: Date
+  notes: string | null
+  showPaymentOptions: boolean | null
+  client: {
+    name: string
+    communicationContactName: string | null
+    communicationEmail: string | null
+    invoicingEmail: string | null
+    communicationPhone: string | null
+    phone: string | null
+    billingType: string
+    locations: Array<{ name: string; address: string }>
+  } | null
+  lineItems: Array<{
+    id: string
+    description: string
+    amount: number
+    serviceDate: Date | null
+    jobId: string | null
+    addOnServiceId: string | null
+  }>
+}
+
+type CachedInvoice = {
+  id: string
+  pdfCache?: Uint8Array | Buffer | null
+  pdfFingerprint?: string | null
+}
+
+/**
+ * Deterministic content fingerprint. Deliberately excludes timestamps and the
+ * cache columns so storing the cache never invalidates it, and includes a
+ * template version so a renderer change forces regeneration.
+ */
+function computePdfFingerprint(invoice: PdfFingerprintSource, logoSettings: LogoSettings | undefined): string {
+  const c = invoice.client
+  const payload = {
+    v: PDF_TEMPLATE_VERSION,
+    inv: {
+      n: invoice.invoiceNumber,
+      t: invoice.totalAmount,
+      due: invoice.dateDue,
+      created: invoice.dateCreated,
+      notes: invoice.notes,
+      spo: invoice.showPaymentOptions,
+    },
+    client: c
+      ? {
+          name: c.name,
+          ccn: c.communicationContactName,
+          ce: c.communicationEmail,
+          ie: c.invoicingEmail,
+          cp: c.communicationPhone,
+          p: c.phone,
+          bt: c.billingType,
+          loc: (c.locations || [])
+            .map((l) => ({ n: l.name, a: l.address }))
+            .sort((a, b) => (a.a || '').localeCompare(b.a || '')),
+        }
+      : null,
+    items: invoice.lineItems
+      .map((li) => ({ id: li.id, d: li.description, a: li.amount, sd: li.serviceDate, j: li.jobId, ao: li.addOnServiceId }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    logo: logoSettings || null,
+  }
+  return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+}
+
+/**
+ * Serve the cached PDF when the content fingerprint matches; otherwise render a
+ * fresh PDF and store it. Keeps repeat previews instant without ever serving a
+ * stale PDF — any line-item, clean, amount, or contact change bumps the fp.
+ */
+async function getOrRenderInvoicePdf(invoice: CachedInvoice, logoSettings: LogoSettings | undefined): Promise<Buffer> {
+  const fingerprint = computePdfFingerprint(invoice as unknown as PdfFingerprintSource, logoSettings)
+
+  if (invoice.pdfFingerprint === fingerprint && invoice.pdfCache) {
+    return Buffer.from(invoice.pdfCache)
+  }
+
+  const element = React.createElement(InvoicePDF, {
+    invoice: invoice as unknown as InvoiceWithRelations,
+    logoSettings,
+  })
+  const buffer = await renderToBuffer(element as React.ReactElement)
+
+  try {
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { pdfCache: buffer, pdfFingerprint: fingerprint },
+    })
+  } catch (err) {
+    logger.warn('[invoice:generate-pdf] cache store failed (non-fatal):', err)
+  }
+
+  return buffer
+}
 
 export async function POST(
   request: Request,
@@ -72,10 +178,9 @@ export async function POST(
       // Logo settings table may not exist yet — use defaults
     }
 
-    // Generate PDF using react-pdf
-    const pdfProps = { invoice: invoice as unknown as InvoiceWithRelations, logoSettings }
-    const invoiceElement = React.createElement(InvoicePDF, pdfProps)
-    const pdfBuffer = await renderToBuffer(invoiceElement as React.ReactElement)
+    // Render the PDF once and cache it (keyed by content fingerprint) so the
+    // iframe's follow-up GET serves the cached bytes instantly.
+    await getOrRenderInvoicePdf(invoice, logoSettings)
 
     // Generate a filename for download
     const filename = `invoice-${invoice.invoiceNumber || invoice.id}.pdf`
@@ -187,10 +292,8 @@ export async function GET(
       // Logo settings table may not exist yet — use defaults
     }
 
-    // Generate PDF using react-pdf
-    const pdfProps = { invoice: invoice as unknown as InvoiceWithRelations, logoSettings }
-    const invoiceElement = React.createElement(InvoicePDF, pdfProps)
-    const pdfBuffer = await renderToBuffer(invoiceElement as React.ReactElement)
+    // Serve the cached PDF when content is unchanged; render + cache otherwise.
+    const pdfBuffer = await getOrRenderInvoicePdf(invoice, logoSettings)
 
     // Return PDF directly as a downloadable file
     const filename = `invoice-${invoice.invoiceNumber || invoice.id}.pdf`
