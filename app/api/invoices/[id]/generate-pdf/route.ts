@@ -41,11 +41,6 @@ interface PdfFingerprintSource {
   }>
 }
 
-type CachedInvoice = {
-  id: string
-  pdfCache?: Uint8Array | Buffer | null
-  pdfFingerprint?: string | null
-}
 
 /**
  * Deterministic content fingerprint. Deliberately excludes timestamps and the
@@ -91,11 +86,12 @@ function computePdfFingerprint(invoice: PdfFingerprintSource, logoSettings: Logo
  * fresh PDF and store it. Keeps repeat previews instant without ever serving a
  * stale PDF — any line-item, clean, amount, or contact change bumps the fp.
  */
-async function getOrRenderInvoicePdf(invoice: CachedInvoice, logoSettings: LogoSettings | undefined): Promise<Buffer> {
+async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: LogoSettings | undefined): Promise<Buffer> {
   const fingerprint = computePdfFingerprint(invoice as unknown as PdfFingerprintSource, logoSettings)
 
-  if (invoice.pdfFingerprint === fingerprint && invoice.pdfCache) {
-    return Buffer.from(invoice.pdfCache)
+  const cached = await prisma.invoicePdfCache.findUnique({ where: { invoiceId: invoice.id } })
+  if (cached && cached.fingerprint === fingerprint) {
+    return Buffer.from(cached.data)
   }
 
   const element = React.createElement(InvoicePDF, {
@@ -105,9 +101,10 @@ async function getOrRenderInvoicePdf(invoice: CachedInvoice, logoSettings: LogoS
   const buffer = await renderToBuffer(element as React.ReactElement)
 
   try {
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: { pdfCache: buffer, pdfFingerprint: fingerprint },
+    await prisma.invoicePdfCache.upsert({
+      where: { invoiceId: invoice.id },
+      create: { invoiceId: invoice.id, data: buffer, fingerprint },
+      update: { data: buffer, fingerprint },
     })
   } catch (err) {
     logger.warn('[invoice:generate-pdf] cache store failed (non-fatal):', err)

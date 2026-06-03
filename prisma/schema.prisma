@@ -217,8 +217,6 @@ model Invoice {
   status        String        @default("DRAFT") // DRAFT, SENT, PAID
   pdfPath       String?
   pdfUrl        String?       // Public URL to PDF
-  pdfCache      Bytes?        // Cached rendered PDF bytes (served when pdfFingerprint matches)
-  pdfFingerprint String?      // sha256 of the content the cached PDF was built from
   notes         String?
   dateSent      DateTime?     // When email was sent
   sentTo        String?       // Email address sent to
@@ -236,12 +234,26 @@ model Invoice {
 
   client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
   lineItems     InvoiceLineItem[]
+  pdfCacheEntry InvoicePdfCache?
 
   @@index([dateCreated])
   @@index([status])
   @@index([clientId])
   @@index([dateCreated, status])
   @@map("invoices")
+}
+
+// Rendered invoice PDF cache, in its own table so the bytes never load with
+// normal invoice queries. Served when `fingerprint` matches the invoice content.
+model InvoicePdfCache {
+  invoiceId   String   @id
+  data        Bytes
+  fingerprint String
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_pdf_cache")
 }
 
 model InvoiceLineItem {

@@ -51,11 +51,11 @@ export default async function PublicInvoicePage({
   }
   
   const invoice = await getInvoice(invoiceId)
-  
+
   if (!invoice) {
     notFound() // Invoice not found
   }
-  
+
   return <PublicInvoiceView invoice={invoice as unknown as InvoiceWithRelations} />
 }
 
