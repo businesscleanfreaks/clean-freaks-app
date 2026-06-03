@@ -6,6 +6,7 @@ import { Download, Shield, Lock, CheckCircle, ChevronDown, ChevronUp, Mail } fro
 import { Button } from "@/components/ui/button"
 import { InvoiceWithRelations } from "@/types"
 import { InvoicePaymentSection } from "./invoice-payment-section"
+import { groupInvoiceLineItems } from "@/lib/invoice-grouping"
 
 interface PublicInvoiceViewProps {
   invoice: InvoiceWithRelations
@@ -21,10 +22,11 @@ export function PublicInvoiceView({ invoice }: PublicInvoiceViewProps) {
   }
 
   const isPaid = invoice.status === 'PAID'
-  
-  // Get first 2 line items for preview
-  const previewLineItems = invoice.lineItems.slice(0, 2)
-  const hasMoreItems = invoice.lineItems.length > 2
+
+  // Group per-clean visits into summary lines (matches the PDF + emailed copy).
+  const groupedRows = groupInvoiceLineItems(invoice.lineItems, { billingType: invoice.client.billingType })
+  const previewRows = groupedRows.slice(0, 2)
+  const hasMoreItems = groupedRows.length > 2
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -83,16 +85,16 @@ export function PublicInvoiceView({ invoice }: PublicInvoiceViewProps) {
                 <div className="mb-6">
                   <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-4">Services</p>
                   <div className="space-y-3">
-                    {previewLineItems.map((item) => (
-                      <div key={item.id} className="flex justify-between items-start py-3 border-b border-slate-100 last:border-b-0">
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-900">{item.description}</p>
-                          {item.serviceDate && (
-                            <p className="text-sm text-slate-500 mt-0.5">{formatDate(item.serviceDate)}</p>
+                    {previewRows.map((row) => (
+                      <div key={row.key} className="flex justify-between items-start py-3 border-b border-slate-100 last:border-b-0">
+                        <div className="flex-1 pr-6">
+                          <p className="font-medium text-slate-900">{row.description}</p>
+                          {row.grouped && (
+                            <p className="text-sm text-slate-500 mt-0.5">{row.quantity} visits × {formatCurrency(row.unitPrice)}</p>
                           )}
                         </div>
-                        <p className="font-semibold text-slate-900 ml-6 tabular-nums">
-                          {formatCurrency(item.amount)}
+                        <p className="font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                          {formatCurrency(row.amount)}
                         </p>
                       </div>
                     ))}
@@ -101,16 +103,16 @@ export function PublicInvoiceView({ invoice }: PublicInvoiceViewProps) {
                   {/* Expandable Full Details */}
                   {showAllDetails && hasMoreItems && (
                     <div className="space-y-3 mt-3 pt-3 border-t border-slate-100">
-                      {invoice.lineItems.slice(2).map((item) => (
-                        <div key={item.id} className="flex justify-between items-start py-3 border-b border-slate-100 last:border-b-0">
-                          <div className="flex-1">
-                            <p className="font-medium text-slate-900">{item.description}</p>
-                            {item.serviceDate && (
-                              <p className="text-sm text-slate-500 mt-0.5">{formatDate(item.serviceDate)}</p>
+                      {groupedRows.slice(2).map((row) => (
+                        <div key={row.key} className="flex justify-between items-start py-3 border-b border-slate-100 last:border-b-0">
+                          <div className="flex-1 pr-6">
+                            <p className="font-medium text-slate-900">{row.description}</p>
+                            {row.grouped && (
+                              <p className="text-sm text-slate-500 mt-0.5">{row.quantity} visits × {formatCurrency(row.unitPrice)}</p>
                             )}
                           </div>
-                          <p className="font-semibold text-slate-900 ml-6 tabular-nums">
-                            {formatCurrency(item.amount)}
+                          <p className="font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                            {formatCurrency(row.amount)}
                           </p>
                         </div>
                       ))}
@@ -131,7 +133,7 @@ export function PublicInvoiceView({ invoice }: PublicInvoiceViewProps) {
                       ) : (
                         <>
                           <ChevronDown className="w-4 h-4" />
-                          View All {invoice.lineItems.length} Items
+                          View All {groupedRows.length} Items
                         </>
                       )}
                     </button>

@@ -4,6 +4,7 @@ import { InvoiceWithRelations } from '@/types'
 import path from 'path'
 import { existsSync } from 'fs'
 import { logger } from '@/lib/logger'
+import { groupInvoiceLineItems } from '@/lib/invoice-grouping'
 
 // Colors matching the provided Clean Freaks invoice template
 const COLORS = {
@@ -124,8 +125,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.lightBlue,
   },
   colDescription: { flex: 3 },
-  colQuantity: { flex: 1, textAlign: 'center' },
-  colPrice: { flex: 1, textAlign: 'right' },
+  colQuantity: { flex: 0.8, textAlign: 'center' },
+  colPrice: { flex: 1.1, textAlign: 'right' },
+  colAmount: { flex: 1.1, textAlign: 'right' },
   tableText: {
     fontSize: 9,
     color: COLORS.textDark,
@@ -322,6 +324,9 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
     zipCode: null,
   }
 
+  // Group per-clean visits into summary lines (flat-rate left unchanged).
+  const groupedRows = groupInvoiceLineItems(invoice.lineItems, { billingType: invoice.client.billingType })
+
   // Point of contact
   const contactName = invoice.client.communicationContactName || invoice.client.name
   const contactEmail = invoice.client.communicationEmail || invoice.client.invoicingEmail || null
@@ -439,20 +444,24 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
           <View style={styles.tableHeader} break={false}>
             <Text style={[styles.colDescription, styles.tableHeaderText]}>Description</Text>
             <Text style={[styles.colQuantity, styles.tableHeaderText]}>Quantity</Text>
-            <Text style={[styles.colPrice, styles.tableHeaderText]}>Price</Text>
+            <Text style={[styles.colPrice, styles.tableHeaderText]}>Unit Price</Text>
+            <Text style={[styles.colAmount, styles.tableHeaderText]}>Amount</Text>
           </View>
-          {invoice.lineItems.map((item, index: number) => (
+          {groupedRows.map((row, index: number) => (
             <View
-              key={item.id}
+              key={row.key}
               style={[styles.tableRow, ...(index % 2 === 1 ? [styles.tableRowAlt] : [])]}
               wrap={false}
             >
               <Text style={[styles.colDescription, styles.tableText]}>
-                {item.description}
+                {row.description}
               </Text>
-              <Text style={[styles.colQuantity, styles.tableText]}>1</Text>
+              <Text style={[styles.colQuantity, styles.tableText]}>{row.quantity}</Text>
               <Text style={[styles.colPrice, styles.tableText]}>
-                {formatCurrency(item.amount)}
+                {formatCurrency(row.unitPrice)}
+              </Text>
+              <Text style={[styles.colAmount, styles.tableText]}>
+                {formatCurrency(row.amount)}
               </Text>
             </View>
           ))}

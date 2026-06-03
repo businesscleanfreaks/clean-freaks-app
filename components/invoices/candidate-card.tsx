@@ -133,6 +133,8 @@ export function CandidateCard({
         <span
           style={{
             flex: 1,
+            minWidth: 0,
+            paddingRight: 10,
             fontSize: 12,
             fontWeight: 600,
             color: '#0F172A',
