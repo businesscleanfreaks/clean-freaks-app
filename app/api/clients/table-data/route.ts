@@ -38,6 +38,7 @@ function deriveFrequencyText(
   }
 
   if (schedFreq === "WEEKLY") {
+    if (count <= 1) return count === 1 ? `Weekly: ${dayNames.join(", ")}` : "Weekly"
     return `${count}x Weekly: ${dayNames.join(", ")}`
   }
 
@@ -47,7 +48,7 @@ function deriveFrequencyText(
       : "Bi-Weekly"
   }
 
-  if (schedFreq === "MONTHLY") return "1x Monthly"
+  if (schedFreq === "MONTHLY") return "Monthly"
   if (schedFreq === "2X_MONTHLY" || schedFreq === "BI_MONTHLY") return "2x Monthly"
 
   return schedFreq

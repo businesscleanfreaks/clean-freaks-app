@@ -27,13 +27,14 @@ function deriveScheduleText(frequency: string, daysOfWeek: number[]): string {
   if (frequency === "DAILY" || (frequency === "WEEKLY" && count === 7)) return "Daily: M-Su"
   if (frequency === "WEEKLY") {
     if (count === 5 && [1, 2, 3, 4, 5].every(d => daysOfWeek.includes(d))) return "5x Weekly: M-F"
+    if (count <= 1) return count === 1 ? `Weekly: ${dayNames.join(", ")}` : "Weekly"
     return `${count}x Weekly: ${dayNames.join(", ")}`
   }
   if (frequency === "BI_WEEKLY") return count > 0 ? `Bi-Weekly: ${dayNames.join(", ")}` : "Bi-Weekly"
   if (frequency === "EVERY_3_WEEKS") return count > 0 ? `Every 3 Weeks: ${dayNames.join(", ")}` : "Every 3 Weeks"
   if (frequency === "EVERY_4_WEEKS") return count > 0 ? `Every 4 Weeks: ${dayNames.join(", ")}` : "Every 4 Weeks"
   if (frequency === "EVERY_6_WEEKS") return count > 0 ? `Every 6 Weeks: ${dayNames.join(", ")}` : "Every 6 Weeks"
-  if (frequency === "MONTHLY") return "1x Monthly"
+  if (frequency === "MONTHLY") return "Monthly"
   if (frequency === "2X_MONTHLY" || frequency === "BI_MONTHLY") return "2x Monthly"
   return frequency
 }

@@ -72,10 +72,12 @@ export function formatFrequency(frequency: string, daysOfWeek?: string, monthlyP
   const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   
   let days = ''
+  let dayCount = 0
   if (daysOfWeek) {
     try {
       const dayIndices = JSON.parse(daysOfWeek)
       if (Array.isArray(dayIndices) && dayIndices.length > 0) {
+        dayCount = dayIndices.length
         days = dayIndices.map((i: number) => dayNames[i]).join(', ')
       }
     } catch {
@@ -122,10 +124,10 @@ export function formatFrequency(frequency: string, daysOfWeek?: string, monthlyP
   }
   
   const freqMap: Record<string, string> = {
-    'DAILY': 'Daily (7x/week)',
-    'WEEKLY': '1x Weekly',
+    'DAILY': 'Daily',
+    'WEEKLY': 'Weekly',
     'BI_WEEKLY': 'Bi-Weekly',
-    'MONTHLY': '1x Monthly',
+    'MONTHLY': 'Monthly',
     'EVERY_2_WEEKS': 'Every 2 Weeks',
     'EVERY_3_WEEKS': 'Every 3 Weeks',
     'EVERY_4_WEEKS': 'Every 4 Weeks',
@@ -138,12 +140,17 @@ export function formatFrequency(frequency: string, daysOfWeek?: string, monthlyP
     '3X_MONTHLY': '3x Monthly',
   }
   
-  const base = freqMap[frequency] || frequency
-  
+  // A WEEKLY schedule with multiple days is really N cleans per week, so label
+  // it "3x Weekly" instead of the confusing old "1x Weekly".
+  let base = freqMap[frequency] || frequency
+  if (frequency === 'WEEKLY' && dayCount > 1) {
+    base = `${dayCount}x Weekly`
+  }
+
   if (days) {
     return `${base}: ${days}`
   }
-  
+
   return base
 }
 
