@@ -96,7 +96,10 @@ export function groupInvoiceLineItems(
   const visits: RawInvoiceLineItem[] = []
   const others: RawInvoiceLineItem[] = []
   for (const li of lineItems) {
-    if (!li.addOnServiceId && li.jobId) visits.push(li)
+    // A cleaning visit = a dated, non-add-on line. Accept jobId OR serviceDate so
+    // line items created by any path group correctly; add-ons always carry an
+    // addOnServiceId and stay on their own line.
+    if (!li.addOnServiceId && (li.jobId || li.serviceDate)) visits.push(li)
     else others.push(li)
   }
 

@@ -43,31 +43,24 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   invoiceTitle: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: 'bold',
-    color: COLORS.templateBlue,
-    marginBottom: 8,
-    letterSpacing: 2,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    marginBottom: 2,
-    alignItems: 'center',
+    color: COLORS.navyBlue,
+    letterSpacing: 1,
+    textAlign: 'center',
   },
   metaLabel: {
-    fontSize: 8,
+    fontSize: 8.5,
     fontWeight: 'bold',
     color: COLORS.templateBlue,
-    width: 80,
     textAlign: 'right',
-    marginRight: 8,
   },
   metaValue: {
-    fontSize: 9,
+    fontSize: 10.5,
     color: COLORS.textDark,
     fontWeight: 'bold',
-    width: 70,
     textAlign: 'right',
+    marginBottom: 5,
   },
   // ─── Bill To / Point of Contact ───
   billToSection: {
@@ -125,9 +118,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.lightBlue,
   },
   colDescription: { flex: 3 },
-  colQuantity: { flex: 0.8, textAlign: 'center' },
-  colPrice: { flex: 1.1, textAlign: 'right' },
-  colAmount: { flex: 1.1, textAlign: 'right' },
+  colQuantity: { flex: 1, textAlign: 'center' },
+  colPrice: { flex: 1, textAlign: 'right' },
   tableText: {
     fontSize: 9,
     color: COLORS.textDark,
@@ -383,60 +375,45 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* ─── Header: Logo left, INVOICE + meta right ─── */}
+        {/* ─── Header: logo (left) · INVOICE (center) · meta (right) ─── */}
         <View style={styles.header} break={false} minPresenceAhead={150}>
-          <View>
+          <View style={{ flex: 1 }}>
             {logoElement}
-            <View style={{ marginTop: 6 }}>
-              <Text style={{ fontSize: 8, color: COLORS.textLight, textTransform: 'uppercase', letterSpacing: 0.5 }}>From:</Text>
-              <Text style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 1 }}>The Clean Freaks Janitorial Services</Text>
-            </View>
           </View>
-          <View style={styles.invoiceTitleBlock}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={styles.invoiceTitle}>INVOICE</Text>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Invoice #:</Text>
-              <Text style={styles.metaValue}>{invoice.invoiceNumber}</Text>
-            </View>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Invoice Date:</Text>
-              <Text style={styles.metaValue}>{formatDate(invoice.dateCreated)}</Text>
-            </View>
-            {invoice.dateDue && (
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>Due Date:</Text>
-                <Text style={styles.metaValue}>{formatDate(invoice.dateDue)}</Text>
-              </View>
-            )}
+          </View>
+          <View style={{ flex: 1, alignItems: 'flex-end' }}>
+            <Text style={styles.metaLabel}>Invoice #:</Text>
+            <Text style={styles.metaValue}>{invoice.invoiceNumber}</Text>
+            <Text style={styles.metaLabel}>Invoice Date:</Text>
+            <Text style={styles.metaValue}>{formatDate(invoice.dateCreated)}</Text>
+            {invoice.dateDue && <Text style={styles.metaLabel}>Due Date:</Text>}
+            {invoice.dateDue && <Text style={styles.metaValue}>{formatDate(invoice.dateDue)}</Text>}
           </View>
         </View>
 
-        {/* ─── Bill To / Point of Contact ─── */}
+        {/* ─── Bill To, then Point of Contact stacked beneath it (matches reference) ─── */}
         <View style={styles.billToSection} break={false}>
-          <View style={styles.billToRow}>
-            <View style={styles.billToColumn}>
-              <Text style={styles.sectionLabel}>Bill to:</Text>
-              <Text style={styles.billToName}>{invoice.client.name}</Text>
-              {clientAddress.address && (
-                <Text style={styles.billToText}>{clientAddress.address}</Text>
-              )}
-              {clientAddress.city && (
-                <Text style={styles.billToText}>
-                  {clientAddress.city}, {clientAddress.state || 'CA'} {clientAddress.zipCode || ''}
-                </Text>
-              )}
-            </View>
-            <View style={[styles.billToColumn, { alignItems: 'flex-end' }]}>
-              <Text style={[styles.sectionLabel, { textAlign: 'right' }]}>Point of Contact</Text>
-              <Text style={[styles.billToText, { textAlign: 'right' }]}>{contactName}</Text>
-              {contactEmail && (
-                <Text style={[styles.billToText, { textAlign: 'right' }]}>{contactEmail}</Text>
-              )}
-              {contactPhone && (
-                <Text style={[styles.billToText, { textAlign: 'right' }]}>{contactPhone}</Text>
-              )}
-            </View>
-          </View>
+          <Text style={styles.sectionLabel}>Bill to:</Text>
+          <Text style={styles.billToName}>{invoice.client.name}</Text>
+          {clientAddress.address && (
+            <Text style={styles.billToText}>{clientAddress.address}</Text>
+          )}
+          {clientAddress.city && (
+            <Text style={styles.billToText}>
+              {clientAddress.city}, {clientAddress.state || 'CA'} {clientAddress.zipCode || ''}
+            </Text>
+          )}
+
+          <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Point of Contact:</Text>
+          <Text style={styles.billToText}>{contactName}</Text>
+          {contactEmail && (
+            <Text style={styles.billToText}>{contactEmail}</Text>
+          )}
+          {contactPhone && (
+            <Text style={styles.billToText}>{contactPhone}</Text>
+          )}
         </View>
 
         {/* ─── Line Items Table ─── */}
@@ -444,8 +421,7 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
           <View style={styles.tableHeader} break={false}>
             <Text style={[styles.colDescription, styles.tableHeaderText]}>Description</Text>
             <Text style={[styles.colQuantity, styles.tableHeaderText]}>Quantity</Text>
-            <Text style={[styles.colPrice, styles.tableHeaderText]}>Unit Price</Text>
-            <Text style={[styles.colAmount, styles.tableHeaderText]}>Amount</Text>
+            <Text style={[styles.colPrice, styles.tableHeaderText]}>Price</Text>
           </View>
           {groupedRows.map((row, index: number) => (
             <View
@@ -458,9 +434,6 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
               </Text>
               <Text style={[styles.colQuantity, styles.tableText]}>{row.quantity}</Text>
               <Text style={[styles.colPrice, styles.tableText]}>
-                {formatCurrency(row.unitPrice)}
-              </Text>
-              <Text style={[styles.colAmount, styles.tableText]}>
                 {formatCurrency(row.amount)}
               </Text>
             </View>
