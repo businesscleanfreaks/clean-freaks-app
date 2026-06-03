@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Eye,
   AlertCircle,
+  ExternalLink,
   Mail,
   Plus,
   Save,
@@ -189,13 +190,13 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
                     <p className="text-xs text-stone-400">No saved addresses. Add one below.</p>
                   ) : (
                     recipientPool.map((email) => (
-                      <label key={email} className="flex items-center gap-2 py-0.5 text-xs text-stone-800">
+                      <label key={email} className="flex min-w-0 items-center gap-2 py-0.5 text-xs text-stone-800">
                         <Checkbox
                           checked={selectedRecipients.some((r) => r.toLowerCase() === email.toLowerCase())}
                           onCheckedChange={() => toggleRecipient(email)}
-                          className="h-3.5 w-3.5 data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
+                          className="h-3.5 w-3.5 shrink-0 data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
                         />
-                        <span className="break-all">{email}</span>
+                        <span className="min-w-0 flex-1 truncate" title={email}>{email}</span>
                       </label>
                     ))
                   )}
@@ -386,11 +387,23 @@ export function QuickInvoiceModal(props: QuickInvoiceModalProps) {
               <p className="mt-1 text-xs text-stone-500">This usually takes a few seconds.</p>
             </div>
           ) : previewPdfUrl ? (
-            <iframe
-              src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-              className="h-full w-full rounded-md border-0 bg-white shadow-xl"
-              title="Invoice Preview"
-            />
+            <div className="relative h-full w-full">
+              <a
+                href={previewPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-1.5 rounded-md bg-stone-900/85 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-md backdrop-blur transition-colors hover:bg-stone-900"
+                title="Open the full-size invoice in a new tab to verify the layout and amounts"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open full size
+              </a>
+              <iframe
+                src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+                className="h-full w-full rounded-md border-0 bg-white shadow-xl"
+                title="Invoice Preview"
+              />
+            </div>
           ) : (
             <div className={`m-auto rounded-lg border bg-white px-10 py-8 text-center shadow-sm ${previewError ? 'border-red-200' : 'border-stone-200'}`}>
               {previewError ? (
