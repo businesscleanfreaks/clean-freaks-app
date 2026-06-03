@@ -1,7 +1,25 @@
+import { format } from "date-fns"
 import { formatDateOnly } from "@/lib/date-only"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getScheduleLifecycle } from "@/lib/schedule-timing"
 import type { ClientSchedule } from "./client-detail-types"
+
+// date-fns format() throws "Invalid time value" on an invalid Date, which crashes
+// the whole cockpit render. Guard every dynamically-built date with this.
+export function safeFormat(
+  value: Date | string | number | null | undefined,
+  fmt: string,
+  fallback = '—',
+): string {
+  if (value === null || value === undefined || value === '') return fallback
+  try {
+    const d = value instanceof Date ? value : new Date(value)
+    if (isNaN(d.getTime())) return fallback
+    return format(d, fmt)
+  } catch {
+    return fallback
+  }
+}
 
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']

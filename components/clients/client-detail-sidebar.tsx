@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import useSWR from "swr"
-import { format } from "date-fns"
+import { safeFormat } from "./client-detail-helpers"
 import { AddContactSheet, type ClientContact } from "@/components/clients/contacts-section"
 import { fetcher } from "@/lib/fetcher"
 import { formatTime } from "@/lib/utils"
@@ -157,13 +157,13 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
       const jobDate = new Date(job.date)
       const day = new Date(jobDate)
       day.setHours(0, 0, 0, 0)
-      const dayKey = format(day, "yyyy-MM-dd")
+      const dayKey = safeFormat(day, "yyyy-MM-dd", "unknown")
       const label =
         day.getTime() === today.getTime()
           ? "Today"
           : day.getTime() === tomorrow.getTime()
             ? "Tomorrow"
-            : format(jobDate, "EEE, MMM d")
+            : safeFormat(jobDate, "EEE, MMM d")
 
       if (dayKey !== lastKey) {
         groups.push({ type: "date", key: dayKey, label })

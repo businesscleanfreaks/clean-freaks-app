@@ -7,7 +7,7 @@ import { ClientDetailHeader } from "./client-detail-header"
 import { ClientDetailLocations } from "./client-detail-locations"
 import { ClientDetailSidebar, ClientDetailJobFeed } from "./client-detail-sidebar"
 import { ClientDetailModals } from "./client-detail-modals"
-import { format } from "date-fns"
+import { safeFormat } from "./client-detail-helpers"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
 import type { ClientWithDetails } from "@/lib/types"
@@ -272,7 +272,7 @@ function OverviewJobHistory({ client }: { client: ClientWithDetails }) {
               <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase" style={{ background: '#EFF6FF', color: '#2563EB' }}>One-Time</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12.5px] font-semibold text-zinc-800">{j.locationName}</div>
-                <div className="truncate text-[11px] text-zinc-400">{format(new Date(j.date), 'MMM d, yyyy')}{j.subcontractor?.name ? ' · ' + j.subcontractor.name : ''}</div>
+                <div className="truncate text-[11px] text-zinc-400">{safeFormat(j.date, 'MMM d, yyyy')}{j.subcontractor?.name ? ' · ' + j.subcontractor.name : ''}</div>
               </div>
               <div className="flex-shrink-0 text-right">
                 <div className="font-mono text-[12.5px] font-semibold text-zinc-800">{formatCurrency(j.clientRate ?? 0)}</div>
@@ -426,7 +426,7 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
             <div className="space-y-1">
               {invoices.slice(0, 10).map(inv => (
                 <div key={inv.id} className="flex items-center gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
-                  <span className="text-[12px] text-slate-600 w-[104px] flex-shrink-0">{format(new Date(inv.dateCreated), 'MMM d, yyyy')}</span>
+                  <span className="text-[12px] text-slate-600 w-[104px] flex-shrink-0">{safeFormat(inv.dateCreated, 'MMM d, yyyy')}</span>
                   <span className="text-[12px] font-mono font-semibold text-slate-900 flex-1">{formatCurrency(inv.totalAmount)}</span>
                   {inv.status !== 'PAID' && inv.status !== 'VOID' && (
                     <button
@@ -729,7 +729,7 @@ function HistoryTab({ state }: { state: ClientDetailState }) {
   // Group same-day events under one date header
   const groups: Array<{ key: string; date: Date; events: HistoryEvent[] }> = []
   for (const ev of events) {
-    const key = format(ev.date, 'yyyy-MM-dd')
+    const key = safeFormat(ev.date, 'yyyy-MM-dd', 'unknown')
     const g = groups.find(x => x.key === key)
     if (g) g.events.push(ev)
     else groups.push({ key, date: ev.date, events: [ev] })
@@ -764,7 +764,7 @@ function HistoryDay({ date, events }: { date: Date; events: HistoryEvent[] }) {
 
   return (
     <div>
-      <p className="mb-1 text-[11px] font-semibold text-zinc-500">{format(date, 'EEE, MMM d, yyyy')}</p>
+      <p className="mb-1 text-[11px] font-semibold text-zinc-500">{safeFormat(date, 'EEE, MMM d, yyyy')}</p>
       <div className="space-y-1">
         {rows.map((ev, i) => {
           const t = ev.kind === 'invoice'
