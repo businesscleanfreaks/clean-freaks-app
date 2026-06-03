@@ -426,14 +426,14 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
                 </Text>
               )}
             </View>
-            <View style={styles.billToColumn}>
-              <Text style={styles.sectionLabel}>Point of Contact:</Text>
-              <Text style={styles.billToText}>{contactName}</Text>
+            <View style={[styles.billToColumn, { alignItems: 'flex-end' }]}>
+              <Text style={[styles.sectionLabel, { textAlign: 'right' }]}>Point of Contact</Text>
+              <Text style={[styles.billToText, { textAlign: 'right' }]}>{contactName}</Text>
               {contactEmail && (
-                <Text style={styles.billToText}>{contactEmail}</Text>
+                <Text style={[styles.billToText, { textAlign: 'right' }]}>{contactEmail}</Text>
               )}
               {contactPhone && (
-                <Text style={styles.billToText}>{contactPhone}</Text>
+                <Text style={[styles.billToText, { textAlign: 'right' }]}>{contactPhone}</Text>
               )}
             </View>
           </View>

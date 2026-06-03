@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // Bump when invoice-pdf.tsx (the template) changes, to invalidate every cached PDF.
-const PDF_TEMPLATE_VERSION = 'v2-grouped'
+const PDF_TEMPLATE_VERSION = 'v3-grouped-poc'
 
 interface PdfFingerprintSource {
   invoiceNumber: string | null
