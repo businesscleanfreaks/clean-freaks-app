@@ -182,8 +182,11 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
     ? 'No locations yet'
     : client.locations.map(l => l.name || l.address?.split(',')[0] || 'Location').join(', ')
   const hasAccessInfo = client.locations.some(l => l.accessInfo && l.accessInfo.trim().length > 0)
+  // nextClean.date is already a display string ('Today' / 'Tomorrow' / 'Wed, Jun 3'),
+  // so render it as-is. Do NOT new Date()/format() it — new Date('Today') is Invalid
+  // and format() then throws "Invalid time value", crashing the whole cockpit.
   const nextCleanLabel = nextClean
-    ? `${format(new Date(nextClean.date), 'EEE, MMM d')}${nextClean.time ? ' · ' + nextClean.time : ''}`
+    ? `${nextClean.date}${nextClean.time ? ' · ' + nextClean.time : ''}`
     : 'No upcoming cleans'
 
   return (
