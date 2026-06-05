@@ -1,11 +1,12 @@
 "use client"
 
-import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Mail } from "lucide-react"
+import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
   type WorkspaceInvoice, type WorkspaceTab,
 } from "./use-workspace"
+import { ComposerRail } from "./composer-rail"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
@@ -100,9 +101,23 @@ export function InvoicingWorkspace() {
           )}
         </div>
 
-        {/* Right rail: details (composer/send lands next) */}
-        <div className="w-[360px] shrink-0 overflow-y-auto border-l border-stone-200 bg-white">
-          {ws.selected ? <RailPanel inv={ws.selected} /> : null}
+        {/* Right rail: composer (not sent) or receipt (sent/paid) */}
+        <div className="w-[360px] shrink-0 border-l border-stone-200 bg-white">
+          {ws.selected ? (
+            <ComposerRail
+              key={ws.selected.candidateId}
+              inv={ws.selected}
+              month={ws.month}
+              onChanged={() => {
+                // Auto-advance to the next not-sent invoice for momentum, then refresh.
+                const next = ws.invoices.find(
+                  (i) => i.uiStatus === "Not sent" && i.candidateId !== ws.selected?.candidateId,
+                )
+                if (next) ws.setSelectedId(next.candidateId)
+                ws.mutate()
+              }}
+            />
+          ) : null}
         </div>
       </div>
     </div>
@@ -169,30 +184,3 @@ function CenterPanel({ inv }: { inv: WorkspaceInvoice }) {
   )
 }
 
-function RailPanel({ inv }: { inv: WorkspaceInvoice }) {
-  return (
-    <div className="flex h-full flex-col p-5">
-      <div className="text-[15px] font-semibold text-stone-900">{inv.clientName}</div>
-      <div className="mt-0.5 text-[12px] text-stone-500">{inv.scheduleSummary}</div>
-
-      <div className="mt-4 space-y-2 border-y border-stone-100 py-4">
-        {inv.lineItems.slice(0, 8).map((li, i) => (
-          <div key={i} className="flex items-start justify-between gap-3 text-[12px]">
-            <span className="min-w-0 flex-1 text-stone-700">{li.description}</span>
-            <span className="flex-shrink-0 font-mono text-stone-900">{formatCurrency(li.quantity * li.price)}</span>
-          </div>
-        ))}
-        {inv.lineItems.length > 8 && <div className="text-[11px] text-stone-400">+{inv.lineItems.length - 8} more</div>}
-      </div>
-      <div className="flex items-center justify-between py-3">
-        <span className="text-[13px] font-semibold text-stone-700">Total</span>
-        <span className="font-mono text-[15px] font-bold text-stone-900">{formatCurrency(inv.total)}</span>
-      </div>
-
-      <div className="mt-2 rounded-lg border border-stone-200 bg-stone-50 p-3 text-center">
-        <Mail size={18} className="mx-auto mb-1.5 text-stone-400" />
-        <p className="text-[12px] text-stone-500">The send composer lands in the next update. For now, send from the classic invoices view.</p>
-      </div>
-    </div>
-  )
-}
