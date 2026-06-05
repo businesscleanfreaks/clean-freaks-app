@@ -404,6 +404,18 @@ model EmailSettings {
   @@map("email_settings")
 }
 
+// Singleton workspace-level invoice email template (Settings / composer "Templates").
+// Resolved per invoice with {client} {month} {month_short} {total} {due_date}.
+model EmailTemplate {
+  id        String   @id @default(uuid())
+  subject   String   @default("Invoice · {client} · {month}")
+  message   String   @default("Hi {client}, please find attached your invoice for {total} for {month}. Payment is due by {due_date}. Thank you for your business.")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("email_templates")
+}
+
 model Expense {
   id            String        @id @default(uuid())
   date          DateTime
