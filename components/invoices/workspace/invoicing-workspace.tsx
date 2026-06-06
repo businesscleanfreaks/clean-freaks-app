@@ -1,18 +1,48 @@
 "use client"
 
-import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText } from "lucide-react"
+import { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
+import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2 } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { showSuccess, showError } from "@/lib/toast"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
   type WorkspaceInvoice, type WorkspaceTab,
 } from "./use-workspace"
 import { ComposerRail } from "./composer-rail"
+import { runBatchSend } from "./invoice-send"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
 
 export function InvoicingWorkspace() {
   const ws = useWorkspace()
+  const [confirmSendAll, setConfirmSendAll] = useState(false)
+  const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
+  const handleSendAll = async () => {
+    setConfirmSendAll(false)
+    const targets = ws.verifiedReady
+    if (targets.length === 0) return
+    setBatch({ done: 0, total: targets.length })
+    try {
+      const result = await runBatchSend(targets, ws.month, (done, total) => setBatch({ done, total }))
+      const parts = [`${result.sent} sent`]
+      if (result.skipped) parts.push(`${result.skipped} skipped (no email)`)
+      if (result.failed) parts.push(`${result.failed} failed`)
+      if (result.sent > 0) showSuccess(parts.join(" · "))
+      else showError(parts.join(" · "))
+    } catch {
+      showError("Batch send failed")
+    } finally {
+      setBatch(null)
+      ws.mutate()
+    }
+  }
+
+  const verifiedTotal = ws.verifiedReady.reduce((s, i) => s + i.total, 0)
 
   return (
     <div className="flex h-full flex-col bg-stone-50" style={{ minHeight: "calc(100vh - 0px)" }}>
@@ -64,11 +94,10 @@ export function InvoicingWorkspace() {
                 <div className="text-[12px] text-emerald-800">
                   <span className="font-semibold">{ws.verifiedReady.length} verified</span> ready to send
                 </div>
-                <span className="font-mono text-[12px] font-semibold text-emerald-800">
-                  {formatCurrency(ws.verifiedReady.reduce((s, i) => s + i.total, 0))}
-                </span>
+                <span className="font-mono text-[12px] font-semibold text-emerald-800">{formatCurrency(verifiedTotal)}</span>
               </div>
-              <button disabled className="mt-2 w-full cursor-not-allowed rounded-md bg-emerald-600/60 py-1.5 text-[12px] font-semibold text-white" title="Batch send — coming with the composer">
+              <button onClick={() => setConfirmSendAll(true)} disabled={!!batch}
+                className="mt-2 w-full rounded-md bg-emerald-600 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60">
                 Send all verified
               </button>
             </div>
@@ -120,6 +149,40 @@ export function InvoicingWorkspace() {
           ) : null}
         </div>
       </div>
+
+      {/* Send-all confirmation (portaled to escape the transformed page wrapper) */}
+      {mounted && confirmSendAll && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4" onClick={() => setConfirmSendAll(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl">
+            <h3 className="text-[15px] font-semibold text-stone-900">Send all verified invoices?</h3>
+            <p className="mt-1 text-[13px] text-stone-600">
+              {ws.verifiedReady.length} verified invoice{ws.verifiedReady.length === 1 ? "" : "s"} totaling{" "}
+              <span className="font-semibold">{formatCurrency(verifiedTotal)}</span> will be emailed to each client.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setConfirmSendAll(false)} className="rounded-md px-3 py-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700">Cancel</button>
+              <button onClick={handleSendAll} className="rounded-md px-4 py-2 text-[13px] font-semibold text-white" style={{ background: "#059669" }}>
+                Send {ws.verifiedReady.length}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Batch progress */}
+      {mounted && batch && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-xs rounded-xl bg-white p-5 text-center shadow-2xl">
+            <Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin text-emerald-600" />
+            <p className="text-[14px] font-semibold text-stone-900">Sending {Math.min(batch.done + 1, batch.total)} of {batch.total}…</p>
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-stone-100">
+              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${batch.total ? (batch.done / batch.total) * 100 : 0}%` }} />
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

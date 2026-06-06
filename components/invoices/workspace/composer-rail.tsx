@@ -6,8 +6,9 @@ import { Send, TestTube, X, Plus, CheckCircle2, DollarSign, RotateCcw, ExternalL
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
-import { resolveTemplate } from "@/lib/email-template"
+import { resolveTemplate } from "@/lib/invoice-template"
 import { formatMonthLabel, type WorkspaceInvoice } from "./use-workspace"
+import { ensureInvoiceId, sendInvoiceEmail } from "./invoice-send"
 
 interface ClientContact { id: string; name: string | null; email: string | null; role?: string | null }
 
@@ -19,40 +20,6 @@ function uniqEmails(list: (string | null | undefined)[]): string[] {
     if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); out.push(v) }
   }
   return out
-}
-
-/** Create the invoice from a candidate if it doesn't exist yet (preview → finalize). */
-async function ensureInvoiceId(inv: WorkspaceInvoice): Promise<string | null> {
-  if (inv.existingInvoiceId) return inv.existingInvoiceId
-  if (!inv.jobIds || inv.jobIds.length === 0) {
-    showError(`${inv.clientName}: no billable cleans to invoice this month.`)
-    return null
-  }
-  const res = await fetch("/api/invoices", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: inv.clientId,
-      jobIds: inv.jobIds,
-      previewOnly: true,
-      showPaymentOptions: true,
-      lineItems: inv.lineItems.map((li) => ({
-        description: li.description,
-        amount: li.quantity * li.price,
-        jobId: li.jobId || null,
-        addOnServiceId: li.sourceType === "ADD_ON" ? li.sourceId || null : null,
-        serviceDate: new Date().toISOString(),
-      })),
-    }),
-  })
-  if (res.status === 409) {
-    const body = await res.json().catch(() => null)
-    if (body?.existingInvoice?.id) return body.existingInvoice.id
-  }
-  if (!res.ok) { await showApiError(res, `Failed to create invoice for ${inv.clientName}`); return null }
-  const created = await res.json()
-  await fetch(`/api/invoices/${created.id}/finalize`, { method: "POST" })
-  return created.id as string
 }
 
 export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice; month: string; onChanged: () => void }) {
@@ -107,18 +74,9 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     try {
       const invoiceId = await ensureInvoiceId(inv)
       if (!invoiceId) return
-      // Ensure a hosted PDF exists for the email link/attachment.
-      await fetch(`/api/invoices/${invoiceId}/generate-pdf`, { method: "POST" })
-      const res = await fetch(`/api/invoices/${invoiceId}/send-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to, cc: cc || undefined, subject, message, isTest, showPaymentOptions: true,
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { showError(data?.error || "Failed to send invoice"); return }
-      if (data?.warning === "SENDING_DISABLED" || data?.safetyMode === "FORCED_TEST") {
+      const r = await sendInvoiceEmail(invoiceId, { to, cc: cc || undefined, subject, message, isTest })
+      if (!r.ok) { showError(r.error || "Failed to send invoice"); return }
+      if (r.warning === "SENDING_DISABLED" || r.warning === "FORCED_TEST") {
         showSuccess(isTest ? "Test sent" : "Saved — sending is in test mode (enable it in Settings → Email)")
       } else {
         showSuccess(isTest ? "Test email sent" : `Invoice sent to ${to.join(", ")}`)
