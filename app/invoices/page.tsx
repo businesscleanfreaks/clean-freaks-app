@@ -1,6 +1,11 @@
-import { InvoicesClient } from "@/components/invoices/invoices-client"
+import { requireAuth } from "@/lib/auth"
+import { InvoicingWorkspace } from "@/components/invoices/workspace/invoicing-workspace"
 
-// This page now loads instantly - all data fetching happens client-side
-export default function InvoicesPage() {
-  return <InvoicesClient />
+export const dynamic = "force-dynamic"
+
+// Redesigned three-column invoicing workspace (was the review-queue). The
+// previous page is preserved at /invoices/classic during rollout.
+export default async function InvoicesPage() {
+  await requireAuth()
+  return <InvoicingWorkspace />
 }

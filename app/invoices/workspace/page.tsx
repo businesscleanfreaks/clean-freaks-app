@@ -1,11 +1,6 @@
-import { requireAuth } from "@/lib/auth"
-import { InvoicingWorkspace } from "@/components/invoices/workspace/invoicing-workspace"
+import { redirect } from "next/navigation"
 
-export const dynamic = "force-dynamic"
-
-// Staged preview of the redesigned three-column invoicing workspace. Once the
-// composer/send flow is wired, this becomes the main /invoices page.
-export default async function InvoicingWorkspacePage() {
-  await requireAuth()
-  return <InvoicingWorkspace />
+// The workspace is now the main invoices page; keep this staging URL working.
+export default function InvoicingWorkspaceRedirect() {
+  redirect("/invoices")
 }
