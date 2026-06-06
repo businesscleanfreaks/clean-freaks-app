@@ -1,10 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
+import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2 } from "lucide-react"
+import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
+import { MiniCalendar } from "./mini-calendar"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
   type WorkspaceInvoice, type WorkspaceTab,
@@ -125,7 +128,7 @@ export function InvoicingWorkspace() {
 
         {/* Center: verification + preview */}
         <div className="flex min-w-0 flex-1 flex-col bg-stone-100">
-          {ws.selected ? <CenterPanel inv={ws.selected} /> : (
+          {ws.selected ? <CenterPanel inv={ws.selected} month={ws.month} /> : (
             <div className="m-auto text-sm text-stone-400">Select an invoice to preview.</div>
           )}
         </div>
@@ -205,8 +208,23 @@ function ListItem({ inv, selected, onSelect }: { inv: WorkspaceInvoice; selected
   )
 }
 
-function CenterPanel({ inv }: { inv: WorkspaceInvoice }) {
+function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   const green = inv.verification.level === "green"
+  const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
+
+  const cleans = useMemo(() => {
+    const jobs = (client?.locations || []).flatMap((l: { jobs?: Array<{ date: string; status: string }> }) => l.jobs || [])
+    return jobs.map((j: { date: string; status: string }) => ({ date: j.date, status: j.status }))
+  }, [client])
+
+  const cleaner = useMemo(() => {
+    for (const l of client?.locations || []) {
+      const s = (l.schedules || []).find((sc: { isActive?: boolean; subcontractor?: { name?: string } }) => sc.isActive && sc.subcontractor?.name)
+      if (s?.subcontractor?.name) return s.subcontractor.name as string
+    }
+    return null
+  }, [client])
+
   return (
     <div className="flex h-full flex-col">
       {/* Verification banner */}
@@ -217,6 +235,25 @@ function CenterPanel({ inv }: { inv: WorkspaceInvoice }) {
           <div className="min-w-0">
             <div className="text-[13px] font-semibold" style={{ color: green ? "#047857" : "#B45309" }}>{inv.verification.summary}</div>
             {inv.verification.detail && <div className="mt-0.5 text-[12px] text-stone-600">{inv.verification.detail}</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Schedule + mini-calendar of this month's cleans */}
+      <div className="px-5 pt-3">
+        <div className="flex items-start gap-4 rounded-lg border border-stone-200 bg-white p-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Schedule</div>
+            <div className="mt-0.5 truncate text-[13px] font-medium text-stone-800">{inv.scheduleSummary}</div>
+            {cleaner && <div className="mt-1 text-[12px] text-stone-500">Cleaner · {cleaner}</div>}
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Cancelled</span>
+            </div>
+          </div>
+          <div className="w-[176px] shrink-0">
+            <MiniCalendar month={month} cleans={cleans} />
           </div>
         </div>
       </div>
