@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { MiniCalendar } from "./mini-calendar"
+import { TemplatesModal } from "./templates-modal"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
   type WorkspaceInvoice, type WorkspaceTab,
@@ -23,6 +24,7 @@ export function InvoicingWorkspace() {
   const [confirmSendAll, setConfirmSendAll] = useState(false)
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
   useEffect(() => setMounted(true), [])
 
   const handleSendAll = async () => {
@@ -85,6 +87,10 @@ export function InvoicingWorkspace() {
           <input value={ws.search} onChange={(e) => ws.setSearch(e.target.value)} placeholder="Search clients"
             className="w-full rounded-md border border-stone-200 bg-stone-50 py-1.5 pl-8 pr-3 text-sm outline-none transition-colors focus:border-stone-400 focus:bg-white" />
         </div>
+        <button onClick={() => setTemplatesOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 px-2.5 py-1.5 text-[12px] font-medium text-stone-600 transition-colors hover:bg-stone-50">
+          <Settings size={13} /> Template
+        </button>
       </div>
 
       {/* ── Three columns ── */}
@@ -186,6 +192,8 @@ export function InvoicingWorkspace() {
         </div>,
         document.body,
       )}
+
+      <TemplatesModal open={templatesOpen} onClose={() => setTemplatesOpen(false)} />
     </div>
   )
 }
