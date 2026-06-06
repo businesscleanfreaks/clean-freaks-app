@@ -25,7 +25,24 @@ export function InvoicingWorkspace() {
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [railWidth, setRailWidth] = useState(360)
   useEffect(() => setMounted(true), [])
+
+  // Drag-to-resize the composer rail (rightmost column → width from the right edge).
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const onMove = (ev: MouseEvent) => setRailWidth(Math.min(600, Math.max(340, window.innerWidth - ev.clientX)))
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    }
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+  }
 
   const handleSendAll = async () => {
     setConfirmSendAll(false)
@@ -139,8 +156,13 @@ export function InvoicingWorkspace() {
           )}
         </div>
 
+        {/* Resize handle */}
+        <div onMouseDown={startResize} onDoubleClick={() => setRailWidth(360)}
+          className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
+          title="Drag to resize · Double-click to reset" />
+
         {/* Right rail: composer (not sent) or receipt (sent/paid) */}
-        <div className="w-[360px] shrink-0 border-l border-stone-200 bg-white">
+        <div className="shrink-0 bg-white" style={{ width: railWidth }}>
           {ws.selected ? (
             <ComposerRail
               key={ws.selected.candidateId}
