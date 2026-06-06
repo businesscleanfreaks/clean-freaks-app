@@ -40,13 +40,13 @@ export async function ensureInvoiceId(inv: WorkspaceInvoice): Promise<string | n
 /** Generate (host) the PDF, then send the invoice email. */
 export async function sendInvoiceEmail(
   invoiceId: string,
-  payload: { to: string[]; cc?: string; subject: string; message: string; isTest: boolean },
+  payload: { to: string[]; cc?: string; subject: string; message: string; isTest: boolean; showPaymentOptions?: boolean },
 ): Promise<{ ok: boolean; warning?: string; error?: string }> {
   await fetch(`/api/invoices/${invoiceId}/generate-pdf`, { method: "POST" })
   const res = await fetch(`/api/invoices/${invoiceId}/send-email`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...payload, showPaymentOptions: true }),
+    body: JSON.stringify({ ...payload, showPaymentOptions: payload.showPaymentOptions ?? true }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) return { ok: false, error: data?.error || "Send failed" }

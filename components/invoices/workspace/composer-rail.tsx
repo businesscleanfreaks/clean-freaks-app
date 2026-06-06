@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import useSWR from "swr"
-import { Send, TestTube, X, Plus, CheckCircle2, DollarSign, RotateCcw, ExternalLink } from "lucide-react"
+import { Send, TestTube, X, Plus, CheckCircle2, DollarSign, RotateCcw, ExternalLink, Clock, FileText } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
@@ -28,6 +28,10 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   const { data: clientData } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
   const { data: contactsData } = useSWR(`/api/clients/${inv.clientId}/contacts`, fetcher)
   const { data: templateData } = useSWR("/api/settings/email-template", fetcher)
+  const { data: invoiceData } = useSWR(
+    isSent && inv.existingInvoiceId ? `/api/invoices/${inv.existingInvoiceId}` : null,
+    fetcher,
+  )
 
   const dueDate = useMemo(() => {
     const [y, m] = month.split("-").map(Number)
@@ -39,13 +43,25 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     return uniqEmails([clientData?.invoicingEmail, clientData?.communicationEmail, ...contactEmails])
   }, [clientData, contactsData])
 
+  // Display name for a recipient email, when we have one.
+  const nameFor = (email: string): string | null => {
+    const e = email.toLowerCase()
+    const c = (contactsData?.contacts || []).find((x: ClientContact) => (x.email || "").toLowerCase() === e)
+    if (c?.name) return c.name
+    if ((clientData?.invoicingEmail || "").toLowerCase() === e) return clientData?.invoicingContactName || null
+    if ((clientData?.communicationEmail || "").toLowerCase() === e) return clientData?.communicationContactName || null
+    return null
+  }
+
   const [to, setTo] = useState<string[]>([])
   const [cc, setCc] = useState("")
   const [subject, setSubject] = useState("")
   const [message, setMessage] = useState("")
   const [manual, setManual] = useState("")
+  const [payNow, setPayNow] = useState(true)
   const [sending, setSending] = useState(false)
   const [marking, setMarking] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
 
   // (Re)initialise composer when the selected invoice, recipient pool, or template changes.
   useEffect(() => {
@@ -74,7 +90,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     try {
       const invoiceId = await ensureInvoiceId(inv)
       if (!invoiceId) return
-      const r = await sendInvoiceEmail(invoiceId, { to, cc: cc || undefined, subject, message, isTest })
+      const r = await sendInvoiceEmail(invoiceId, { to, cc: cc || undefined, subject, message, isTest, showPaymentOptions: payNow })
       if (!r.ok) { showError(r.error || "Failed to send invoice"); return }
       if (r.warning === "SENDING_DISABLED" || r.warning === "FORCED_TEST") {
         showSuccess(isTest ? "Test sent" : "Saved — sending is in test mode (enable it in Settings → Email)")
@@ -87,6 +103,36 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     } finally {
       setSending(false)
     }
+  }
+
+  // Create the invoice (as a draft) without emailing it.
+  const saveDraft = async () => {
+    setSavingDraft(true)
+    try {
+      const invoiceId = await ensureInvoiceId(inv)
+      if (invoiceId) { showSuccess("Draft saved"); onChanged() }
+    } catch { showError("Failed to save draft") } finally { setSavingDraft(false) }
+  }
+
+  // Re-email an already-sent invoice to the client's primary address.
+  const resend = async () => {
+    if (!inv.existingInvoiceId) return
+    const recipients = uniqEmails([clientData?.invoicingEmail, clientData?.communicationEmail])
+    if (recipients.length === 0) { showError("No email on file to resend to."); return }
+    setSending(true)
+    try {
+      const vars = { client: inv.clientName, month: formatMonthLabel(month), monthShort: formatMonthLabel(month), total: formatCurrency(inv.total), dueDate }
+      const tpl = templateData || {
+        subject: "Invoice · {client} · {month}",
+        message: "Hi {client}, please find attached your invoice for {total} for {month}. Payment is due by {due_date}. Thank you for your business.",
+      }
+      const r = await sendInvoiceEmail(inv.existingInvoiceId, {
+        to: recipients, subject: resolveTemplate(tpl.subject, vars), message: resolveTemplate(tpl.message, vars), isTest: false,
+      })
+      if (!r.ok) { showError(r.error || "Failed to resend"); return }
+      showSuccess("Invoice resent")
+      onChanged()
+    } catch { showError("Failed to resend") } finally { setSending(false) }
   }
 
   const markPaid = async (paid: boolean) => {
@@ -107,6 +153,12 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   // ── Receipt mode (sent / paid) ──
   if (isSent) {
     const paid = inv.uiStatus === "Paid"
+    const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null)
+    const lifecycle = [
+      { key: "gen", label: "Generated", date: fmt(invoiceData?.dateCreated), Icon: FileText, done: true, accent: false },
+      { key: "sent", label: "Sent", date: fmt(invoiceData?.dateSent), Icon: Send, done: !!invoiceData?.dateSent, accent: false },
+      { key: "paid", label: `Paid${invoiceData?.paymentMethod ? ` via ${invoiceData.paymentMethod}` : ""}`, date: fmt(invoiceData?.datePaid), Icon: CheckCircle2, done: paid, accent: true },
+    ]
     return (
       <div className="flex h-full flex-col p-5">
         <div className={`rounded-lg px-4 py-3 ${paid ? "bg-emerald-50" : "bg-sky-50"}`}>
@@ -117,14 +169,29 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
           <div className="mt-1 text-[12px] text-stone-600">{inv.clientName} · {formatCurrency(inv.total)}</div>
         </div>
 
-        {inv.existingInvoiceId && (
-          <a href={`/api/invoices/${inv.existingInvoiceId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-md border border-stone-200 py-2 text-[12px] font-semibold text-stone-600 hover:bg-stone-50">
-            <ExternalLink size={13} /> Download PDF
-          </a>
+        {/* Lifecycle */}
+        <div className="mt-4">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Lifecycle</div>
+          <div className="mt-2 space-y-2.5 rounded-lg border border-stone-200 p-3">
+            {lifecycle.map((s) => (
+              <div key={s.key} className="flex items-center gap-2.5 text-[12px]">
+                <s.Icon size={14} className={s.done ? (s.accent && paid ? "text-emerald-600" : "text-stone-500") : "text-stone-300"} />
+                <span className={s.done ? "font-medium text-stone-700" : "text-stone-400"}>{s.label}</span>
+                <span className="ml-auto tabular-nums text-stone-400">{s.date || "—"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sent to */}
+        {invoiceData?.sentTo && (
+          <div className="mt-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Sent to</div>
+            <div className="mt-1 break-words text-[12px] text-stone-700">{invoiceData.sentTo}</div>
+          </div>
         )}
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto space-y-2 pt-4">
           {paid ? (
             <button onClick={() => markPaid(false)} disabled={marking}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-stone-200 py-2 text-[12px] font-semibold text-stone-500 hover:bg-stone-50 disabled:opacity-50">
@@ -137,6 +204,18 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
               <DollarSign size={15} /> {marking ? "Marking…" : "Mark as paid"}
             </button>
           )}
+          {inv.existingInvoiceId && (
+            <div className="flex gap-2">
+              <a href={`/api/invoices/${inv.existingInvoiceId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-stone-200 py-2 text-[12px] font-semibold text-stone-600 hover:bg-stone-50">
+                <ExternalLink size={13} /> Download PDF
+              </a>
+              <button onClick={resend} disabled={sending}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-stone-200 py-2 text-[12px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50">
+                <Send size={13} /> {sending ? "…" : "Resend"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -148,12 +227,19 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
       <div className="flex-1 overflow-y-auto p-5">
         <label className="text-[11px] font-semibold text-stone-500">Recipients</label>
         <div className="mt-1 flex flex-wrap gap-1.5">
-          {to.map((e) => (
-            <span key={e} className="inline-flex items-center gap-1 rounded-full bg-teal-50 py-0.5 pl-2 pr-1 text-[11px] text-teal-800">
-              <span className="max-w-[180px] truncate">{e}</span>
-              <button onClick={() => toggleRecipient(e)} className="text-teal-500 hover:text-teal-700"><X size={11} /></button>
-            </span>
-          ))}
+          {to.map((e) => {
+            const nm = nameFor(e)
+            return (
+              <span key={e} className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 py-1 pl-2.5 pr-1.5 text-[11px] text-teal-800">
+                <span className="inline-flex items-center gap-1 truncate" style={{ maxWidth: 210 }}>
+                  <span className="rounded bg-teal-100 px-1 text-[9px] font-bold uppercase text-teal-700">To</span>
+                  {nm && <span className="font-semibold">{nm}</span>}
+                  <span className="truncate text-teal-600">{e}</span>
+                </span>
+                <button onClick={() => toggleRecipient(e)} className="text-teal-500 hover:text-teal-700"><X size={11} /></button>
+              </span>
+            )
+          })}
           {to.length === 0 && <span className="text-[12px] text-amber-600">No recipient selected</span>}
         </div>
 
@@ -189,15 +275,29 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
 
       {/* Sticky send bar */}
       <div className="border-t border-stone-200 bg-white p-3">
-        <div className="flex items-center gap-2">
-          <button onClick={() => send(true)} disabled={sending}
-            className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 px-3 py-2 text-[12px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50">
-            <TestTube size={13} /> Test
+        <div className="mb-2.5 flex items-center justify-between gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-stone-700">
+            <input type="checkbox" checked={payNow} onChange={(e) => setPayNow(e.target.checked)} className="h-3.5 w-3.5 accent-teal-600" />
+            Pay Now (Zelle)
+          </label>
+          <button disabled title="Scheduling is coming soon"
+            className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-400">
+            <Clock size={12} /> Send later
           </button>
-          <button onClick={() => send(false)} disabled={sending}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
-            style={{ background: "#0D9488" }}>
-            <Send size={15} /> {sending ? "Sending…" : "Send to client"}
+        </div>
+        <button onClick={() => send(false)} disabled={sending}
+          className="flex w-full items-center justify-center gap-1.5 rounded-md py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
+          style={{ background: "#0D9488" }}>
+          <Send size={15} /> {sending ? "Sending…" : "Send to client"}
+        </button>
+        <div className="mt-2 flex items-center gap-2">
+          <button onClick={() => send(true)} disabled={sending}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-stone-200 py-1.5 text-[12px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50">
+            <TestTube size={13} /> Send test
+          </button>
+          <button onClick={saveDraft} disabled={savingDraft}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-stone-200 py-1.5 text-[12px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50">
+            <FileText size={13} /> {savingDraft ? "Saving…" : "Save draft"}
           </button>
         </div>
       </div>
