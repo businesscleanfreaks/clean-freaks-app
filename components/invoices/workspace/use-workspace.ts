@@ -57,6 +57,23 @@ export function useWorkspace() {
   const [tab, setTab] = useState<WorkspaceTab>("All")
   const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+
+  const toggleCheck = (id: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const toggleCheckMany = (ids: string[]) =>
+    setChecked((prev) => {
+      const next = new Set(prev)
+      const allIn = ids.length > 0 && ids.every((id) => next.has(id))
+      ids.forEach((id) => (allIn ? next.delete(id) : next.add(id)))
+      return next
+    })
+  const clearChecked = () => setChecked(new Set())
 
   const range = useMemo(() => {
     const [y, m] = month.split("-").map(Number)
@@ -102,21 +119,28 @@ export function useWorkspace() {
     })
   }, [invoices, tab, search])
 
-  // Group by status, yellows-first then alphabetical within each group.
+  // Group by billing type (Flat Rate / Per Clean / One-Time); yellows-first then
+  // alphabetical within each group. Status is shown per-item and filtered by tab.
   const groups = useMemo(() => {
-    const order: WorkspaceInvoice["uiStatus"][] = ["Not sent", "Sent", "Paid"]
+    const labelOf = (i: WorkspaceInvoice) =>
+      i.billingType === "FLAT_RATE" ? "Flat Rate" : i.billingType === "PER_CLEAN" ? "Per Clean" : "One-Time"
+    const order = ["Flat Rate", "Per Clean", "One-Time"]
     return order
-      .map((status) => ({
-        status,
-        items: filtered
-          .filter((i) => i.uiStatus === status)
+      .map((label) => {
+        const items = filtered
+          .filter((i) => labelOf(i) === label)
           .sort((a, b) => {
-            if (a.verification.level !== b.verification.level) {
-              return a.verification.level === "yellow" ? -1 : 1
-            }
+            if (a.verification.level !== b.verification.level) return a.verification.level === "yellow" ? -1 : 1
             return a.clientName.localeCompare(b.clientName)
-          }),
-      }))
+          })
+        return {
+          label,
+          items,
+          total: items.reduce((s, i) => s + i.total, 0),
+          yellowCount: items.filter((i) => i.verification.level === "yellow").length,
+          notSentIds: items.filter((i) => i.uiStatus === "Not sent").map((i) => i.candidateId),
+        }
+      })
       .filter((g) => g.items.length > 0)
   }, [filtered])
 
@@ -131,11 +155,18 @@ export function useWorkspace() {
     [filtered, selectedId],
   )
 
+  // Manually checked invoices (only not-sent ones are sendable).
+  const checkedList = useMemo(
+    () => invoices.filter((i) => checked.has(i.candidateId) && i.uiStatus === "Not sent"),
+    [invoices, checked],
+  )
+
   return {
     month, setMonth,
     tab, setTab,
     search, setSearch,
     selectedId, setSelectedId,
+    checked, toggleCheck, toggleCheckMany, clearChecked, checkedList,
     isLoading, error, mutate,
     invoices, totals, groups, verifiedReady, selected,
   }
