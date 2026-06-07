@@ -1,9 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import { X } from "lucide-react"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
+import { resolveTemplate } from "@/lib/invoice-template"
+import { formatCurrency } from "@/lib/utils"
+import { formatMonthLabel } from "./use-workspace"
 
 const VARS = [
   { name: "{client}", desc: "Client name" },
@@ -13,7 +16,9 @@ const VARS = [
   { name: "{due_date}", desc: "Due date" },
 ]
 
-export function TemplatesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+interface TemplateSample { client: string; total: number; month: string }
+
+export function TemplatesModal({ open, onClose, sample }: { open: boolean; onClose: () => void; sample?: TemplateSample | null }) {
   const [subject, setSubject] = useState("")
   const [message, setMessage] = useState("")
   const [defaults, setDefaults] = useState({ subject: "", message: "" })
@@ -21,6 +26,19 @@ export function TemplatesModal({ open, onClose }: { open: boolean; onClose: () =
   const [saving, setSaving] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+
+  // Resolve the template against the currently-selected invoice for a live preview.
+  const sampleVars = useMemo(() => {
+    const client = sample?.client || "CrossFit Montrose"
+    const ym = sample?.month || ""
+    const [y, m] = ym.split("-").map(Number)
+    const monthLabel = y && m ? formatMonthLabel(ym) : "June 2026"
+    const dueDate = y && m
+      ? new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "Jun 10, 2026"
+    const total = sample?.total != null ? formatCurrency(sample.total) : "$129"
+    return { client, month: monthLabel, monthShort: monthLabel, total, dueDate }
+  }, [sample])
 
   useEffect(() => {
     if (!open) return
@@ -56,7 +74,7 @@ export function TemplatesModal({ open, onClose }: { open: boolean; onClose: () =
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-[15px] font-semibold text-stone-900">Email template</h3>
+          <h3 className="text-[15px] font-semibold text-stone-900">Email templates</h3>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={16} /></button>
         </div>
 
@@ -75,25 +93,38 @@ export function TemplatesModal({ open, onClose }: { open: boolean; onClose: () =
               className="mt-1 w-full resize-y rounded-md border border-stone-200 px-2.5 py-2 text-[13px] leading-relaxed outline-none focus:border-stone-400" />
 
             <div className="mt-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Variables — click to insert</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Available variables — click to insert</div>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {VARS.map((v) => (
-                  <button key={v.name} title={v.desc} onClick={() => setMessage((m) => (m ? `${m} ${v.name}` : v.name))}
-                    className="rounded-full border border-stone-200 px-2 py-0.5 font-mono text-[11px] text-stone-600 hover:border-teal-300 hover:text-teal-700">
-                    {v.name}
+                  <button key={v.name} title={`Insert ${v.name}`} onClick={() => setMessage((m) => (m ? `${m} ${v.name}` : v.name))}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 px-2 py-0.5 text-[11px] hover:border-teal-300">
+                    <span className="font-mono font-semibold text-stone-700">{v.name}</span>
+                    <span className="text-stone-400">{v.desc}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="mt-5 flex items-center justify-between">
-              <button onClick={() => { setSubject(defaults.subject); setMessage(defaults.message) }}
-                className="text-[12px] font-semibold text-stone-400 hover:text-stone-600">Reset to default</button>
-              <div className="flex gap-2">
+            {/* Live preview against the selected invoice */}
+            <div className="mt-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Preview using {sampleVars.client}</div>
+              <div className="mt-1.5 rounded-lg border border-stone-200 bg-stone-50 p-3">
+                <div className="text-[13px] font-semibold text-stone-800">{resolveTemplate(subject, sampleVars)}</div>
+                <div className="mt-1.5 whitespace-pre-wrap text-[12px] leading-relaxed text-stone-600">{resolveTemplate(message, sampleVars)}</div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-end justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <button onClick={() => { setSubject(defaults.subject); setMessage(defaults.message) }}
+                  className="self-start text-[12px] font-semibold text-stone-400 hover:text-stone-600">Reset to default</button>
+                <span className="text-[11px] text-stone-400">Your edits to specific invoices are preserved.</span>
+              </div>
+              <div className="flex flex-shrink-0 gap-2">
                 <button onClick={onClose} className="rounded-md px-3 py-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700">Cancel</button>
                 <button onClick={save} disabled={saving}
                   className="rounded-md px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60" style={{ background: "#0D9488" }}>
-                  {saving ? "Saving…" : "Save template"}
+                  {saving ? "Saving…" : "Save changes"}
                 </button>
               </div>
             </div>

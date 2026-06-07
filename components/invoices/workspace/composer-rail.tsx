@@ -9,6 +9,7 @@ import { showSuccess, showError, showApiError } from "@/lib/toast"
 import { resolveTemplate } from "@/lib/invoice-template"
 import { formatMonthLabel, type WorkspaceInvoice } from "./use-workspace"
 import { ensureInvoiceId, sendInvoiceEmail } from "./invoice-send"
+import { SendLaterPopover } from "./send-later-popover"
 
 interface ClientContact { id: string; name: string | null; email: string | null; role?: string | null }
 
@@ -62,6 +63,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   const [sending, setSending] = useState(false)
   const [marking, setMarking] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [schedAnchor, setSchedAnchor] = useState<DOMRect | null>(null)
 
   // (Re)initialise composer when the selected invoice, recipient pool, or template changes.
   useEffect(() => {
@@ -83,6 +85,12 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
 
   const toggleRecipient = (email: string) =>
     setTo((prev) => (prev.some((e) => e.toLowerCase() === email.toLowerCase()) ? prev.filter((e) => e.toLowerCase() !== email.toLowerCase()) : [...prev, email]))
+
+  // Saved contacts not already added as recipients.
+  const availablePool = useMemo(
+    () => pool.filter((e) => !to.some((t) => t.toLowerCase() === e.toLowerCase())),
+    [pool, to],
+  )
 
   const send = async (isTest: boolean) => {
     if (to.length === 0 && !isTest) { showError("Add at least one recipient."); return }
@@ -112,6 +120,20 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
       const invoiceId = await ensureInvoiceId(inv)
       if (invoiceId) { showSuccess("Draft saved"); onChanged() }
     } catch { showError("Failed to save draft") } finally { setSavingDraft(false) }
+  }
+
+  // "Send later": save the draft now and note the chosen time. Timed auto-firing
+  // is a follow-up (needs the scheduled-send cron); we don't fake an auto-send.
+  const handleSchedule = async (when: Date) => {
+    setSchedAnchor(null)
+    setSending(true)
+    try {
+      const invoiceId = await ensureInvoiceId(inv)
+      if (!invoiceId) return
+      const label = when.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      showSuccess(`Draft saved · you planned to send ${label}. Send it from here when ready.`)
+      onChanged()
+    } catch { showError("Failed to save draft") } finally { setSending(false) }
   }
 
   // Re-email an already-sent invoice to the client's primary address.
@@ -243,22 +265,23 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
           {to.length === 0 && <span className="text-[12px] text-amber-600">No recipient selected</span>}
         </div>
 
-        {pool.filter((e) => !to.some((t) => t.toLowerCase() === e.toLowerCase())).length > 0 && (
+        {availablePool.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {pool.filter((e) => !to.some((t) => t.toLowerCase() === e.toLowerCase())).map((e) => (
+            {availablePool.map((e) => (
               <button key={e} onClick={() => toggleRecipient(e)}
                 className="inline-flex items-center gap-1 rounded-full border border-stone-200 px-2 py-0.5 text-[11px] text-stone-500 hover:border-teal-300 hover:text-teal-700">
                 <Plus size={10} /> <span className="max-w-[160px] truncate">{e}</span>
               </button>
             ))}
           </div>
+        ) : (
+          <div className="mt-2 text-[11px] text-stone-400">No more saved contacts for this client</div>
         )}
 
-        <div className="mt-2 flex gap-1.5">
-          <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="add email@example.com"
-            onKeyDown={(e) => { if (e.key === "Enter" && manual.includes("@")) { toggleRecipient(manual.trim()); setManual("") } }}
-            className="flex-1 rounded-md border border-stone-200 px-2 py-1 text-[12px] outline-none focus:border-stone-400" />
-        </div>
+        <label className="mt-2.5 block text-[11px] text-stone-400">Or type a new email and press Enter</label>
+        <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="email@example.com"
+          onKeyDown={(e) => { if (e.key === "Enter" && manual.includes("@")) { toggleRecipient(manual.trim()); setManual("") } }}
+          className="mt-1 w-full rounded-md border border-stone-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-stone-400" />
 
         <label className="mt-4 block text-[11px] font-semibold text-stone-500">CC</label>
         <input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="cc@example.com"
@@ -280,8 +303,8 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
             <input type="checkbox" checked={payNow} onChange={(e) => setPayNow(e.target.checked)} className="h-3.5 w-3.5 accent-teal-600" />
             Pay Now (Zelle)
           </label>
-          <button disabled title="Scheduling is coming soon"
-            className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-400">
+          <button onClick={(e) => setSchedAnchor(e.currentTarget.getBoundingClientRect())} disabled={sending}
+            className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-500 hover:bg-stone-50 disabled:opacity-50">
             <Clock size={12} /> Send later
           </button>
         </div>
@@ -301,6 +324,10 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
           </button>
         </div>
       </div>
+
+      {schedAnchor && (
+        <SendLaterPopover anchor={schedAnchor} onCancel={() => setSchedAnchor(null)} onSchedule={handleSchedule} />
+      )}
     </div>
   )
 }

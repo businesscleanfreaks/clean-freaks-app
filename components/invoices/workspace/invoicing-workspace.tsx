@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -256,7 +256,11 @@ export function InvoicingWorkspace() {
         document.body,
       )}
 
-      <TemplatesModal open={templatesOpen} onClose={() => setTemplatesOpen(false)} />
+      <TemplatesModal
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        sample={ws.selected ? { client: ws.selected.clientName, total: ws.selected.total, month: ws.month } : null}
+      />
     </div>
   )
 }
@@ -297,6 +301,7 @@ function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: Workspac
 
 function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   const green = inv.verification.level === "green"
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
 
   const cleans = useMemo(() => {
@@ -318,6 +323,22 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   }, [month])
   const badge = STATUS_BADGE[inv.uiStatus] || STATUS_BADGE["Not sent"]
 
+  // Structured "what changed this month" rows for the Details expander.
+  const changeRows = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const e of inv.exceptions) counts[e.type] = (counts[e.type] || 0) + 1
+    const priceEx = inv.exceptions.find((e) => e.type === "PRICE_CHANGE")
+    const rows: Array<{ label: string; value: string; flag: boolean }> = [
+      { label: "Cancellations", value: counts.SKIPPED ? `${counts.SKIPPED} this month` : "None", flag: !!counts.SKIPPED },
+      { label: "Rate vs last month", value: priceEx ? priceEx.message : "No change", flag: !!priceEx },
+    ]
+    if (counts.ONE_TIME_ADD_ON) rows.push({ label: "Add-ons", value: `${counts.ONE_TIME_ADD_ON} this month`, flag: true })
+    if (counts.ONE_OFF_JOB) rows.push({ label: "One-off jobs", value: `${counts.ONE_OFF_JOB} this month`, flag: true })
+    if (counts.RESCHEDULED) rows.push({ label: "Rescheduled", value: `${counts.RESCHEDULED} clean${counts.RESCHEDULED > 1 ? "s" : ""}`, flag: true })
+    if (counts.MISSING_EMAIL) rows.push({ label: "Email on file", value: "Missing — add before sending", flag: true })
+    return rows
+  }, [inv.exceptions])
+
   return (
     <div className="flex h-full flex-col">
       {/* Header: client · due · status · amount */}
@@ -332,34 +353,53 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
         </div>
       </div>
 
-      {/* Verification banner */}
+      {/* Verification banner — collapsible Details (changes + this month's cleans) */}
       <div className="px-5 pt-4">
-        <div className="flex items-start gap-2 rounded-lg px-3.5 py-2.5"
+        <div className="rounded-lg px-3.5 py-2.5"
           style={green ? { background: "#ECFDF5", border: "1px solid #A7F3D0" } : { background: "#FFFBEB", border: "1px solid #FDE68A" }}>
-          {green ? <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-600" /> : <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-amber-600" />}
-          <div className="min-w-0">
-            <div className="text-[13px] font-semibold" style={{ color: green ? "#047857" : "#B45309" }}>{inv.verification.summary}</div>
-            {inv.verification.detail && <div className="mt-0.5 text-[12px] text-stone-600">{inv.verification.detail}</div>}
-          </div>
-        </div>
-      </div>
-
-      {/* Schedule + mini-calendar of this month's cleans */}
-      <div className="px-5 pt-3">
-        <div className="flex items-start gap-4 rounded-lg border border-stone-200 bg-white p-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Schedule</div>
-            <div className="mt-0.5 truncate text-[13px] font-medium text-stone-800">{inv.scheduleSummary}</div>
-            {cleaner && <div className="mt-1 text-[12px] text-stone-500">Cleaner · {cleaner}</div>}
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
-              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed</span>
-              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled</span>
-              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Cancelled</span>
+          <div className="flex items-start gap-2">
+            {green ? <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-600" /> : <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-amber-600" />}
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-semibold" style={{ color: green ? "#047857" : "#B45309" }}>{inv.verification.summary}</div>
+              <div className="mt-0.5 truncate text-[12px] text-stone-500">{inv.scheduleSummary}{cleaner ? ` · ${cleaner}` : ""}</div>
             </div>
+            <button onClick={() => setDetailsOpen((o) => !o)}
+              className="inline-flex flex-shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold hover:bg-black/5"
+              style={{ color: green ? "#047857" : "#B45309" }}>
+              Details <ChevronDown size={13} className={`transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
+            </button>
           </div>
-          <div className="w-[176px] shrink-0">
-            <MiniCalendar month={month} cleans={cleans} />
-          </div>
+
+          {detailsOpen && (
+            <div className="mt-3 space-y-3 border-t pt-3" style={{ borderColor: green ? "#A7F3D0" : "#FDE68A" }}>
+              {/* What changed this month */}
+              <div className="space-y-1.5">
+                {changeRows.map((r) => (
+                  <div key={r.label} className="flex items-start justify-between gap-3 text-[12px]">
+                    <span className="flex items-center gap-1.5 text-stone-500">
+                      {r.flag ? <AlertTriangle size={12} className="flex-shrink-0 text-amber-500" /> : <CheckCircle2 size={12} className="flex-shrink-0 text-emerald-500" />}
+                      {r.label}
+                    </span>
+                    <span className={`text-right ${r.flag ? "font-medium text-stone-800" : "text-stone-400"}`}>{r.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* This month's cleans */}
+              <div className="rounded-lg border border-white/70 bg-white/70 p-2.5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-stone-600">{formatMonthLabel(month)}</span>
+                  <span className="text-[11px] text-stone-400">{cleans.length} clean{cleans.length === 1 ? "" : "s"}</span>
+                </div>
+                <MiniCalendar month={month} cleans={cleans} />
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
+                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Cancelled</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
