@@ -229,6 +229,8 @@ model Invoice {
   showPaymentOptions Boolean  @default(true) // Whether to show payment options on public invoice
   billingPeriodStart DateTime? // Start of the billing period this invoice covers
   billingPeriodEnd   DateTime? // End of the billing period this invoice covers
+  scheduledSendAt    DateTime? // "Send later": when this invoice should auto-send
+  scheduledPayload   Json?     // Captured email (to/cc/subject/message/showPaymentOptions) for the scheduled send
   createdAt     DateTime      @default(now())
   updatedAt     DateTime?
 
@@ -240,6 +242,7 @@ model Invoice {
   @@index([status])
   @@index([clientId])
   @@index([dateCreated, status])
+  @@index([scheduledSendAt])
   @@map("invoices")
 }
 

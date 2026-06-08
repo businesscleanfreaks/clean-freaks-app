@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import useSWR from "swr"
 import { Send, TestTube, X, Plus, CheckCircle2, DollarSign, RotateCcw, ExternalLink, Clock, FileText } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
@@ -12,6 +12,28 @@ import { ensureInvoiceId, sendInvoiceEmail } from "./invoice-send"
 import { SendLaterPopover } from "./send-later-popover"
 
 interface ClientContact { id: string; name: string | null; email: string | null; role?: string | null }
+
+// ── Local (per-browser) draft persistence so the composer auto-saves as you type ──
+interface DraftPayload { to: string[]; cc: string; subject: string; message: string; payNow: boolean }
+const draftKey = (candidateId: string) => `cf-invoice-draft-${candidateId}`
+function loadDraft(candidateId: string): DraftPayload | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(draftKey(candidateId))
+    if (!raw) return null
+    const d = JSON.parse(raw)
+    if (!d || !Array.isArray(d.to)) return null
+    return { to: d.to, cc: d.cc || "", subject: d.subject || "", message: d.message || "", payNow: d.payNow !== false }
+  } catch { return null }
+}
+function saveDraftLocal(candidateId: string, d: DraftPayload) {
+  if (typeof window === "undefined") return
+  try { window.localStorage.setItem(draftKey(candidateId), JSON.stringify(d)) } catch { /* quota / disabled */ }
+}
+function clearDraftLocal(candidateId: string) {
+  if (typeof window === "undefined") return
+  try { window.localStorage.removeItem(draftKey(candidateId)) } catch { /* noop */ }
+}
 
 function uniqEmails(list: (string | null | undefined)[]): string[] {
   const seen = new Set<string>()
@@ -30,7 +52,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   const { data: contactsData } = useSWR(`/api/clients/${inv.clientId}/contacts`, fetcher)
   const { data: templateData } = useSWR("/api/settings/email-template", fetcher)
   const { data: invoiceData } = useSWR(
-    isSent && inv.existingInvoiceId ? `/api/invoices/${inv.existingInvoiceId}` : null,
+    inv.existingInvoiceId ? `/api/invoices/${inv.existingInvoiceId}` : null,
     fetcher,
   )
 
@@ -64,9 +86,31 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   const [marking, setMarking] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [schedAnchor, setSchedAnchor] = useState<DOMRect | null>(null)
+  const [scheduledLocal, setScheduledLocal] = useState<{ at: string; invoiceId: string } | null>(null)
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
 
-  // (Re)initialise composer when the selected invoice, recipient pool, or template changes.
+  const touchedRef = useRef(false)        // user has edited the current composer
+  const hydratedForRef = useRef<string | null>(null) // candidate we've hydrated
+  const markTouched = () => { touchedRef.current = true }
+
+  // (Re)initialise the composer. Restores a locally-saved draft if one exists for
+  // this candidate; otherwise fills from the template + client defaults (and keeps
+  // refreshing those until the user actually edits something).
   useEffect(() => {
+    if (hydratedForRef.current !== inv.candidateId) {
+      touchedRef.current = false
+      hydratedForRef.current = inv.candidateId
+      setScheduledLocal(null)
+      setLastSavedAt(null)
+      const saved = loadDraft(inv.candidateId)
+      if (saved) {
+        setTo(saved.to); setCc(saved.cc); setSubject(saved.subject); setMessage(saved.message); setPayNow(saved.payNow)
+        touchedRef.current = true // a restored draft has user content — keep auto-saving it
+        return
+      }
+    }
+    if (touchedRef.current) return // don't clobber in-progress edits when template/client load late
+
     const vars = {
       client: inv.clientName,
       month: formatMonthLabel(month),
@@ -83,8 +127,30 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inv.candidateId, templateData, clientData, pool.join(",")])
 
-  const toggleRecipient = (email: string) =>
+  // Auto-save (debounced) to localStorage once the user has edited anything.
+  useEffect(() => {
+    if (isSent || !touchedRef.current) return
+    const t = setTimeout(() => {
+      saveDraftLocal(inv.candidateId, { to, cc, subject, message, payNow })
+      setLastSavedAt(Date.now())
+    }, 600)
+    return () => clearTimeout(t)
+  }, [to, cc, subject, message, payNow, inv.candidateId, isSent])
+
+  // Pending scheduled-send state (optimistic local, else from the fetched invoice).
+  const scheduledAt: string | null =
+    scheduledLocal?.at ?? (invoiceData?.scheduledSendAt as string | undefined) ?? null
+  const scheduledInvoiceId: string | null =
+    scheduledLocal?.invoiceId ?? inv.existingInvoiceId ?? null
+  const schedLabel = (iso: string) => {
+    const d = new Date(iso)
+    return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+  }
+
+  const toggleRecipient = (email: string) => {
+    markTouched()
     setTo((prev) => (prev.some((e) => e.toLowerCase() === email.toLowerCase()) ? prev.filter((e) => e.toLowerCase() !== email.toLowerCase()) : [...prev, email]))
+  }
 
   // Saved contacts not already added as recipients.
   const availablePool = useMemo(
@@ -105,7 +171,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
       } else {
         showSuccess(isTest ? "Test email sent" : `Invoice sent to ${to.join(", ")}`)
       }
-      if (!isTest) onChanged()
+      if (!isTest) { clearDraftLocal(inv.candidateId); onChanged() }
     } catch {
       showError("Failed to send invoice")
     } finally {
@@ -122,18 +188,40 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     } catch { showError("Failed to save draft") } finally { setSavingDraft(false) }
   }
 
-  // "Send later": save the draft now and note the chosen time. Timed auto-firing
-  // is a follow-up (needs the scheduled-send cron); we don't fake an auto-send.
+  // "Send later": persist the composed email + a send time. The cron
+  // (/api/cron/send-scheduled) fires it when the time arrives.
   const handleSchedule = async (when: Date) => {
     setSchedAnchor(null)
+    if (to.length === 0) { showError("Add at least one recipient before scheduling."); return }
     setSending(true)
     try {
       const invoiceId = await ensureInvoiceId(inv)
       if (!invoiceId) return
+      const res = await fetch(`/api/invoices/${invoiceId}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledSendAt: when.toISOString(), to, cc: cc || undefined, subject, message, showPaymentOptions: payNow }),
+      })
+      if (!res.ok) { await showApiError(res, "Failed to schedule send"); return }
+      setScheduledLocal({ at: when.toISOString(), invoiceId })
+      clearDraftLocal(inv.candidateId)
       const label = when.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-      showSuccess(`Draft saved · you planned to send ${label}. Send it from here when ready.`)
+      showSuccess(`Scheduled to send ${label}`)
       onChanged()
-    } catch { showError("Failed to save draft") } finally { setSending(false) }
+    } catch { showError("Failed to schedule send") } finally { setSending(false) }
+  }
+
+  // Cancel a pending scheduled send.
+  const unschedule = async () => {
+    if (!scheduledInvoiceId) { setScheduledLocal(null); return }
+    setSending(true)
+    try {
+      const res = await fetch(`/api/invoices/${scheduledInvoiceId}/schedule`, { method: "DELETE" })
+      if (!res.ok) { await showApiError(res, "Failed to cancel scheduled send"); return }
+      setScheduledLocal(null)
+      showSuccess("Scheduled send cancelled")
+      onChanged()
+    } catch { showError("Failed to cancel scheduled send") } finally { setSending(false) }
   }
 
   // Re-email an already-sent invoice to the client's primary address.
@@ -247,6 +335,17 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto p-5">
+        {scheduledAt && (
+          <div className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2 text-[12px] text-sky-800">
+              <Clock size={14} className="flex-shrink-0 text-sky-600" />
+              <span className="truncate">Scheduled to send <strong>{schedLabel(scheduledAt)}</strong></span>
+            </div>
+            <button onClick={unschedule} disabled={sending}
+              className="flex-shrink-0 text-[11px] font-semibold text-sky-700 hover:text-sky-900 disabled:opacity-50">Cancel</button>
+          </div>
+        )}
+
         <label className="text-[11px] font-semibold text-stone-500">Recipients</label>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {to.map((e) => {
@@ -284,15 +383,15 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
           className="mt-1 w-full rounded-md border border-stone-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-stone-400" />
 
         <label className="mt-4 block text-[11px] font-semibold text-stone-500">CC</label>
-        <input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="cc@example.com"
+        <input value={cc} onChange={(e) => { markTouched(); setCc(e.target.value) }} placeholder="cc@example.com"
           className="mt-1 w-full rounded-md border border-stone-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-stone-400" />
 
         <label className="mt-4 block text-[11px] font-semibold text-stone-500">Subject</label>
-        <input value={subject} onChange={(e) => setSubject(e.target.value)}
+        <input value={subject} onChange={(e) => { markTouched(); setSubject(e.target.value) }}
           className="mt-1 w-full rounded-md border border-stone-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-stone-400" />
 
         <label className="mt-4 block text-[11px] font-semibold text-stone-500">Message</label>
-        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={6}
+        <textarea value={message} onChange={(e) => { markTouched(); setMessage(e.target.value) }} rows={6}
           className="mt-1 w-full resize-y rounded-md border border-stone-200 px-2.5 py-2 text-[13px] leading-relaxed outline-none focus:border-stone-400" />
       </div>
 
@@ -300,13 +399,20 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
       <div className="border-t border-stone-200 bg-white p-3">
         <div className="mb-2.5 flex items-center justify-between gap-2">
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-stone-700">
-            <input type="checkbox" checked={payNow} onChange={(e) => setPayNow(e.target.checked)} className="h-3.5 w-3.5 accent-teal-600" />
+            <input type="checkbox" checked={payNow} onChange={(e) => { markTouched(); setPayNow(e.target.checked) }} className="h-3.5 w-3.5 accent-teal-600" />
             Pay Now (Zelle)
           </label>
           <button onClick={(e) => setSchedAnchor(e.currentTarget.getBoundingClientRect())} disabled={sending}
             className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-500 hover:bg-stone-50 disabled:opacity-50">
             <Clock size={12} /> Send later
           </button>
+        </div>
+        <div className="mb-2 flex items-center justify-center gap-1 text-[11px] text-stone-400">
+          {lastSavedAt ? (
+            <><CheckCircle2 size={11} className="text-emerald-500" /> Draft saved {new Date(lastSavedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</>
+          ) : (
+            "Draft auto-saves as you type"
+          )}
         </div>
         <button onClick={() => send(false)} disabled={sending}
           className="flex w-full items-center justify-center gap-1.5 rounded-md py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"

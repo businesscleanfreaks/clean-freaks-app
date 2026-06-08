@@ -87,6 +87,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Allow cron endpoints (secured separately by CRON_SECRET, not the session cookie)
+  if (pathname.startsWith('/api/cron/')) {
+    return NextResponse.next()
+  }
+
   // Allow public invoice viewing
   if (pathname.startsWith('/view-invoice/')) {
     return NextResponse.next()
