@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { startOfDay } from 'date-fns'
 import { logger } from '@/lib/logger'
+import { authorizeCron } from '@/lib/cron-auth'
 
-export async function POST() {
+export const dynamic = 'force-dynamic'
+
+export async function POST(request: Request) {
+  if (!authorizeCron(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     // Auto-complete jobs in the past that are still scheduled
     const today = new Date()

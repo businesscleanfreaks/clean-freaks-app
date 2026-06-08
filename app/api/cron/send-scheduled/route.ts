@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import { logger } from '@/lib/logger'
 import { generateInvoiceToken } from '@/lib/invoice-tokens'
 import { getBaseUrl } from '@/lib/url'
+import { authorizeCron } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -133,18 +134,8 @@ async function processDueInvoices() {
   return { processed: due.length, sent, skipped, failed, results }
 }
 
-// Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` when CRON_SECRET is set.
-function authorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET
-  if (!secret) {
-    logger.warn('[cron:send-scheduled] CRON_SECRET not set — endpoint is unprotected. Set CRON_SECRET in the environment.')
-    return true
-  }
-  return request.headers.get('authorization') === `Bearer ${secret}`
-}
-
 async function handle(request: Request) {
-  if (!authorized(request)) {
+  if (!authorizeCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {

@@ -88,7 +88,11 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow cron endpoints (secured separately by CRON_SECRET, not the session cookie)
-  if (pathname.startsWith('/api/cron/')) {
+  if (
+    pathname.startsWith('/api/cron/') ||
+    pathname === '/api/jobs/auto-complete' ||
+    pathname === '/api/jobs/auto-generate'
+  ) {
     return NextResponse.next()
   }
 

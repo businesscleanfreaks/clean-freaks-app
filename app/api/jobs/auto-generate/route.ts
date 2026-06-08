@@ -2,15 +2,20 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { logger } from '@/lib/logger'
+import { authorizeCron } from '@/lib/cron-auth'
+
+export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/jobs/auto-generate
  *
- * Regenerates jobs for all active schedules to ensure Job records
- * exist for the next 3 months. Called on dashboard load (once per session)
- * to keep the calendar and other job-dependent features current.
+ * Regenerates jobs for all active schedules to ensure Job records exist for the
+ * next 3 months. Invoked by Vercel Cron (see vercel.json); guarded by CRON_SECRET.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  if (!authorizeCron(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const schedules = await prisma.schedule.findMany({
       where: { isActive: true },
