@@ -15,6 +15,7 @@ import { ClientNotesPanel, OpenIssuesEditor, WhatToKnow, type ClientNote } from 
 import { ContactsSection } from "./contacts-section"
 import { AtAGlanceStrip, type CockpitTab } from "./cockpit/at-a-glance-strip"
 import { PauseServiceModal } from "./cockpit/pause-service-modal"
+import { ProrationCard } from "./cockpit/proration-card"
 import { Pause } from "lucide-react"
 
 const notesFetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error("Failed"); return r.json() })
@@ -380,6 +381,7 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
 
   return (
     <div className="space-y-4">
+      <ProrationCard clientId={client.id} />
       <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
