@@ -16,6 +16,7 @@ import { ContactsSection } from "./contacts-section"
 import { AtAGlanceStrip, type CockpitTab } from "./cockpit/at-a-glance-strip"
 import { PauseServiceModal } from "./cockpit/pause-service-modal"
 import { ProrationCard } from "./cockpit/proration-card"
+import { TrialStatusPanel } from "./cockpit/trial-status-panel"
 import { Pause } from "lucide-react"
 
 const notesFetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error("Failed"); return r.json() })
@@ -225,6 +226,9 @@ function OverviewTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpT
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
       <div className="space-y-4">
+        {trial && (
+          <TrialStatusPanel client={client} proposedRate={trial.proposedRate} onDone={() => state.router.refresh()} />
+        )}
         {/* Snapshot card */}
         <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
