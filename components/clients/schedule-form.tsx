@@ -20,6 +20,7 @@ import { logger } from "@/lib/logger"
 import { showError, showSuccess, showApiError } from "@/lib/toast"
 import { createScheduleSchema, updateScheduleSchema } from "@/lib/validations"
 import { dateInputValue as formatDateForInput } from "@/lib/date-only"
+import { ScheduleDiffPreview, type ScheduleDiff } from "./cockpit/schedule-diff-preview"
 
 export interface ScheduleRecord {
   id: string
@@ -103,6 +104,7 @@ interface FutureChangePreviewData {
   lastNewJobDate: string | null
   recurringAddOnsToCarry: number
   overlappingScheduleCount: number
+  dateDiff?: ScheduleDiff
 }
 
 type ScheduleFrequency =
@@ -476,7 +478,7 @@ function ScheduleFormInner({
       }
 
       const result = await response.json()
-      setFuturePreview(result.preview)
+      setFuturePreview({ ...result.preview, dateDiff: result.dateDiff })
       setPendingSaveData(dataToSend)
     } catch (error) {
       logger.error('Error previewing future schedule change:', error)
@@ -679,6 +681,13 @@ function ScheduleFormInner({
                   </div>
                 )}
               </div>
+
+              {futurePreview.dateDiff && (
+                <div className="rounded-lg border border-white/70 bg-white/80 p-3">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-500">Clean-by-clean preview</div>
+                  <ScheduleDiffPreview diff={futurePreview.dateDiff} />
+                </div>
+              )}
 
               <div className="flex gap-3 pt-1">
                 <Button
