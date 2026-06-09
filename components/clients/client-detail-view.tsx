@@ -14,6 +14,8 @@ import type { ClientWithDetails } from "@/lib/types"
 import { ClientNotesPanel, OpenIssuesEditor, WhatToKnow, type ClientNote } from "./client-notes-panel"
 import { ContactsSection } from "./contacts-section"
 import { AtAGlanceStrip, type CockpitTab } from "./cockpit/at-a-glance-strip"
+import { PauseServiceModal } from "./cockpit/pause-service-modal"
+import { Pause } from "lucide-react"
 
 const notesFetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error("Failed"); return r.json() })
 
@@ -50,6 +52,15 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
   const state = useClientDetail({ client: initialClient, onDataChange })
   const { mounted, ConfirmDialog } = state
   const [activeTab, setActiveTab] = useState<CockpitTab>('overview')
+  const [pauseOpen, setPauseOpen] = useState(false)
+
+  const activeSchedules = state.client.locations.flatMap(loc =>
+    (loc.schedules || []).filter(s => s.isActive).map(s => ({
+      id: s.id,
+      locationName: loc.name || loc.address?.split(',')[0] || 'Location',
+      cadence: s.frequency.toLowerCase().replace(/_/g, ' '),
+    }))
+  )
 
   if (!mounted) {
     return (
@@ -99,6 +110,13 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');`}</style>
       <ConfirmDialog />
       <ClientDetailModals state={state} />
+      {pauseOpen && (
+        <PauseServiceModal
+          schedules={activeSchedules}
+          onClose={() => setPauseOpen(false)}
+          onDone={() => state.router.refresh()}
+        />
+      )}
 
       <div style={{ minHeight: '100vh', background: '#FAFAF9', overscrollBehavior: 'none', fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
         <ClientDetailHeader state={state} />
@@ -137,13 +155,25 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
         <div className="mx-auto w-full max-w-[1080px] px-3 sm:px-5 py-5">
           {activeTab === 'overview' && <OverviewTab state={state} onJumpToTab={setActiveTab} />}
           {activeTab === 'schedule' && (
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4">
-              <div className="space-y-4 order-2 lg:order-1">
-                <ClientDetailLocations state={state} />
-                <ClientDetailSidebar state={state} />
-              </div>
-              <div className="order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
-                <ClientDetailJobFeed state={state} />
+            <div className="space-y-3">
+              {activeSchedules.length > 0 && (
+                <div className="flex items-center justify-end">
+                  <button
+                    onClick={() => setPauseOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700 hover:bg-amber-100"
+                  >
+                    <Pause size={13} /> Pause service
+                  </button>
+                </div>
+              )}
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4">
+                <div className="space-y-4 order-2 lg:order-1">
+                  <ClientDetailLocations state={state} />
+                  <ClientDetailSidebar state={state} />
+                </div>
+                <div className="order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+                  <ClientDetailJobFeed state={state} />
+                </div>
               </div>
             </div>
           )}
