@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { logger } from '@/lib/logger'
-import { calculateScheduleDates, previewScheduleChanges } from '@/lib/regenerate-schedule-jobs'
+import { calculateScheduleDates, previewScheduleChanges, diffScheduleChange } from '@/lib/regenerate-schedule-jobs'
 import { changeScheduleGoingForwardSchema } from '@/lib/validations'
 import { parseDateOnly, parseDateOnlyForStorage } from '@/lib/date-only'
 
@@ -83,6 +83,22 @@ export async function POST(
       )
     }
 
+    // Per-date diff (added / removed / modified / kept) for the modal preview.
+    const dateDiff = await diffScheduleChange(existingSchedule.id, {
+      frequency: newScheduleData.frequency,
+      daysOfWeek: newScheduleData.daysOfWeek ?? null,
+      monthlyPattern: newScheduleData.monthlyPattern ?? null,
+      startDate: newScheduleData.startDate,
+      endDate: newScheduleData.endDate ?? null,
+      defaultClientRate: newScheduleData.defaultClientRate,
+      defaultSubcontractorRate: newScheduleData.defaultSubcontractorRate,
+      subcontractorId: newScheduleData.subcontractorId ?? null,
+      timeType: newScheduleData.timeType,
+      startTime: newScheduleData.startTime ?? null,
+      startWindowBegin: newScheduleData.startWindowBegin ?? null,
+      startWindowEnd: newScheduleData.startWindowEnd ?? null,
+    })
+
     // ── Same-start-date: preview an in-place update ─────────────────────────
     const isSameStartDate = newStartDate.getTime() === currentStartDate.getTime()
 
@@ -131,6 +147,7 @@ export async function POST(
           overlappingScheduleCount: 0,
           inPlaceUpdate: true,
         },
+        dateDiff,
       })
     }
 
@@ -238,6 +255,7 @@ export async function POST(
           : 0,
         overlappingScheduleCount,
       },
+      dateDiff,
     })
   } catch (error) {
     logger.error('Error previewing future schedule change:', error)

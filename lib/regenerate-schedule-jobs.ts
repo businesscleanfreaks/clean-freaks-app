@@ -782,3 +782,170 @@ export async function regenerateJobsForSchedule(
 
   return summary
 }
+
+export type ScheduleChangeDiffKind = 'added' | 'removed' | 'modified' | 'kept'
+
+export interface ScheduleChangeDiffRow {
+  iso: string
+  kind: ScheduleChangeDiffKind
+  cleaner: string | null
+  clientRate: number | null
+  protectedJob: boolean
+}
+
+export interface ScheduleChangeDiffResult {
+  rows: ScheduleChangeDiffRow[]
+  addedCount: number
+  removedCount: number
+  modifiedCount: number
+  keptCount: number
+  windowFrom: string
+  windowTo: string
+}
+
+export interface ScheduleChangeUpdates {
+  frequency?: string
+  daysOfWeek?: string | null
+  monthlyPattern?: string | null
+  startDate?: Date | string // the change's effectiveFrom (new interval start)
+  endDate?: Date | string | null
+  defaultClientRate?: number
+  defaultSubcontractorRate?: number
+  subcontractorId?: string | null
+  timeType?: string
+  startTime?: string | null
+  startWindowBegin?: string | null
+  startWindowEnd?: string | null
+}
+
+const isoOf = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+
+/**
+ * Per-date diff of a proposed "going forward" schedule change, computed without
+ * writing anything. Mirrors how the change actually applies (old pattern stops
+ * at the change date, new pattern starts there; past + protected jobs untouched),
+ * so the modal preview matches reality. Reuses `calculateScheduleDates`.
+ */
+export async function diffScheduleChange(
+  scheduleId: string,
+  updates: ScheduleChangeUpdates,
+  windowOpts?: { from?: Date; to?: Date },
+): Promise<ScheduleChangeDiffResult> {
+  const empty: ScheduleChangeDiffResult = {
+    rows: [], addedCount: 0, removedCount: 0, modifiedCount: 0, keptCount: 0, windowFrom: '', windowTo: '',
+  }
+
+  const schedule = await prisma.schedule.findUnique({
+    where: { id: scheduleId },
+    include: { subcontractor: { select: { id: true, name: true } } },
+  })
+  if (!schedule) return empty
+
+  const today = utcDateOnly(new Date())
+  const effectiveFrom = updates.startDate ? parseUtcDateOnly(updates.startDate) : today
+  const mergedEndDate = updates.endDate !== undefined ? updates.endDate : schedule.endDate
+
+  const windowFrom = windowOpts?.from ? utcDateOnly(windowOpts.from) : startOfUtcMonth(today)
+  const farRef = mergedEndDate ? parseUtcDateOnly(mergedEndDate) : effectiveFrom
+  const windowTo = windowOpts?.to
+    ? utcDateOnly(windowOpts.to)
+    : endOfUtcMonth(addUtcMonths(farRef > effectiveFrom ? farRef : effectiveFrom, 2))
+
+  const oldDates = calculateScheduleDates({
+    frequency: schedule.frequency,
+    startDate: schedule.startDate,
+    endDate: schedule.endDate,
+    daysOfWeek: schedule.daysOfWeek,
+    monthlyPattern: schedule.monthlyPattern,
+    customDates: schedule.customDates,
+    excludedDates: schedule.excludedDates,
+  }, windowTo).filter((d) => d >= windowFrom && d <= windowTo)
+
+  const newDates = calculateScheduleDates({
+    frequency: String(updates.frequency ?? schedule.frequency),
+    startDate: effectiveFrom,
+    endDate: mergedEndDate ?? null,
+    daysOfWeek: updates.daysOfWeek !== undefined ? updates.daysOfWeek : schedule.daysOfWeek,
+    monthlyPattern: updates.monthlyPattern !== undefined ? updates.monthlyPattern : schedule.monthlyPattern,
+    customDates: schedule.customDates,
+    excludedDates: schedule.excludedDates,
+  }, windowTo).filter((d) => d >= effectiveFrom && d <= windowTo)
+
+  const oldSet = new Set(oldDates.map((d) => d.getTime()))
+  const newSet = new Set(newDates.map((d) => d.getTime()))
+
+  // Same-date "modified" detection: did cleaner / rate / time change?
+  const cleanerChanged = updates.subcontractorId !== undefined && (updates.subcontractorId ?? null) !== (schedule.subcontractorId ?? null)
+  const rateChanged = (updates.defaultClientRate !== undefined && updates.defaultClientRate !== schedule.defaultClientRate)
+    || (updates.defaultSubcontractorRate !== undefined && updates.defaultSubcontractorRate !== schedule.defaultSubcontractorRate)
+  const timeChanged = (updates.startTime !== undefined && (updates.startTime ?? null) !== (schedule.startTime ?? null))
+    || (updates.timeType !== undefined && updates.timeType !== schedule.timeType)
+  const attrsChanged = cleanerChanged || rateChanged || timeChanged
+
+  // Protected jobs (invoiced/paid/cancelled/draft) won't actually change.
+  const protectedJobs = await prisma.job.findMany({
+    where: {
+      scheduleId,
+      date: { gte: windowFrom, lte: windowTo },
+      OR: [
+        { invoiced: true },
+        { subcontractorPaid: true },
+        { status: 'CANCELLED' },
+        { invoiceLineItems: { some: { invoice: { status: 'DRAFT' } } } },
+      ],
+    },
+    select: { date: true },
+  })
+  const protectedSet = new Set(protectedJobs.map((j) => utcDateOnly(j.date).getTime()))
+
+  const oldCleaner = schedule.subcontractor?.name ?? null
+  const oldClientRate = schedule.defaultClientRate
+  let newCleaner = oldCleaner
+  if (cleanerChanged) {
+    newCleaner = null
+    if (updates.subcontractorId) {
+      const sub = await prisma.subcontractor.findUnique({ where: { id: updates.subcontractorId }, select: { name: true } })
+      newCleaner = sub?.name ?? null
+    }
+  }
+  const newClientRate = updates.defaultClientRate ?? schedule.defaultClientRate
+
+  // Boundary: dates before max(today, effectiveFrom) are unaffected (past, or the
+  // old interval still running until the change date).
+  const classifyMs = Math.max(effectiveFrom.getTime(), today.getTime())
+
+  const allMs = Array.from(new Set([...oldSet, ...newSet])).sort((a, b) => a - b)
+  const rows: ScheduleChangeDiffRow[] = []
+  for (const ms of allMs) {
+    const isProtected = protectedSet.has(ms)
+    if (ms < classifyMs) {
+      rows.push({ iso: isoOf(ms), kind: 'kept', cleaner: oldCleaner, clientRate: oldClientRate, protectedJob: isProtected })
+      continue
+    }
+    const inOld = oldSet.has(ms)
+    const inNew = newSet.has(ms)
+    let kind: ScheduleChangeDiffKind
+    let cleaner = newCleaner
+    let clientRate: number | null = newClientRate
+    if (inOld && inNew) {
+      kind = attrsChanged ? 'modified' : 'kept'
+    } else if (inOld) {
+      kind = 'removed'; cleaner = oldCleaner; clientRate = oldClientRate
+    } else {
+      kind = 'added'
+    }
+    // Protected jobs are never removed/modified by regeneration.
+    if (isProtected && (kind === 'removed' || kind === 'modified')) kind = 'kept'
+    rows.push({ iso: isoOf(ms), kind, cleaner, clientRate, protectedJob: isProtected })
+  }
+
+  return {
+    rows,
+    addedCount: rows.filter((r) => r.kind === 'added').length,
+    removedCount: rows.filter((r) => r.kind === 'removed').length,
+    modifiedCount: rows.filter((r) => r.kind === 'modified').length,
+    keptCount: rows.filter((r) => r.kind === 'kept').length,
+    windowFrom: isoOf(windowFrom.getTime()),
+    windowTo: isoOf(windowTo.getTime()),
+  }
+}
