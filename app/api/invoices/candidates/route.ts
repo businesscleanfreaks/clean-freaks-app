@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { startOfMonth, endOfMonth, format } from "date-fns"
 import { getBillingStartDate } from "@/lib/billing-settings"
+import { computeClientProration } from "@/lib/proration"
 import { logger } from "@/lib/logger"
 
 export const dynamic = 'force-dynamic'
@@ -188,7 +189,7 @@ export async function GET(request: Request) {
       description: string
       quantity: number
       price: number
-      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON'
+      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION'
       sourceId?: string
       jobId?: string
       scheduleId?: string
@@ -434,6 +435,23 @@ export async function GET(request: Request) {
             }
           })
         })
+
+        // Proration credit for flat-rate cleans missed this month (e.g. a pause).
+        // Only on fresh candidates — never retro-adjust an existing invoice.
+        if (!hasExistingActiveInvoice && lineItems.length > 0) {
+          const prorations = await computeClientProration(clientId, periodStart, periodEnd)
+          for (const p of prorations) {
+            lineItems.push({
+              description: `Proration credit — ${p.missed} missed clean${p.missed === 1 ? '' : 's'} (${p.locationName})`,
+              quantity: 1,
+              price: -p.credit,
+              sourceType: 'PRORATION',
+              scheduleId: p.scheduleId,
+              locationName: p.locationName,
+            })
+            total -= p.credit
+          }
+        }
       } else {
         // PER_CLEAN: each job is a line item
         uninvoicedJobs.forEach(job => {

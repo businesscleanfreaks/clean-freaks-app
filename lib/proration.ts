@@ -4,6 +4,7 @@ import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
 export interface LocationProration {
   locationId: string
   locationName: string
+  scheduleId: string // representative flat-rate schedule (for scoping the credit on split candidates)
   flatRate: number
   expected: number
   actual: number
@@ -95,6 +96,7 @@ export async function computeClientProration(
     out.push({
       locationId: loc.id,
       locationName: loc.name || loc.address?.split(',')[0] || 'Location',
+      scheduleId: rep.id,
       flatRate,
       expected,
       actual,
