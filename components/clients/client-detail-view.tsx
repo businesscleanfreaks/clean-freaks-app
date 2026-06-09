@@ -13,6 +13,7 @@ import { showSuccess, showError, showApiError } from "@/lib/toast"
 import type { ClientWithDetails } from "@/lib/types"
 import { ClientNotesPanel, OpenIssuesEditor, WhatToKnow, type ClientNote } from "./client-notes-panel"
 import { ContactsSection } from "./contacts-section"
+import { AtAGlanceStrip, type CockpitTab } from "./cockpit/at-a-glance-strip"
 
 const notesFetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error("Failed"); return r.json() })
 
@@ -34,8 +35,6 @@ interface ClientDetailViewProps {
   client: ClientWithDetails
   onDataChange?: () => void
 }
-
-type CockpitTab = 'overview' | 'schedule' | 'billing' | 'contacts' | 'access' | 'scope' | 'history'
 
 const TABS: { key: CockpitTab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -103,6 +102,9 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
 
       <div style={{ minHeight: '100vh', background: '#FAFAF9', overscrollBehavior: 'none', fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
         <ClientDetailHeader state={state} />
+
+        {/* At-a-glance strip — visible above every tab */}
+        <AtAGlanceStrip client={state.client} nextClean={state.nextClean} onJumpTo={setActiveTab} />
 
         {/* Cockpit Tabs */}
         <div className="bg-white border-b border-gray-200">
