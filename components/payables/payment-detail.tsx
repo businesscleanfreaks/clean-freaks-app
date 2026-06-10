@@ -116,6 +116,10 @@ export function PaymentDetail({ payable, onPaid }: { payable: Payable | null; on
             {payable.contactPhone && <span className="inline-flex items-center gap-1"><Phone size={11} /> {payable.contactPhone}</span>}
           </div>
         </div>
+        <a href={payable.type === "cleaner" ? "/subcontractors" : "/vendors"}
+          className="flex-shrink-0 text-[11px] font-semibold text-stone-400 hover:text-stone-700" title="Edit on the system-of-record page">
+          Edit ↗
+        </a>
       </div>
 
       {/* Accounts to pay */}

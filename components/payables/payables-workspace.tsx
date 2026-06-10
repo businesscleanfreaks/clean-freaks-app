@@ -1,9 +1,11 @@
 "use client"
 
-import { UserCog, Package, Loader2 } from "lucide-react"
+import { useState } from "react"
+import { UserCog, Package, Loader2, Plus } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { usePayables, type Payable, type PayableAccount, type AccountStatus } from "./use-payables"
 import { PaymentDetail } from "./payment-detail"
+import { PersonModal } from "./person-modal"
 
 const STATUS: Record<AccountStatus, { dot: string; label: string; bg: string; text: string }> = {
   safe: { dot: "#10B981", label: "Ready", bg: "#ECFDF5", text: "#047857" },
@@ -26,6 +28,7 @@ function Avatar({ initials }: { initials: string }) {
 export function PayablesWorkspace() {
   const ws = usePayables()
   const { tab, setTab, list, totals, selected, counts, isLoading, error } = ws
+  const [addType, setAddType] = useState<"cleaner" | "vendor" | null>(null)
 
   return (
     <div className="min-h-screen bg-stone-50" style={{ fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
@@ -34,9 +37,15 @@ export function PayablesWorkspace() {
       {/* TopBar */}
       <div className="border-b border-stone-200 bg-white">
         <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 pt-5 pb-3">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h1 className="text-[20px] font-bold text-stone-900">Payables</h1>
-            <span className="text-[12px] font-semibold uppercase tracking-wide text-stone-400">This month · {monthLabel()}</span>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-[12px] font-semibold uppercase tracking-wide text-stone-400 sm:inline">This month · {monthLabel()}</span>
+              <button onClick={() => setAddType(tab === "cleaners" ? "cleaner" : "vendor")}
+                className="inline-flex items-center gap-1.5 rounded-md bg-stone-900 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-stone-800">
+                <Plus size={13} /> Add {tab === "cleaners" ? "cleaner" : "vendor"}
+              </button>
+            </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
             <Stat label="Total owed" value={totals.total} />
@@ -77,6 +86,8 @@ export function PayablesWorkspace() {
           </div>
         )}
       </div>
+
+      {addType && <PersonModal type={addType} onClose={() => setAddType(null)} onSaved={() => ws.mutate()} />}
     </div>
   )
 }
