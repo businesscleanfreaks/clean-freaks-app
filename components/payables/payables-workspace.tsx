@@ -31,6 +31,7 @@ export function PayablesWorkspace() {
   const ws = usePayables()
   const { tab, setTab, list, totals, selected, counts, isLoading, error } = ws
   const [addType, setAddType] = useState<"cleaner" | "vendor" | null>(null)
+  const [editPayable, setEditPayable] = useState<Payable | null>(null)
 
   return (
     <div className="min-h-screen bg-stone-50" style={{ fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
@@ -92,7 +93,7 @@ export function PayablesWorkspace() {
                     ))}
                   </div>
                   <div className="lg:sticky lg:top-4 lg:self-start">
-                    <PaymentDetail payable={selected} onPaid={() => ws.mutate()} />
+                    <PaymentDetail payable={selected} onPaid={() => ws.mutate()} onEdit={setEditPayable} />
                   </div>
                 </div>
               )
@@ -107,6 +108,9 @@ export function PayablesWorkspace() {
       </div>
 
       {addType && <PersonModal type={addType} onClose={() => setAddType(null)} onSaved={() => ws.mutate()} />}
+      {editPayable && (
+        <PersonModal type={editPayable.type} mode="edit" editId={editPayable.id} onClose={() => setEditPayable(null)} onSaved={() => ws.mutate()} />
+      )}
     </div>
   )
 }

@@ -26,7 +26,7 @@ function isoToday(): string {
  * subcontractor or vendor payment endpoint. Only the payable (safe) portion of
  * an account is ever sent — the gate can't be bypassed from here.
  */
-export function PaymentDetail({ payable, onPaid }: { payable: Payable | null; onPaid: () => void }) {
+export function PaymentDetail({ payable, onPaid, onEdit }: { payable: Payable | null; onPaid: () => void; onEdit: (p: Payable) => void }) {
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [date, setDate] = useState(isoToday())
   const [method, setMethod] = useState<(typeof METHODS)[number]>("Zelle")
@@ -140,10 +140,10 @@ export function PaymentDetail({ payable, onPaid }: { payable: Payable | null; on
             <Zap size={10} /> Fast-pay {payable.fastPay ? "on" : "off"}
           </button>
         )}
-        <a href={payable.type === "cleaner" ? "/subcontractors" : "/vendors"}
-          className="flex-shrink-0 text-[11px] font-semibold text-stone-400 hover:text-stone-700" title="Edit on the system-of-record page">
-          Edit ↗
-        </a>
+        <button onClick={() => onEdit(payable)}
+          className="flex-shrink-0 text-[11px] font-semibold text-stone-400 hover:text-stone-700" title="Edit profile">
+          Edit
+        </button>
       </div>
 
       {/* Accounts to pay */}
