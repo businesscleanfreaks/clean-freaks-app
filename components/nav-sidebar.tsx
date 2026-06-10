@@ -9,6 +9,7 @@ import {
   FileText,
   UserCog,
   Package,
+  Wallet,
   Settings,
   LogOut,
   Sparkles,
@@ -54,6 +55,7 @@ const sections: NavSection[] = [
       { name: "Invoices",  href: "/invoices",       icon: FileText  },
       { name: "Cleaners",  href: "/subcontractors", icon: UserCog, tooltip: "nav-subcontractors" },
       { name: "Vendors",   href: "/vendors",        icon: Package },
+      { name: "Payables",  href: "/payables",       icon: Wallet },
     ],
   },
   {
