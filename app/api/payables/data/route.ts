@@ -60,12 +60,23 @@ function ledgerKey(job: { date: Date; scheduleId: string | null; location: { id:
  * per-client accounts with owed + a gate status (safe / waiting / partial).
  * Reuses the existing cadence + ledger helpers so the numbers never diverge.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireAuth()
     const billingStartDate = await getBillingStartDate()
     const today = new Date()
     today.setHours(23, 59, 59, 999)
+
+    // Selected month (for paid history). Owed is "now" and only shown for the
+    // current month; past months show what was paid then.
+    const now = new Date()
+    const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    const periodParam = new URL(request.url).searchParams.get("period")
+    const period = periodParam && /^\d{4}-\d{2}$/.test(periodParam) ? periodParam : currentPeriod
+    const isCurrent = period === currentPeriod
+    const [py, pm] = period.split("-").map(Number)
+    const monthStart = new Date(py, pm - 1, 1, 0, 0, 0)
+    const monthEnd = new Date(py, pm, 0, 23, 59, 59, 999)
 
     // ── CLEANERS ──────────────────────────────────────────────────────────
     const subcontractors = await prisma.subcontractor.findMany({
@@ -233,9 +244,45 @@ export async function GET() {
       vendors: { total: sumBy(vendors, (v) => v.total), safe: sumBy(vendors, (v) => v.safe), waiting: sumBy(vendors, (v) => v.waiting) },
     }
 
-    return NextResponse.json({ cleaners, vendors, totals }, {
-      headers: { 'Cache-Control': 'private, max-age=10, stale-while-revalidate=59' },
-    })
+    // ── PAID HISTORY for the selected month ───────────────────────────────
+    const [subPayments, vendorPayments] = await Promise.all([
+      prisma.subcontractorPayment.findMany({
+        where: { datePaid: { gte: monthStart, lte: monthEnd } },
+        include: { subcontractor: { select: { name: true } } },
+        orderBy: { datePaid: 'desc' },
+      }),
+      prisma.vendorPayment.findMany({
+        where: { datePaid: { gte: monthStart, lte: monthEnd } },
+        include: { vendor: { select: { name: true } } },
+        orderBy: { datePaid: 'desc' },
+      }),
+    ])
+    const paidCleaners = subPayments.map((p) => ({
+      paymentId: p.id, name: p.subcontractor.name, initials: initialsOf(p.subcontractor.name),
+      amount: p.totalAmount, datePaid: p.datePaid.toISOString(), notes: p.notes || null,
+    }))
+    const paidVendors = vendorPayments.map((p) => ({
+      paymentId: p.id, name: p.vendor.name, initials: initialsOf(p.vendor.name),
+      amount: p.totalAmount, datePaid: p.datePaid.toISOString(), notes: p.notes || null,
+    }))
+    const paid = {
+      cleaners: paidCleaners,
+      vendors: paidVendors,
+      total: paidCleaners.reduce((s, x) => s + x.amount, 0) + paidVendors.reduce((s, x) => s + x.amount, 0),
+    }
+
+    const emptyTotals = { cleaners: { total: 0, safe: 0, waiting: 0 }, vendors: { total: 0, safe: 0, waiting: 0 } }
+    return NextResponse.json(
+      {
+        cleaners: isCurrent ? cleaners : [],
+        vendors: isCurrent ? vendors : [],
+        totals: isCurrent ? totals : emptyTotals,
+        period,
+        isCurrent,
+        paid,
+      },
+      { headers: { 'Cache-Control': 'private, max-age=10, stale-while-revalidate=59' } },
+    )
   } catch (error) {
     console.error('Payables data error:', error)
     return NextResponse.json(

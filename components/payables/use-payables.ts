@@ -34,6 +34,15 @@ export interface Payable {
   waiting: number
 }
 
+export interface PaidEntry {
+  paymentId: string
+  name: string
+  initials: string
+  amount: number
+  datePaid: string
+  notes: string | null
+}
+
 interface PayablesData {
   cleaners: Payable[]
   vendors: Payable[]
@@ -41,10 +50,19 @@ interface PayablesData {
     cleaners: { total: number; safe: number; waiting: number }
     vendors: { total: number; safe: number; waiting: number }
   }
+  period: string
+  isCurrent: boolean
+  paid: { cleaners: PaidEntry[]; vendors: PaidEntry[]; total: number }
+}
+
+function thisMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
 }
 
 export function usePayables() {
-  const { data, isLoading, error, mutate } = useSWR<PayablesData>("/api/payables/data", fetcher, {
+  const [month, setMonth] = useState(thisMonth)
+  const { data, isLoading, error, mutate } = useSWR<PayablesData>(`/api/payables/data?period=${month}`, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 10000,
   })
@@ -55,6 +73,16 @@ export function usePayables() {
   const vendors = data?.vendors || []
   const list = tab === "cleaners" ? cleaners : vendors
   const totals = (tab === "cleaners" ? data?.totals.cleaners : data?.totals.vendors) || { total: 0, safe: 0, waiting: 0 }
+  const isCurrent = data?.isCurrent ?? month === thisMonth()
+  const paid = data?.paid || { cleaners: [], vendors: [], total: 0 }
+  const paidForTab: PaidEntry[] = tab === "cleaners" ? paid.cleaners : paid.vendors
+
+  const shiftMonth = (delta: number) =>
+    setMonth((m) => {
+      const [y, mo] = m.split("-").map(Number)
+      const d = new Date(y, mo - 1 + delta, 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    })
 
   const selected = useMemo(
     () => list.find((p) => p.id === selectedId) || list[0] || null,
@@ -75,5 +103,11 @@ export function usePayables() {
     totals,
     selected,
     counts: { cleaners: cleaners.length, vendors: vendors.length },
+    month,
+    setMonth,
+    shiftMonth,
+    isCurrent,
+    paid,
+    paidForTab,
   }
 }

@@ -1,9 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { UserCog, Package, Loader2, Plus } from "lucide-react"
+import { UserCog, Package, Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
-import { usePayables, type Payable, type PayableAccount, type AccountStatus } from "./use-payables"
+import { usePayables, type Payable, type PayableAccount, type AccountStatus, type PaidEntry } from "./use-payables"
 import { PaymentDetail } from "./payment-detail"
 import { PersonModal } from "./person-modal"
 
@@ -13,8 +13,9 @@ const STATUS: Record<AccountStatus, { dot: string; label: string; bg: string; te
   partial: { dot: "#0EA5E9", label: "Partial", bg: "#EFF6FF", text: "#1D4ED8" },
 }
 
-function monthLabel(): string {
-  return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })
+function formatMonthLabel(period: string): string {
+  const [y, m] = period.split("-").map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
 }
 
 function Avatar({ initials }: { initials: string }) {
@@ -40,7 +41,12 @@ export function PayablesWorkspace() {
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-[20px] font-bold text-stone-900">Payables</h1>
             <div className="flex items-center gap-3">
-              <span className="hidden text-[12px] font-semibold uppercase tracking-wide text-stone-400 sm:inline">This month · {monthLabel()}</span>
+              <div className="flex items-center gap-0.5">
+                <button onClick={() => ws.shiftMonth(-1)} className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><ChevronLeft size={16} /></button>
+                <span className="min-w-[116px] text-center text-[13px] font-semibold text-stone-700">{formatMonthLabel(ws.month)}</span>
+                <button onClick={() => ws.shiftMonth(1)} disabled={ws.isCurrent}
+                  className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight size={16} /></button>
+              </div>
               <button onClick={() => setAddType(tab === "cleaners" ? "cleaner" : "vendor")}
                 className="inline-flex items-center gap-1.5 rounded-md bg-stone-900 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-stone-800">
                 <Plus size={13} /> Add {tab === "cleaners" ? "cleaner" : "vendor"}
@@ -68,21 +74,32 @@ export function PayablesWorkspace() {
           <div className="flex items-center justify-center py-20 text-stone-400"><Loader2 size={18} className="mr-2 animate-spin" /> Loading payables…</div>
         ) : error ? (
           <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">Failed to load payables.</div>
-        ) : list.length === 0 ? (
-          <div className="rounded-lg border border-stone-200 bg-white px-6 py-16 text-center">
-            <p className="text-[14px] font-semibold text-stone-700">Nothing owed to {tab === "cleaners" ? "cleaners" : "vendors"} right now</p>
-            <p className="mt-1 text-[12px] text-stone-400">Completed work that hasn&apos;t been paid will show up here.</p>
-          </div>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[1fr_400px]">
-            <div className="space-y-3">
-              {list.map((p) => (
-                <PayableCard key={p.id} payable={p} selected={selected?.id === p.id} onSelect={() => ws.setSelectedId(p.id)} />
-              ))}
-            </div>
-            <div className="lg:sticky lg:top-4 lg:self-start">
-              <PaymentDetail payable={selected} onPaid={() => ws.mutate()} />
-            </div>
+          <div className="space-y-6">
+            {ws.isCurrent ? (
+              list.length === 0 ? (
+                <div className="rounded-lg border border-stone-200 bg-white px-6 py-16 text-center">
+                  <p className="text-[14px] font-semibold text-stone-700">Nothing owed to {tab === "cleaners" ? "cleaners" : "vendors"} right now</p>
+                  <p className="mt-1 text-[12px] text-stone-400">Completed work that hasn&apos;t been paid will show up here.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4 lg:grid-cols-[1fr_400px]">
+                  <div className="space-y-3">
+                    {list.map((p) => (
+                      <PayableCard key={p.id} payable={p} selected={selected?.id === p.id} onSelect={() => ws.setSelectedId(p.id)} />
+                    ))}
+                  </div>
+                  <div className="lg:sticky lg:top-4 lg:self-start">
+                    <PaymentDetail payable={selected} onPaid={() => ws.mutate()} />
+                  </div>
+                </div>
+              )
+            ) : (
+              <div className="rounded-lg border border-stone-200 bg-white px-6 py-5 text-center text-[12px] text-stone-500">
+                Viewing {formatMonthLabel(ws.month)}. Amounts owed are tracked against the current month — below is what was paid in {formatMonthLabel(ws.month)}.
+              </div>
+            )}
+            <PaidSection entries={ws.paidForTab} period={ws.month} tab={tab} />
           </div>
         )}
       </div>
@@ -149,6 +166,36 @@ function AccountRow({ account }: { account: PayableAccount }) {
       <span className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ background: st.bg, color: st.text }}>{st.label}</span>
       <span className="w-[64px] flex-shrink-0 text-right font-mono text-[12.5px] font-semibold text-stone-800">{formatCurrency(account.owed)}</span>
     </div>
+  )
+}
+
+function PaidSection({ entries, period, tab }: { entries: PaidEntry[]; period: string; tab: "cleaners" | "vendors" }) {
+  const total = entries.reduce((s, e) => s + e.amount, 0)
+  return (
+    <section className="rounded-lg border border-stone-200 bg-white">
+      <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">{tab === "cleaners" ? "Cleaners" : "Vendors"} paid · {formatMonthLabel(period)}</span>
+        <span className="font-mono text-[13px] font-bold text-stone-700">{formatCurrency(total)}</span>
+      </div>
+      {entries.length === 0 ? (
+        <p className="px-4 py-6 text-center text-[12px] text-stone-400">No {tab === "cleaners" ? "cleaner" : "vendor"} payments recorded this month.</p>
+      ) : (
+        <div className="divide-y divide-stone-50">
+          {entries.map((e) => (
+            <div key={e.paymentId} className="flex items-center gap-3 px-4 py-2.5">
+              <Avatar initials={e.initials} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-stone-800">{e.name}</div>
+                <div className="truncate text-[11px] text-stone-400">
+                  {new Date(e.datePaid).toLocaleDateString("en-US", { month: "short", day: "numeric" })}{e.notes ? ` · ${e.notes}` : ""}
+                </div>
+              </div>
+              <span className="flex-shrink-0 font-mono text-[13px] font-semibold text-emerald-700">{formatCurrency(e.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
