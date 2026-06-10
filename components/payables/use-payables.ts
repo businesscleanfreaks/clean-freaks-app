@@ -33,6 +33,7 @@ export interface Payable {
   safe: number
   waiting: number
   payToday: number
+  fastPay: boolean
 }
 
 export interface PaidEntry {

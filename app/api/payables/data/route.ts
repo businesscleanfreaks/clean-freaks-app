@@ -37,6 +37,7 @@ interface Payable {
   safe: number
   waiting: number
   payToday: number
+  fastPay: boolean
 }
 
 function initialsOf(name: string): string {
@@ -186,6 +187,7 @@ export async function GET(request: Request) {
           safe,
           waiting: Math.max(0, total - safe),
           payToday,
+          fastPay: sub.fastPay,
         }
       })
       .filter((c) => c.accounts.length > 0)
@@ -248,6 +250,7 @@ export async function GET(request: Request) {
           safe: total,
           waiting: 0,
           payToday: 0,
+          fastPay: false,
         }
       })
       .filter((v) => v.accounts.length > 0)

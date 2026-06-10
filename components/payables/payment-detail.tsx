@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Mail, Phone, AlertTriangle, Wallet, Send } from "lucide-react"
+import { Mail, Phone, AlertTriangle, Wallet, Send, Zap } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
 import type { Payable, PayableAccount, AccountStatus } from "./use-payables"
@@ -90,6 +90,22 @@ export function PaymentDetail({ payable, onPaid }: { payable: Payable | null; on
     }
   }
 
+  const toggleFastPay = async () => {
+    if (!payable || payable.type !== "cleaner") return
+    try {
+      const res = await fetch(`/api/subcontractors/${payable.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fastPay: !payable.fastPay }),
+      })
+      if (!res.ok) { await showApiError(res, "Failed to update fast-pay"); return }
+      showSuccess(payable.fastPay ? "Fast-pay turned off" : "Fast-pay turned on")
+      onPaid()
+    } catch {
+      showError("Failed to update fast-pay")
+    }
+  }
+
   if (!payable) {
     return (
       <div className="rounded-lg border border-stone-200 bg-white px-6 py-12 text-center">
@@ -117,6 +133,13 @@ export function PaymentDetail({ payable, onPaid }: { payable: Payable | null; on
             {payable.contactPhone && <span className="inline-flex items-center gap-1"><Phone size={11} /> {payable.contactPhone}</span>}
           </div>
         </div>
+        {payable.type === "cleaner" && (
+          <button onClick={toggleFastPay} title="Residential — pay within 72h"
+            className="flex-shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+            style={payable.fastPay ? { borderColor: "#FECACA", background: "#FEF2F2", color: "#B91C1C" } : { borderColor: "#E7E5E4", background: "#fff", color: "#A8A29E" }}>
+            <Zap size={10} /> Fast-pay {payable.fastPay ? "on" : "off"}
+          </button>
+        )}
         <a href={payable.type === "cleaner" ? "/subcontractors" : "/vendors"}
           className="flex-shrink-0 text-[11px] font-semibold text-stone-400 hover:text-stone-700" title="Edit on the system-of-record page">
           Edit ↗
