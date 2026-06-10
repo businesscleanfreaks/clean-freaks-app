@@ -121,6 +121,7 @@ model Subcontractor {
   paymentCadenceNotes String?  // Free-text notes about this cleaner's payment rules
   excludeClientIds    String?  // JSON array of client IDs whose jobs are excluded from payouts
   isActive            Boolean  @default(true)
+  fastPay             Boolean  @default(false) // Residential — pay within 72h; ready work flips to "Pay today" once a clean has gone >72h unpaid
 
   schedules        Schedule[]
   jobs             Job[]

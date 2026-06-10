@@ -4,7 +4,7 @@ import useSWR from "swr"
 import { useMemo, useState } from "react"
 import { fetcher } from "@/lib/fetcher"
 
-export type AccountStatus = "safe" | "waiting" | "partial"
+export type AccountStatus = "safe" | "waiting" | "partial" | "pay-today"
 export type PayablesTab = "cleaners" | "vendors"
 
 export interface PayableAccount {
@@ -32,6 +32,7 @@ export interface Payable {
   total: number
   safe: number
   waiting: number
+  payToday: number
 }
 
 export interface PaidEntry {
@@ -47,8 +48,8 @@ interface PayablesData {
   cleaners: Payable[]
   vendors: Payable[]
   totals: {
-    cleaners: { total: number; safe: number; waiting: number }
-    vendors: { total: number; safe: number; waiting: number }
+    cleaners: { total: number; safe: number; waiting: number; payToday: number }
+    vendors: { total: number; safe: number; waiting: number; payToday: number }
   }
   period: string
   isCurrent: boolean
@@ -72,7 +73,7 @@ export function usePayables() {
   const cleaners = data?.cleaners || []
   const vendors = data?.vendors || []
   const list = tab === "cleaners" ? cleaners : vendors
-  const totals = (tab === "cleaners" ? data?.totals.cleaners : data?.totals.vendors) || { total: 0, safe: 0, waiting: 0 }
+  const totals = (tab === "cleaners" ? data?.totals.cleaners : data?.totals.vendors) || { total: 0, safe: 0, waiting: 0, payToday: 0 }
   const isCurrent = data?.isCurrent ?? month === thisMonth()
   const paid = data?.paid || { cleaners: [], vendors: [], total: 0 }
   const paidForTab: PaidEntry[] = tab === "cleaners" ? paid.cleaners : paid.vendors

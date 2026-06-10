@@ -20,6 +20,7 @@ export function PersonModal({ type, onClose, onSaved }: { type: "cleaner" | "ven
   const [zelle, setZelle] = useState("")
   const [service, setService] = useState("")
   const [notes, setNotes] = useState("")
+  const [fastPay, setFastPay] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const isCleaner = type === "cleaner"
@@ -30,7 +31,7 @@ export function PersonModal({ type, onClose, onSaved }: { type: "cleaner" | "ven
     try {
       const url = isCleaner ? "/api/subcontractors" : "/api/vendors"
       const body = isCleaner
-        ? { name: name.trim(), phone: phone.trim() || null, email: email.trim() || null, notes: notes.trim() || null }
+        ? { name: name.trim(), phone: phone.trim() || null, email: email.trim() || null, notes: notes.trim() || null, fastPay }
         : {
             name: name.trim(),
             phone: phone.trim() || null,
@@ -97,6 +98,12 @@ export function PersonModal({ type, onClose, onSaved }: { type: "cleaner" | "ven
               className="w-full resize-none rounded-md border border-stone-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-stone-400" />
           </Field>
 
+          {isCleaner && (
+            <label className="flex cursor-pointer items-start gap-2">
+              <input type="checkbox" checked={fastPay} onChange={(e) => setFastPay(e.target.checked)} className="mt-0.5 h-3.5 w-3.5 accent-stone-800" />
+              <span className="text-[12px] text-stone-700">Pay fast <span className="text-stone-400">— residential; flag "Pay today" once a clean has gone &gt;72h unpaid</span></span>
+            </label>
+          )}
           {isCleaner && (
             <p className="text-[11px] text-stone-400">Payment cadence (pay-after-client-pays, etc.) is set on the Cleaners page.</p>
           )}

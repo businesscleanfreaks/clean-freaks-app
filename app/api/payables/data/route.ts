@@ -9,7 +9,7 @@ import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
 
 export const dynamic = 'force-dynamic'
 
-type AccountStatus = 'safe' | 'waiting' | 'partial'
+type AccountStatus = 'safe' | 'waiting' | 'partial' | 'pay-today'
 
 interface PayableAccount {
   id: string
@@ -36,6 +36,7 @@ interface Payable {
   total: number
   safe: number
   waiting: number
+  payToday: number
 }
 
 function initialsOf(name: string): string {
@@ -136,12 +137,22 @@ export async function GET(request: Request) {
           .map((g) => {
             const safeOwed = safeByKey.get(g.clientId) || 0
             const waitingOwed = Math.max(0, g.owedAmount - safeOwed)
-            const status: AccountStatus = waitingOwed === 0 ? 'safe' : safeOwed === 0 ? 'waiting' : 'partial'
+            let status: AccountStatus = waitingOwed === 0 ? 'safe' : safeOwed === 0 ? 'waiting' : 'partial'
             const groupJobs = allJobs.filter((j) => ledgerKey(j) === g.clientId)
             const waitingJob = groupJobs.find((j) => !payableOf(j))
-            const reason = waitingJob
+            let reason = waitingJob
               ? getPayableStatusText(waitingJob as unknown as CadenceJobInfo, cadenceSub, scheduleFor(waitingJob.scheduleId))
               : 'Ready to pay'
+            // Fast-pay (residential): a ready account flips to "Pay today" once its
+            // latest clean has gone past 72h unpaid.
+            if (sub.fastPay && status === 'safe') {
+              const payableDates = groupJobs.filter(payableOf).map((j) => j.date.getTime())
+              if (payableDates.length > 0) {
+                const overdue = Date.now() - Math.max(...payableDates) >= 3 * 86400000
+                status = overdue ? 'pay-today' : status
+                reason = overdue ? 'Residential — pay within 72h (overdue)' : 'Residential — pay within 72h'
+              }
+            }
             return {
               id: g.clientId,
               clientName: g.clientName,
@@ -162,6 +173,7 @@ export async function GET(request: Request) {
 
         const total = ledgerAll.totalOwed
         const safe = ledgerSafe.totalOwed
+        const payToday = accounts.filter((a) => a.status === 'pay-today').reduce((s, a) => s + a.safeOwed, 0)
         return {
           id: sub.id,
           type: 'cleaner' as const,
@@ -173,6 +185,7 @@ export async function GET(request: Request) {
           total,
           safe,
           waiting: Math.max(0, total - safe),
+          payToday,
         }
       })
       .filter((c) => c.accounts.length > 0)
@@ -234,14 +247,15 @@ export async function GET(request: Request) {
           total,
           safe: total,
           waiting: 0,
+          payToday: 0,
         }
       })
       .filter((v) => v.accounts.length > 0)
 
     const sumBy = (arr: Payable[], f: (p: Payable) => number) => arr.reduce((s, x) => s + f(x), 0)
     const totals = {
-      cleaners: { total: sumBy(cleaners, (c) => c.total), safe: sumBy(cleaners, (c) => c.safe), waiting: sumBy(cleaners, (c) => c.waiting) },
-      vendors: { total: sumBy(vendors, (v) => v.total), safe: sumBy(vendors, (v) => v.safe), waiting: sumBy(vendors, (v) => v.waiting) },
+      cleaners: { total: sumBy(cleaners, (c) => c.total), safe: sumBy(cleaners, (c) => c.safe), waiting: sumBy(cleaners, (c) => c.waiting), payToday: sumBy(cleaners, (c) => c.payToday) },
+      vendors: { total: sumBy(vendors, (v) => v.total), safe: sumBy(vendors, (v) => v.safe), waiting: sumBy(vendors, (v) => v.waiting), payToday: 0 },
     }
 
     // ── PAID HISTORY for the selected month ───────────────────────────────
@@ -271,7 +285,7 @@ export async function GET(request: Request) {
       total: paidCleaners.reduce((s, x) => s + x.amount, 0) + paidVendors.reduce((s, x) => s + x.amount, 0),
     }
 
-    const emptyTotals = { cleaners: { total: 0, safe: 0, waiting: 0 }, vendors: { total: 0, safe: 0, waiting: 0 } }
+    const emptyTotals = { cleaners: { total: 0, safe: 0, waiting: 0, payToday: 0 }, vendors: { total: 0, safe: 0, waiting: 0, payToday: 0 } }
     return NextResponse.json(
       {
         cleaners: isCurrent ? cleaners : [],

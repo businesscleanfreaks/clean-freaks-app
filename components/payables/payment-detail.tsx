@@ -12,6 +12,7 @@ const STATUS: Record<AccountStatus, { dot: string; label: string; bg: string; te
   safe: { dot: "#10B981", label: "Ready", bg: "#ECFDF5", text: "#047857" },
   waiting: { dot: "#F59E0B", label: "Waiting", bg: "#FFFBEB", text: "#B45309" },
   partial: { dot: "#0EA5E9", label: "Partial", bg: "#EFF6FF", text: "#1D4ED8" },
+  "pay-today": { dot: "#DC2626", label: "Pay today", bg: "#FEF2F2", text: "#B91C1C" },
 }
 
 function isoToday(): string {

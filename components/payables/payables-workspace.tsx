@@ -11,6 +11,7 @@ const STATUS: Record<AccountStatus, { dot: string; label: string; bg: string; te
   safe: { dot: "#10B981", label: "Ready", bg: "#ECFDF5", text: "#047857" },
   waiting: { dot: "#F59E0B", label: "Waiting", bg: "#FFFBEB", text: "#B45309" },
   partial: { dot: "#0EA5E9", label: "Partial", bg: "#EFF6FF", text: "#1D4ED8" },
+  "pay-today": { dot: "#DC2626", label: "Pay today", bg: "#FEF2F2", text: "#B91C1C" },
 }
 
 function formatMonthLabel(period: string): string {
@@ -55,6 +56,7 @@ export function PayablesWorkspace() {
           </div>
           <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
             <Stat label="Total owed" value={totals.total} />
+            {totals.payToday > 0 && <Stat label="Pay today" value={totals.payToday} color="#B91C1C" />}
             <Stat label="Ready to pay" value={totals.safe} color="#047857" />
             <Stat label="Waiting on client" value={totals.waiting} color="#B45309" />
           </div>

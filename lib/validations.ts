@@ -153,6 +153,7 @@ export const createSubcontractorSchema = z.object({
   phone: z.string().max(50, 'Phone number too long').optional().nullable(),
   email: z.string().email('Invalid email format').optional().nullable().or(z.literal('')),
   notes: z.string().max(5000, 'Notes cannot exceed 5000 characters').optional().nullable(),
+  fastPay: z.boolean().optional(),
 })
 
 // Expense schemas

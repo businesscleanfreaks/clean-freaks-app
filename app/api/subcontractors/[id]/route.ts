@@ -292,7 +292,7 @@ export async function PATCH(
     const allowedFields = [
       'name', 'phone', 'email', 'notes', 'teamMembers',
       'paymentCadence', 'paymentCadenceNotes', 'excludeClientIds',
-      'isActive'
+      'isActive', 'fastPay'
     ]
 
     const data: Record<string, unknown> = {}
