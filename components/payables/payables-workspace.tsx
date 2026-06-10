@@ -1,8 +1,9 @@
 "use client"
 
-import { UserCog, Package, Mail, Phone, AlertTriangle, Loader2 } from "lucide-react"
+import { UserCog, Package, Loader2 } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { usePayables, type Payable, type PayableAccount, type AccountStatus } from "./use-payables"
+import { PaymentDetail } from "./payment-detail"
 
 const STATUS: Record<AccountStatus, { dot: string; label: string; bg: string; text: string }> = {
   safe: { dot: "#10B981", label: "Ready", bg: "#ECFDF5", text: "#047857" },
@@ -71,7 +72,7 @@ export function PayablesWorkspace() {
               ))}
             </div>
             <div className="lg:sticky lg:top-4 lg:self-start">
-              <PayableDetail payable={selected} />
+              <PaymentDetail payable={selected} onPaid={() => ws.mutate()} />
             </div>
           </div>
         )}
@@ -140,55 +141,3 @@ function AccountRow({ account }: { account: PayableAccount }) {
   )
 }
 
-function PayableDetail({ payable }: { payable: Payable | null }) {
-  if (!payable) {
-    return (
-      <div className="rounded-lg border border-stone-200 bg-white px-6 py-12 text-center text-[13px] text-stone-400">
-        Select a payable to see the breakdown.
-      </div>
-    )
-  }
-  return (
-    <div className="rounded-lg border border-stone-200 bg-white">
-      <div className="flex items-start gap-3 border-b border-stone-100 px-4 pt-4 pb-3">
-        <Avatar initials={payable.initials} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold text-stone-900">{payable.name}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-stone-500">
-            {payable.zelleEmail ? (
-              <span className="inline-flex items-center gap-1 truncate"><Mail size={11} /> {payable.zelleEmail}</span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-amber-700"><AlertTriangle size={11} /> No Zelle email</span>
-            )}
-            {payable.contactPhone && <span className="inline-flex items-center gap-1"><Phone size={11} /> {payable.contactPhone}</span>}
-          </div>
-        </div>
-        <div className="flex-shrink-0 text-right">
-          <div className="font-mono text-[18px] font-bold text-stone-900">{formatCurrency(payable.total)}</div>
-          <div className="text-[10px] uppercase tracking-wide text-stone-400">owed</div>
-        </div>
-      </div>
-
-      <div className="space-y-2 p-4">
-        {payable.accounts.map((acc) => {
-          const st = STATUS[acc.status]
-          return (
-            <div key={acc.id} className="rounded-md border border-stone-100 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-[13px] font-medium text-stone-800">{acc.clientName}</span>
-                <span className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ background: st.bg, color: st.text }}>{st.label}</span>
-              </div>
-              <div className="mt-1 flex items-center justify-between">
-                <span className="text-[11px]" style={{ color: st.text }}>{acc.reason}</span>
-                <span className="font-mono text-[14px] font-bold text-stone-900">{formatCurrency(acc.owed)}</span>
-              </div>
-              {acc.status === "partial" && (
-                <div className="mt-1 text-[10px] text-stone-400">{formatCurrency(acc.safeOwed)} ready · {formatCurrency(acc.waitingOwed)} waiting</div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
