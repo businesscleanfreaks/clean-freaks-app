@@ -29,6 +29,13 @@ function formatReadableDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
 }
 
+// 1 → "1st", 2 → "2nd", 21 → "21st", 31 → "31st" (handles the 11–13 exceptions).
+function ordinalDay(day: number): string {
+  const s = ["th", "st", "nd", "rd"]
+  const v = day % 100
+  return `${day}${s[(v - 20) % 10] || s[v] || s[0]}`
+}
+
 export interface ScheduleRecord {
   id: string
   frequency: string
@@ -1044,6 +1051,7 @@ function ScheduleFormInner({
               
               {/* Fixed Dates Options */}
               {monthlyPatternType === 'FIXED_DATES' && (
+                <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-blue-900">First date</Label>
@@ -1055,9 +1063,9 @@ function ScheduleFormInner({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
                           <SelectItem key={day} value={day.toString()}>
-                            {day === 1 ? '1st' : day === 2 ? '2nd' : day === 3 ? '3rd' : `${day}th`}
+                            {ordinalDay(day)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1073,17 +1081,23 @@ function ScheduleFormInner({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
                           <SelectItem key={day} value={day.toString()}>
-                            {day === 1 ? '1st' : day === 2 ? '2nd' : day === 3 ? '3rd' : `${day}th`}
+                            {ordinalDay(day)}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
+                {(fixedDates[0] > 28 || fixedDates[1] > 28) && (
+                  <p className="text-xs text-blue-700">
+                    Months without the {ordinalDay(Math.max(fixedDates[0], fixedDates[1]))} use that month&apos;s last day instead.
+                  </p>
+                )}
+              </div>
               )}
-              
+
               {/* Nth Weekday Options */}
               {monthlyPatternType === 'NTH_WEEKDAY' && (
                 <div className="space-y-4">
