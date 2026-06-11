@@ -1837,9 +1837,12 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
             "!left-0 !right-0 !top-auto !bottom-0 !w-full !max-w-none",
             "!translate-x-0 !translate-y-0",
             "!rounded-t-[20px] !rounded-b-none",
-            // Desktop (md+): restore centered dialog
+            // Desktop (md+): restore centered dialog. The schedule-change panel
+            // hosts a dense 2-column form, so give it more room (480px clips it).
             "md:!left-1/2 md:!top-1/2 md:!bottom-auto md:!right-auto",
-            "md:!w-[min(92vw,480px)] md:!max-w-[480px] md:!max-h-[90vh]",
+            activeQuickFixPanel === 'schedule'
+              ? "md:!w-[min(94vw,720px)] md:!max-w-[720px] md:!max-h-[90vh]"
+              : "md:!w-[min(92vw,480px)] md:!max-w-[480px] md:!max-h-[90vh]",
             "md:!-translate-x-1/2 md:!-translate-y-1/2",
             "md:!rounded-[12px]",
           ].join(" ")}
