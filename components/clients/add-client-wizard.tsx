@@ -88,7 +88,9 @@ function generateId() {
 }
 
 function clampDayOfMonth(value: number) {
-  return Math.min(28, Math.max(1, Number.isFinite(value) ? value : 1))
+  // 1-31. The backend clamps a day past a month's end to its last day (utcDayOfMonth)
+  // or skips it (2x-monthly), so 29-31 are safe to allow here.
+  return Math.min(31, Math.max(1, Number.isFinite(value) ? value : 1))
 }
 
 function normalizeTwiceMonthlyDays(days?: number[]) {
@@ -200,24 +202,28 @@ function MonthlyWeekdayPicker({
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {rows.map((row, idx) => (
-        <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      {/* One weekday for all occurrences — the pattern is "Nth & Mth <weekday>",
+          so the cleaner comes the same day of the week both times. */}
+      <select
+        value={sharedWeekday}
+        onChange={e => setWeekday(parseInt(e.target.value) || 0)}
+        style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 12, outline: 'none', background: '#fff', color: '#0F172A', width: '100%' }}
+      >
+        {WEEKDAY_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+      </select>
+      {/* Which week(s) of the month */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {rows.map((row, idx) => (
           <select
+            key={idx}
             value={row.ordinal}
             onChange={e => setOrdinal(idx, parseInt(e.target.value) || 1)}
             style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 12, outline: 'none', background: '#fff', color: '#0F172A', flex: 1 }}
           >
             {ORDINAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <select
-            value={row.weekday}
-            onChange={e => setWeekday(parseInt(e.target.value) || 0)}
-            style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 12, outline: 'none', background: '#fff', color: '#0F172A', flex: 1 }}
-          >
-            {WEEKDAY_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-          </select>
-        </div>
-      ))}
+        ))}
+      </div>
       <div style={{ fontSize: 10.5, color: '#0D9488', fontWeight: 500 }}>
         {rows.map(r => {
           const ord = ORDINAL_OPTIONS.find(o => o.value === r.ordinal)?.label || ''
