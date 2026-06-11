@@ -624,7 +624,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
 
     return (
       <div
-        className="flex h-full min-h-0 flex-col rounded-[18px] p-4"
+        className={`flex ${!isMobile && activeQuickFixPanel === 'schedule' ? '' : 'h-full'} min-h-0 flex-col rounded-[18px] p-4`}
         style={{
           background: 'linear-gradient(180deg, #FEFFFE 0%, #F7FBFA 100%)',
           border: '1px solid rgba(15,118,110,0.16)',
@@ -965,7 +965,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
         )}
 
         {activeQuickFixPanel === 'schedule' && recurringScheduleRecord && (
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className={!isMobile ? "pr-1" : "min-h-0 flex-1 overflow-y-auto pr-1"}>
             <ScheduleForm
               locationId={job.location.id}
               clientBillingType={clientBillingType}
@@ -2472,7 +2472,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
             })()}
 
             {/* ── Scrollable body ── */}
-            <div className={isQuickFixMode ? "flex-1 min-h-0 overflow-hidden px-5 py-4 space-y-4" : "flex-1 px-5 py-4"}>
+            <div className={isQuickFixMode ? (activeQuickFixPanel === 'schedule' ? "px-5 py-4 space-y-4" : "flex-1 min-h-0 overflow-hidden px-5 py-4 space-y-4") : "flex-1 px-5 py-4"}>
 
               {/* Invoiced / Paid warnings */}
               {hasFinalInvoice && (

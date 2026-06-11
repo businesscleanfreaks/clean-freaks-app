@@ -172,7 +172,11 @@ export function ScheduleForm({
 
 function getDefaultStartDate(mode: ScheduleFormMode, schedule?: ScheduleRecord, futureStartDate?: string | Date) {
   if (mode === 'future') {
-    return formatDateForInput(futureStartDate || new Date())
+    // A "going forward" change can't start in the past — the server requires
+    // today or later. If opened from a past/completed clean, default to today.
+    const todayStr = formatDateForInput(new Date())
+    const wanted = formatDateForInput(futureStartDate || new Date())
+    return wanted < todayStr ? todayStr : wanted
   }
   if (schedule?.startDate) {
     return formatDateForInput(schedule.startDate)
@@ -533,19 +537,19 @@ function ScheduleFormInner({
   }
 
   // Live preview: as the future-change form is edited, refresh the dated diff
-  // (debounced + silent) so the clean-by-clean preview you see is exactly what
-  // Confirm will save — no separate "Preview" click needed.
+  // (debounced + silent) so the clean-by-clean preview reflects the form. The
+  // "updating…" hint shows while it's in flight; Confirm itself is gated by
+  // futureValidity (below), not this, so it never depends on the preview call.
   useEffect(() => {
     if (!isFutureChange || !schedule) return
-    // The moment any field changes, the on-screen diff no longer matches the form
-    // — mark it stale so Confirm is blocked until the fresh preview lands. If the
-    // form is invalid/incomplete it stays stale (you can't confirm a bad change).
     setLiveUpdating(true)
     const result = buildValidatedPayload()
-    if (!result.success) return
-    const startDate = new Date(formData.startDate + 'T12:00:00Z')
-    const currentStart = schedule.startDate ? new Date(schedule.startDate) : null
-    if (currentStart && startDate <= new Date(currentStart)) return
+    if (!result.success) { setLiveUpdating(false); return }
+    // The server rejects a past start, or one before the current plan's start —
+    // don't fire a doomed call (futureValidity surfaces the reason on-screen).
+    const todayStr = formatDateForInput(new Date())
+    if (!formData.startDate || formData.startDate < todayStr) { setLiveUpdating(false); return }
+    if (schedule.startDate && formData.startDate < formatDateForInput(schedule.startDate)) { setLiveUpdating(false); return }
     const data = toDataToSend(result.data as Record<string, unknown>)
     const t = setTimeout(() => { previewFutureScheduleChange(data, true) }, 350)
     return () => clearTimeout(t)
@@ -609,6 +613,29 @@ function ScheduleFormInner({
     setPreview(null)
     setFuturePreview(null)
     setPendingSaveData(null)
+  }
+
+  // Save a future change directly from the current form state (not the live
+  // preview), so Confirm always saves exactly what's on screen and never depends
+  // on the preview request having succeeded. Validates with a visible reason.
+  const handleConfirmFutureChange = async () => {
+    const { showError } = await import('@/lib/toast')
+    const todayStr = formatDateForInput(new Date())
+    if (!formData.startDate || formData.startDate < todayStr) {
+      showError('Pick a start date of today or later — a going-forward change can’t start in the past.')
+      return
+    }
+    if (schedule?.startDate && formData.startDate < formatDateForInput(schedule.startDate)) {
+      showError('Start date must be on or after the current plan’s start date.')
+      return
+    }
+    const result = buildValidatedPayload()
+    if (!result.success) {
+      const { formatZodErrors } = await import('@/lib/validations')
+      showError(formatZodErrors(result.error)[0] || 'Please complete all required fields.')
+      return
+    }
+    await saveFutureSchedule(toDataToSend(result.data as Record<string, unknown>))
   }
 
   const clientRateLabel = formData.clientPayType === 'FLAT_RATE'
@@ -681,6 +708,20 @@ function ScheduleFormInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFutureChange, schedule, formData, monthlyPatternType, subcontractors])
 
+  // Whether a future change can be confirmed right now, with a plain reason when
+  // not — so Confirm is enabled when actionable and explains itself when greyed.
+  const futureValidity = useMemo<{ ok: boolean; reason: string | null }>(() => {
+    if (!isFutureChange) return { ok: true, reason: null }
+    if (!formData.startDate) return { ok: false, reason: 'Set a start date.' }
+    if (formData.startDate < formatDateForInput(new Date())) return { ok: false, reason: 'Start date must be today or later.' }
+    if (schedule?.startDate && formData.startDate < formatDateForInput(schedule.startDate)) {
+      return { ok: false, reason: 'Start must be on or after the current plan’s start.' }
+    }
+    if (!buildValidatedPayload().success) return { ok: false, reason: 'Fill in all required fields.' }
+    return { ok: true, reason: null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFutureChange, schedule, formData, monthlyPatternType, fixedDates, nthWeekday, nthWeeks])
+
   return (
     <form onSubmit={handleSubmit}>
       <div className={embedded ? "space-y-5" : `rounded-xl border-2 ${schedule ? 'border-teal-200' : 'border-gray-200'} overflow-hidden`}>
@@ -725,14 +766,14 @@ function ScheduleFormInner({
             </div>
           )}
 
-          {futurePreview && isFutureChange && (
+          {isFutureChange && (
             <div className={`rounded-lg border-2 p-4 space-y-3 ${
-              futurePreview.futureProtectedJobsCount > 0 || futurePreview.overlappingScheduleCount > 0
+              futurePreview && (futurePreview.futureProtectedJobsCount > 0 || futurePreview.overlappingScheduleCount > 0)
                 ? 'border-amber-300 bg-amber-50'
                 : 'border-blue-200 bg-blue-50'
             }`}>
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span className="font-semibold text-gray-900">What this change does</span>
@@ -757,6 +798,8 @@ function ScheduleFormInner({
                 </div>
               )}
 
+              {futurePreview ? (
+                <>
               <div className="space-y-1.5 text-sm">
                 <div className="text-gray-700">
                   The current schedule will end on{' '}
@@ -814,6 +857,16 @@ function ScheduleFormInner({
                   <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-500">Clean-by-clean preview</div>
                   <ScheduleDiffPreview diff={futurePreview.dateDiff} />
                 </div>
+              )}
+                </>
+              ) : (
+                <p className="text-[12px] italic text-gray-500">
+                  {futureValidity.reason
+                    ? `${futureValidity.reason} The clean-by-clean preview appears once the new plan is valid.`
+                    : liveUpdating
+                      ? 'Calculating the clean-by-clean preview…'
+                      : 'The clean-by-clean preview will appear here.'}
+                </p>
               )}
 
               <p className="flex items-center gap-1.5 pt-0.5 text-[11px] text-gray-500">
@@ -1351,6 +1404,7 @@ function ScheduleFormInner({
                 type="date"
                 value={formData.startDate}
                 onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                min={isFutureChange ? formatDateForInput(new Date()) : undefined}
                 required
               />
               {isFutureChange && formData.startDate && (
@@ -1481,11 +1535,11 @@ function ScheduleFormInner({
           )}
 
           {isFutureChange ? (
-            <div className="flex items-center gap-4 pt-4">
+            <div className="flex items-center gap-3 pt-4">
               <Button
                 type="button"
-                onClick={handleConfirmSave}
-                disabled={loading || !futurePreview || liveUpdating}
+                onClick={handleConfirmFutureChange}
+                disabled={loading || !futureValidity.ok}
                 className="bg-teal-600 hover:bg-teal-700"
               >
                 {loading ? 'Saving…' : 'Confirm change'}
@@ -1493,9 +1547,11 @@ function ScheduleFormInner({
               <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
                 Cancel
               </Button>
-              {!loading && liveUpdating && (
+              {!loading && futureValidity.reason ? (
+                <span className="text-[11px] text-amber-600">{futureValidity.reason}</span>
+              ) : !loading && liveUpdating ? (
                 <span className="text-[11px] text-gray-400">Updating preview…</span>
-              )}
+              ) : null}
             </div>
           ) : (!preview && !futurePreview) && (
             <div className="flex gap-4 pt-4">
