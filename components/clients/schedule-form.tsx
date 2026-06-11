@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -196,6 +196,7 @@ function ScheduleFormInner({
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [futurePreview, setFuturePreview] = useState<FutureChangePreviewData | null>(null)
   const [pendingSaveData, setPendingSaveData] = useState<Record<string, unknown> | null>(null)
+  const [liveUpdating, setLiveUpdating] = useState(false)
   const [subcontractors, setSubcontractors] = useState<Array<{ id: string; name: string; isActive?: boolean }>>([])
   const [carryForwardRecurringAddOns, setCarryForwardRecurringAddOns] = useState(true)
   const isFutureChange = mode === 'future'
@@ -314,9 +315,42 @@ function ScheduleFormInner({
     }))
   }
 
+  // Build + validate the payload from the current form state. Shared by the live
+  // preview so the diff you see is exactly what Confirm will save.
+  const buildValidatedPayload = () => {
+    const schema = isFutureChange ? createScheduleSchema : schedule ? updateScheduleSchema : createScheduleSchema
+    const startDate = new Date(formData.startDate + 'T12:00:00Z')
+    const endDate = formData.endDate ? new Date(formData.endDate + 'T12:00:00Z') : null
+    let monthlyPattern: string | null = null
+    if (formData.frequency === '2X_MONTHLY') {
+      monthlyPattern = monthlyPatternType === 'FIXED_DATES'
+        ? JSON.stringify({ type: 'FIXED_DATES', dates: fixedDates })
+        : JSON.stringify({ type: 'NTH_WEEKDAY', weekday: nthWeekday, weeks: nthWeeks })
+    } else if (formData.frequency === 'MONTHLY' && monthlyPatternType === 'NTH_WEEKDAY') {
+      monthlyPattern = JSON.stringify({ type: 'NTH_WEEKDAY', weekday: nthWeekday, weeks: nthWeeks })
+    }
+    return schema.safeParse({
+      ...formData,
+      daysOfWeek: (formData.frequency === '2X_MONTHLY' || (formData.frequency === 'MONTHLY' && monthlyPatternType === 'NTH_WEEKDAY')) ? null : JSON.stringify(formData.daysOfWeek),
+      monthlyPattern,
+      defaultClientRate: parseFloat(formData.defaultClientRate),
+      defaultSubcontractorRate: parseFloat(formData.defaultSubcontractorRate),
+      clientPayType: formData.clientPayType,
+      subcontractorPayType: formData.subcontractorPayType,
+      startDate,
+      endDate,
+      subcontractorId: formData.subcontractorId || null,
+    })
+  }
+  const toDataToSend = (data: Record<string, unknown>) => ({
+    ...data,
+    startDate: data.startDate instanceof Date ? data.startDate.toISOString() : data.startDate,
+    endDate: data.endDate instanceof Date ? data.endDate.toISOString() : data.endDate,
+  })
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     // Client-side validation
     const schema = isFutureChange
       ? createScheduleSchema
@@ -466,9 +500,10 @@ function ScheduleFormInner({
     }
   }
 
-  const previewFutureScheduleChange = async (dataToSend: Record<string, unknown>) => {
+  const previewFutureScheduleChange = async (dataToSend: Record<string, unknown>, silent = false) => {
     if (!schedule) return
-    setPreviewLoading(true)
+    if (silent) setLiveUpdating(true)
+    else setPreviewLoading(true)
     try {
       const response = await fetch(`/api/schedules/${schedule.id}/change-going-forward/preview`, {
         method: 'POST',
@@ -480,7 +515,8 @@ function ScheduleFormInner({
       })
 
       if (!response.ok) {
-        await showApiError(response, 'Failed to preview future schedule change')
+        // Silent (live) calls stay quiet — the form may be mid-edit/invalid.
+        if (!silent) await showApiError(response, 'Failed to preview future schedule change')
         return
       }
 
@@ -489,11 +525,32 @@ function ScheduleFormInner({
       setPendingSaveData(dataToSend)
     } catch (error) {
       logger.error('Error previewing future schedule change:', error)
-      showError('Failed to preview future schedule change. Please try again.')
+      if (!silent) showError('Failed to preview future schedule change. Please try again.')
     } finally {
-      setPreviewLoading(false)
+      if (silent) setLiveUpdating(false)
+      else setPreviewLoading(false)
     }
   }
+
+  // Live preview: as the future-change form is edited, refresh the dated diff
+  // (debounced + silent) so the clean-by-clean preview you see is exactly what
+  // Confirm will save — no separate "Preview" click needed.
+  useEffect(() => {
+    if (!isFutureChange || !schedule) return
+    // The moment any field changes, the on-screen diff no longer matches the form
+    // — mark it stale so Confirm is blocked until the fresh preview lands. If the
+    // form is invalid/incomplete it stays stale (you can't confirm a bad change).
+    setLiveUpdating(true)
+    const result = buildValidatedPayload()
+    if (!result.success) return
+    const startDate = new Date(formData.startDate + 'T12:00:00Z')
+    const currentStart = schedule.startDate ? new Date(schedule.startDate) : null
+    if (currentStart && startDate <= new Date(currentStart)) return
+    const data = toDataToSend(result.data as Record<string, unknown>)
+    const t = setTimeout(() => { previewFutureScheduleChange(data, true) }, 350)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFutureChange, schedule, formData, monthlyPatternType, fixedDates, nthWeekday, nthWeeks, carryForwardRecurringAddOns])
 
   const saveSchedule = async (dataToSend: Record<string, unknown>) => {
     setLoading(true)
@@ -580,6 +637,50 @@ function ScheduleFormInner({
       ? 'Updating...'
       : 'Creating...'
 
+  // Plain-English headline of what's changing vs the current plan — the one-line
+  // "here's what you're about to do" so a frequency/cleaner/pay switch is obvious.
+  const changeSummary = useMemo(() => {
+    if (!isFutureChange || !schedule) return null
+    const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const parts: string[] = []
+
+    if (schedule.frequency !== formData.frequency) {
+      parts.push(`${FREQUENCY_LABELS[schedule.frequency as ScheduleFrequency] || schedule.frequency} → ${FREQUENCY_LABELS[formData.frequency] || formData.frequency}`)
+    }
+
+    const usesWeekdays = formData.frequency !== '2X_MONTHLY' && !(formData.frequency === 'MONTHLY' && monthlyPatternType === 'NTH_WEEKDAY')
+    const oldDays = parseDaysOfWeek(schedule.daysOfWeek).slice().sort().join(',')
+    const newDays = formData.daysOfWeek.slice().sort().join(',')
+    if (usesWeekdays && oldDays !== newDays) {
+      const names = formData.daysOfWeek.slice().sort().map((d: number) => DAY[d]).join(', ')
+      parts.push(`days → ${names || 'none set'}`)
+    }
+
+    const oldSub = schedule.subcontractorId || null
+    const newSub = formData.subcontractorId || null
+    if (oldSub !== newSub) {
+      const name = subcontractors.find((s) => s.id === newSub)?.name || 'Unassigned'
+      parts.push(`cleaner → ${name}`)
+    }
+
+    const newCRate = formData.defaultClientRate === '' ? null : parseFloat(formData.defaultClientRate)
+    if (schedule.clientPayType !== formData.clientPayType) {
+      parts.push(`client billing → ${formData.clientPayType === 'FLAT_RATE' ? 'monthly flat' : 'per clean'}${newCRate != null && !Number.isNaN(newCRate) ? ` $${newCRate}` : ''}`)
+    } else if (newCRate != null && !Number.isNaN(newCRate) && newCRate !== (schedule.defaultClientRate ?? null)) {
+      parts.push(`client rate → $${newCRate}`)
+    }
+
+    const newSRate = formData.defaultSubcontractorRate === '' ? null : parseFloat(formData.defaultSubcontractorRate)
+    if (schedule.subcontractorPayType !== formData.subcontractorPayType) {
+      parts.push(`cleaner pay → ${formData.subcontractorPayType === 'FLAT_RATE' ? 'monthly flat' : 'per clean'}${newSRate != null && !Number.isNaN(newSRate) ? ` $${newSRate}` : ''}`)
+    } else if (newSRate != null && !Number.isNaN(newSRate) && newSRate !== (schedule.defaultSubcontractorRate ?? null)) {
+      parts.push(`cleaner pay → $${newSRate}`)
+    }
+
+    return { parts, when: formData.startDate ? formatReadableDate(formData.startDate) : null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFutureChange, schedule, formData, monthlyPatternType, subcontractors])
+
   return (
     <form onSubmit={handleSubmit}>
       <div className={embedded ? "space-y-5" : `rounded-xl border-2 ${schedule ? 'border-teal-200' : 'border-gray-200'} overflow-hidden`}>
@@ -634,8 +735,27 @@ function ScheduleFormInner({
                 <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="font-semibold text-gray-900">Review Future Change</span>
+                <span className="font-semibold text-gray-900">What this change does</span>
+                {liveUpdating && (
+                  <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-gray-400">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" /> updating…
+                  </span>
+                )}
               </div>
+
+              {/* Plain-English headline of the change — updates live as you edit */}
+              {changeSummary && (
+                <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2.5">
+                  {changeSummary.parts.length === 0 ? (
+                    <p className="text-[13px] text-gray-500">No changes yet — adjust the plan below and you&apos;ll see the effect here live.</p>
+                  ) : (
+                    <p className="text-[13px] leading-snug text-gray-800">
+                      <span className="font-semibold">{changeSummary.parts.join('  ·  ')}</span>
+                      {changeSummary.when && <span className="text-gray-500"> — starting {changeSummary.when}</span>}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1.5 text-sm">
                 <div className="text-gray-700">
@@ -696,19 +816,10 @@ function ScheduleFormInner({
                 </div>
               )}
 
-              <div className="flex gap-3 pt-1">
-                <Button
-                  type="button"
-                  onClick={handleConfirmSave}
-                  disabled={loading}
-                  className="bg-teal-600 hover:bg-teal-700"
-                >
-                  {loading ? 'Saving...' : 'Confirm Future Change'}
-                </Button>
-                <Button type="button" variant="outline" onClick={handleCancelPreview} disabled={loading}>
-                  Go Back
-                </Button>
-              </div>
+              <p className="flex items-center gap-1.5 pt-0.5 text-[11px] text-gray-500">
+                <svg className="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                Updates live as you edit. When it looks right, hit <span className="font-semibold text-gray-700">Confirm change</span> at the bottom.
+              </p>
             </div>
           )}
 
@@ -1369,7 +1480,24 @@ function ScheduleFormInner({
             </div>
           )}
 
-          {(!preview && !futurePreview) && (
+          {isFutureChange ? (
+            <div className="flex items-center gap-4 pt-4">
+              <Button
+                type="button"
+                onClick={handleConfirmSave}
+                disabled={loading || !futurePreview || liveUpdating}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                {loading ? 'Saving…' : 'Confirm change'}
+              </Button>
+              <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+                Cancel
+              </Button>
+              {!loading && liveUpdating && (
+                <span className="text-[11px] text-gray-400">Updating preview…</span>
+              )}
+            </div>
+          ) : (!preview && !futurePreview) && (
             <div className="flex gap-4 pt-4">
               <Button type="submit" disabled={loading || previewLoading}>
                 {previewLoading ? 'Checking...' : loading ? savingLabel : submitLabel}
