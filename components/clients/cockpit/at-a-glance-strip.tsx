@@ -149,7 +149,7 @@ export function AtAGlanceStrip({
 
   return (
     <div className="bg-white border-b border-gray-200">
-      <div className="mx-auto w-full max-w-[1080px] px-3 sm:px-5">
+      <div className="px-4 sm:px-7">
         <div className="grid" style={{ gridTemplateColumns: `repeat(${slots.length}, minmax(0,1fr))` }}>
           {slots.map((s, i) => (
             <button

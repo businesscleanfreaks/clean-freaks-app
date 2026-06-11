@@ -128,7 +128,7 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
 
         {/* Cockpit Tabs */}
         <div className="bg-white border-b border-gray-200">
-          <div className="mx-auto w-full max-w-[1080px] px-3 sm:px-5">
+          <div className="px-4 sm:px-7">
             <div className="flex items-center gap-1 overflow-x-auto">
               {TABS.map(tab => {
                 const isActive = activeTab === tab.key
@@ -154,7 +154,7 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
         </div>
 
         {/* Main Body */}
-        <div className="mx-auto w-full max-w-[1080px] px-3 sm:px-5 py-5">
+        <div className="px-4 sm:px-7 py-5">
           {activeTab === 'overview' && <OverviewTab state={state} onJumpToTab={setActiveTab} />}
           {activeTab === 'schedule' && (
             <div className="space-y-3">
