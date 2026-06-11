@@ -22,6 +22,13 @@ import { createScheduleSchema, updateScheduleSchema } from "@/lib/validations"
 import { dateInputValue as formatDateForInput } from "@/lib/date-only"
 import { ScheduleDiffPreview, type ScheduleDiff } from "./cockpit/schedule-diff-preview"
 
+// Plain-language date for the "when does this change start" messaging.
+function formatReadableDate(iso: string): string {
+  if (!iso) return ""
+  const d = new Date(iso + "T12:00:00")
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+}
+
 export interface ScheduleRecord {
   id: string
   frequency: string
@@ -1225,7 +1232,7 @@ function ScheduleFormInner({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="startDate">
-                Start Date *
+                {isFutureChange ? 'New plan starts on *' : 'Start Date *'}
                 <InlineHelp content="schedule-start-date" />
               </Label>
               <Input
@@ -1235,6 +1242,11 @@ function ScheduleFormInner({
                 onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
                 required
               />
+              {isFutureChange && formData.startDate && (
+                <p className="text-xs font-medium text-blue-700">
+                  Switches on {formatReadableDate(formData.startDate)}. Cleans before then keep the current plan.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="endDate">
