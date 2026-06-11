@@ -36,6 +36,17 @@ function ordinalDay(day: number): string {
   return `${day}${s[(v - 20) % 10] || s[v] || s[0]}`
 }
 
+// "09:30" → "9:30 AM". Times are stored as 24h "HH:MM".
+function formatTime12(t: string): string {
+  if (!t) return "—"
+  const [hStr, mStr] = t.split(":")
+  const h = parseInt(hStr, 10)
+  if (Number.isNaN(h)) return t
+  const ampm = h < 12 ? "AM" : "PM"
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${h12}:${(mStr || "00").padStart(2, "0")} ${ampm}`
+}
+
 export interface ScheduleRecord {
   id: string
   frequency: string
@@ -711,9 +722,36 @@ function ScheduleFormInner({
       parts.push(`cleaner pay → $${newSRate}`)
     }
 
+    // Time
+    const timeChanged = (schedule.timeType || 'SPECIFIC') !== formData.timeType || (
+      formData.timeType === 'SPECIFIC'
+        ? (schedule.startTime || '') !== (formData.startTime || '')
+        : (schedule.startWindowBegin || '') !== (formData.startWindowBegin || '') || (schedule.startWindowEnd || '') !== (formData.startWindowEnd || '')
+    )
+    if (timeChanged) {
+      parts.push(`time → ${formData.timeType === 'SPECIFIC' ? formatTime12(formData.startTime) : `${formatTime12(formData.startWindowBegin)}–${formatTime12(formData.startWindowEnd)}`}`)
+    }
+
+    // End date
+    const oldEnd = schedule.endDate ? formatDateForInput(schedule.endDate) : ''
+    if (oldEnd !== (formData.endDate || '')) {
+      parts.push(formData.endDate ? `ends ${formatReadableDate(formData.endDate)}` : 'no end date')
+    }
+
+    // Monthly pattern (only for the monthly-style frequencies)
+    if (formData.frequency === '2X_MONTHLY' || formData.frequency === 'MONTHLY') {
+      const old = parseMonthlyPattern(schedule)
+      const patternChanged = old.type !== monthlyPatternType || (
+        monthlyPatternType === 'FIXED_DATES'
+          ? (old.dates[0] || 0) !== fixedDates[0] || (old.dates[1] || 0) !== fixedDates[1]
+          : old.weekday !== nthWeekday || old.weeks.slice().join(',') !== nthWeeks.slice().join(',')
+      )
+      if (patternChanged) parts.push('monthly pattern changed')
+    }
+
     return { parts, when: formData.startDate ? formatReadableDate(formData.startDate) : null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFutureChange, schedule, formData, monthlyPatternType, subcontractors])
+  }, [isFutureChange, schedule, formData, monthlyPatternType, fixedDates, nthWeekday, nthWeeks, subcontractors])
 
   // Whether a future change can be confirmed right now, with a plain reason when
   // not — so Confirm is enabled when actionable and explains itself when greyed.
@@ -725,9 +763,10 @@ function ScheduleFormInner({
       return { ok: false, reason: 'Start must be on or after the current plan’s start.' }
     }
     if (!buildValidatedPayload().success) return { ok: false, reason: 'Fill in all required fields.' }
+    if (changeSummary && changeSummary.parts.length === 0) return { ok: false, reason: 'No changes yet — adjust the plan to apply.' }
     return { ok: true, reason: null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFutureChange, schedule, formData, monthlyPatternType, fixedDates, nthWeekday, nthWeeks])
+  }, [isFutureChange, schedule, formData, monthlyPatternType, fixedDates, nthWeekday, nthWeeks, changeSummary])
 
   return (
     <form onSubmit={handleSubmit}>
@@ -805,7 +844,7 @@ function ScheduleFormInner({
                 </div>
               )}
 
-              {futurePreview ? (
+              {changeSummary && changeSummary.parts.length === 0 ? null : futurePreview ? (
                 <>
               <div className="space-y-1.5 text-sm">
                 <div className="text-gray-700">
