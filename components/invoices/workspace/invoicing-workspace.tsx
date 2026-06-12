@@ -27,7 +27,7 @@ const STATUS_BADGE: Record<string, React.CSSProperties> = {
 
 export function InvoicingWorkspace() {
   const ws = useWorkspace()
-  const [confirmSendAll, setConfirmSendAll] = useState(false)
+  const [confirmSend, setConfirmSend] = useState<{ targets: WorkspaceInvoice[]; isAll: boolean } | null>(null)
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
@@ -87,8 +87,7 @@ export function InvoicingWorkspace() {
       ws.mutate()
     }
   }
-  const handleSendAll = () => { setConfirmSendAll(false); runBatch(ws.verifiedReady) }
-  const handleSendSelected = () => runBatch(ws.checkedList)
+  const confirmAndSend = () => { if (!confirmSend) return; const t = confirmSend.targets; setConfirmSend(null); runBatch(t) }
 
   const verifiedTotal = ws.verifiedReady.reduce((s, i) => s + i.total, 0)
   const checkedTotal = ws.checkedList.reduce((s, i) => s + i.total, 0)
@@ -151,7 +150,7 @@ export function InvoicingWorkspace() {
                 <div className="text-[12px] text-stone-600">
                   <span className="font-semibold text-stone-800">{ws.verifiedReady.length} verified</span> · {formatCurrency(verifiedTotal)}
                 </div>
-                <button onClick={() => setConfirmSendAll(true)} disabled={!!batch}
+                <button onClick={() => setConfirmSend({ targets: ws.verifiedReady, isAll: true })} disabled={!!batch}
                   className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60">
                   <Send size={12} /> Send all
                 </button>
@@ -200,7 +199,7 @@ export function InvoicingWorkspace() {
 
           {ws.checkedList.length > 0 && (
             <div className="border-t border-stone-200 bg-white p-2.5">
-              <button onClick={handleSendSelected} disabled={!!batch}
+              <button onClick={() => setConfirmSend({ targets: ws.checkedList, isAll: false })} disabled={!!batch}
                 className="flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
                 style={{ background: "#0D9488" }}>
                 <Send size={13} /> Send {ws.checkedList.length} selected · {formatCurrency(checkedTotal)}
@@ -253,19 +252,19 @@ export function InvoicingWorkspace() {
         </div>
       </div>
 
-      {/* Send-all confirmation (portaled to escape the transformed page wrapper) */}
-      {mounted && confirmSendAll && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4" onClick={() => setConfirmSendAll(false)}>
+      {/* Bulk-send confirmation (portaled to escape the transformed page wrapper) */}
+      {mounted && confirmSend && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4" onClick={() => setConfirmSend(null)}>
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl">
-            <h3 className="text-[15px] font-semibold text-stone-900">Send all verified invoices?</h3>
+            <h3 className="text-[15px] font-semibold text-stone-900">{confirmSend.isAll ? "Send all verified invoices?" : "Send selected invoices?"}</h3>
             <p className="mt-1 text-[13px] text-stone-600">
-              {ws.verifiedReady.length} verified invoice{ws.verifiedReady.length === 1 ? "" : "s"} totaling{" "}
-              <span className="font-semibold">{formatCurrency(verifiedTotal)}</span> will be emailed to each client.
+              {confirmSend.targets.length} invoice{confirmSend.targets.length === 1 ? "" : "s"} totaling{" "}
+              <span className="font-semibold">{formatCurrency(confirmSend.targets.reduce((s, i) => s + i.total, 0))}</span> will be emailed to each client.
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setConfirmSendAll(false)} className="rounded-md px-3 py-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700">Cancel</button>
-              <button onClick={handleSendAll} className="rounded-md px-4 py-2 text-[13px] font-semibold text-white" style={{ background: "#059669" }}>
-                Send {ws.verifiedReady.length}
+              <button onClick={() => setConfirmSend(null)} className="rounded-md px-3 py-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700">Cancel</button>
+              <button onClick={confirmAndSend} className="rounded-md px-4 py-2 text-[13px] font-semibold text-white" style={{ background: "#059669" }}>
+                Send {confirmSend.targets.length}
               </button>
             </div>
           </div>
