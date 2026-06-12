@@ -36,12 +36,30 @@ export function RecurringAddonForm({ scheduleId, siblingScheduleIds = [], onSucc
     subcontractorRate: '',
     frequency: 'MONTHLY',
     vendorId: '',
+    subcontractorId: '',
+    dayOfWeek: '',
   })
   const [newVendorName, setNewVendorName] = useState('')
   const [showNewVendor, setShowNewVendor] = useState(false)
 
   const fetcher = (url: string) => fetch(url).then(r => r.json())
   const { data: vendors, mutate: mutateVendors } = useSWR<Array<{ id: string; name: string; isActive?: boolean }>>('/api/vendors', fetcher)
+  const { data: cleaners } = useSWR<Array<{ id: string; name: string; isActive?: boolean }>>('/api/subcontractors', fetcher)
+
+  // "Performed by" is one picker over cleaners + vendors; encode the selection so a
+  // single <select> can drive either subcontractorId or vendorId.
+  const performedByValue = formData.subcontractorId ? `cleaner:${formData.subcontractorId}` : formData.vendorId ? `vendor:${formData.vendorId}` : ''
+  const onPerformedByChange = (value: string) => {
+    if (value === '__new__') { setShowNewVendor(true); setFormData((f) => ({ ...f, vendorId: '', subcontractorId: '' })); return }
+    if (value.startsWith('cleaner:')) setFormData((f) => ({ ...f, subcontractorId: value.slice(8), vendorId: '' }))
+    else if (value.startsWith('vendor:')) setFormData((f) => ({ ...f, vendorId: value.slice(7), subcontractorId: '' }))
+    else setFormData((f) => ({ ...f, vendorId: '', subcontractorId: '' }))
+  }
+
+  const DOW = [
+    { value: '1', label: 'Monday' }, { value: '2', label: 'Tuesday' }, { value: '3', label: 'Wednesday' },
+    { value: '4', label: 'Thursday' }, { value: '5', label: 'Friday' }, { value: '6', label: 'Saturday' }, { value: '0', label: 'Sunday' },
+  ]
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -79,6 +97,8 @@ export function RecurringAddonForm({ scheduleId, siblingScheduleIds = [], onSucc
             frequency: formData.frequency,
             isRecurring: true,
             vendorId,
+            subcontractorId: vendorId ? null : (formData.subcontractorId || null),
+            dayOfWeek: formData.dayOfWeek === '' ? null : parseInt(formData.dayOfWeek),
           }),
         })
 
@@ -165,8 +185,22 @@ export function RecurringAddonForm({ scheduleId, siblingScheduleIds = [], onSucc
           />
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="dayOfWeek">Day of week <span className="text-gray-400 font-normal">(optional)</span></Label>
+          <select
+            id="dayOfWeek"
+            value={formData.dayOfWeek}
+            onChange={(e) => setFormData({ ...formData, dayOfWeek: e.target.value })}
+            className="w-full h-10 px-3 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="">Any day this cycle</option>
+            {DOW.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </select>
+          <p className="text-xs text-gray-400">Which day the cleaner performs it</p>
+        </div>
+
         <div className="space-y-2 md:col-span-2">
-          <Label>Outsourced Vendor <span className="text-gray-400 font-normal">(optional)</span></Label>
+          <Label>Performed by <span className="text-gray-400 font-normal">(optional)</span></Label>
           {showNewVendor ? (
             <div className="flex gap-2">
               <Input
@@ -186,25 +220,25 @@ export function RecurringAddonForm({ scheduleId, siblingScheduleIds = [], onSucc
             </div>
           ) : (
             <select
-              value={formData.vendorId}
-              onChange={(e) => {
-                if (e.target.value === '__new__') {
-                  setShowNewVendor(true)
-                  setFormData({ ...formData, vendorId: '' })
-                } else {
-                  setFormData({ ...formData, vendorId: e.target.value })
-                }
-              }}
+              value={performedByValue}
+              onChange={(e) => onPerformedByChange(e.target.value)}
               className="w-full h-10 px-3 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
             >
-              <option value="">None (in-house)</option>
-              {(vendors || []).filter(v => v.isActive !== false).map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
+              <option value="">Schedule&apos;s cleaner (default)</option>
+              <optgroup label="Cleaners">
+                {(cleaners || []).filter(c => c.isActive !== false).map(c => (
+                  <option key={c.id} value={`cleaner:${c.id}`}>{c.name}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Vendors">
+                {(vendors || []).filter(v => v.isActive !== false).map(v => (
+                  <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
+                ))}
+              </optgroup>
               <option value="__new__">+ Add new vendor...</option>
             </select>
           )}
-          <p className="text-xs text-gray-400">If this add-on is performed by an external subcontractor</p>
+          <p className="text-xs text-gray-400">Who does this add-on — an in-house cleaner or an outside vendor. Defaults to the schedule&apos;s cleaner.</p>
         </div>
       </div>
 

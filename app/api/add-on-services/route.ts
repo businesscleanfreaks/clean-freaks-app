@@ -17,6 +17,8 @@ const createAddOnServiceSchema = z.object({
   isRecurring: z.boolean().optional().default(false),
   outsourcedVendor: z.string().optional().nullable(),
   vendorId: z.string().uuid().optional().nullable(),
+  subcontractorId: z.string().uuid().optional().nullable(),
+  dayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
 })
 
 export async function POST(request: Request) {
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { jobId, scheduleId, description, clientRate, subcontractorRate, frequency, isRecurring, outsourcedVendor, vendorId } = validationResult.data
+    const { jobId, scheduleId, description, clientRate, subcontractorRate, frequency, isRecurring, outsourcedVendor, vendorId, subcontractorId, dayOfWeek } = validationResult.data
 
     // For recurring add-ons, scheduleId is required
     if (isRecurring && !scheduleId) {
@@ -90,6 +92,8 @@ export async function POST(request: Request) {
         isRecurring,
         outsourcedVendor: outsourcedVendor || null,
         vendorId: vendorId || null,
+        subcontractorId: subcontractorId || null,
+        dayOfWeek: dayOfWeek ?? null,
       },
       include: {
         schedule: {

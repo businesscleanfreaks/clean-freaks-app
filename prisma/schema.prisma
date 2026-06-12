@@ -127,6 +127,7 @@ model Subcontractor {
   jobs             Job[]
   payments         SubcontractorPayment[]
   assignedClients  Client[]
+  addOnServices    AddOnService[]
 
   @@index([isActive])
   @@map("subcontractors")
@@ -323,6 +324,8 @@ model AddOnService {
   isRecurring       Boolean   @default(false)
   outsourcedVendor  String?   // DEPRECATED — kept temporarily for backfill migration
   vendorId          String?   // FK to Vendor model (replaces outsourcedVendor)
+  subcontractorId   String?   // Assigned in-house cleaner (alternative to a vendor). null = schedule's cleaner / vendor.
+  dayOfWeek         Int?      // 0=Sun..6=Sat — which day the add-on is performed (scheduling reference)
   vendorPaid        Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -330,12 +333,14 @@ model AddOnService {
   job               Job?      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   schedule          Schedule? @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   vendor            Vendor?   @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  subcontractor     Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
   invoiceLineItems  InvoiceLineItem[]
   vendorPaymentLineItems VendorPaymentLineItem[]
 
   @@index([jobId])
   @@index([scheduleId])
   @@index([vendorId])
+  @@index([subcontractorId])
   @@map("add_on_services")
 }
 
