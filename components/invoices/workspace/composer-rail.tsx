@@ -264,10 +264,12 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   if (isSent) {
     const paid = inv.uiStatus === "Paid"
     const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null)
-    const lifecycle = [
-      { key: "gen", label: "Generated", date: fmt(invoiceData?.dateCreated), Icon: FileText, done: true, accent: false },
-      { key: "sent", label: "Sent", date: fmt(invoiceData?.dateSent), Icon: Send, done: !!invoiceData?.dateSent, accent: false },
-      { key: "paid", label: `Paid${invoiceData?.paymentMethod ? ` via ${invoiceData.paymentMethod}` : ""}`, date: fmt(invoiceData?.datePaid), Icon: CheckCircle2, done: paid, accent: true },
+    const timeline = [
+      { key: "gen", label: "Generated", date: fmt(invoiceData?.dateCreated), done: true, accent: false },
+      { key: "sent", label: "Sent", date: fmt(invoiceData?.dateSent), done: !!invoiceData?.dateSent, accent: false },
+      paid
+        ? { key: "paid", label: `Paid${invoiceData?.paymentMethod ? ` · ${invoiceData.paymentMethod}` : ""}`, date: fmt(invoiceData?.datePaid), done: true, accent: true }
+        : { key: "await", label: "Awaiting payment", date: `Due ${dueDate}`, done: false, accent: false },
     ]
     return (
       <div className="flex h-full flex-col p-5">
@@ -279,17 +281,26 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
           <div className="mt-1 text-[12px] text-stone-600">{inv.clientName} · {formatCurrency(inv.total)}</div>
         </div>
 
-        {/* Lifecycle */}
+        {/* Lifecycle timeline */}
         <div className="mt-4">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Lifecycle</div>
-          <div className="mt-2 space-y-2.5 rounded-lg border border-stone-200 p-3">
-            {lifecycle.map((s) => (
-              <div key={s.key} className="flex items-center gap-2.5 text-[12px]">
-                <s.Icon size={14} className={s.done ? (s.accent && paid ? "text-emerald-600" : "text-stone-500") : "text-stone-300"} />
-                <span className={s.done ? "font-medium text-stone-700" : "text-stone-400"}>{s.label}</span>
-                <span className="ml-auto tabular-nums text-stone-400">{s.date || "—"}</span>
-              </div>
-            ))}
+          <div className="mt-2.5 rounded-lg border border-stone-200 p-3.5">
+            {timeline.map((s, i) => {
+              const last = i === timeline.length - 1
+              return (
+                <div key={s.key} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <span className="mt-0.5 h-3 w-3 flex-shrink-0 rounded-full"
+                      style={s.done ? { background: s.accent ? "#059669" : "#0D9488" } : { background: "#fff", border: "2px solid #D6D3D1" }} />
+                    {!last && <span className="w-0.5 flex-1" style={{ minHeight: 20, background: s.done ? "#99F6E4" : "#E7E5E4" }} />}
+                  </div>
+                  <div className={last ? "" : "pb-3"}>
+                    <div className="text-[12.5px] font-medium leading-tight" style={{ color: s.done ? (s.accent ? "#047857" : "#1C1917") : "#A8A29E" }}>{s.label}</div>
+                    <div className="mt-0.5 text-[11px] tabular-nums text-stone-400">{s.date || "Pending"}</div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 
