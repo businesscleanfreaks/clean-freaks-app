@@ -250,12 +250,13 @@ export function OpenIssuesEditor({ clientId, initial }: { clientId: string; init
           <input
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") add() }}
+            onKeyDown={e => { if (e.key === "Enter") add(); else if (e.key === "Escape") { setDraft(""); setAdding(false) } }}
             autoFocus
             placeholder="Describe the issue…"
             style={{ flex: 1, border: "1px solid #FDE68A", borderRadius: 5, padding: "4px 8px", fontSize: 12, outline: "none", color: INK, background: "#fff" }}
           />
           <button type="button" onClick={add} disabled={busy} style={{ all: "unset", fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 5, background: "#D97706", color: "#fff", cursor: "pointer" }}>Add</button>
+          <button type="button" onClick={() => { setDraft(""); setAdding(false) }} style={{ all: "unset", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 5, color: "#92400E", cursor: "pointer" }} title="Cancel (Esc)">Cancel</button>
         </div>
       )}
     </div>
