@@ -11,7 +11,7 @@ import { showSuccess, showError } from "@/lib/toast"
 import { MiniCalendar } from "./mini-calendar"
 import { TemplatesModal } from "./templates-modal"
 import {
-  useWorkspace, formatMonthLabel, shiftMonth, shortReason,
+  useWorkspace, formatMonthLabel, shiftMonth, shortReason, buildVerdict, VERDICT_TONE,
   type WorkspaceInvoice, type WorkspaceTab,
 } from "./use-workspace"
 import { ComposerRail } from "./composer-rail"
@@ -300,8 +300,9 @@ function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: Workspac
 }
 
 function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
-  const green = inv.verification.level === "green"
-  const [detailsOpen, setDetailsOpen] = useState(false)
+  const verdict = buildVerdict(inv)
+  const tone = VERDICT_TONE[verdict.tone]
+  const [detailsOpen, setDetailsOpen] = useState(true)
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
 
   const cleans = useMemo(() => {
@@ -353,25 +354,24 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
         </div>
       </div>
 
-      {/* Verification banner — collapsible Details (changes + this month's cleans) */}
+      {/* Verdict — plain-English "what's the story this month" + the this-month detail */}
       <div className="px-5 pt-4">
-        <div className="rounded-lg px-3.5 py-2.5"
-          style={green ? { background: "#ECFDF5", border: "1px solid #A7F3D0" } : { background: "#FFFBEB", border: "1px solid #FDE68A" }}>
-          <div className="flex items-start gap-2">
-            {green ? <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-600" /> : <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-amber-600" />}
+        <div className="rounded-lg px-3.5 py-3" style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
+          <div className="flex items-start gap-2.5">
+            <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full" style={{ background: tone.dot }} />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold" style={{ color: green ? "#047857" : "#B45309" }}>{inv.verification.summary}</div>
-              <div className="mt-0.5 truncate text-[12px] text-stone-500">{inv.scheduleSummary}{cleaner ? ` · ${cleaner}` : ""}</div>
+              <div className="text-[13px] font-medium leading-snug" style={{ color: tone.text }}>{verdict.text}</div>
+              <div className="mt-1 truncate text-[12px] text-stone-500">{inv.scheduleSummary}{cleaner ? ` · ${cleaner}` : ""}</div>
             </div>
             <button onClick={() => setDetailsOpen((o) => !o)}
               className="inline-flex flex-shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold hover:bg-black/5"
-              style={{ color: green ? "#047857" : "#B45309" }}>
-              Details <ChevronDown size={13} className={`transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
+              style={{ color: tone.text }}>
+              This month <ChevronDown size={13} className={`transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
             </button>
           </div>
 
           {detailsOpen && (
-            <div className="mt-3 space-y-3 border-t pt-3" style={{ borderColor: green ? "#A7F3D0" : "#FDE68A" }}>
+            <div className="mt-3 space-y-3 border-t pt-3" style={{ borderColor: tone.border }}>
               {/* What changed this month */}
               <div className="space-y-1.5">
                 {changeRows.map((r) => (
@@ -385,7 +385,7 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
                 ))}
               </div>
 
-              {/* This month's cleans */}
+              {/* This month's cleans calendar */}
               <div className="rounded-lg border border-white/70 bg-white/70 p-2.5">
                 <div className="mb-1.5 flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-stone-600">{formatMonthLabel(month)}</span>
@@ -395,7 +395,7 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
                   <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed</span>
                   <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Cancelled</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Missed</span>
                 </div>
               </div>
             </div>

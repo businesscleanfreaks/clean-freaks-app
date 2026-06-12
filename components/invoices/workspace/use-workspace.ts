@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import useSWR from "swr"
 import { format, startOfMonth, endOfMonth } from "date-fns"
 import { fetcher } from "@/lib/fetcher"
+import { formatCurrency } from "@/lib/utils"
 import { deriveVerification, type InvoiceVerification } from "@/lib/invoice-verification"
 import type { InvoiceCandidate } from "@/components/invoices/candidate-card"
 
@@ -50,6 +51,67 @@ export function shortReason(inv: WorkspaceInvoice): string | null {
   if (parts.length === 0) return null
   if (parts.length === 1) return parts[0]
   return `${parts.length} changes`
+}
+
+// ── Verdict ────────────────────────────────────────────────────────────────
+// The plain-English "what's the story with this invoice this month" line — the
+// single most useful thing to know at a glance, built from real candidate data
+// (status + the same exceptions/line-items the rest of the workspace uses).
+export type VerdictTone = "green" | "amber" | "blue" | "rose"
+export interface Verdict { text: string; tone: VerdictTone }
+
+export const VERDICT_TONE: Record<VerdictTone, { bg: string; border: string; text: string; dot: string }> = {
+  green: { bg: "#ECFDF5", border: "#A7F3D0", text: "#047857", dot: "#10B981" },
+  amber: { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", dot: "#F59E0B" },
+  blue: { bg: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8", dot: "#0EA5E9" },
+  rose: { bg: "#FFF1F2", border: "#FECDD3", text: "#BE123C", dot: "#F43F5E" },
+}
+
+export function buildVerdict(inv: WorkspaceInvoice): Verdict {
+  if (inv.uiStatus === "Paid") return { text: "Paid in full — nothing left to do this month.", tone: "green" }
+  if (inv.uiStatus === "Sent") return { text: "Sent — awaiting payment.", tone: "blue" }
+
+  const counts: Record<string, number> = {}
+  for (const e of inv.exceptions) counts[e.type] = (counts[e.type] || 0) + 1
+  const proration = inv.lineItems.find((li) => li.sourceType === "PRORATION")
+  const addOn = inv.lineItems.find((li) => li.sourceType === "ADD_ON" || li.sourceType === "RECURRING_ADD_ON")
+  const isFlat = inv.billingType === "FLAT_RATE"
+  const cleans = inv.completedCount || inv.jobCount
+
+  // Lead with the most consequential change (the one that moved the dollar amount).
+  if (counts.SKIPPED) {
+    const n = counts.SKIPPED
+    if (proration) {
+      const credit = Math.abs(proration.price * proration.quantity)
+      return { text: `${n} clean${n > 1 ? "s" : ""} missed — invoice credited ${formatCurrency(credit)}.`, tone: "amber" }
+    }
+    return { text: `${n} clean${n > 1 ? "s" : ""} missed — billed for ${cleans} of ${inv.jobCount}.`, tone: "amber" }
+  }
+  if (counts.ONE_TIME_ADD_ON || addOn) {
+    const desc = addOn?.description?.replace(/\s*·.*$/, "") || "An add-on"
+    const amt = addOn ? ` (+${formatCurrency(addOn.price * addOn.quantity)})` : ""
+    return { text: `${desc} due this month${amt}, on top of the regular visits.`, tone: "amber" }
+  }
+  if (counts.PRICE_CHANGE) {
+    const msg = inv.exceptions.find((e) => e.type === "PRICE_CHANGE")?.message
+    return { text: msg ? msg[0].toUpperCase() + msg.slice(1) : "Rate changed this month — review before sending.", tone: "amber" }
+  }
+  if (counts.ONE_OFF_JOB) {
+    const n = counts.ONE_OFF_JOB
+    return { text: `${n} one-off job${n > 1 ? "s" : ""} added this month.`, tone: "amber" }
+  }
+  if (counts.RESCHEDULED) {
+    const n = counts.RESCHEDULED
+    return { text: `${n} clean${n > 1 ? "s" : ""} rescheduled — monthly total unchanged.`, tone: "amber" }
+  }
+  if (counts.MISSING_EMAIL) {
+    return { text: "No email on file — add one before this can be sent.", tone: "rose" }
+  }
+
+  // Nothing flagged → steady month.
+  if (isFlat) return { text: "Flat monthly rate, no changes since last month.", tone: "green" }
+  if (inv.billingType === "ONE_TIME") return { text: "One-time clean, billed once.", tone: "green" }
+  return { text: `${cleans} clean${cleans === 1 ? "" : "s"} this month at the usual rate — no changes.`, tone: "green" }
 }
 
 export function useWorkspace() {
