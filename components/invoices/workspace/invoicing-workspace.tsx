@@ -17,7 +17,7 @@ import {
 import { ComposerRail } from "./composer-rail"
 import { runBatchSend } from "./invoice-send"
 
-const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Paid"]
+const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
 const STATUS_BADGE: Record<string, React.CSSProperties> = {
   "Not sent": { background: "#FFFBEB", borderColor: "#FDE68A", color: "#B45309" },
@@ -123,8 +123,11 @@ export function InvoicingWorkspace() {
         <div className="flex items-center gap-0.5 rounded-md bg-stone-100 p-0.5">
           {TABS.map((t) => (
             <button key={t} onClick={() => ws.setTab(t)}
-              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${ws.tab === t ? "bg-white text-stone-900 shadow-sm" : "text-stone-600 hover:text-stone-800"}`}>
+              className={`inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-medium transition-colors ${ws.tab === t ? "bg-white text-stone-900 shadow-sm" : "text-stone-600 hover:text-stone-800"}`}>
               {t}
+              {t === "Overdue" && ws.overdueCount > 0 && (
+                <span className="rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-700">{ws.overdueCount}</span>
+              )}
             </button>
           ))}
         </div>
@@ -307,6 +310,7 @@ function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: Workspac
   const green = inv.verification.level === "green"
   const reason = shortReason(inv)
   const notSent = inv.uiStatus === "Not sent"
+  const overdue = !!inv.overdueDays && inv.overdueDays > 0
   return (
     <div className={`mb-0.5 flex items-center gap-2 rounded-md px-2 py-2 transition-colors ${selected ? "bg-stone-100 ring-1 ring-stone-300" : "hover:bg-stone-50"}`}>
       {notSent && (
@@ -314,15 +318,19 @@ function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: Workspac
       )}
       <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <span className="flex-shrink-0">
-          {green ? <CheckCircle2 size={14} className="text-emerald-500" /> : <AlertTriangle size={14} className="text-amber-500" />}
+          {overdue ? <AlertTriangle size={14} className="text-rose-500" /> : green ? <CheckCircle2 size={14} className="text-emerald-500" /> : <AlertTriangle size={14} className="text-amber-500" />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium text-stone-900">{inv.clientName}</div>
-          {reason && <div className="truncate text-[11px] text-amber-600">{reason}</div>}
+          {overdue ? (
+            <div className="truncate text-[11px] font-semibold text-rose-600">{inv.overdueDays}d overdue</div>
+          ) : reason ? (
+            <div className="truncate text-[11px] text-amber-600">{reason}</div>
+          ) : null}
         </div>
         <div className="flex-shrink-0 text-right">
           <div className="font-mono text-[12px] font-semibold text-stone-700">{formatCurrency(inv.total)}</div>
-          <div className="text-[9px] uppercase tracking-wide text-stone-400">{inv.uiStatus}</div>
+          <div className={`text-[9px] uppercase tracking-wide ${overdue ? "font-bold text-rose-600" : "text-stone-400"}`}>{overdue ? "Overdue" : inv.uiStatus}</div>
         </div>
       </button>
     </div>

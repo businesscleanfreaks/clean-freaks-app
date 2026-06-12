@@ -8,11 +8,14 @@ import { formatCurrency } from "@/lib/utils"
 import { deriveVerification, type InvoiceVerification } from "@/lib/invoice-verification"
 import type { InvoiceCandidate } from "@/components/invoices/candidate-card"
 
-export type WorkspaceTab = "All" | "Not sent" | "Sent" | "Paid"
+export type WorkspaceTab = "All" | "Not sent" | "Sent" | "Overdue" | "Paid"
 
 export interface WorkspaceInvoice extends InvoiceCandidate {
   verification: InvoiceVerification
   uiStatus: "Not sent" | "Sent" | "Paid"
+  overdueDays?: number      // set only for rows from the cross-month Overdue source
+  dueDateIso?: string
+  sentDateIso?: string | null
 }
 
 const MONTH_NAMES = [
@@ -69,6 +72,10 @@ export const VERDICT_TONE: Record<VerdictTone, { bg: string; border: string; tex
 
 export function buildVerdict(inv: WorkspaceInvoice): Verdict {
   if (inv.uiStatus === "Paid") return { text: "Paid in full — nothing left to do this month.", tone: "green" }
+  if (inv.overdueDays && inv.overdueDays > 0) {
+    const since = inv.sentDateIso ? new Date(inv.sentDateIso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null
+    return { text: `Overdue ${inv.overdueDays} day${inv.overdueDays === 1 ? "" : "s"}${since ? ` — unpaid since it was sent ${since}` : " — unpaid"}.`, tone: "rose" }
+  }
   if (inv.uiStatus === "Sent") return { text: "Sent — awaiting payment.", tone: "blue" }
 
   const counts: Record<string, number> = {}
@@ -161,6 +168,24 @@ export function useWorkspace() {
     }))
   }, [data])
 
+  // Cross-month aging list — its own endpoint, ignores the month selector.
+  const { data: overdueData, mutate: mutateOverdue } = useSWR(
+    "/api/invoices/overdue",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 30000 },
+  )
+  const overdueInvoices: WorkspaceInvoice[] = useMemo(() => {
+    const raw = (overdueData?.candidates || []) as Array<InvoiceCandidate & { overdueDays: number; dueDateIso?: string; sentDateIso?: string | null }>
+    return raw.map((c) => ({
+      ...c,
+      verification: deriveVerification(c),
+      uiStatus: "Sent" as const,
+      overdueDays: c.overdueDays,
+      dueDateIso: c.dueDateIso,
+      sentDateIso: c.sentDateIso,
+    }))
+  }, [overdueData])
+
   const totals = useMemo(() => {
     const t = { notSent: 0, sent: 0, paid: 0 }
     for (const inv of invoices) {
@@ -171,15 +196,16 @@ export function useWorkspace() {
     return t
   }, [invoices])
 
-  // Tab + search filter
+  // Tab + search filter. The Overdue tab pulls from the cross-month aging source.
+  const activeSource = tab === "Overdue" ? overdueInvoices : invoices
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return invoices.filter((inv) => {
-      if (tab !== "All" && inv.uiStatus !== tab) return false
+    return activeSource.filter((inv) => {
+      if (tab !== "All" && tab !== "Overdue" && inv.uiStatus !== tab) return false
       if (q && !inv.clientName.toLowerCase().includes(q)) return false
       return true
     })
-  }, [invoices, tab, search])
+  }, [activeSource, tab, search])
 
   // Group by billing type (Flat Rate / Per Clean / One-Time); yellows-first then
   // alphabetical within each group. Status is shown per-item and filtered by tab.
@@ -192,6 +218,7 @@ export function useWorkspace() {
         const items = filtered
           .filter((i) => labelOf(i) === label)
           .sort((a, b) => {
+            if (a.overdueDays != null && b.overdueDays != null) return b.overdueDays - a.overdueDays
             if (a.verification.level !== b.verification.level) return a.verification.level === "yellow" ? -1 : 1
             return a.clientName.localeCompare(b.clientName)
           })
@@ -223,13 +250,18 @@ export function useWorkspace() {
     [invoices, checked],
   )
 
+  const overdueCount = overdueInvoices.length
+  const overdueTotal = useMemo(() => overdueInvoices.reduce((s, i) => s + i.total, 0), [overdueInvoices])
+  const refreshAll = () => { mutate(); mutateOverdue() }
+
   return {
     month, setMonth,
     tab, setTab,
     search, setSearch,
     selectedId, setSelectedId,
     checked, toggleCheck, toggleCheckMany, clearChecked, checkedList,
-    isLoading, error, mutate,
+    isLoading, error, mutate: refreshAll,
     invoices, totals, groups, verifiedReady, selected,
+    overdueCount, overdueTotal,
   }
 }
