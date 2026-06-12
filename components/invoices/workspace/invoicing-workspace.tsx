@@ -324,21 +324,28 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   }, [month])
   const badge = STATUS_BADGE[inv.uiStatus] || STATUS_BADGE["Not sent"]
 
-  // Structured "what changed this month" rows for the Details expander.
+  // Structured "what changed this month" rows — with the $ impact pulled from the
+  // real line items (proration credit for cancellations, add-on totals).
   const changeRows = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const e of inv.exceptions) counts[e.type] = (counts[e.type] || 0) + 1
     const priceEx = inv.exceptions.find((e) => e.type === "PRICE_CHANGE")
+    const credit = inv.lineItems
+      .filter((li) => li.sourceType === "PRORATION")
+      .reduce((s, li) => s + Math.abs(li.price * li.quantity), 0)
+    const addOnTotal = inv.lineItems
+      .filter((li) => li.sourceType === "ADD_ON" || li.sourceType === "RECURRING_ADD_ON")
+      .reduce((s, li) => s + li.price * li.quantity, 0)
     const rows: Array<{ label: string; value: string; flag: boolean }> = [
-      { label: "Cancellations", value: counts.SKIPPED ? `${counts.SKIPPED} this month` : "None", flag: !!counts.SKIPPED },
+      { label: "Cancellations", value: counts.SKIPPED ? `${counts.SKIPPED} this month${credit ? ` · -${formatCurrency(credit)}` : ""}` : "None", flag: !!counts.SKIPPED },
       { label: "Rate vs last month", value: priceEx ? priceEx.message : "No change", flag: !!priceEx },
     ]
-    if (counts.ONE_TIME_ADD_ON) rows.push({ label: "Add-ons", value: `${counts.ONE_TIME_ADD_ON} this month`, flag: true })
+    if (counts.ONE_TIME_ADD_ON) rows.push({ label: "Add-ons", value: `${counts.ONE_TIME_ADD_ON} this month${addOnTotal ? ` · +${formatCurrency(addOnTotal)}` : ""}`, flag: true })
     if (counts.ONE_OFF_JOB) rows.push({ label: "One-off jobs", value: `${counts.ONE_OFF_JOB} this month`, flag: true })
     if (counts.RESCHEDULED) rows.push({ label: "Rescheduled", value: `${counts.RESCHEDULED} clean${counts.RESCHEDULED > 1 ? "s" : ""}`, flag: true })
     if (counts.MISSING_EMAIL) rows.push({ label: "Email on file", value: "Missing — add before sending", flag: true })
     return rows
-  }, [inv.exceptions])
+  }, [inv.exceptions, inv.lineItems])
 
   return (
     <div className="flex h-full flex-col">
