@@ -32,12 +32,31 @@ export function InvoicingWorkspace() {
   const [mounted, setMounted] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [railWidth, setRailWidth] = useState(360)
+  const [detailWidth, setDetailWidth] = useState(340)
   useEffect(() => setMounted(true), [])
 
   // Drag-to-resize the composer rail (rightmost column → width from the right edge).
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault()
     const onMove = (ev: MouseEvent) => setRailWidth(Math.min(600, Math.max(340, window.innerWidth - ev.clientX)))
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    }
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+  }
+
+  // Drag-to-resize the detail column (interior handle → delta from drag start).
+  const startDetailResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = detailWidth
+    const onMove = (ev: MouseEvent) => setDetailWidth(Math.min(560, Math.max(280, startW + (ev.clientX - startX))))
     const onUp = () => {
       document.removeEventListener("mousemove", onMove)
       document.removeEventListener("mouseup", onUp)
@@ -190,14 +209,26 @@ export function InvoicingWorkspace() {
           )}
         </div>
 
-        {/* Center: verification + preview */}
+        {/* Detail column: verdict · schedule · calendar · changes */}
+        <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: detailWidth }}>
+          {ws.selected ? <DetailPanel inv={ws.selected} month={ws.month} /> : (
+            <div className="m-auto p-6 text-center text-sm text-stone-400">Select an invoice.</div>
+          )}
+        </div>
+
+        {/* Resize handle (detail ↔ preview) */}
+        <div onMouseDown={startDetailResize} onDoubleClick={() => setDetailWidth(340)}
+          className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
+          title="Drag to resize · Double-click to reset" />
+
+        {/* PDF preview column */}
         <div className="flex min-w-0 flex-1 flex-col bg-stone-100">
-          {ws.selected ? <CenterPanel inv={ws.selected} month={ws.month} /> : (
+          {ws.selected ? <PdfPreview inv={ws.selected} /> : (
             <div className="m-auto text-sm text-stone-400">Select an invoice to preview.</div>
           )}
         </div>
 
-        {/* Resize handle */}
+        {/* Resize handle (preview ↔ composer) */}
         <div onMouseDown={startResize} onDoubleClick={() => setRailWidth(360)}
           className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
           title="Drag to resize · Double-click to reset" />
@@ -299,7 +330,7 @@ function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: Workspac
   )
 }
 
-function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
+function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   const verdict = buildVerdict(inv)
   const tone = VERDICT_TONE[verdict.tone]
   const [detailsOpen, setDetailsOpen] = useState(true)
@@ -361,6 +392,8 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
         </div>
       </div>
 
+      {/* Scrollable detail: verdict · schedule · calendar · changes */}
+      <div className="min-h-0 flex-1 overflow-y-auto pb-4">
       {/* Verdict — plain-English "what's the story this month" + the this-month detail */}
       <div className="px-5 pt-4">
         <div className="rounded-lg px-3.5 py-3" style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
@@ -410,28 +443,33 @@ function CenterPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
         </div>
       </div>
 
-      {/* Preview */}
-      <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">Preview</span>
-          {inv.existingInvoiceId && (
-            <a href={`/api/invoices/${inv.existingInvoiceId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
-              <ExternalLink size={12} /> View actual PDF
-            </a>
-          )}
-        </div>
-        {inv.existingInvoiceId ? (
-          <iframe src={`/api/invoices/${inv.existingInvoiceId}/generate-pdf#toolbar=0&navpanes=0&view=FitH`} title="Invoice preview"
-            className="min-h-0 flex-1 rounded-md border-0 bg-white shadow-sm" />
-        ) : (
-          <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-center">
-            <FileText size={28} className="mb-3 text-stone-300" />
-            <p className="text-sm font-medium text-stone-600">Not created yet</p>
-            <p className="mt-1 max-w-xs text-xs text-stone-400">The PDF preview generates once this invoice is created or sent.</p>
-          </div>
+      </div>
+    </div>
+  )
+}
+
+function PdfPreview({ inv }: { inv: WorkspaceInvoice }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">Preview</span>
+        {inv.existingInvoiceId && (
+          <a href={`/api/invoices/${inv.existingInvoiceId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
+            <ExternalLink size={12} /> View actual PDF
+          </a>
         )}
       </div>
+      {inv.existingInvoiceId ? (
+        <iframe src={`/api/invoices/${inv.existingInvoiceId}/generate-pdf#toolbar=0&navpanes=0&view=FitH`} title="Invoice preview"
+          className="min-h-0 flex-1 rounded-md border-0 bg-white shadow-sm" />
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-center">
+          <FileText size={28} className="mb-3 text-stone-300" />
+          <p className="text-sm font-medium text-stone-600">Not created yet</p>
+          <p className="mt-1 max-w-xs text-xs text-stone-400">The PDF preview generates once this invoice is created or sent.</p>
+        </div>
+      )}
     </div>
   )
 }
