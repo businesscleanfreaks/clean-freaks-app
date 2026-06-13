@@ -48,6 +48,8 @@ export interface PaidEntry {
 interface PayablesData {
   cleaners: Payable[]
   vendors: Payable[]
+  othersCleaners: Payable[]
+  othersVendors: Payable[]
   totals: {
     cleaners: { total: number; safe: number; waiting: number; payToday: number }
     vendors: { total: number; safe: number; waiting: number; payToday: number }
@@ -73,7 +75,10 @@ export function usePayables() {
 
   const cleaners = data?.cleaners || []
   const vendors = data?.vendors || []
+  const othersCleaners = data?.othersCleaners || []
+  const othersVendors = data?.othersVendors || []
   const list = tab === "cleaners" ? cleaners : vendors
+  const others = tab === "cleaners" ? othersCleaners : othersVendors
   const totals = (tab === "cleaners" ? data?.totals.cleaners : data?.totals.vendors) || { total: 0, safe: 0, waiting: 0, payToday: 0 }
   const isCurrent = data?.isCurrent ?? month === thisMonth()
   const paid = data?.paid || { cleaners: [], vendors: [], total: 0 }
@@ -87,8 +92,8 @@ export function usePayables() {
     })
 
   const selected = useMemo(
-    () => list.find((p) => p.id === selectedId) || list[0] || null,
-    [list, selectedId],
+    () => [...list, ...others].find((p) => p.id === selectedId) || list[0] || others[0] || null,
+    [list, others, selectedId],
   )
 
   return {
@@ -102,6 +107,7 @@ export function usePayables() {
     cleaners,
     vendors,
     list,
+    others,
     totals,
     selected,
     counts: { cleaners: cleaners.length, vendors: vendors.length },

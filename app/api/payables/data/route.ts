@@ -111,7 +111,7 @@ export async function GET(request: Request) {
       jobsBySub.set(j.subcontractorId, arr)
     })
 
-    const cleaners: Payable[] = subcontractors
+    const allCleaners: Payable[] = subcontractors
       .map((sub) => {
         const allJobs = jobsBySub.get(sub.id) || []
         const cadenceSub: CadenceSubcontractorInfo = {
@@ -190,7 +190,8 @@ export async function GET(request: Request) {
           fastPay: sub.fastPay,
         }
       })
-      .filter((c) => c.accounts.length > 0)
+    const cleaners = allCleaners.filter((c) => c.accounts.length > 0)
+    const othersCleaners = allCleaners.filter((c) => c.accounts.length === 0)
 
     // ── VENDORS ───────────────────────────────────────────────────────────
     const vendorRows = await prisma.vendor.findMany({
@@ -211,7 +212,7 @@ export async function GET(request: Request) {
       },
     })
 
-    const vendors: Payable[] = vendorRows
+    const allVendors: Payable[] = vendorRows
       .map((v) => {
         const byClient = new Map<string, { clientName: string; ids: string[]; owed: number; cleans: Array<{ date: string; amount: number }> }>()
         v.addOnServices.forEach((a) => {
@@ -253,7 +254,8 @@ export async function GET(request: Request) {
           fastPay: false,
         }
       })
-      .filter((v) => v.accounts.length > 0)
+    const vendors = allVendors.filter((v) => v.accounts.length > 0)
+    const othersVendors = allVendors.filter((v) => v.accounts.length === 0)
 
     const sumBy = (arr: Payable[], f: (p: Payable) => number) => arr.reduce((s, x) => s + f(x), 0)
     const totals = {
@@ -293,6 +295,8 @@ export async function GET(request: Request) {
       {
         cleaners: isCurrent ? cleaners : [],
         vendors: isCurrent ? vendors : [],
+        othersCleaners: isCurrent ? othersCleaners : [],
+        othersVendors: isCurrent ? othersVendors : [],
         totals: isCurrent ? totals : emptyTotals,
         period,
         isCurrent,

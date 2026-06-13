@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { UserCog, Package, Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react"
+import { UserCog, Package, Loader2, Plus, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { usePayables, type Payable, type PayableAccount, type AccountStatus, type PaidEntry } from "./use-payables"
 import { PaymentDetail } from "./payment-detail"
@@ -80,10 +80,10 @@ export function PayablesWorkspace() {
         ) : (
           <div className="space-y-6">
             {ws.isCurrent ? (
-              list.length === 0 ? (
+              list.length === 0 && ws.others.length === 0 ? (
                 <div className="rounded-lg border border-stone-200 bg-white px-6 py-16 text-center">
-                  <p className="text-[14px] font-semibold text-stone-700">Nothing owed to {tab === "cleaners" ? "cleaners" : "vendors"} right now</p>
-                  <p className="mt-1 text-[12px] text-stone-400">Completed work that hasn&apos;t been paid will show up here.</p>
+                  <p className="text-[14px] font-semibold text-stone-700">No {tab === "cleaners" ? "cleaners" : "vendors"} yet</p>
+                  <p className="mt-1 text-[12px] text-stone-400">Add one above — completed unpaid work will then show up here.</p>
                 </div>
               ) : (
                 <div className="grid gap-4 lg:grid-cols-[1fr_400px]">
@@ -91,6 +91,12 @@ export function PayablesWorkspace() {
                     {list.map((p) => (
                       <PayableCard key={p.id} payable={p} selected={selected?.id === p.id} onSelect={() => ws.setSelectedId(p.id)} />
                     ))}
+                    {list.length === 0 && (
+                      <p className="rounded-lg border border-stone-200 bg-white px-4 py-3 text-[13px] text-stone-500">Nothing owed to {tab === "cleaners" ? "cleaners" : "vendors"} right now.</p>
+                    )}
+                    {ws.others.length > 0 && (
+                      <AllPeopleSection others={ws.others} tab={tab} selectedId={selected?.id ?? null} onSelect={(id) => ws.setSelectedId(id)} />
+                    )}
                   </div>
                   <div className="lg:sticky lg:top-4 lg:self-start">
                     <PaymentDetail payable={selected} onPaid={() => ws.mutate()} onEdit={setEditPayable} />
@@ -110,6 +116,35 @@ export function PayablesWorkspace() {
       {addType && <PersonModal type={addType} onClose={() => setAddType(null)} onSaved={() => ws.mutate()} />}
       {editPayable && (
         <PersonModal type={editPayable.type} mode="edit" editId={editPayable.id} onClose={() => setEditPayable(null)} onSaved={() => ws.mutate()} />
+      )}
+    </div>
+  )
+}
+
+// Collapsed directory of everyone with nothing owed right now — so Payables can
+// reach (view/edit/history) any cleaner or vendor, not just those we currently owe.
+function AllPeopleSection({ others, tab, selectedId, onSelect }: { others: Payable[]; tab: "cleaners" | "vendors"; selectedId: string | null; onSelect: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-stone-50">
+        <span className="text-[12px] font-semibold text-stone-600">All {tab === "cleaners" ? "cleaners" : "vendors"} <span className="font-normal text-stone-400">· {others.length} with nothing owed</span></span>
+        <ChevronDown size={15} className={`text-stone-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="border-t border-stone-100">
+          {others.map((p) => (
+            <button key={p.id} onClick={() => onSelect(p.id)}
+              className={`flex w-full items-center gap-3 border-b border-stone-50 px-4 py-2.5 text-left last:border-b-0 hover:bg-stone-50 ${selectedId === p.id ? "bg-stone-100" : ""}`}>
+              <Avatar initials={p.initials} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-stone-800">{p.name}</div>
+                <div className="truncate text-[11px] text-stone-400">{p.zelleEmail || "No Zelle email saved"}</div>
+              </div>
+              <span className="flex-shrink-0 text-[11px] text-stone-300">Nothing owed</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )

@@ -147,6 +147,8 @@ export function PaymentDetail({ payable, onPaid, onEdit }: { payable: Payable | 
         </button>
       </div>
 
+      {payable.accounts.length > 0 ? (
+        <>
       {/* Accounts to pay */}
       <div className="space-y-1.5 p-4">
         {payable.accounts.map((acc) => <AccountCheckRow key={acc.id} account={acc} checked={checked.has(acc.id)} onToggle={() => toggle(acc.id)} />)}
@@ -188,6 +190,10 @@ export function PaymentDetail({ payable, onPaid, onEdit }: { payable: Payable | 
           <p className="text-center text-[11px] text-stone-400">Add a payment reference to enable.</p>
         )}
       </div>
+        </>
+      ) : (
+        <div className="border-t border-stone-100 px-4 py-4 text-[12px] text-stone-400">Nothing owed to {payable.name} right now.</div>
+      )}
 
       <PaymentHistory payable={payable} />
     </div>
