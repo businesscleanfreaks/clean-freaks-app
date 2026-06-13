@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, Loader2, Settings, Send } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -96,7 +96,7 @@ export function InvoicingWorkspace() {
     : 0
 
   return (
-    <div className="flex h-full flex-col bg-stone-50" style={{ minHeight: "calc(100vh - 0px)" }}>
+    <div className="flex flex-col bg-stone-50" style={{ height: "100dvh" }}>
       {/* ── Top bar: title · month nav · status totals ── */}
       <header className="flex items-center justify-between gap-6 border-b border-stone-200 bg-white px-6 py-3">
         <div className="flex items-center gap-4">
@@ -225,7 +225,7 @@ export function InvoicingWorkspace() {
 
         {/* PDF preview column */}
         <div className="flex min-w-0 flex-1 flex-col bg-stone-100">
-          {ws.selected ? <PdfPreview inv={ws.selected} /> : (
+          {ws.selected ? <InvoicePreview inv={ws.selected} month={ws.month} /> : (
             <div className="m-auto text-sm text-stone-400">Select an invoice to preview.</div>
           )}
         </div>
@@ -455,28 +455,81 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   )
 }
 
-function PdfPreview({ inv }: { inv: WorkspaceInvoice }) {
+// Client-side invoice render — always shows (not-sent invoices have no server PDF
+// yet), built straight from the candidate's line items so the operator can read the
+// invoice before it's created/sent. Mirrors the PDF; "View actual PDF" for created.
+function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
+  const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
+  const [y, m] = month.split("-").map(Number)
+  const issued = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  const dueDate = new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  const invNumber = inv.existingInvoiceNumber || "Draft"
+  const loc = (client?.locations || [])[0] as { address?: string; name?: string } | undefined
+  const address = loc?.address || loc?.name || ""
+  const items = inv.lineItems.length > 0
+    ? inv.lineItems
+    : [{ description: `Cleaning services · ${formatMonthLabel(month)}`, quantity: 1, price: inv.total, sourceType: "FLAT_RATE", locationName: undefined }]
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">Preview</span>
+    <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div className="mx-auto w-full max-w-[540px] rounded-md bg-white p-10 shadow-lg">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md text-[13px] font-bold text-white" style={{ background: "#0D9488" }}>C</div>
+              <span className="text-[17px] font-bold tracking-tight text-stone-900">Clean Freaks</span>
+            </div>
+            <div className="mt-2 text-[10.5px] leading-relaxed text-stone-400">Commercial cleaning · Los Angeles<br />admin@thecleanfreaks.co</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[13px] font-semibold text-stone-700">Invoice</div>
+            <div className="mt-1.5 text-[10.5px] leading-relaxed tabular-nums text-stone-400">{invNumber}<br />Issued {issued} · Due {dueDate}</div>
+          </div>
+        </div>
+
+        <div className="mt-7">
+          <div className="text-[10px] font-semibold tracking-wide text-stone-400">BILL TO</div>
+          <div className="mt-1 text-[13px] font-semibold text-stone-900">{inv.clientName}</div>
+          {address && <div className="mt-0.5 text-[11px] text-stone-500">{address}</div>}
+        </div>
+
+        <div className="mt-6">
+          <div className="flex justify-between border-b border-black/10 pb-2 text-[10px] font-semibold tracking-wide text-stone-400">
+            <span>DESCRIPTION</span><span>AMOUNT</span>
+          </div>
+          {items.map((li, i) => {
+            const amt = li.quantity * li.price
+            return (
+              <div key={i} className="flex justify-between gap-3 border-b border-black/5 py-2.5">
+                <div className="min-w-0">
+                  <div className="text-[12.5px] text-stone-800">{li.description}</div>
+                  {li.locationName && <div className="mt-0.5 text-[11px] text-stone-400">{li.locationName}</div>}
+                </div>
+                <div className="flex-shrink-0 text-[12.5px] tabular-nums" style={{ color: amt < 0 ? "#047857" : "#1C1917" }}>{formatCurrency(amt)}</div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-5 flex items-baseline justify-between">
+          <span className="text-[13px] font-semibold text-stone-700">Total due</span>
+          <span className="text-[20px] font-bold tabular-nums text-stone-900">{formatCurrency(inv.total)}</span>
+        </div>
+
+        <div className="mt-5 rounded-lg border p-3 text-[10.5px] leading-relaxed text-stone-600" style={{ background: "#F0FDFA", borderColor: "#99F6E4" }}>
+          Please send payment via Zelle to <span className="font-semibold text-stone-900">admin@thecleanfreaks.co</span>{" "}
+          <span className="rounded px-1 font-semibold" style={{ background: "#FEF3C7", color: "#92400E" }}>&ldquo;co&rdquo; not &ldquo;com&rdquo;</span>.
+        </div>
+
         {inv.existingInvoiceId && (
-          <a href={`/api/invoices/${inv.existingInvoiceId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
-            <ExternalLink size={12} /> View actual PDF
-          </a>
+          <div className="mt-3 text-center">
+            <a href={`/api/invoices/${inv.existingInvoiceId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
+              <ExternalLink size={12} /> View the generated PDF
+            </a>
+          </div>
         )}
       </div>
-      {inv.existingInvoiceId ? (
-        <iframe src={`/api/invoices/${inv.existingInvoiceId}/generate-pdf#toolbar=0&navpanes=0&view=FitH`} title="Invoice preview"
-          className="min-h-0 flex-1 rounded-md border-0 bg-white shadow-sm" />
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-center">
-          <FileText size={28} className="mb-3 text-stone-300" />
-          <p className="text-sm font-medium text-stone-600">Not created yet</p>
-          <p className="mt-1 max-w-xs text-xs text-stone-400">The PDF preview generates once this invoice is created or sent.</p>
-        </div>
-      )}
     </div>
   )
 }
