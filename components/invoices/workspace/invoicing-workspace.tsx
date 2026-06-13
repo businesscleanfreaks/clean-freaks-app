@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, Loader2, Settings, Send } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -15,7 +15,7 @@ import {
   type WorkspaceInvoice, type WorkspaceTab,
 } from "./use-workspace"
 import { ComposerRail } from "./composer-rail"
-import { runBatchSend } from "./invoice-send"
+import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
@@ -455,11 +455,45 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   )
 }
 
-// Client-side invoice render — always shows (not-sent invoices have no server PDF
-// yet), built straight from the candidate's line items so the operator can read the
-// invoice before it's created/sent. Mirrors the PDF; "View actual PDF" for created.
+// The PDF the client actually receives — rendered on demand through the same server
+// generator (ensureInvoiceId → generate-pdf), so the preview is exact. Until that's
+// generated it shows a quick teal approximation so you can read it without creating it.
 function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
+  const [pdfId, setPdfId] = useState<string | null>(inv.existingInvoiceId || null)
+  const [generating, setGenerating] = useState(false)
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
+  useEffect(() => { setPdfId(inv.existingInvoiceId || null) }, [inv.candidateId, inv.existingInvoiceId])
+
+  const generate = async () => {
+    setGenerating(true)
+    try {
+      const id = await ensureInvoiceId(inv)
+      if (id) {
+        await fetch(`/api/invoices/${id}/generate-pdf`, { method: "POST" }).catch(() => {})
+        setPdfId(id)
+      }
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  // Exact PDF — identical to what the client receives.
+  if (pdfId) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">Exact PDF · what the client sees</span>
+          <a href={`/api/invoices/${pdfId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
+            <ExternalLink size={12} /> Open in new tab
+          </a>
+        </div>
+        <iframe src={`/api/invoices/${pdfId}/generate-pdf#toolbar=0&navpanes=0&view=FitH`} title="Invoice PDF preview"
+          className="min-h-0 flex-1 rounded-md border-0 bg-white shadow-sm" />
+      </div>
+    )
+  }
+
   const [y, m] = month.split("-").map(Number)
   const issued = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
   const dueDate = new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -472,7 +506,13 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-6">
-      <div className="mx-auto w-full max-w-[540px] rounded-md bg-white p-10 shadow-lg">
+      <div className="mx-auto w-full max-w-[540px]">
+        <button onClick={generate} disabled={generating}
+          className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-[12px] font-semibold text-white disabled:opacity-60" style={{ background: "#0D9488" }}>
+          <FileText size={13} /> {generating ? "Generating the real PDF…" : "Generate exact PDF — what the client sees"}
+        </button>
+        <div className="mb-3 text-center text-[10.5px] text-stone-400">The card below is a quick approximation. Generate above for the exact PDF.</div>
+        <div className="rounded-md bg-white p-10 shadow-lg">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -521,14 +561,7 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
           <span className="rounded px-1 font-semibold" style={{ background: "#FEF3C7", color: "#92400E" }}>&ldquo;co&rdquo; not &ldquo;com&rdquo;</span>.
         </div>
 
-        {inv.existingInvoiceId && (
-          <div className="mt-3 text-center">
-            <a href={`/api/invoices/${inv.existingInvoiceId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
-              <ExternalLink size={12} /> View the generated PDF
-            </a>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   )
