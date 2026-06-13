@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import useSWR from "swr"
 import { Mail, Phone, AlertTriangle, Wallet, Send, Zap } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
@@ -187,6 +188,48 @@ export function PaymentDetail({ payable, onPaid, onEdit }: { payable: Payable | 
           <p className="text-center text-[11px] text-stone-400">Add a payment reference to enable.</p>
         )}
       </div>
+
+      <PaymentHistory payable={payable} />
+    </div>
+  )
+}
+
+interface HistoryEntry { id: string; datePaid: string; amount: number; method: string | null; notes: string | null; count: number }
+
+// Per-person payment history — the statement view that used to live on the
+// separate /subcontractors and /vendors detail pages.
+function PaymentHistory({ payable }: { payable: Payable }) {
+  const { data } = useSWR<{ payments: HistoryEntry[]; total: number }>(
+    `/api/payables/history?type=${payable.type}&id=${payable.id}`,
+    (url: string) => fetch(url).then((r) => r.json()),
+  )
+  const payments = data?.payments || []
+  return (
+    <div className="border-t border-stone-100 px-4 py-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Payment history</span>
+        {payable.type === "cleaner" && payments.length > 0 && (
+          <a href={`/api/subcontractors/${payable.id}/statement`} className="text-[11px] font-semibold text-stone-400 hover:text-stone-700">Download CSV</a>
+        )}
+      </div>
+      {payments.length === 0 ? (
+        <p className="text-[12px] text-stone-400">No payments recorded yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {payments.map((p) => (
+            <div key={p.id} className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[12px] text-stone-700">
+                  {new Date(p.datePaid).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  <span className="text-stone-400"> · {p.count} item{p.count === 1 ? "" : "s"}</span>
+                </div>
+                {p.notes && <div className="truncate text-[11px] text-stone-400">{p.notes}</div>}
+              </div>
+              <span className="flex-shrink-0 font-mono text-[12px] font-semibold text-emerald-700">{formatCurrency(p.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
