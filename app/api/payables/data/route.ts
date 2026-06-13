@@ -167,7 +167,7 @@ export async function GET(request: Request) {
               allItemIds: groupJobs.map((j) => j.id),
               cleans: groupJobs.map((j) => ({
                 date: j.date.toISOString(),
-                amount: (j.subcontractorRate || 0) + (j.addOnServices?.reduce((s, a) => s + (a.subcontractorRate || 0), 0) || 0),
+                amount: (j.subcontractorRate || 0) + (j.addOnServices?.reduce((s, a) => s + (a.vendorId ? 0 : (a.subcontractorRate || 0)), 0) || 0),
               })),
             }
           })

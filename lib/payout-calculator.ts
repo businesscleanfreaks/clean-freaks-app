@@ -85,7 +85,9 @@ export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
         groupOwed += monthlyRate
         groupJobs.forEach((job: any) => {
           if (!job.subcontractorPaid) {
-            job.addOnServices?.forEach((a: any) => { groupOwed += a.subcontractorRate })
+            // Add-ons performed by an outside vendor are paid through the vendor (not
+            // the schedule's cleaner); only in-house add-ons credit this cleaner.
+            job.addOnServices?.forEach((a: any) => { if (!a.vendorId) groupOwed += a.subcontractorRate })
           }
         })
       }
@@ -94,7 +96,7 @@ export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
       // Calculate total (all jobs) for reference
       let addOnTotal = 0
       groupJobs.forEach((job: any) => {
-        job.addOnServices?.forEach((a: any) => { addOnTotal += a.subcontractorRate })
+        job.addOnServices?.forEach((a: any) => { if (!a.vendorId) addOnTotal += a.subcontractorRate })
       })
 
       const monthDisplay = format(new Date(firstJob.date), 'MMMM yyyy')
@@ -117,8 +119,9 @@ export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
 
       groupJobs.forEach((job: any) => {
         let jobTotal = job.subcontractorRate || 0
-        job.addOnServices?.forEach((a: any) => { jobTotal += a.subcontractorRate || 0 })
-        
+        // Vendor-performed add-ons are paid via the vendor, not this cleaner.
+        job.addOnServices?.forEach((a: any) => { if (!a.vendorId) jobTotal += a.subcontractorRate || 0 })
+
         groupTotalAmount += jobTotal
         if (!job.subcontractorPaid) {
           groupOwedAmount += jobTotal
