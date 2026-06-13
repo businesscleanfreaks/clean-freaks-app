@@ -7,8 +7,6 @@ import {
   Users,
   Calendar,
   FileText,
-  UserCog,
-  Package,
   Wallet,
   Settings,
   LogOut,
@@ -53,8 +51,8 @@ const sections: NavSection[] = [
       { name: "Calendar",  href: "/calendar",       icon: Calendar  },
       { name: "Clients",   href: "/clients",        icon: Users     },
       { name: "Invoices",  href: "/invoices",       icon: FileText  },
-      { name: "Cleaners",  href: "/subcontractors", icon: UserCog, tooltip: "nav-subcontractors" },
-      { name: "Vendors",   href: "/vendors",        icon: Package },
+      // Cleaners + Vendors retired into Payables (single home for payment tracking +
+      // profiles + history). Pages still reachable by URL as a temporary safety net.
       { name: "Payables",  href: "/payables",       icon: Wallet },
     ],
   },

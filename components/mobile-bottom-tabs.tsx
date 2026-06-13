@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { Home, Calendar, Users, FileText, UserCheck, MoreHorizontal, X } from "lucide-react"
+import { Home, Calendar, Users, FileText, Wallet, MoreHorizontal, X } from "lucide-react"
 import { useState } from "react"
 import { haptic } from "@/lib/haptics"
 
@@ -41,7 +41,7 @@ const primaryTabs: TabItem[] = [
 ]
 
 const moreMenuItems = [
-  { href: "/subcontractors", label: "Cleaners", icon: <UserCheck className="w-5 h-5" /> },
+  { href: "/payables", label: "Payables", icon: <Wallet className="w-5 h-5" /> },
 ]
 
 export function MobileBottomTabs() {
