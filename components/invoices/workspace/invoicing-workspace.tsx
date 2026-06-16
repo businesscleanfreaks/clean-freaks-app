@@ -365,13 +365,15 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   // Structured "what changed this month" rows — with the $ impact pulled from the
   // real line items (proration credit for cancellations, add-on totals).
   const changeRows = useMemo(() => {
+    const exceptions = Array.isArray(inv.exceptions) ? inv.exceptions : []
+    const lineItems = Array.isArray(inv.lineItems) ? inv.lineItems : []
     const counts: Record<string, number> = {}
-    for (const e of inv.exceptions) counts[e.type] = (counts[e.type] || 0) + 1
-    const priceEx = inv.exceptions.find((e) => e.type === "PRICE_CHANGE")
-    const credit = inv.lineItems
+    for (const e of exceptions) counts[e.type] = (counts[e.type] || 0) + 1
+    const priceEx = exceptions.find((e) => e.type === "PRICE_CHANGE")
+    const credit = lineItems
       .filter((li) => li.sourceType === "PRORATION")
       .reduce((s, li) => s + Math.abs(li.price * li.quantity), 0)
-    const addOnTotal = inv.lineItems
+    const addOnTotal = lineItems
       .filter((li) => li.sourceType === "ADD_ON" || li.sourceType === "RECURRING_ADD_ON")
       .reduce((s, li) => s + li.price * li.quantity, 0)
     const rows: Array<{ label: string; value: string; flag: boolean }> = [
@@ -461,37 +463,29 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
 function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   const [pdfId, setPdfId] = useState<string | null>(inv.existingInvoiceId || null)
   const [generating, setGenerating] = useState(false)
+  const [pdfOpen, setPdfOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
-  useEffect(() => { setPdfId(inv.existingInvoiceId || null) }, [inv.candidateId, inv.existingInvoiceId])
+  useEffect(() => setMounted(true), [])
+  useEffect(() => { setPdfId(inv.existingInvoiceId || null); setPdfOpen(false) }, [inv.candidateId, inv.existingInvoiceId])
 
-  const generate = async () => {
-    setGenerating(true)
-    try {
-      const id = await ensureInvoiceId(inv)
-      if (id) {
-        await fetch(`/api/invoices/${id}/generate-pdf`, { method: "POST" }).catch(() => {})
-        setPdfId(id)
+  // Open the exact PDF (what the client receives) in a popup. Generates it first
+  // (creating the invoice) when it doesn't exist yet; the inline approximation stays.
+  const openPdf = async () => {
+    let id = pdfId
+    if (!id) {
+      setGenerating(true)
+      try {
+        id = await ensureInvoiceId(inv)
+        if (id) setPdfId(id)
+      } finally {
+        setGenerating(false)
       }
-    } finally {
-      setGenerating(false)
     }
-  }
-
-  // Exact PDF — identical to what the client receives.
-  if (pdfId) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">Exact PDF · what the client sees</span>
-          <a href={`/api/invoices/${pdfId}/generate-pdf`} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800">
-            <ExternalLink size={12} /> Open in new tab
-          </a>
-        </div>
-        <iframe src={`/api/invoices/${pdfId}/generate-pdf#toolbar=0&navpanes=0&view=FitH`} title="Invoice PDF preview"
-          className="min-h-0 flex-1 rounded-md border-0 bg-white shadow-sm" />
-      </div>
-    )
+    if (id) {
+      fetch(`/api/invoices/${id}/generate-pdf`, { method: "POST" }).catch(() => {})
+      setPdfOpen(true)
+    }
   }
 
   const [y, m] = month.split("-").map(Number)
@@ -500,18 +494,19 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
   const invNumber = inv.existingInvoiceNumber || "Draft"
   const loc = (client?.locations || [])[0] as { address?: string; name?: string } | undefined
   const address = loc?.address || loc?.name || ""
-  const items = inv.lineItems.length > 0
-    ? inv.lineItems
+  const lineItems = Array.isArray(inv.lineItems) ? inv.lineItems : []
+  const items = lineItems.length > 0
+    ? lineItems
     : [{ description: `Cleaning services · ${formatMonthLabel(month)}`, quantity: 1, price: inv.total, sourceType: "FLAT_RATE", locationName: undefined }]
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-6">
       <div className="mx-auto w-full max-w-[540px]">
-        <button onClick={generate} disabled={generating}
+        <button onClick={openPdf} disabled={generating}
           className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-[12px] font-semibold text-white disabled:opacity-60" style={{ background: "#0D9488" }}>
-          <FileText size={13} /> {generating ? "Generating the real PDF…" : "Generate exact PDF — what the client sees"}
+          <FileText size={13} /> {generating ? "Preparing PDF…" : pdfId ? "Open exact PDF — what the client sees" : "Generate & open exact PDF"}
         </button>
-        <div className="mb-3 text-center text-[10.5px] text-stone-400">The card below is a quick approximation. Generate above for the exact PDF.</div>
+        <div className="mb-3 text-center text-[10.5px] text-stone-400">The card below is a quick approximation. Open the exact PDF above.</div>
         <div className="rounded-md bg-white p-10 shadow-lg">
         <div className="flex items-start justify-between">
           <div>
@@ -563,6 +558,16 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
 
         </div>
       </div>
+      {mounted && pdfOpen && pdfId && createPortal(
+        <div onClick={() => setPdfOpen(false)} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-6">
+          <div onClick={(e) => e.stopPropagation()} className="relative flex h-[92vh] w-[min(820px,94vw)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+            <button onClick={() => setPdfOpen(false)} aria-label="Close"
+              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-stone-100 text-[14px] text-stone-500 hover:bg-stone-200">&times;</button>
+            <iframe src={`/api/invoices/${pdfId}/generate-pdf#toolbar=0&navpanes=0&view=FitH`} title="Invoice PDF" className="h-full w-full border-0" />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

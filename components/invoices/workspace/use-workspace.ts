@@ -43,7 +43,7 @@ function toUiStatus(status: string): WorkspaceInvoice["uiStatus"] {
 export function shortReason(inv: WorkspaceInvoice): string | null {
   if (inv.verification.level === "green") return null
   const counts: Record<string, number> = {}
-  for (const e of inv.exceptions) counts[e.type] = (counts[e.type] || 0) + 1
+  for (const e of inv.exceptions || []) counts[e.type] = (counts[e.type] || 0) + 1
   const parts: string[] = []
   if (counts.SKIPPED) parts.push(`${counts.SKIPPED} cancelled`)
   if (counts.PRICE_CHANGE) parts.push("Rate change")
@@ -78,10 +78,12 @@ export function buildVerdict(inv: WorkspaceInvoice): Verdict {
   }
   if (inv.uiStatus === "Sent") return { text: "Sent — awaiting payment.", tone: "blue" }
 
+  const exceptions = Array.isArray(inv.exceptions) ? inv.exceptions : []
+  const lineItems = Array.isArray(inv.lineItems) ? inv.lineItems : []
   const counts: Record<string, number> = {}
-  for (const e of inv.exceptions) counts[e.type] = (counts[e.type] || 0) + 1
-  const proration = inv.lineItems.find((li) => li.sourceType === "PRORATION")
-  const addOn = inv.lineItems.find((li) => li.sourceType === "ADD_ON" || li.sourceType === "RECURRING_ADD_ON")
+  for (const e of exceptions) counts[e.type] = (counts[e.type] || 0) + 1
+  const proration = lineItems.find((li) => li.sourceType === "PRORATION")
+  const addOn = lineItems.find((li) => li.sourceType === "ADD_ON" || li.sourceType === "RECURRING_ADD_ON")
   const isFlat = inv.billingType === "FLAT_RATE"
   const cleans = inv.completedCount || inv.jobCount
 
@@ -100,7 +102,7 @@ export function buildVerdict(inv: WorkspaceInvoice): Verdict {
     return { text: `${desc} due this month${amt}, on top of the regular visits.`, tone: "amber" }
   }
   if (counts.PRICE_CHANGE) {
-    const msg = inv.exceptions.find((e) => e.type === "PRICE_CHANGE")?.message
+    const msg = exceptions.find((e) => e.type === "PRICE_CHANGE")?.message
     return { text: msg ? msg[0].toUpperCase() + msg.slice(1) : "Rate changed this month — review before sending.", tone: "amber" }
   }
   if (counts.ONE_OFF_JOB) {

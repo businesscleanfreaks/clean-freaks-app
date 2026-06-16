@@ -18,7 +18,7 @@ export async function ensureInvoiceId(inv: WorkspaceInvoice): Promise<string | n
       jobIds: inv.jobIds,
       previewOnly: true,
       showPaymentOptions: true,
-      lineItems: inv.lineItems.map((li) => ({
+      lineItems: (inv.lineItems || []).map((li) => ({
         description: li.description,
         amount: li.quantity * li.price,
         jobId: li.jobId || null,

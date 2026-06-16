@@ -41,7 +41,8 @@ function plural(n: number, word: string) {
 }
 
 export function deriveVerification(candidate: VerifiableCandidate): InvoiceVerification {
-  const attention = candidate.exceptions.filter((e) => ATTENTION_TYPES.has(e.type))
+  const allExceptions = Array.isArray(candidate.exceptions) ? candidate.exceptions : []
+  const attention = allExceptions.filter((e) => ATTENTION_TYPES.has(e.type))
   const hasMissingEmail = attention.some((e) => e.type === 'MISSING_EMAIL')
 
   // ── Green: nothing to flag ──
