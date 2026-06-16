@@ -21,6 +21,16 @@ export interface PayLedgerResult {
 }
 
 /**
+ * An add-on credits the job's OWN cleaner only when nobody else performs it:
+ * not an outside vendor (paid via the Vendors tab), and not a different in-house
+ * cleaner (paid via that cleaner's own "add-ons performed" payables). An add-on
+ * with no explicit performer, or one assigned back to the job's cleaner, counts.
+ */
+function addOnCreditsJobCleaner(a: any, job: any): boolean {
+  return !a.vendorId && (!a.subcontractorId || a.subcontractorId === job.subcontractorId)
+}
+
+/**
  * Centralized helper to calculate the total owed amount to a subcontractor
  * and build the corresponding frontend ledger display groups.
  * Ensures queue, profile, and dashboard always agree.
@@ -85,9 +95,9 @@ export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
         groupOwed += monthlyRate
         groupJobs.forEach((job: any) => {
           if (!job.subcontractorPaid) {
-            // Add-ons performed by an outside vendor are paid through the vendor (not
-            // the schedule's cleaner); only in-house add-ons credit this cleaner.
-            job.addOnServices?.forEach((a: any) => { if (!a.vendorId) groupOwed += a.subcontractorRate })
+            // Add-ons performed by an outside vendor OR a different in-house cleaner
+            // are paid through them, not the schedule's cleaner.
+            job.addOnServices?.forEach((a: any) => { if (addOnCreditsJobCleaner(a, job)) groupOwed += a.subcontractorRate })
           }
         })
       }
@@ -96,7 +106,7 @@ export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
       // Calculate total (all jobs) for reference
       let addOnTotal = 0
       groupJobs.forEach((job: any) => {
-        job.addOnServices?.forEach((a: any) => { if (!a.vendorId) addOnTotal += a.subcontractorRate })
+        job.addOnServices?.forEach((a: any) => { if (addOnCreditsJobCleaner(a, job)) addOnTotal += a.subcontractorRate })
       })
 
       const monthDisplay = format(new Date(firstJob.date), 'MMMM yyyy')
@@ -119,8 +129,9 @@ export function buildSubcontractorPayLedger(jobs: any[]): PayLedgerResult {
 
       groupJobs.forEach((job: any) => {
         let jobTotal = job.subcontractorRate || 0
-        // Vendor-performed add-ons are paid via the vendor, not this cleaner.
-        job.addOnServices?.forEach((a: any) => { if (!a.vendorId) jobTotal += a.subcontractorRate || 0 })
+        // Add-ons performed by a vendor or a different in-house cleaner are paid via
+        // them, not this cleaner.
+        job.addOnServices?.forEach((a: any) => { if (addOnCreditsJobCleaner(a, job)) jobTotal += a.subcontractorRate || 0 })
 
         groupTotalAmount += jobTotal
         if (!job.subcontractorPaid) {

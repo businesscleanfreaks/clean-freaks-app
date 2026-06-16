@@ -327,6 +327,7 @@ model AddOnService {
   subcontractorId   String?   // Assigned in-house cleaner (alternative to a vendor). null = schedule's cleaner / vendor.
   dayOfWeek         Int?      // 0=Sun..6=Sat — which day the add-on is performed (scheduling reference)
   vendorPaid        Boolean   @default(false)
+  subcontractorPaid Boolean   @default(false) // Paid to the assigned in-house cleaner (when a different cleaner performs the add-on)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

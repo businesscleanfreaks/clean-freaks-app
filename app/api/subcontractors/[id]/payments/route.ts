@@ -23,7 +23,14 @@ export async function POST(
       )
     }
     
-    const { jobIds, datePaid, notes } = validationResult.data
+    const { jobIds, addOnIds, datePaid, notes } = validationResult.data
+
+    // An add-on belongs to THIS cleaner's pay only when nobody else performs it:
+    // not an outside vendor, and not a different in-house cleaner. (Jobs queried
+    // below all have subcontractorId === this cleaner, so === resolvedParams.id is
+    // equivalent to === job.subcontractorId.)
+    const creditsThisCleaner = (addOn: { vendorId: string | null; subcontractorId: string | null }) =>
+      !addOn.vendorId && (!addOn.subcontractorId || addOn.subcontractorId === resolvedParams.id)
 
     // Get billing start date to prevent paying pre-cutoff jobs
     const billingStartDate = await getBillingStartDate()
@@ -47,9 +54,20 @@ export async function POST(
       },
     })
 
-    if (jobs.length === 0) {
+    // Add-ons this cleaner performed on someone else's schedule/job (Payout-B):
+    // paid via a flag, no job line item. Only this cleaner's unpaid ones count.
+    const assignedAddOns = await prisma.addOnService.findMany({
+      where: {
+        id: { in: addOnIds },
+        subcontractorId: resolvedParams.id,
+        subcontractorPaid: false,
+      },
+      select: { id: true, subcontractorRate: true },
+    })
+
+    if (jobs.length === 0 && assignedAddOns.length === 0) {
       return NextResponse.json(
-        { error: 'No valid unpaid jobs found for this subcontractor' },
+        { error: 'No valid unpaid jobs or add-ons found for this subcontractor' },
         { status: 400 }
       )
     }
@@ -60,6 +78,14 @@ export async function POST(
       const alreadyPaid = jobIds.filter(id => !foundIds.has(id))
       return NextResponse.json(
         { error: `${alreadyPaid.length} job(s) already paid or not found`, alreadyPaidJobIds: alreadyPaid },
+        { status: 409 }
+      )
+    }
+    if (assignedAddOns.length < addOnIds.length) {
+      const foundIds = new Set(assignedAddOns.map(a => a.id))
+      const alreadyPaid = addOnIds.filter(id => !foundIds.has(id))
+      return NextResponse.json(
+        { error: `${alreadyPaid.length} add-on(s) already paid or not found`, alreadyPaidAddOnIds: alreadyPaid },
         { status: 409 }
       )
     }
@@ -92,12 +118,13 @@ export async function POST(
         let jobTotal = monthlyRate
         
         // Add add-on subcontractor rates from every selected job in this month
+        // (skip add-ons performed by a vendor or a different in-house cleaner).
         jobsGroup.forEach(job => {
           job.addOnServices.forEach(addOn => {
-            jobTotal += addOn.subcontractorRate
+            if (creditsThisCleaner(addOn)) jobTotal += addOn.subcontractorRate
           })
         })
-        
+
         totalAmount += jobTotal
         // Create one line item for the first job representing the monthly rate + add-ons
         paymentLineItems.push({
@@ -108,12 +135,13 @@ export async function POST(
         // For PER_CLEAN or one-off jobs, sum all rates and create line items for each
         jobsGroup.forEach(job => {
           let jobTotal = job.subcontractorRate
-          
-          // Add add-on subcontractor rates for this job
+
+          // Add add-on subcontractor rates for this job (skip add-ons performed by
+          // a vendor or a different in-house cleaner).
           job.addOnServices.forEach(addOn => {
-            jobTotal += addOn.subcontractorRate
+            if (creditsThisCleaner(addOn)) jobTotal += addOn.subcontractorRate
           })
-          
+
           totalAmount += jobTotal
           paymentLineItems.push({
             jobId: job.id,
@@ -122,6 +150,11 @@ export async function POST(
         })
       }
     })
+
+    // Add-ons this cleaner performed on someone else's schedule/job: paid via the
+    // subcontractorPaid flag (no job line item), folded into the payment total.
+    const assignedAddOnTotal = assignedAddOns.reduce((sum, a) => sum + a.subcontractorRate, 0)
+    totalAmount += assignedAddOnTotal
 
     // Use transaction to ensure payment and job updates happen atomically
     const payment = await prisma.$transaction(async (tx) => {
@@ -154,14 +187,24 @@ export async function POST(
       })
 
       // Mark all jobs as paid
-      await tx.job.updateMany({
-        where: {
-          id: { in: jobs.map(job => job.id) },
-        },
-        data: {
-          subcontractorPaid: true,
-        },
-      })
+      if (jobs.length > 0) {
+        await tx.job.updateMany({
+          where: {
+            id: { in: jobs.map(job => job.id) },
+          },
+          data: {
+            subcontractorPaid: true,
+          },
+        })
+      }
+
+      // Mark this cleaner's performed add-ons paid
+      if (assignedAddOns.length > 0) {
+        await tx.addOnService.updateMany({
+          where: { id: { in: assignedAddOns.map(a => a.id) } },
+          data: { subcontractorPaid: true },
+        })
+      }
 
       return newPayment
     })

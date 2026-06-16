@@ -20,7 +20,8 @@ interface PayableAccount {
   status: AccountStatus
   reason: string
   payType: string
-  payableItemIds: string[] // job ids (cleaner) / add-on ids (vendor) that are payable now
+  itemKind?: 'job' | 'addon' // 'addon' = cleaner-assigned add-on account (Payout-B); default 'job'
+  payableItemIds: string[] // job ids (cleaner) / add-on ids (vendor / cleaner add-on) payable now
   allItemIds: string[]
   cleans: Array<{ date: string; amount: number }>
 }
@@ -167,7 +168,7 @@ export async function GET(request: Request) {
               allItemIds: groupJobs.map((j) => j.id),
               cleans: groupJobs.map((j) => ({
                 date: j.date.toISOString(),
-                amount: (j.subcontractorRate || 0) + (j.addOnServices?.reduce((s, a) => s + (a.vendorId ? 0 : (a.subcontractorRate || 0)), 0) || 0),
+                amount: (j.subcontractorRate || 0) + (j.addOnServices?.reduce((s, a) => s + ((!a.vendorId && (!a.subcontractorId || a.subcontractorId === sub.id)) ? (a.subcontractorRate || 0) : 0), 0) || 0),
               })),
             }
           })
@@ -190,6 +191,64 @@ export async function GET(request: Request) {
           fastPay: sub.fastPay,
         }
       })
+    // ── CLEANER-ASSIGNED ADD-ONS (Payout-B) ───────────────────────────────
+    // Add-ons performed by a DIFFERENT in-house cleaner than the one running the
+    // schedule/job. They pay the performer — surfaced as that cleaner's own
+    // "ready to pay" account, separate from their regular cleans.
+    const assignedAddOns = await prisma.addOnService.findMany({
+      where: { subcontractorId: { in: subIds }, subcontractorPaid: false },
+      select: {
+        id: true,
+        subcontractorRate: true,
+        subcontractorId: true,
+        createdAt: true,
+        job: { select: { date: true, subcontractorId: true, location: { select: { client: { select: { id: true, name: true } } } } } },
+        schedule: { select: { subcontractorId: true, location: { select: { client: { select: { id: true, name: true } } } } } },
+      },
+    })
+    // performer id → clientId → account accumulator
+    const addOnsBySub = new Map<string, Map<string, { clientName: string; owed: number; ids: string[]; cleans: Array<{ date: string; amount: number }> }>>()
+    for (const a of assignedAddOns) {
+      const performer = a.subcontractorId
+      if (!performer) continue
+      const owner = a.job?.subcontractorId ?? a.schedule?.subcontractorId ?? null
+      if (owner === performer) continue // same-cleaner add-on: already paid via the job
+      if (billingStartDate && a.job?.date && a.job.date < billingStartDate) continue
+      const client = a.job?.location.client || a.schedule?.location.client || null
+      const clientId = client?.id || 'unassigned'
+      const clientName = client?.name ? `${client.name} · add-ons` : 'Add-ons performed'
+      const byClient = addOnsBySub.get(performer) || new Map()
+      const e = byClient.get(clientId) || { clientName, owed: 0, ids: [] as string[], cleans: [] as Array<{ date: string; amount: number }> }
+      e.owed += a.subcontractorRate
+      e.ids.push(a.id)
+      e.cleans.push({ date: (a.job?.date || a.createdAt).toISOString(), amount: a.subcontractorRate })
+      byClient.set(clientId, e)
+      addOnsBySub.set(performer, byClient)
+    }
+    // Merge add-on accounts into the matching cleaner and bump their totals.
+    for (const c of allCleaners) {
+      const byClient = addOnsBySub.get(c.id)
+      if (!byClient) continue
+      for (const [clientId, e] of byClient.entries()) {
+        c.accounts.push({
+          id: `${c.id}:addon:${clientId}`,
+          clientName: e.clientName,
+          owed: e.owed,
+          safeOwed: e.owed,
+          waitingOwed: 0,
+          status: 'safe',
+          reason: 'Add-on you performed — ready to pay',
+          payType: 'PER_CLEAN',
+          itemKind: 'addon',
+          payableItemIds: e.ids,
+          allItemIds: e.ids,
+          cleans: e.cleans,
+        })
+        c.total += e.owed
+        c.safe += e.owed
+      }
+    }
+
     const cleaners = allCleaners.filter((c) => c.accounts.length > 0)
     const othersCleaners = allCleaners.filter((c) => c.accounts.length === 0)
 

@@ -71,9 +71,16 @@ export function PaymentDetail({ payable, onPaid, onEdit }: { payable: Payable | 
       const url = payable.type === "cleaner"
         ? `/api/subcontractors/${payable.id}/payments`
         : `/api/vendors/${payable.id}/payments`
-      const body = payable.type === "cleaner"
-        ? { jobIds: itemIds, datePaid: date, notes: combinedNotes || null }
-        : { addOnServiceIds: itemIds, datePaid: date, notes: combinedNotes || null }
+      let body: Record<string, unknown>
+      if (payable.type === "cleaner") {
+        // Split selected items: regular cleans → jobIds; add-ons this cleaner
+        // performed on someone else's schedule → addOnIds (Payout-B).
+        const jobIds = Array.from(new Set(checkedAccounts.filter((a) => a.itemKind !== "addon").flatMap((a) => a.payableItemIds)))
+        const addOnIds = Array.from(new Set(checkedAccounts.filter((a) => a.itemKind === "addon").flatMap((a) => a.payableItemIds)))
+        body = { jobIds, addOnIds, datePaid: date, notes: combinedNotes || null }
+      } else {
+        body = { addOnServiceIds: itemIds, datePaid: date, notes: combinedNotes || null }
+      }
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

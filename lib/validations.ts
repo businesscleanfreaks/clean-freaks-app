@@ -203,9 +203,14 @@ export const updateExpenseSchema = z.object({
 
 // Payment schemas
 export const createPaymentSchema = z.object({
-  jobIds: z.array(z.string().uuid('Invalid job ID')).min(1, 'At least one job is required'),
+  jobIds: z.array(z.string().uuid('Invalid job ID')).optional().default([]),
+  // Add-ons performed by this cleaner on someone else's schedule/job (Payout-B).
+  addOnIds: z.array(z.string().uuid('Invalid add-on ID')).optional().default([]),
   datePaid: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
   notes: z.string().max(2000, 'Notes too long').optional().nullable(),
+}).refine((d) => d.jobIds.length + d.addOnIds.length > 0, {
+  message: 'At least one job or add-on is required',
+  path: ['jobIds'],
 })
 
 // Email Invoice Schema
