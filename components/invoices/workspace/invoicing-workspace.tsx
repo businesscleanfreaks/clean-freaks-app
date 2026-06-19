@@ -4,14 +4,14 @@ import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
+import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { MiniCalendar } from "./mini-calendar"
 import { TemplatesModal } from "./templates-modal"
 import {
-  useWorkspace, formatMonthLabel, shiftMonth, shortReason, buildVerdict, VERDICT_TONE,
+  useWorkspace, formatMonthLabel, shiftMonth, shortReason,
   type WorkspaceInvoice, type WorkspaceTab,
 } from "./use-workspace"
 import { ComposerRail } from "./composer-rail"
@@ -33,17 +33,48 @@ export function InvoicingWorkspace() {
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [railWidth, setRailWidth] = useState(360)
   const [detailWidth, setDetailWidth] = useState(340)
+  const [listWidth, setListWidth] = useState(330)
   useEffect(() => setMounted(true), [])
+  // Restore saved column widths — list width persists across sessions (Ticket 1).
+  useEffect(() => {
+    try {
+      const l = Number(localStorage.getItem("cf-inv-listW")); if (l >= 240 && l <= 480) setListWidth(l)
+      const d = Number(localStorage.getItem("cf-inv-detailW")); if (d >= 280 && d <= 560) setDetailWidth(d)
+      const r = Number(localStorage.getItem("cf-inv-railW")); if (r >= 340 && r <= 600) setRailWidth(r)
+    } catch { /* localStorage unavailable */ }
+  }, [])
 
-  // Drag-to-resize the composer rail (rightmost column → width from the right edge).
-  const startResize = (e: React.MouseEvent) => {
+  // Drag-to-resize the left invoice list (Ticket 1 — clamp 240–480, persisted).
+  const startListResize = (e: React.MouseEvent) => {
     e.preventDefault()
-    const onMove = (ev: MouseEvent) => setRailWidth(Math.min(600, Math.max(340, window.innerWidth - ev.clientX)))
+    const startX = e.clientX
+    const startW = listWidth
+    let finalW = startW
+    const onMove = (ev: MouseEvent) => { finalW = Math.min(480, Math.max(240, startW + (ev.clientX - startX))); setListWidth(finalW) }
     const onUp = () => {
       document.removeEventListener("mousemove", onMove)
       document.removeEventListener("mouseup", onUp)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
+      try { localStorage.setItem("cf-inv-listW", String(finalW)) } catch { /* noop */ }
+    }
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+  }
+
+  // Drag-to-resize the composer rail (rightmost column → width from the right edge).
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    let finalW = railWidth
+    const onMove = (ev: MouseEvent) => { finalW = Math.min(600, Math.max(340, window.innerWidth - ev.clientX)); setRailWidth(finalW) }
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      try { localStorage.setItem("cf-inv-railW", String(finalW)) } catch { /* noop */ }
     }
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
@@ -56,12 +87,14 @@ export function InvoicingWorkspace() {
     e.preventDefault()
     const startX = e.clientX
     const startW = detailWidth
-    const onMove = (ev: MouseEvent) => setDetailWidth(Math.min(560, Math.max(280, startW + (ev.clientX - startX))))
+    let finalW = startW
+    const onMove = (ev: MouseEvent) => { finalW = Math.min(560, Math.max(280, startW + (ev.clientX - startX))); setDetailWidth(finalW) }
     const onUp = () => {
       document.removeEventListener("mousemove", onMove)
       document.removeEventListener("mouseup", onUp)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
+      try { localStorage.setItem("cf-inv-detailW", String(finalW)) } catch { /* noop */ }
     }
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
@@ -146,7 +179,7 @@ export function InvoicingWorkspace() {
       {/* ── Three columns ── */}
       <div className="flex min-h-0 flex-1">
         {/* Left: invoice list */}
-        <div className="flex w-[330px] shrink-0 flex-col border-r border-stone-200 bg-white">
+        <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: listWidth }}>
           {ws.verifiedReady.length > 0 && (
             <div className="border-b border-stone-100 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -154,7 +187,7 @@ export function InvoicingWorkspace() {
                   <span className="font-semibold text-stone-800">{ws.verifiedReady.length} verified</span> · {formatCurrency(verifiedTotal)}
                 </div>
                 <button onClick={() => setConfirmSend({ targets: ws.verifiedReady, isAll: true })} disabled={!!batch}
-                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60">
+                  className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-60">
                   <Send size={12} /> Send all
                 </button>
               </div>
@@ -211,7 +244,12 @@ export function InvoicingWorkspace() {
           )}
         </div>
 
-        {/* Detail column: verdict · schedule · calendar · changes */}
+        {/* Resize handle (list ↔ detail) — Ticket 1 */}
+        <div onMouseDown={startListResize} onDoubleClick={() => { setListWidth(330); try { localStorage.setItem("cf-inv-listW", "330") } catch { /* noop */ } }}
+          className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
+          title="Drag to resize · Double-click to reset" />
+
+        {/* Detail column: schedule · changes · calendar */}
         <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: detailWidth }}>
           {ws.selected ? <DetailPanel inv={ws.selected} month={ws.month} /> : (
             <div className="m-auto p-6 text-center text-sm text-stone-400">Select an invoice.</div>
@@ -338,9 +376,6 @@ function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: Workspac
 }
 
 function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
-  const verdict = buildVerdict(inv)
-  const tone = VERDICT_TONE[verdict.tone]
-  const [detailsOpen, setDetailsOpen] = useState(true)
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
 
   const cleans = useMemo(() => {
@@ -387,71 +422,81 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
     return rows
   }, [inv.exceptions, inv.lineItems])
 
+  // Only the rows that represent an actual change this month (the "Changes" card +
+  // the headline count are driven off these).
+  const flaggedRows = changeRows.filter((r) => r.flag)
+  const monthCleans = cleans.filter((c: { date: string }) => (c.date || "").startsWith(month))
+  const billingModel = inv.billingType === "FLAT_RATE" ? "Flat monthly" : inv.billingType === "ONE_TIME" ? "One-time" : "Per clean"
+
   return (
     <div className="flex h-full flex-col">
-      {/* Header: client · due · status · amount */}
-      <div className="flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-3">
-        <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold text-stone-900">{inv.clientName}</div>
-          <div className="text-[12px] text-stone-400">Due {dueDate}</div>
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-3">
+      {/* Header (Ticket 5): full name → due → amount on its own line + status inline */}
+      <div className="border-b border-stone-200 bg-white px-5 py-4">
+        <div className="text-[17px] font-semibold leading-snug text-stone-900">{inv.clientName}</div>
+        <div className="mt-1.5 text-[12px] text-stone-400">Due {dueDate}</div>
+        <div className="mt-3.5 flex items-center gap-3">
+          <span className="font-mono text-[26px] font-bold leading-none text-stone-900">{formatCurrency(inv.total)}</span>
           <span className="rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={badge}>{inv.uiStatus}</span>
-          <span className="font-mono text-[18px] font-bold text-stone-900">{formatCurrency(inv.total)}</span>
         </div>
       </div>
 
-      {/* Scrollable detail: verdict · schedule · calendar · changes */}
-      <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-      {/* Verdict — plain-English "what's the story this month" + the this-month detail */}
-      <div className="px-5 pt-4">
-        <div className="rounded-lg px-3.5 py-3" style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
-          <div className="flex items-start gap-2.5">
-            <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full" style={{ background: tone.dot }} />
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium leading-snug" style={{ color: tone.text }}>{verdict.text}</div>
-              <div className="mt-1 truncate text-[12px] text-stone-500">{inv.scheduleSummary}{cleaner ? ` · ${cleaner}` : ""}</div>
+      {/* Scrollable detail (Ticket 2): schedule · changes · headline · calendar */}
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        {/* Schedule */}
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Schedule</div>
+          <dl className="mt-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-3 text-[12.5px]">
+              <dt className="text-stone-500">Frequency</dt>
+              <dd className="text-right font-medium text-stone-800">{inv.scheduleSummary || "—"}</dd>
             </div>
-            <button onClick={() => setDetailsOpen((o) => !o)}
-              className="inline-flex flex-shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold hover:bg-black/5"
-              style={{ color: tone.text }}>
-              This month <ChevronDown size={13} className={`transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
-            </button>
+            <div className="flex items-center justify-between gap-3 text-[12.5px]">
+              <dt className="text-stone-500">Billing</dt>
+              <dd className="text-right font-medium text-stone-800">{billingModel}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-[12.5px]">
+              <dt className="text-stone-500">Cleaner</dt>
+              <dd className="text-right font-medium text-stone-800">{cleaner || "Unassigned"}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Changes this month — shown only when there are changes */}
+        {flaggedRows.length > 0 && (
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Changes this month</div>
+            <div className="mt-2 space-y-1.5 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+              {flaggedRows.map((r) => (
+                <div key={r.label} className="flex items-start justify-between gap-3 text-[12px]">
+                  <span className="flex items-center gap-1.5 text-stone-600">
+                    <AlertTriangle size={12} className="flex-shrink-0 text-amber-500" />
+                    {r.label}
+                  </span>
+                  <span className="text-right font-medium text-stone-800">{r.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
+        )}
 
-          {detailsOpen && (
-            <div className="mt-3 space-y-3 border-t pt-3" style={{ borderColor: tone.border }}>
-              {/* What changed this month */}
-              <div className="space-y-1.5">
-                {changeRows.map((r) => (
-                  <div key={r.label} className="flex items-start justify-between gap-3 text-[12px]">
-                    <span className="flex items-center gap-1.5 text-stone-500">
-                      {r.flag ? <AlertTriangle size={12} className="flex-shrink-0 text-amber-500" /> : <CheckCircle2 size={12} className="flex-shrink-0 text-emerald-500" />}
-                      {r.label}
-                    </span>
-                    <span className={`text-right ${r.flag ? "font-medium text-stone-800" : "text-stone-400"}`}>{r.value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* This month's cleans calendar */}
-              <div className="rounded-lg border border-white/70 bg-white/70 p-2.5">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-stone-600">{formatMonthLabel(month)}</span>
-                  <span className="text-[11px] text-stone-400">{cleans.length} clean{cleans.length === 1 ? "" : "s"}</span>
-                </div>
-                <MiniCalendar month={month} cleans={cleans} />
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Missed</span>
-                </div>
-              </div>
+        {/* One quiet headline above the calendar, then the calendar */}
+        <div>
+          <div className="mb-2 text-[12px] text-stone-500">
+            <span className="font-semibold text-stone-700">{monthCleans.length} clean{monthCleans.length === 1 ? "" : "s"}</span> this month · {flaggedRows.length === 0 ? "no changes" : `${flaggedRows.length} change${flaggedRows.length === 1 ? "" : "s"}`}
+          </div>
+          <div className="rounded-lg border border-stone-200 bg-white p-2.5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-stone-600">{formatMonthLabel(month)}</span>
+              <span className="text-[11px] text-stone-400">{monthCleans.length} clean{monthCleans.length === 1 ? "" : "s"}</span>
             </div>
-          )}
+            <MiniCalendar month={month} cleans={cleans} />
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Missed</span>
+            </div>
+          </div>
         </div>
-      </div>
-
       </div>
     </div>
   )
@@ -500,14 +545,17 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
     : [{ description: `Cleaning services · ${formatMonthLabel(month)}`, quantity: 1, price: inv.total, sourceType: "FLAT_RATE", locationName: undefined }]
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-6">
-      <div className="mx-auto w-full max-w-[540px]">
-        <button onClick={openPdf} disabled={generating}
-          className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-[12px] font-semibold text-white disabled:opacity-60" style={{ background: "#0D9488" }}>
-          <FileText size={13} /> {generating ? "Preparing PDF…" : pdfId ? "Open exact PDF — what the client sees" : "Generate & open exact PDF"}
-        </button>
-        <div className="mb-3 text-center text-[10.5px] text-stone-400">The card below is a quick approximation. Open the exact PDF above.</div>
-        <div className="rounded-md bg-white p-10 shadow-lg">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
+      <div className="mx-auto flex min-h-0 w-full max-w-[540px] flex-1 flex-col">
+        {/* Demoted secondary action — the exact client-facing PDF (Ticket 3) */}
+        <div className="mb-2 flex justify-end">
+          <button onClick={openPdf} disabled={generating}
+            className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-medium text-stone-600 transition-colors hover:bg-stone-50 disabled:opacity-60"
+            title="Open the exact PDF the client receives">
+            <FileText size={12} /> {generating ? "Preparing…" : pdfId ? "Open exact PDF" : "Exact PDF"}
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-md bg-white p-10 shadow-lg">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
