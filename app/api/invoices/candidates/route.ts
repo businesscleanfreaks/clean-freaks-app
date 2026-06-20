@@ -4,6 +4,7 @@ import { startOfMonth, endOfMonth, format } from "date-fns"
 import { getBillingStartDate } from "@/lib/billing-settings"
 import { computeClientProration } from "@/lib/proration"
 import { logger } from "@/lib/logger"
+import { calculateScheduleDates } from "@/lib/regenerate-schedule-jobs"
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +32,10 @@ function formatUtcCalendarDate(date: Date, includeYear = false) {
     day: 'numeric',
     ...(includeYear ? { year: 'numeric' } : {}),
   }).format(date)
+}
+
+function utcDateKey(date: Date) {
+  return date.toISOString().slice(0, 10)
 }
 
 function compactLocationName(clientName: string, locationName: string) {
@@ -197,7 +202,7 @@ export async function GET(request: Request) {
     }
 
     interface CandidateException {
-      type: 'SKIPPED' | 'RESCHEDULED' | 'ONE_TIME_ADD_ON' | 'MISSING_EMAIL' | 'PRICE_CHANGE' | 'ONE_OFF_JOB'
+      type: 'SKIPPED' | 'RESCHEDULED' | 'ONE_TIME_ADD_ON' | 'MISSING_EMAIL' | 'PRICE_CHANGE' | 'ONE_OFF_JOB' | 'EXTRA_CLEAN'
       message: string
       scheduleId?: string | null
       locationId?: string
@@ -290,6 +295,51 @@ export async function GET(request: Request) {
             message: `One-off job on ${format(job.date, 'MMM d')} — ${job.location.name}`,
             scheduleId: job.scheduleId,
             locationId: job.locationId,
+          })
+        }
+      })
+
+      const recurringJobsBySchedule = new Map<string, typeof recurringJobs>()
+      recurringJobs.forEach(job => {
+        if (!job.scheduleId) return
+        const grouped = recurringJobsBySchedule.get(job.scheduleId) || []
+        grouped.push(job)
+        recurringJobsBySchedule.set(job.scheduleId, grouped)
+      })
+
+      recurringJobsBySchedule.forEach((scheduleJobs, scheduleId) => {
+        const schedule = scheduleJobs[0]?.schedule
+        if (!schedule) return
+
+        const expectedDates = calculateScheduleDates({
+          frequency: schedule.frequency,
+          startDate: schedule.startDate,
+          daysOfWeek: schedule.daysOfWeek,
+          monthlyPattern: schedule.monthlyPattern,
+          customDates: schedule.customDates,
+          excludedDates: schedule.excludedDates,
+          endDate: schedule.endDate,
+        }, periodEnd).filter(date => date >= effectivePeriodStart && date <= periodEnd)
+
+        const expectedKeys = new Set(expectedDates.map(utcDateKey))
+        const offPatternJobs = scheduleJobs.filter(job => !expectedKeys.has(utcDateKey(job.date)))
+
+        offPatternJobs.forEach(job => {
+          exceptions.push({
+            type: 'EXTRA_CLEAN',
+            message: `Extra clean on ${formatUtcCalendarDate(job.date)} - ${job.location.name}`,
+            scheduleId,
+            locationId: job.locationId,
+          })
+        })
+
+        if (offPatternJobs.length === 0 && scheduleJobs.length > expectedKeys.size) {
+          const locationName = scheduleJobs[0]?.location.name || 'this location'
+          exceptions.push({
+            type: 'EXTRA_CLEAN',
+            message: `${locationName} has ${scheduleJobs.length} cleans this period; schedule expected ${expectedKeys.size}.`,
+            scheduleId,
+            locationId: scheduleJobs[0]?.locationId,
           })
         }
       })

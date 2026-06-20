@@ -693,11 +693,15 @@ export async function regenerateJobsForSchedule(
       },
     })
 
+    const editableStatuses = rebuildDraftInvoicedJobs
+      ? ['SCHEDULED', 'COMPLETED', 'CANCELLED']
+      : ['SCHEDULED', 'CANCELLED']
+
     const futureDeleted = await tx.job.deleteMany({
       where: {
         scheduleId,
         date: { gte: now },
-        status: { in: ['SCHEDULED', 'CANCELLED'] },
+        status: { in: editableStatuses },
         invoiced: false,
         subcontractorPaid: false,
         id: { notIn: Array.from(protectedJobIds) },

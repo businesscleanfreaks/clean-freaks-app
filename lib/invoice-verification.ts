@@ -33,6 +33,7 @@ const ATTENTION_TYPES = new Set([
   'ONE_TIME_ADD_ON',
   'PRICE_CHANGE',
   'ONE_OFF_JOB',
+  'EXTRA_CLEAN',
   'MISSING_EMAIL',
 ])
 
@@ -64,6 +65,7 @@ export function deriveVerification(candidate: VerifiableCandidate): InvoiceVerif
   if (counts.PRICE_CHANGE) parts.push(`${plural(counts.PRICE_CHANGE, 'price change')}`)
   if (counts.ONE_TIME_ADD_ON) parts.push(`${plural(counts.ONE_TIME_ADD_ON, 'add-on')}`)
   if (counts.ONE_OFF_JOB) parts.push(`${plural(counts.ONE_OFF_JOB, 'one-off job')}`)
+  if (counts.EXTRA_CLEAN) parts.push(`${plural(counts.EXTRA_CLEAN, 'extra clean')}`)
 
   const summary =
     parts.length === 0 && hasMissingEmail

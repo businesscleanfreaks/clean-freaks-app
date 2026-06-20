@@ -136,7 +136,10 @@ export async function PUT(
 
     // Regenerate all jobs with updated settings (an explicit edit rebuilds this
     // month's cleans even when a DRAFT invoice was auto-generated for them).
-    const summary = await regenerateJobsForSchedule(schedule.id, { rebuildDraftInvoicedJobs: true })
+    const summary = await regenerateJobsForSchedule(schedule.id, {
+      effectiveDate: schedule.startDate,
+      rebuildDraftInvoicedJobs: true,
+    })
 
     // Revalidate all schedule-related pages
     revalidateSchedulePages(schedule.location.client.id)

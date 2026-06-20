@@ -13,6 +13,37 @@ export const revalidate = 0
 
 // Bump when invoice-pdf.tsx (the template) changes, to invalidate every cached PDF.
 const PDF_TEMPLATE_VERSION = 'v4-ref-layout'
+const LOGO_SETTINGS_CACHE_MS = 60_000
+
+class InvoicePdfNotFoundError extends Error {}
+
+async function fetchInvoiceForPdf(invoiceId: string) {
+  return prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      client: {
+        include: {
+          locations: true,
+        },
+      },
+      lineItems: {
+        include: {
+          job: {
+            include: {
+              location: true,
+            },
+          },
+        },
+      },
+    },
+  })
+}
+
+type InvoiceForPdf = NonNullable<Awaited<ReturnType<typeof fetchInvoiceForPdf>>>
+
+const pdfRenderInFlight = new Map<string, Promise<Buffer>>()
+const invoicePdfInFlight = new Map<string, Promise<{ invoice: InvoiceForPdf; pdfBuffer: Buffer }>>()
+let logoSettingsCache: { expiresAt: number; value: LogoSettings | undefined } | null = null
 
 interface PdfFingerprintSource {
   invoiceNumber: string | null
@@ -81,6 +112,45 @@ function computePdfFingerprint(invoice: PdfFingerprintSource, logoSettings: Logo
   return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')
 }
 
+function isConnectionLimitError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /max clients|EMAXCONNSESSION|MaxClientsInSessionMode/i.test(message)
+}
+
+function publicPdfErrorMessage(error: unknown) {
+  if (error instanceof InvoicePdfNotFoundError) return 'Invoice not found'
+  if (isConnectionLimitError(error)) {
+    return 'PDF generation is temporarily busy. Please wait a few seconds and try again.'
+  }
+  return 'Failed to generate PDF. Please try again.'
+}
+
+async function getLogoSettings(): Promise<LogoSettings | undefined> {
+  const now = Date.now()
+  if (logoSettingsCache && logoSettingsCache.expiresAt > now) {
+    return logoSettingsCache.value
+  }
+
+  let value: LogoSettings | undefined
+  try {
+    const dbSettings = await prisma.invoiceLogoSettings.findFirst({
+      orderBy: { createdAt: 'desc' },
+    })
+    if (dbSettings) {
+      value = {
+        positionX: (dbSettings.positionX as 'left' | 'center' | 'right') || 'left',
+        width: dbSettings.width || 160,
+        maxHeight: dbSettings.maxHeight || 80,
+      }
+    }
+  } catch {
+    // Logo settings table may not exist yet - use defaults.
+  }
+
+  logoSettingsCache = { expiresAt: now + LOGO_SETTINGS_CACHE_MS, value }
+  return value
+}
+
 /**
  * Serve the cached PDF when the content fingerprint matches; otherwise render a
  * fresh PDF and store it. Keeps repeat previews instant without ever serving a
@@ -94,23 +164,63 @@ async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: Logo
     return Buffer.from(cached.data)
   }
 
-  const element = React.createElement(InvoicePDF, {
-    invoice: invoice as unknown as InvoiceWithRelations,
-    logoSettings,
-  })
-  const buffer = await renderToBuffer(element as React.ReactElement)
-
-  try {
-    await prisma.invoicePdfCache.upsert({
-      where: { invoiceId: invoice.id },
-      create: { invoiceId: invoice.id, data: buffer, fingerprint },
-      update: { data: buffer, fingerprint },
-    })
-  } catch (err) {
-    logger.warn('[invoice:generate-pdf] cache store failed (non-fatal):', err)
+  const inFlightKey = `${invoice.id}:${fingerprint}`
+  const existingRender = pdfRenderInFlight.get(inFlightKey)
+  if (existingRender) {
+    return existingRender
   }
 
-  return buffer
+  const renderPromise = (async () => {
+    const element = React.createElement(InvoicePDF, {
+      invoice: invoice as unknown as InvoiceWithRelations,
+      logoSettings,
+    })
+    const buffer = await renderToBuffer(element as React.ReactElement)
+
+    try {
+      await prisma.invoicePdfCache.upsert({
+        where: { invoiceId: invoice.id },
+        create: { invoiceId: invoice.id, data: buffer, fingerprint },
+        update: { data: buffer, fingerprint },
+      })
+    } catch (err) {
+      logger.warn('[invoice:generate-pdf] cache store failed (non-fatal):', err)
+    }
+
+    return buffer
+  })()
+
+  pdfRenderInFlight.set(inFlightKey, renderPromise)
+  try {
+    return await renderPromise
+  } finally {
+    if (pdfRenderInFlight.get(inFlightKey) === renderPromise) {
+      pdfRenderInFlight.delete(inFlightKey)
+    }
+  }
+}
+
+async function getInvoicePdfPayload(invoiceId: string) {
+  const existing = invoicePdfInFlight.get(invoiceId)
+  if (existing) return existing
+
+  const promise = (async () => {
+    const invoice = await fetchInvoiceForPdf(invoiceId)
+    if (!invoice) throw new InvoicePdfNotFoundError('Invoice not found')
+
+    const logoSettings = await getLogoSettings()
+    const pdfBuffer = await getOrRenderInvoicePdf(invoice, logoSettings)
+    return { invoice, pdfBuffer }
+  })()
+
+  invoicePdfInFlight.set(invoiceId, promise)
+  try {
+    return await promise
+  } finally {
+    if (invoicePdfInFlight.get(invoiceId) === promise) {
+      invoicePdfInFlight.delete(invoiceId)
+    }
+  }
 }
 
 export async function POST(
@@ -126,6 +236,38 @@ export async function POST(
       invoiceId: resolvedParams!.id,
     })
 
+    const payload = await getInvoicePdfPayload(resolvedParams!.id)
+    const invoiceForResponse = payload.invoice
+    const filenameForResponse = `invoice-${invoiceForResponse.invoiceNumber || invoiceForResponse.id}.pdf`
+    const requestOrigin = new URL(request.url).origin
+    const hostedPdfUrl = `${requestOrigin}/api/invoices/${invoiceForResponse.id}/generate-pdf`
+    const previewPdfUrl = `/api/invoices/${invoiceForResponse.id}/generate-pdf`
+
+    if (invoiceForResponse.pdfUrl !== hostedPdfUrl) {
+      await prisma.invoice.update({
+        where: { id: invoiceForResponse.id },
+        data: { pdfUrl: hostedPdfUrl },
+      })
+    }
+
+    console.info('[invoice:generate-pdf] success', {
+      requestId,
+      invoiceId: invoiceForResponse.id,
+      invoiceNumber: invoiceForResponse.invoiceNumber,
+      lineItemCount: invoiceForResponse.lineItems.length,
+      totalAmount: invoiceForResponse.totalAmount,
+      hostedPdfUrl,
+    })
+
+    return NextResponse.json({
+      success: true,
+      pdfUrl: previewPdfUrl,
+      hostedPdfUrl,
+      filename: filenameForResponse,
+      invoiceNumber: invoiceForResponse.invoiceNumber,
+    })
+
+    /*
     // Get invoice with all necessary data
     const invoice = await prisma.invoice.findUnique({
       where: { id: resolvedParams!.id },
@@ -210,6 +352,7 @@ export async function POST(
       filename,
       invoiceNumber: invoice.invoiceNumber,
     })
+    */
   } catch (error) {
     logger.error('Error generating PDF:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
@@ -228,12 +371,13 @@ export async function POST(
       stack: errorStack,
     })
     
+    const status = error instanceof InvoicePdfNotFoundError ? 404 : 500
     return NextResponse.json(
-      { 
-        error: `Failed to generate PDF: ${errorMessage}`,
-        details: process.env.NODE_ENV === 'development' ? errorStack : undefined
+      {
+        error: publicPdfErrorMessage(error),
+        details: process.env.NODE_ENV === 'development' ? errorStack : undefined,
       },
-      { status: 500 }
+      { status }
     )
   }
 }
@@ -247,6 +391,20 @@ export async function GET(
   try {
     resolvedParams = await Promise.resolve(params)
 
+    const payload = await getInvoicePdfPayload(resolvedParams!.id)
+    const invoiceForDownload = payload.invoice
+    const filenameForDownload = `invoice-${invoiceForDownload.invoiceNumber || invoiceForDownload.id}.pdf`
+    const uint8ArrayForDownload = new Uint8Array(payload.pdfBuffer)
+
+    return new NextResponse(uint8ArrayForDownload, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${filenameForDownload}"`,
+        'Cache-Control': 'private, max-age=60',
+      },
+    })
+
+    /*
     // Get invoice with all necessary data
     const invoice = await prisma.invoice.findUnique({
       where: { id: resolvedParams!.id },
@@ -304,9 +462,10 @@ export async function GET(
         'Content-Disposition': `inline; filename="${filename}"`,
       },
     })
+    */
   } catch (error) {
     logger.error('Error generating PDF:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-    return new NextResponse(`Failed to generate PDF: ${errorMessage}`, { status: 500 })
+    const status = error instanceof InvoicePdfNotFoundError ? 404 : 500
+    return new NextResponse(publicPdfErrorMessage(error), { status })
   }
 }

@@ -114,7 +114,10 @@ export async function POST(
       })
 
       const summary = updatedSchedule.isActive
-        ? await regenerateJobsForSchedule(updatedSchedule.id, { rebuildDraftInvoicedJobs: true })
+        ? await regenerateJobsForSchedule(updatedSchedule.id, {
+            effectiveDate: updatedSchedule.startDate,
+            rebuildDraftInvoicedJobs: true,
+          })
         : null
 
       revalidateSchedulePages(updatedSchedule.location.client.id)
@@ -227,7 +230,10 @@ export async function POST(
       ? await regenerateJobsForSchedule(existingSchedule.id, { rebuildDraftInvoicedJobs: true })
       : null
     const newSummary = result.newSchedule.isActive
-      ? await regenerateJobsForSchedule(result.newSchedule.id, { rebuildDraftInvoicedJobs: true })
+      ? await regenerateJobsForSchedule(result.newSchedule.id, {
+          effectiveDate: result.newSchedule.startDate,
+          rebuildDraftInvoicedJobs: true,
+        })
       : null
 
     if (oldScheduleEndDate < today && existingSchedule.isActive) {
