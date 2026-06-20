@@ -545,8 +545,10 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
     : [{ description: `Cleaning services · ${formatMonthLabel(month)}`, quantity: 1, price: inv.total, sourceType: "FLAT_RATE", locationName: undefined }]
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
-      <div className="mx-auto flex min-h-0 w-full max-w-[540px] flex-1 flex-col">
+    // Scroll (both axes) rather than crush the invoice: the card keeps a minimum
+    // readable width so its columns never overlap when the panel is narrow.
+    <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="mx-auto w-full min-w-[400px] max-w-[540px]">
         {/* Demoted secondary action — the exact client-facing PDF (Ticket 3) */}
         <div className="mb-2 flex justify-end">
           <button onClick={openPdf} disabled={generating}
@@ -555,7 +557,7 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
             <FileText size={12} /> {generating ? "Preparing…" : pdfId ? "Open exact PDF" : "Exact PDF"}
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-md bg-white p-10 shadow-lg">
+        <div className="rounded-md bg-white p-10 shadow-lg">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
