@@ -49,7 +49,7 @@ export function NeedsAttention({
       id: 'payouts',
       icon: DollarSign,
       label: `$${Math.round(pendingPayoutsTotal).toLocaleString()} owed to ${pendingPayoutsCount} cleaner${pendingPayoutsCount !== 1 ? 's' : ''}`,
-      href: '/subcontractors',
+      href: '/payables',
       actionLabel: 'Pay',
       color: 'warning' as const,
     })

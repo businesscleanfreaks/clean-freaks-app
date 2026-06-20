@@ -11,7 +11,7 @@ import { revalidatePath } from 'next/cache'
 export function revalidateJobPages(clientId?: string) {
   revalidatePath('/')
   revalidatePath('/calendar')
-  revalidatePath('/subcontractors')
+  revalidatePath('/payables')
   if (clientId) {
     revalidatePath('/clients')
     revalidatePath(`/clients/${clientId}`)
@@ -48,19 +48,18 @@ export function revalidateSchedulePages(clientId: string) {
   revalidatePath('/calendar')
   revalidatePath('/clients')
   revalidatePath(`/clients/${clientId}`)
-  revalidatePath('/subcontractors') // Schedules affect subcontractor balances
+  revalidatePath('/payables') // Schedules affect cleaner balances
 }
 
 /**
- * Revalidate all pages that might be affected by a subcontractor change
+ * Revalidate all pages that might be affected by a subcontractor (cleaner) change.
+ * Cleaner payables now live in the consolidated /payables workspace.
  */
 export function revalidateSubcontractorPages(subcontractorId?: string) {
   revalidatePath('/')
-  revalidatePath('/subcontractors')
+  revalidatePath('/payables')
   revalidatePath('/calendar')
-  if (subcontractorId) {
-    revalidatePath(`/subcontractors/${subcontractorId}`)
-  }
+  if (subcontractorId) revalidatePath('/payables')
 }
 
 /**
@@ -70,10 +69,9 @@ export function revalidateInvoicePages(clientId?: string) {
   revalidatePath('/')
   revalidatePath('/invoices')
   revalidatePath('/calendar')
-  revalidatePath('/subcontractors') // Invoices affect job status which affects balances
+  revalidatePath('/payables') // Invoices affect job status which affects balances
   if (clientId) {
     revalidatePath('/clients')
     revalidatePath(`/clients/${clientId}`)
   }
 }
-

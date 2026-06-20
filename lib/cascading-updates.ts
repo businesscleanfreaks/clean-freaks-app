@@ -21,11 +21,10 @@ export function invalidateDashboardCache() {
  */
 export function revalidateSubcontractorRelatedPages(subcontractorId?: string) {
   try {
-    revalidatePath('/subcontractors')
+    // Cleaner payables now live in the consolidated /payables workspace.
+    revalidatePath('/payables')
     revalidatePath('/')
-    if (subcontractorId) {
-      revalidatePath(`/subcontractors/${subcontractorId}`)
-    }
+    if (subcontractorId) revalidatePath('/payables')
     logger.debug('[cascading-updates] Subcontractor pages revalidated')
   } catch (error) {
     logger.error('[cascading-updates] Error revalidating subcontractor pages:', error)
@@ -39,7 +38,7 @@ export function revalidateJobRelatedPages(clientId?: string) {
   try {
     revalidatePath('/')
     revalidatePath('/calendar')
-    revalidatePath('/subcontractors')
+    revalidatePath('/payables')
     if (clientId) {
       revalidatePath('/clients')
       revalidatePath(`/clients/${clientId}`)
@@ -215,7 +214,7 @@ export async function triggerSystemRefresh() {
     revalidatePath('/')
     revalidatePath('/dashboard')
     revalidatePath('/calendar')
-    revalidatePath('/subcontractors')
+    revalidatePath('/payables')
     revalidatePath('/clients')
     revalidatePath('/invoices')
 

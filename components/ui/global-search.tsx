@@ -80,7 +80,7 @@ export function GlobalSearch() {
       allItems.push({ type: "client", id: c.id, label: c.name, sub: c.isActive === false ? "Paused" : "Client", href: `/clients/${c.id}` })
     })
     results.subcontractors.forEach(s => {
-      allItems.push({ type: "subcontractor", id: s.id, label: s.name, sub: s.phone || "Cleaner", href: `/subcontractors/${s.id}` })
+      allItems.push({ type: "subcontractor", id: s.id, label: s.name, sub: s.phone || "Cleaner", href: `/payables` })
     })
     results.locations.forEach(l => {
       allItems.push({ type: "location", id: l.id, label: l.name, sub: `${l.client.name} · ${l.address}`, href: `/clients/${l.client.id}` })
@@ -201,7 +201,7 @@ export function GlobalSearch() {
                       return (
                         <button
                           key={s.id}
-                          onClick={() => navigate(`/subcontractors/${s.id}`)}
+                          onClick={() => navigate(`/payables`)}
                           onMouseEnter={() => setSelectedIndex(idx)}
                           className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${selectedIndex === idx ? 'bg-teal-50' : 'hover:bg-gray-50'}`}
                         >

@@ -50,8 +50,8 @@ export default function NotFound() {
               Calendar
             </Link>
             <span className="text-gray-300">•</span>
-            <Link href="/subcontractors" className="text-sm text-teal-600 hover:text-teal-700 underline">
-              Cleaners
+            <Link href="/payables" className="text-sm text-teal-600 hover:text-teal-700 underline">
+              Payables
             </Link>
           </div>
         </div>
