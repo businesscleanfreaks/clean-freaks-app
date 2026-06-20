@@ -416,7 +416,18 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
       { label: "Rate vs last month", value: priceEx ? priceEx.message : "No change", flag: !!priceEx },
     ]
     if (counts.ONE_TIME_ADD_ON) rows.push({ label: "Add-ons", value: `${counts.ONE_TIME_ADD_ON} this month${addOnTotal ? ` · +${formatCurrency(addOnTotal)}` : ""}`, flag: true })
-    if (counts.ONE_OFF_JOB) rows.push({ label: "One-off jobs", value: `${counts.ONE_OFF_JOB} this month`, flag: true })
+    // One-off jobs: list each clean's date + amount (a one-off job line item is a
+    // JOB with no scheduleId — recurring per-clean items always carry one).
+    const oneOffItems = lineItems.filter((li) => li.sourceType === "JOB" && !li.scheduleId)
+    if (oneOffItems.length > 0) {
+      const detail = oneOffItems
+        .map((li) => {
+          const datePart = li.description.split("—").pop()?.trim()
+          return `${datePart ? `${datePart} · ` : ""}${formatCurrency(li.price * li.quantity)}`
+        })
+        .join(", ")
+      rows.push({ label: oneOffItems.length === 1 ? "One-off job" : `One-off jobs (${oneOffItems.length})`, value: detail, flag: true })
+    }
     if (counts.RESCHEDULED) rows.push({ label: "Rescheduled", value: `${counts.RESCHEDULED} clean${counts.RESCHEDULED > 1 ? "s" : ""}`, flag: true })
     if (counts.MISSING_EMAIL) rows.push({ label: "Email on file", value: "Missing — add before sending", flag: true })
     return rows
