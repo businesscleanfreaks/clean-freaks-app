@@ -27,9 +27,17 @@ async function main() {
   const { prisma } = await import('../lib/db')
   const { hashPassword } = await import('../lib/auth')
 
-  const email = process.env.ADMIN_EMAIL || 'admin@cleanfreaks.com'
-  const password = process.env.ADMIN_PASSWORD || 'admin123'
+  const email = process.env.ADMIN_EMAIL
+  const password = process.env.ADMIN_PASSWORD
   const name = process.env.ADMIN_NAME || 'Admin User'
+
+  // No insecure defaults — require a real email + password to be supplied.
+  if (!email || !password) {
+    console.error('❌ Refusing to create an admin with default credentials.')
+    console.error('   Set ADMIN_EMAIL and ADMIN_PASSWORD first, e.g.:')
+    console.error("   ADMIN_EMAIL='you@company.com' ADMIN_PASSWORD='a-strong-password' npm run create-admin")
+    process.exit(1)
+  }
 
   // Check if user already exists
   const existingUser = await prisma.user.findUnique({
@@ -55,8 +63,6 @@ async function main() {
   console.log(`✅ Admin user created successfully!`)
   console.log(`   Email: ${user.email}`)
   console.log(`   Name: ${user.name}`)
-  console.log(`   Password: ${password}`)
-  console.log(`\n⚠️  Please change the default password after first login!`)
 
   await prisma.$disconnect()
 }
