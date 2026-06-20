@@ -497,22 +497,18 @@ export async function previewScheduleChanges(
   const now = utcDateOnly(new Date())
   const startDate = utcDateOnly(new Date(merged.startDate))
 
-  // Count protected jobs
-  const protectedCount = await prisma.job.count({
+  // Count protected jobs. Only SENT/PAID invoices and recorded cleaner payments
+  // freeze a clean — a DRAFT invoice does not (a schedule change rebuilds it).
+  const totalProtected = await prisma.job.count({
     where: {
       scheduleId,
-      OR: [{ invoiced: true }, { subcontractorPaid: true }, { status: 'CANCELLED' }],
+      OR: [
+        { subcontractorPaid: true },
+        { status: 'CANCELLED' },
+        { invoiceLineItems: { some: { invoice: { status: { in: ['SENT', 'PAID'] } } } } },
+      ],
     },
   })
-
-  const draftInvoiceCount = await prisma.job.count({
-    where: {
-      scheduleId,
-      invoiceLineItems: { some: { invoice: { status: 'DRAFT' } } },
-    },
-  })
-
-  const totalProtected = protectedCount + draftInvoiceCount
 
   // Count jobs that would be deleted (past pre-start + future scheduled)
   const pastDeleteCount = await prisma.job.count({
@@ -599,7 +595,7 @@ export async function previewScheduleChanges(
 
 export async function regenerateJobsForSchedule(
   scheduleId: string,
-  options?: { effectiveDate?: Date }
+  options?: { effectiveDate?: Date; rebuildDraftInvoicedJobs?: boolean }
 ): Promise<RegenerationSummary> {
   const schedule = await prisma.schedule.findUnique({
     where: { id: scheduleId },
@@ -623,10 +619,44 @@ export async function regenerateJobsForSchedule(
 
   const now = utcDateOnly(options?.effectiveDate ?? new Date())
   const startDate = utcDateOnly(new Date(schedule.startDate))
+  // On an explicit schedule change, this month's cleans must rebuild even if a
+  // DRAFT invoice was auto-generated for them (which marks them `invoiced`). The
+  // nightly cron leaves this false so it never churns draft-attached cleans.
+  const rebuildDraftInvoicedJobs = options?.rebuildDraftInvoicedJobs ?? false
 
   // Wrap all delete/update/create operations in a transaction so a crash
   // mid-way doesn't leave the schedule in a broken state
   const summary = await prisma.$transaction(async (tx) => {
+    if (rebuildDraftInvoicedJobs) {
+      // SENT/PAID cleans are frozen forever — collect them so we never un-freeze.
+      const sentPaidJobIds = (await tx.invoiceLineItem.findMany({
+        where: { job: { scheduleId }, invoice: { status: { in: ['SENT', 'PAID'] } } },
+        select: { jobId: true },
+      })).map((li) => li.jobId).filter((x): x is string => !!x)
+
+      // DRAFT invoices for this schedule are regenerable (the candidate recomputes
+      // them live from the rebuilt cleans), so delete them and un-invoice their
+      // cleans — letting the rebuild below replace them to match the new schedule.
+      const draftInvoiceIds = Array.from(new Set(
+        (await tx.invoiceLineItem.findMany({
+          where: { job: { scheduleId }, invoice: { status: 'DRAFT' } },
+          select: { invoiceId: true },
+        })).map((li) => li.invoiceId)
+      ))
+      if (draftInvoiceIds.length > 0) {
+        await tx.invoice.deleteMany({ where: { id: { in: draftInvoiceIds }, status: 'DRAFT' } })
+      }
+      await tx.job.updateMany({
+        where: {
+          scheduleId,
+          invoiced: true,
+          subcontractorPaid: false,
+          ...(sentPaidJobIds.length > 0 ? { id: { notIn: sentPaidJobIds } } : {}),
+        },
+        data: { invoiced: false },
+      })
+    }
+
     const protectedJobs = await tx.job.findMany({
       where: {
         scheduleId,
@@ -882,16 +912,17 @@ export async function diffScheduleChange(
     || (updates.timeType !== undefined && updates.timeType !== schedule.timeType)
   const attrsChanged = cleanerChanged || rateChanged || timeChanged
 
-  // Protected jobs (invoiced/paid/cancelled/draft) won't actually change.
+  // Protected cleans won't actually change: only a SENT/PAID invoice, a recorded
+  // cleaner payment, or a cancellation freezes a clean. A DRAFT invoice does not —
+  // a schedule change rebuilds it.
   const protectedJobs = await prisma.job.findMany({
     where: {
       scheduleId,
       date: { gte: windowFrom, lte: windowTo },
       OR: [
-        { invoiced: true },
         { subcontractorPaid: true },
         { status: 'CANCELLED' },
-        { invoiceLineItems: { some: { invoice: { status: 'DRAFT' } } } },
+        { invoiceLineItems: { some: { invoice: { status: { in: ['SENT', 'PAID'] } } } } },
       ],
     },
     select: { date: true },

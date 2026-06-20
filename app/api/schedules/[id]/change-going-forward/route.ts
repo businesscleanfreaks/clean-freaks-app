@@ -114,7 +114,7 @@ export async function POST(
       })
 
       const summary = updatedSchedule.isActive
-        ? await regenerateJobsForSchedule(updatedSchedule.id)
+        ? await regenerateJobsForSchedule(updatedSchedule.id, { rebuildDraftInvoicedJobs: true })
         : null
 
       revalidateSchedulePages(updatedSchedule.location.client.id)
@@ -148,10 +148,9 @@ export async function POST(
         scheduleId: existingSchedule.id,
         date: { gte: newStartDate },
         OR: [
-          { invoiced: true },
           { subcontractorPaid: true },
           { status: 'CANCELLED' },
-          { invoiceLineItems: { some: { invoice: { status: 'DRAFT' } } } },
+          { invoiceLineItems: { some: { invoice: { status: { in: ['SENT', 'PAID'] } } } } },
         ],
       },
     })
@@ -225,10 +224,10 @@ export async function POST(
     })
 
     const oldSummary = existingSchedule.isActive
-      ? await regenerateJobsForSchedule(existingSchedule.id)
+      ? await regenerateJobsForSchedule(existingSchedule.id, { rebuildDraftInvoicedJobs: true })
       : null
     const newSummary = result.newSchedule.isActive
-      ? await regenerateJobsForSchedule(result.newSchedule.id)
+      ? await regenerateJobsForSchedule(result.newSchedule.id, { rebuildDraftInvoicedJobs: true })
       : null
 
     if (oldScheduleEndDate < today && existingSchedule.isActive) {

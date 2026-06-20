@@ -105,8 +105,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
       }
     })
 
-    await regenerateJobsForSchedule(schedule.id)
-    if (resumeScheduleId) await regenerateJobsForSchedule(resumeScheduleId)
+    await regenerateJobsForSchedule(schedule.id, { rebuildDraftInvoicedJobs: true })
+    if (resumeScheduleId) await regenerateJobsForSchedule(resumeScheduleId, { rebuildDraftInvoicedJobs: true })
 
     revalidateSchedulePages(schedule.location.client.id)
     await triggerSystemRefresh()
