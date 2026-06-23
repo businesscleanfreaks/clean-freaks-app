@@ -8,6 +8,7 @@ import { emailInvoiceSchema, formatZodErrors } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { generateInvoiceToken } from '@/lib/invoice-tokens'
 import { getBaseUrl } from '@/lib/url'
+import { evaluateInvoiceForSend } from '@/lib/invoice-guard'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -78,6 +79,21 @@ export async function POST(
         { error: 'Invoice not found' },
         { status: 404 }
       )
+    }
+
+    // Pre-send guard: a real send must still match the schedule, or be confirmed.
+    if (!isActuallyTest && body?.confirmMismatch !== true) {
+      const guard = await evaluateInvoiceForSend(resolvedParams.id)
+      if (!guard.matches) {
+        return NextResponse.json(
+          {
+            error: 'This invoice no longer matches the schedule. Review and confirm before sending.',
+            code: 'INVOICE_MISMATCH',
+            findings: guard.findings,
+          },
+          { status: 409 }
+        )
+      }
     }
 
     // Ensure PDF exists and is hosted
