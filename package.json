@@ -11,7 +11,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "create-admin": "tsx scripts/create-admin-user.ts",
-    "test": "vitest run", 
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts", 
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .gitignore"
   },
   "dependencies": {
