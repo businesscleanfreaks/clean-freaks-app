@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns"
 import { logger } from "@/lib/logger"
 import { requireAuth } from "@/lib/auth"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +56,12 @@ export async function GET(request: Request) {
           end: endOfDay(new Date(endDateParam)),
         }
       : getDateRange(period)
+
+    await ensureOperationalDataForDateRange({
+      startDate: dateRange.start,
+      endDate: dateRange.end,
+      surface: 'dashboard',
+    })
     
     // Calculate MRR: Sum of all active FLAT_RATE client monthly rates
     const activeSchedules = await prisma.schedule.findMany({

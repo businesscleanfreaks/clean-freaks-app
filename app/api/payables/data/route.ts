@@ -6,6 +6,7 @@ import { getBillingStartDate } from "@/lib/billing-settings"
 import { isJobPayable, getPayableStatusText } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo, CadenceJobInfo } from "@/lib/payment-cadence"
 import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 
@@ -80,6 +81,17 @@ export async function GET(request: Request) {
     const [py, pm] = period.split("-").map(Number)
     const monthStart = new Date(py, pm - 1, 1, 0, 0, 0)
     const monthEnd = new Date(py, pm, 0, 23, 59, 59, 999)
+    const payablesEnsureStart =
+      isCurrent && billingStartDate && billingStartDate < monthStart
+        ? billingStartDate
+        : monthStart
+    const payablesEnsureEnd = isCurrent ? today : monthEnd
+
+    await ensureOperationalDataForDateRange({
+      startDate: payablesEnsureStart,
+      endDate: payablesEnsureEnd,
+      surface: 'payables',
+    })
 
     // ── CLEANERS ──────────────────────────────────────────────────────────
     const subcontractors = await prisma.subcontractor.findMany({

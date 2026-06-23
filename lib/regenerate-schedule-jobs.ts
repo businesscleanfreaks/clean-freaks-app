@@ -301,6 +301,156 @@ function getHistoricalScheduleStartDate(schedule: {
   return clientStart < scheduleStart ? clientStart : scheduleStart
 }
 
+function getEarliestScheduleStartByLocation(schedules: Array<{ locationId: string; startDate: Date }>) {
+  const earliestByLocation = new Map<string, number>()
+
+  for (const schedule of schedules) {
+    const scheduleStart = utcDateOnly(new Date(schedule.startDate)).getTime()
+    const current = earliestByLocation.get(schedule.locationId)
+    if (current === undefined || scheduleStart < current) {
+      earliestByLocation.set(schedule.locationId, scheduleStart)
+    }
+  }
+
+  return earliestByLocation
+}
+
+export interface ReconciliationSchedule {
+  id: string
+  locationId: string
+  subcontractorId: string | null
+  frequency: string
+  daysOfWeek: string | null
+  monthlyPattern: string | null
+  customDates: string | null
+  excludedDates: string | null
+  startDate: Date
+  endDate: Date | null
+  defaultClientRate: number
+  defaultSubcontractorRate: number
+  timeType?: string | null
+  startTime?: string | null
+  startWindowBegin?: string | null
+  startWindowEnd?: string | null
+  location?: { client?: { startDate?: Date | null } | null } | null
+}
+
+export interface ReconciliationJob {
+  id: string
+  date: Date
+  startTime?: string | null
+  startWindowBegin?: string | null
+  invoiceLineItems: Array<{ invoice: { status: string | null } | null }>
+}
+
+export interface JobReconciliationPlan {
+  toCreate: Array<{
+    locationId: string
+    subcontractorId: string | null
+    scheduleId: string
+    date: Date
+    startTime: string | null
+    startWindowBegin: string | null
+    startWindowEnd: string | null
+    clientRate: number
+    subcontractorRate: number
+  }>
+  toRepair: Array<{
+    ids: string[]
+    data: {
+      startTime: string | null
+      startWindowBegin: string | null
+      startWindowEnd: string | null
+      subcontractorId: string | null
+      clientRate: number
+      subcontractorRate: number
+    }
+  }>
+  skippedCount: number
+}
+
+/**
+ * Pure planner for read-path reconciliation. Decides which cleans to CREATE
+ * (missing pattern dates) and which to REPAIR (back-fill a schedule's time on
+ * timeless jobs). It is deliberately ADDITIVE-ONLY: it never removes a job.
+ *
+ * Off-pattern cleans — including ones a user legitimately added as an extra —
+ * are left untouched (the invoice review surfaces them as "extra cleans" for a
+ * human to keep or cancel). Stale removal belongs to regenerateJobsForSchedule
+ * at schedule-change time, where the old vs new pattern is actually known.
+ */
+export function planScheduleJobReconciliation(
+  schedules: ReconciliationSchedule[],
+  jobsBySchedule: ReadonlyMap<string, ReconciliationJob[]>,
+  rangeStart: Date,
+  rangeEnd: Date,
+): JobReconciliationPlan {
+  const earliestScheduleStartByLocation = getEarliestScheduleStartByLocation(schedules)
+  const toCreate: JobReconciliationPlan['toCreate'] = []
+  const toRepair: JobReconciliationPlan['toRepair'] = []
+  let skippedCount = 0
+
+  for (const schedule of schedules) {
+    const scheduleStart = utcDateOnly(new Date(schedule.startDate))
+    const isBaselineSchedule =
+      earliestScheduleStartByLocation.get(schedule.locationId) === scheduleStart.getTime()
+    const effectiveStartDate = isBaselineSchedule
+      ? getHistoricalScheduleStartDate(schedule)
+      : scheduleStart
+
+    const candidateDates = calculateScheduleDates({
+      frequency: schedule.frequency,
+      startDate: effectiveStartDate,
+      daysOfWeek: schedule.daysOfWeek,
+      monthlyPattern: schedule.monthlyPattern,
+      customDates: schedule.customDates,
+      excludedDates: schedule.excludedDates,
+      endDate: schedule.endDate,
+    }, rangeEnd).filter((date) => date >= rangeStart && date <= rangeEnd)
+
+    if (candidateDates.length === 0) continue
+
+    const scheduleJobs = jobsBySchedule.get(schedule.id) ?? []
+    const existingByTime = new Map(scheduleJobs.map((job) => [job.date.getTime(), job]))
+    const timeFields = getScheduleJobTimeFields(schedule)
+
+    if (hasScheduleTime(schedule)) {
+      const repairableIds = scheduleJobs
+        .filter((job) => !hasJobTime(job) && !hasFinalInvoice(job.invoiceLineItems))
+        .map((job) => job.id)
+      if (repairableIds.length > 0) {
+        toRepair.push({
+          ids: repairableIds,
+          data: {
+            ...timeFields,
+            subcontractorId: schedule.subcontractorId,
+            clientRate: schedule.defaultClientRate,
+            subcontractorRate: schedule.defaultSubcontractorRate,
+          },
+        })
+      }
+    }
+
+    for (const date of candidateDates) {
+      if (existingByTime.has(date.getTime())) {
+        skippedCount++
+        continue
+      }
+      toCreate.push({
+        locationId: schedule.locationId,
+        subcontractorId: schedule.subcontractorId,
+        scheduleId: schedule.id,
+        date,
+        ...timeFields,
+        clientRate: schedule.defaultClientRate,
+        subcontractorRate: schedule.defaultSubcontractorRate,
+      })
+    }
+  }
+
+  return { toCreate, toRepair, skippedCount }
+}
+
 export async function ensureJobsForDateRange({
   startDate,
   endDate,
@@ -377,87 +527,35 @@ export async function ensureJobsForDateRange({
     jobsBySchedule.set(job.scheduleId, jobs)
   }
 
-  let createdCount = 0
+  const { toCreate, toRepair, skippedCount: existingSkipped } = planScheduleJobReconciliation(
+    schedules,
+    jobsBySchedule,
+    rangeStart,
+    rangeEnd,
+  )
+
   let repairedCount = 0
-  let skippedCount = 0
-  const jobsToCreate: Array<{
-    locationId: string
-    subcontractorId: string | null
-    scheduleId: string
-    date: Date
-    startTime: string | null
-    startWindowBegin: string | null
-    startWindowEnd: string | null
-    clientRate: number
-    subcontractorRate: number
-  }> = []
-
-  for (const schedule of schedules) {
-    const effectiveStartDate = getHistoricalScheduleStartDate(schedule)
-    const candidateDates = calculateScheduleDates({
-      frequency: schedule.frequency,
-      startDate: effectiveStartDate,
-      daysOfWeek: schedule.daysOfWeek,
-      monthlyPattern: schedule.monthlyPattern,
-      customDates: schedule.customDates,
-      excludedDates: schedule.excludedDates,
-      endDate: schedule.endDate,
-    }, rangeEnd).filter(date => date >= rangeStart && date <= rangeEnd)
-
-    if (candidateDates.length === 0) continue
-
-    const scheduleJobs = jobsBySchedule.get(schedule.id) ?? []
-    const existingByTime = new Map(scheduleJobs.map(job => [job.date.getTime(), job]))
-    const timeFields = getScheduleJobTimeFields(schedule)
-
-    const repairableJobIds = hasScheduleTime(schedule)
-      ? scheduleJobs
-          .filter(job => !hasJobTime(job) && !hasFinalInvoice(job.invoiceLineItems))
-          .map(job => job.id)
-      : []
-
-    if (repairableJobIds.length > 0) {
-      const updated = await prisma.job.updateMany({
-        where: { id: { in: repairableJobIds } },
-        data: {
-          ...timeFields,
-          subcontractorId: schedule.subcontractorId,
-          clientRate: schedule.defaultClientRate,
-          subcontractorRate: schedule.defaultSubcontractorRate,
-        },
-      })
-      repairedCount += updated.count
-    }
-
-    for (const date of candidateDates) {
-      const exists = existingByTime.has(date.getTime())
-      if (exists) {
-        skippedCount++
-        continue
-      }
-      jobsToCreate.push({
-        locationId: schedule.locationId,
-        subcontractorId: schedule.subcontractorId,
-        scheduleId: schedule.id,
-        date,
-        ...timeFields,
-        clientRate: schedule.defaultClientRate,
-        subcontractorRate: schedule.defaultSubcontractorRate,
-      })
-    }
+  for (const repair of toRepair) {
+    const updated = await prisma.job.updateMany({
+      where: { id: { in: repair.ids } },
+      data: repair.data,
+    })
+    repairedCount += updated.count
   }
 
-  if (jobsToCreate.length > 0) {
+  let createdCount = 0
+  let skippedCount = existingSkipped
+  if (toCreate.length > 0) {
     const result = await prisma.job.createMany({
-      data: jobsToCreate,
+      data: toCreate,
       skipDuplicates: true,
     })
     createdCount = result.count
-    skippedCount += jobsToCreate.length - result.count
+    skippedCount += toCreate.length - result.count
   }
 
   if (createdCount || repairedCount) {
-    logger.info('[ensureJobsForDateRange] Ensured jobs', {
+    logger.info('[ensureJobsForDateRange] Ensured jobs (additive-only)', {
       rangeStart: rangeStart.toISOString().split('T')[0],
       rangeEnd: rangeEnd.toISOString().split('T')[0],
       schedulesChecked: schedules.length,

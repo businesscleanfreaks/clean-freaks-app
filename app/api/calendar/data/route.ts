@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { logger } from "@/lib/logger"
-import { ensureJobsForDateRange } from "@/lib/regenerate-schedule-jobs"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,7 +20,7 @@ export async function GET() {
     const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59)
     endDate.setDate(endDate.getDate() + (6 - endDate.getDay()))
 
-    await ensureJobsForDateRange({ startDate, endDate })
+    await ensureOperationalDataForDateRange({ startDate, endDate, surface: 'calendar' })
 
     const [jobs, clients, subcontractors] = await Promise.all([
       prisma.job.findMany({

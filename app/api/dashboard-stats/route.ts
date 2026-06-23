@@ -8,6 +8,7 @@ import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { isJobPayable } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo } from "@/lib/payment-cadence"
 import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +27,12 @@ export async function GET() {
     const billingDateFilter = billingStartDate ? { date: { gte: billingStartDate } } : {}
 
     const todayEnd = endOfDay(now)
+
+    await ensureOperationalDataForDateRange({
+      startDate: billingStartDate && billingStartDate > thirtyDaysAgo ? billingStartDate : thirtyDaysAgo,
+      endDate: monthEnd,
+      surface: 'dashboard',
+    })
 
     const [
       recurringClientsCount,

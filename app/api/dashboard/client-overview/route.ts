@@ -8,6 +8,7 @@ import { requireAuth } from "@/lib/auth"
 import { projectSingleScheduleForMonth, type ProjectableSchedule } from "@/lib/schedule-projection"
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getPrimaryScheduleForDisplay, getScheduleLifecycle, sortSchedulesForDisplay } from "@/lib/schedule-timing"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,12 @@ export async function GET(request: NextRequest) {
     const periodEnd = endOfMonth(new Date(year, month, 1))
     const now = new Date()
     const isPastMonth = periodEnd < startOfDay(now)
+
+    await ensureOperationalDataForDateRange({
+      startDate: periodStart,
+      endDate: periodEnd,
+      surface: 'dashboard',
+    })
 
     logger.debug(`[client-overview] Fetching clients for ${year}-${month+1}...`)
 

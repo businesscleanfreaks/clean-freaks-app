@@ -5,6 +5,7 @@ import { getBillingStartDate } from "@/lib/billing-settings"
 import { computeClientProration } from "@/lib/proration"
 import { logger } from "@/lib/logger"
 import { calculateScheduleDates } from "@/lib/regenerate-schedule-jobs"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 
@@ -84,6 +85,12 @@ export async function GET(request: Request) {
     const effectivePeriodStart = billingStartDate && billingStartDate > periodStart ? billingStartDate : periodStart
     const currentMonthStart = startOfMonth(new Date())
     const olderWorkCutoff = periodStart < currentMonthStart ? periodStart : currentMonthStart
+
+    await ensureOperationalDataForDateRange({
+      startDate: effectivePeriodStart,
+      endDate: periodEnd,
+      surface: 'invoices',
+    })
 
     const [
       allJobs,

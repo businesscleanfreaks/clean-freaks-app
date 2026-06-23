@@ -4,6 +4,7 @@ import { startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns"
 import { logger } from "@/lib/logger"
 import { requireAuth } from "@/lib/auth"
 import { projectSchedulesForMonth, type ProjectableSchedule } from "@/lib/schedule-projection"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +19,12 @@ export async function GET(request: NextRequest) {
     const monthEnd = endOfMonth(new Date(year, month, 1))
     const now = new Date()
     const isPastMonth = monthEnd < startOfDay(now)
+
+    await ensureOperationalDataForDateRange({
+      startDate: monthStart,
+      endDate: monthEnd,
+      surface: 'dashboard',
+    })
 
     let revenue = 0
     let addOnRevenue = 0

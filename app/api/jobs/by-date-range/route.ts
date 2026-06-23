@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { handleApiError } from '@/lib/api-error-handler'
-import { ensureJobsForDateRange } from '@/lib/regenerate-schedule-jobs'
+import { ensureOperationalDataForDateRange } from '@/lib/operational-reconciliation'
 
 export const dynamic = 'force-dynamic'
 /**
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
 
     // Any viewed range should self-heal from recurring schedules. This keeps
     // historical calendar navigation useful for disputes and backfilled data.
-    await ensureJobsForDateRange({ startDate, endDate })
+    await ensureOperationalDataForDateRange({ startDate, endDate, surface: 'jobs' })
 
     const jobs = await prisma.job.findMany({
       where: {

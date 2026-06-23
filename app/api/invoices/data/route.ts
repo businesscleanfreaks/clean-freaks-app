@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, subWeeks, format } from "date-fns"
 import { logger } from "@/lib/logger"
 import { getBillingStartDate } from "@/lib/billing-settings"
+import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
 
@@ -39,6 +40,12 @@ export async function GET(request: Request) {
 
     // Get billing start date to filter out historical jobs
     const billingStartDate = await getBillingStartDate()
+
+    await ensureOperationalDataForDateRange({
+      startDate: periodStart ?? currentMonthStart,
+      endDate: periodEnd ?? currentMonthEnd,
+      surface: 'invoices',
+    })
 
     const [
       invoices,
