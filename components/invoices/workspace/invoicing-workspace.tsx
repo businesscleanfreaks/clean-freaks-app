@@ -109,6 +109,7 @@ export function InvoicingWorkspace() {
       const result = await runBatchSend(targets, ws.month, (done, total) => setBatch({ done, total }))
       const parts = [`${result.sent} sent`]
       if (result.skipped) parts.push(`${result.skipped} skipped (no email)`)
+      if (result.needsReview) parts.push(`${result.needsReview} need review (don't match schedule)`)
       if (result.failed) parts.push(`${result.failed} failed`)
       if (result.sent > 0) showSuccess(parts.join(" · "))
       else showError(parts.join(" · "))

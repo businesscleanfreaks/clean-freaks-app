@@ -9,6 +9,7 @@ import { showSuccess, showError, showApiError } from "@/lib/toast"
 import { resolveTemplate } from "@/lib/invoice-template"
 import { formatMonthLabel, type WorkspaceInvoice } from "./use-workspace"
 import { ensureInvoiceId, sendInvoiceEmail } from "./invoice-send"
+import { useConfirm } from "@/hooks/use-confirm"
 import { SendLaterPopover } from "./send-later-popover"
 
 interface ClientContact { id: string; name: string | null; email: string | null; role?: string | null }
@@ -158,13 +159,28 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     [pool, to],
   )
 
+  const { confirm, ConfirmDialog } = useConfirm()
+
+  // Show the guard's findings and ask before sending a mismatched invoice.
+  const confirmMismatch = async (findings?: { message: string }[]) =>
+    confirm({
+      title: "This invoice no longer matches the schedule",
+      description: `${(findings ?? []).map((f) => `• ${f.message}`).join("\n") || "The cleans on this invoice no longer match the schedule."}\n\nSend it anyway?`,
+      confirmText: "Send anyway",
+    })
+
   const send = async (isTest: boolean) => {
     if (to.length === 0 && !isTest) { showError("Add at least one recipient."); return }
     setSending(true)
     try {
       const invoiceId = await ensureInvoiceId(inv)
       if (!invoiceId) return
-      const r = await sendInvoiceEmail(invoiceId, { to, cc: cc || undefined, subject, message, isTest, showPaymentOptions: payNow })
+      const base = { to, cc: cc || undefined, subject, message, isTest, showPaymentOptions: payNow }
+      let r = await sendInvoiceEmail(invoiceId, base)
+      if (!r.ok && r.mismatch) {
+        if (!(await confirmMismatch(r.findings))) return
+        r = await sendInvoiceEmail(invoiceId, { ...base, confirmMismatch: true })
+      }
       if (!r.ok) { showError(r.error || "Failed to send invoice"); return }
       if (r.warning === "SENDING_DISABLED" || r.warning === "FORCED_TEST") {
         showSuccess(isTest ? "Test sent" : "Saved — sending is in test mode (enable it in Settings → Email)")
@@ -236,9 +252,12 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
         subject: "Invoice · {client} · {month}",
         message: "Hi {client}, please find attached your invoice for {total} for {month}. Payment is due by {due_date}. Thank you for your business.",
       }
-      const r = await sendInvoiceEmail(inv.existingInvoiceId, {
-        to: recipients, subject: resolveTemplate(tpl.subject, vars), message: resolveTemplate(tpl.message, vars), isTest: false,
-      })
+      const base = { to: recipients, subject: resolveTemplate(tpl.subject, vars), message: resolveTemplate(tpl.message, vars), isTest: false }
+      let r = await sendInvoiceEmail(inv.existingInvoiceId!, base)
+      if (!r.ok && r.mismatch) {
+        if (!(await confirmMismatch(r.findings))) return
+        r = await sendInvoiceEmail(inv.existingInvoiceId!, { ...base, confirmMismatch: true })
+      }
       if (!r.ok) { showError(r.error || "Failed to resend"); return }
       showSuccess("Invoice resent")
       onChanged()
@@ -273,6 +292,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     ]
     return (
       <div className="flex h-full flex-col p-5">
+        <ConfirmDialog />
         <div className={`rounded-lg px-4 py-3 ${paid ? "bg-emerald-50" : "bg-sky-50"}`}>
           <div className="flex items-center gap-2">
             <CheckCircle2 size={16} className={paid ? "text-emerald-600" : "text-sky-600"} />
@@ -345,6 +365,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   // ── Composer (not sent) ──
   return (
     <div className="flex h-full flex-col">
+      <ConfirmDialog />
       <div className="flex-1 overflow-y-auto p-5">
         {scheduledAt && (
           <div className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5">
