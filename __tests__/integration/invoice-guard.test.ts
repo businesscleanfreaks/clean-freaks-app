@@ -52,8 +52,8 @@ async function invoiceAllCleans(clientId: string) {
       clientId,
       totalAmount: jobs.length * 120,
       status: 'DRAFT',
-      billingPeriodStart: MONTH.startDate,
-      billingPeriodEnd: MONTH.endDate,
+      // No billingPeriodStart/End — mirrors composer-created invoices, so this
+      // exercises the guard's period-derivation path.
       lineItems: { create: jobs.map((j) => ({ jobId: j.id, description: 'Cleaning', amount: 120, serviceDate: j.date })) },
     },
   })

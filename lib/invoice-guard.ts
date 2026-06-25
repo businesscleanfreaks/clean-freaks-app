@@ -80,18 +80,35 @@ export async function evaluateInvoiceForSend(invoiceId: string): Promise<Invoice
     },
   })
 
-  if (!invoice || !invoice.billingPeriodStart || !invoice.billingPeriodEnd) {
-    return { matches: true, findings: [] }
-  }
+  if (!invoice) return { matches: true, findings: [] }
 
-  const billedJobIds = new Set(
-    invoice.lineItems.map((li) => li.jobId).filter((x): x is string => !!x),
-  )
+  const billedJobIdList = invoice.lineItems.map((li) => li.jobId).filter((x): x is string => !!x)
+  const billedJobIds = new Set(billedJobIdList)
+
+  // Determine the billing period: prefer the stored one, else derive it from the
+  // dates of the cleans this invoice bills (composer-created invoices don't store
+  // a period). Without a period we can't compare, so we don't block.
+  let periodStart = invoice.billingPeriodStart
+  let periodEnd = invoice.billingPeriodEnd
+  if ((!periodStart || !periodEnd) && billedJobIdList.length > 0) {
+    const billed = await prisma.job.findMany({
+      where: { id: { in: billedJobIdList } },
+      select: { date: true },
+      orderBy: { date: "asc" },
+    })
+    if (billed.length > 0) {
+      const first = billed[0].date
+      const last = billed[billed.length - 1].date
+      periodStart = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1))
+      periodEnd = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0, 23, 59, 59))
+    }
+  }
+  if (!periodStart || !periodEnd) return { matches: true, findings: [] }
 
   const periodJobsRaw = await prisma.job.findMany({
     where: {
       location: { clientId: invoice.clientId },
-      date: { gte: invoice.billingPeriodStart, lte: invoice.billingPeriodEnd },
+      date: { gte: periodStart, lte: periodEnd },
     },
     select: {
       id: true,
