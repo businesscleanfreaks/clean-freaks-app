@@ -450,14 +450,19 @@ export function InvoicesPageClient({
           const invoiceId = await ensureInvoiceId(d.candidate)
           if (!invoiceId) throw new Error('no-invoice')
           const res = await fetch(`/api/invoices/${invoiceId}/mark-sent`, { method: 'POST' })
+          if (res.status === 409) { const e = new Error('mismatch') as Error & { mismatch?: boolean }; e.mismatch = true; throw e }
           if (!res.ok) throw new Error('failed')
         })
       )
       const ok = results.filter(r => r.status === 'fulfilled').length
+      const needsReview = results.filter(r => r.status === 'rejected' && (r.reason as { mismatch?: boolean })?.mismatch).length
+      const parts: string[] = []
+      if (ok > 0) parts.push(`${ok} marked as sent`)
+      if (needsReview > 0) parts.push(`${needsReview} need review (don't match schedule)`)
       if (ok > 0) {
-        showSuccess(`${ok} invoice${ok > 1 ? 's' : ''} marked as sent`)
+        showSuccess(parts.join(' · '))
       } else {
-        showError('Failed to mark invoices as sent')
+        showError(parts.length ? parts.join(' · ') : 'Failed to mark invoices as sent')
       }
       setSel(new Set())
       onDataChange()

@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { resetDb } from './db-helpers'
 import { ensureJobsForDateRange } from '@/lib/regenerate-schedule-jobs'
 import { POST as markSent } from '@/app/api/invoices/[id]/mark-sent/route'
+import { PUT as putInvoice } from '@/app/api/invoices/[id]/route'
 
 const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
 const MONTH = { startDate: utc(2026, 5, 1), endDate: utc(2026, 5, 31) }
@@ -106,6 +107,23 @@ describe('pre-invoice guard at send time (real DB)', () => {
 
     const res = await markSent(req(), { params: { id: invoice.id } })
     expect(res.status).toBe(200)
+    expect(await statusOf(invoice.id)).toBe('SENT')
+  })
+
+  it('also guards the invoice-detail PUT status=SENT path', async () => {
+    const { client } = await seedPerClean()
+    await ensureJobsForDateRange(MONTH)
+    const { invoice, jobs } = await invoiceAllCleans(client.id)
+    await prisma.job.update({ where: { id: jobs[0].id }, data: { status: 'CANCELLED' } })
+
+    const putReq = (b: unknown) => new Request('http://test', { method: 'PUT', body: JSON.stringify(b) })
+
+    const blocked = await putInvoice(putReq({ status: 'SENT' }), { params: { id: invoice.id } })
+    expect(blocked.status).toBe(409)
+    expect(await statusOf(invoice.id)).toBe('DRAFT')
+
+    const ok = await putInvoice(putReq({ status: 'SENT', confirmMismatch: true }), { params: { id: invoice.id } })
+    expect(ok.status).toBe(200)
     expect(await statusOf(invoice.id)).toBe('SENT')
   })
 })

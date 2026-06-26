@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { revalidateInvoicePages } from '@/lib/revalidate'
 import { updateInvoiceSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
+import { evaluateInvoiceForSend } from '@/lib/invoice-guard'
 
 export async function GET(
   request: Request,
@@ -64,6 +65,29 @@ export async function PUT(
     }
     
     const { status, showPaymentOptions } = validationResult.data
+    const confirmMismatch = body?.confirmMismatch === true
+
+    // Pre-send guard: block marking a DRAFT as SENT if it no longer matches the
+    // schedule, unless explicitly confirmed. (Un-marking PAID→SENT is exempt.)
+    if (status === 'SENT' && !confirmMismatch) {
+      const current = await prisma.invoice.findUnique({
+        where: { id: resolvedParams.id },
+        select: { status: true },
+      })
+      if (current?.status === 'DRAFT') {
+        const guard = await evaluateInvoiceForSend(resolvedParams.id)
+        if (!guard.matches) {
+          return NextResponse.json(
+            {
+              error: 'This invoice no longer matches the schedule. Review and confirm before marking it sent.',
+              code: 'INVOICE_MISMATCH',
+              findings: guard.findings,
+            },
+            { status: 409 },
+          )
+        }
+      }
+    }
 
     const updateData: { status?: string; showPaymentOptions?: boolean } = {}
     if (status !== undefined) updateData.status = status

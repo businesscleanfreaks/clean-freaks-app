@@ -122,13 +122,33 @@ export function InvoiceDetail({ invoice, onDataChange }: InvoiceDetailProps) {
 
     setUpdating(true)
     try {
-      const response = await fetch(`/api/invoices/${invoice.id}`, {
+      let response = await fetch(`/api/invoices/${invoice.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ status: newStatus }),
       })
+
+      // Pre-send guard: if marking sent and the invoice no longer matches the
+      // schedule, surface why and let the user confirm.
+      if (response.status === 409) {
+        const data = await response.json().catch(() => null)
+        if (data?.code === 'INVOICE_MISMATCH') {
+          const proceed = await confirm({
+            title: "This invoice no longer matches the schedule",
+            description: `${(data.findings ?? []).map((f: { message: string }) => `• ${f.message}`).join("\n") || "The cleans on this invoice no longer match the schedule."}\n\nMark it sent anyway?`,
+            confirmText: "Mark sent anyway",
+            cancelText: "Cancel",
+          })
+          if (!proceed) return
+          response = await fetch(`/api/invoices/${invoice.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus, confirmMismatch: true }),
+          })
+        }
+      }
 
       if (!response.ok) {
         await showApiError(response, 'Failed to update status')
