@@ -34,6 +34,7 @@ export async function GET() {
           id: true,
           locationId: true,
           subcontractorId: true,
+          vendorId: true,
           scheduleId: true,
           date: true,
           startTime: true,
@@ -44,6 +45,7 @@ export async function GET() {
           status: true,
           invoiced: true,
           subcontractorPaid: true,
+          vendorPaid: true,
           createdAt: true,
           updatedAt: true,
           location: {
@@ -89,6 +91,14 @@ export async function GET() {
             },
           },
           subcontractor: {
+            select: {
+              id: true,
+              name: true,
+              createdAt: true,
+              isActive: true,
+            },
+          },
+          vendor: {
             select: {
               id: true,
               name: true,
@@ -191,6 +201,10 @@ export async function GET() {
       subcontractor: job.subcontractor ? {
         ...job.subcontractor,
         createdAt: job.subcontractor.createdAt.toISOString(),
+      } : null,
+      vendor: job.vendor ? {
+        ...job.vendor,
+        createdAt: job.vendor.createdAt.toISOString(),
       } : null,
       invoiceLineItems: job.invoiceLineItems.map((item: any) => ({
         ...item,

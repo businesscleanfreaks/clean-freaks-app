@@ -79,7 +79,9 @@ export function PaymentDetail({ payable, onPaid, onEdit }: { payable: Payable | 
         const addOnIds = Array.from(new Set(checkedAccounts.filter((a) => a.itemKind === "addon").flatMap((a) => a.payableItemIds)))
         body = { jobIds, addOnIds, datePaid: date, notes: combinedNotes || null }
       } else {
-        body = { addOnServiceIds: itemIds, datePaid: date, notes: combinedNotes || null }
+        const jobIds = Array.from(new Set(checkedAccounts.filter((a) => a.itemKind === "job").flatMap((a) => a.payableItemIds)))
+        const addOnServiceIds = Array.from(new Set(checkedAccounts.filter((a) => a.itemKind !== "job").flatMap((a) => a.payableItemIds)))
+        body = { addOnServiceIds, jobIds, datePaid: date, notes: combinedNotes || null }
       }
       const res = await fetch(url, {
         method: "POST",

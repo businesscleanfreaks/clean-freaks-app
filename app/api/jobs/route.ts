@@ -22,6 +22,7 @@ export async function POST(request: Request) {
     const {
       locationId,
       subcontractorId,
+      vendorId,
       scheduleId,
       date,
       startTime,
@@ -34,11 +35,14 @@ export async function POST(request: Request) {
       trialNotes,
     } = validationResult.data
 
-    // Create the job - scheduleId can be provided for one-time jobs linked to a schedule
+    // Create the job - scheduleId can be provided for one-time jobs linked to a schedule.
+    // Vendor-performed jobs are standalone one-offs, so they intentionally do
+    // not also carry a cleaner assignment.
     const job = await prisma.job.create({
       data: {
         locationId,
-        subcontractorId: subcontractorId || null,
+        subcontractorId: vendorId ? null : (subcontractorId || null),
+        vendorId: vendorId || null,
         scheduleId: scheduleId || null, // Link to schedule if provided (for flat rate billing)
         date: new Date(date + 'T12:00:00'),
         startTime: startTime || null,
@@ -58,6 +62,7 @@ export async function POST(request: Request) {
           },
         },
         subcontractor: true,
+        vendor: true,
       },
     })
 

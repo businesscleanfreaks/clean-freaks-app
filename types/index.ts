@@ -54,6 +54,7 @@ export interface Job {
   id: string
   locationId: string
   subcontractorId: string | null
+  vendorId: string | null
   scheduleId: string | null
   date: Date
   startTime: string | null
@@ -64,15 +65,18 @@ export interface Job {
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
   invoiced: boolean
   subcontractorPaid: boolean
+  vendorPaid: boolean
   isTrial: boolean
   trialNotes: string | null
   createdAt: Date
   updatedAt: Date
   location?: Location
   subcontractor?: Subcontractor | null
+  vendor?: Vendor | null
   schedule?: Schedule | null
   invoiceLineItems?: InvoiceLineItem[]
   paymentLineItems?: SubcontractorPaymentLineItem[]
+  vendorPaymentLineItems?: VendorPaymentLineItem[]
   addOnServices?: AddOnService[]
 }
 
@@ -173,6 +177,45 @@ export interface AddOnService {
   job?: Job | null
   schedule?: Schedule | null
   invoiceLineItems?: InvoiceLineItem[]
+}
+
+export interface Vendor {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  zelle: string | null
+  services: string[]
+  contacts?: unknown
+  notes: string | null
+  isActive: boolean
+  createdAt: Date
+  updatedAt: Date
+  jobs?: Job[]
+  addOnServices?: AddOnService[]
+  payments?: VendorPayment[]
+}
+
+export interface VendorPayment {
+  id: string
+  vendorId: string
+  datePaid: Date
+  totalAmount: number
+  notes: string | null
+  createdAt: Date
+  vendor?: Vendor
+  lineItems?: VendorPaymentLineItem[]
+}
+
+export interface VendorPaymentLineItem {
+  id: string
+  paymentId: string
+  addOnServiceId: string | null
+  jobId: string | null
+  amount: number
+  payment?: VendorPayment
+  addOnService?: AddOnService | null
+  job?: Job | null
 }
 
 // Specific types for invoice with full relations

@@ -40,6 +40,7 @@ export async function PUT(
     const {
       locationId,
       subcontractorId,
+      vendorId,
       date,
       startTime,
       startWindowBegin,
@@ -48,6 +49,7 @@ export async function PUT(
       subcontractorRate,
       status,
       subcontractorPaid,
+      vendorPaid,
       notes,
       isTrial,
       trialNotes,
@@ -62,8 +64,10 @@ export async function PUT(
         select: {
           invoiced: true,
           subcontractorPaid: true,
+          vendorPaid: true,
           status: true,
           scheduleId: true,
+          vendorId: true,
           date: true,
           clientRate: true,
           subcontractorRate: true,
@@ -108,11 +112,32 @@ export async function PUT(
           }
         }
 
+        if (currentJob.vendorPaid) {
+          return {
+            error: 'Cannot reschedule or modify a job that has been paid to a vendor. Please void the vendor payment first.' as const,
+            status: 400 as const,
+          }
+        }
+
         if (currentJob.status === 'CANCELLED') {
           return {
             error: 'Cannot reschedule or modify a cancelled job. Please change status to SCHEDULED first.' as const,
             status: 400 as const,
           }
+        }
+      }
+
+      if ((vendorId !== undefined || subcontractorId !== undefined) && (currentJob.subcontractorPaid || currentJob.vendorPaid)) {
+        return {
+          error: 'Cannot change who performed a job after it has been paid. Please void the payment first.' as const,
+          status: 400 as const,
+        }
+      }
+
+      if (vendorId && currentJob.scheduleId) {
+        return {
+          error: 'Vendor-performed jobs must be standalone one-off jobs.' as const,
+          status: 400 as const,
         }
       }
 
@@ -162,6 +187,7 @@ export async function PUT(
       const updateData: {
         locationId?: string
         subcontractorId?: string | null
+        vendorId?: string | null
         date?: Date
         startTime?: string | null
         startWindowBegin?: string | null
@@ -170,13 +196,32 @@ export async function PUT(
         subcontractorRate?: number
         status?: string
         subcontractorPaid?: boolean
+        vendorPaid?: boolean
         notes?: string | null
         isTrial?: boolean
         trialNotes?: string | null
       } = {}
 
       if (locationId !== undefined) updateData.locationId = locationId
-      if (subcontractorId !== undefined) updateData.subcontractorId = subcontractorId || null
+      if (subcontractorId !== undefined) {
+        updateData.subcontractorId = subcontractorId || null
+        if (subcontractorId) {
+          updateData.vendorId = null
+          updateData.vendorPaid = false
+        } else if (vendorId === undefined && currentJob.vendorId) {
+          updateData.vendorId = null
+          updateData.vendorPaid = false
+        }
+      }
+      if (vendorId !== undefined) {
+        updateData.vendorId = vendorId || null
+        if (vendorId) {
+          updateData.subcontractorId = null
+          updateData.subcontractorPaid = false
+        } else {
+          updateData.vendorPaid = false
+        }
+      }
       if (date !== undefined) updateData.date = new Date(date + 'T12:00:00')
       if (startTime !== undefined) updateData.startTime = startTime || null
       if (startWindowBegin !== undefined) updateData.startWindowBegin = startWindowBegin || null
@@ -186,6 +231,9 @@ export async function PUT(
       if (status !== undefined) updateData.status = status
       if (subcontractorPaid !== undefined) {
         updateData.subcontractorPaid = subcontractorPaid
+      }
+      if (vendorPaid !== undefined) {
+        updateData.vendorPaid = vendorPaid
       }
       if (notes !== undefined) updateData.notes = notes || null
       if (isTrial !== undefined) updateData.isTrial = isTrial
@@ -229,6 +277,37 @@ export async function PUT(
               where: { id: lineItem.id },
             })
             await tx.subcontractorPayment.update({
+              where: { id: lineItem.payment.id },
+              data: {
+                totalAmount: Math.max(0, lineItem.payment.totalAmount - lineItem.amount),
+              },
+            })
+          }
+        }
+      }
+
+      if (vendorPaid === false) {
+        const paymentLineItems = await tx.vendorPaymentLineItem.findMany({
+          where: { jobId: resolvedParams.id },
+          include: {
+            payment: {
+              include: {
+                lineItems: true,
+              },
+            },
+          },
+        })
+
+        for (const lineItem of paymentLineItems) {
+          if (lineItem.payment.lineItems.length === 1) {
+            await tx.vendorPayment.delete({
+              where: { id: lineItem.payment.id },
+            })
+          } else {
+            await tx.vendorPaymentLineItem.delete({
+              where: { id: lineItem.id },
+            })
+            await tx.vendorPayment.update({
               where: { id: lineItem.payment.id },
               data: {
                 totalAmount: Math.max(0, lineItem.payment.totalAmount - lineItem.amount),
@@ -303,6 +382,7 @@ export async function PUT(
             },
           },
           subcontractor: true,
+          vendor: true,
         },
       })
 
@@ -388,6 +468,9 @@ export async function DELETE(
             },
           },
         },
+        vendorPaymentLineItems: {
+          select: { id: true },
+        },
       },
     })
 
@@ -398,6 +481,14 @@ export async function DELETE(
     if (hasFinalInvoice(jobToDelete.invoiceLineItems)) {
       return createErrorResponse(
         'Cannot delete a job that is on a sent or paid invoice. Void or reset the invoice first.',
+        400,
+        'CONSTRAINT_ERROR'
+      )
+    }
+
+    if (jobToDelete.vendorPaymentLineItems.length > 0) {
+      return createErrorResponse(
+        'Cannot delete a job that has been paid to a vendor. Void or remove the vendor payment first.',
         400,
         'CONSTRAINT_ERROR'
       )

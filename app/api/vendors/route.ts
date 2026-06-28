@@ -74,6 +74,33 @@ export async function GET() {
             },
           },
         },
+        jobs: {
+          where: { vendorPaid: false, scheduleId: null },
+          select: {
+            id: true,
+            subcontractorRate: true,
+            vendorPaid: true,
+            date: true,
+            status: true,
+            location: {
+              select: {
+                client: {
+                  select: { id: true, name: true },
+                },
+              },
+            },
+            vendorPaymentLineItems: {
+              select: {
+                payment: {
+                  select: {
+                    id: true,
+                    datePaid: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         payments: {
           orderBy: { datePaid: 'desc' },
           select: {
@@ -90,10 +117,11 @@ export async function GET() {
 
     const result = vendors.map(vendor => {
       const unpaidAddOns = vendor.addOnServices.filter(addon => !addon.vendorPaid)
+      const unpaidJobs = vendor.jobs.filter(job => !job.vendorPaid)
       const owedAmount = unpaidAddOns.reduce(
         (sum, addon) => sum + addon.subcontractorRate,
         0
-      )
+      ) + unpaidJobs.reduce((sum, job) => sum + job.subcontractorRate, 0)
       const lastPayment = vendor.payments[0] || null
 
       // Multi-contact support with back-compat: fall back to legacy phone/email
@@ -115,6 +143,7 @@ export async function GET() {
         updatedAt: vendor.updatedAt.toISOString(),
         owedAmount,
         unpaidAddOns: unpaidAddOns.length,
+        unpaidJobs: unpaidJobs.length,
         lastPayment: lastPayment
           ? {
               ...lastPayment,
@@ -136,6 +165,14 @@ export async function GET() {
             : null,
           paidDate: addon.vendorPaymentLineItems[0]?.payment?.datePaid
             ? addon.vendorPaymentLineItems[0].payment.datePaid.toISOString()
+            : null,
+          vendorPaymentLineItems: undefined,
+        })),
+        jobs: vendor.jobs.map(job => ({
+          ...job,
+          date: job.date.toISOString(),
+          paidDate: job.vendorPaymentLineItems[0]?.payment?.datePaid
+            ? job.vendorPaymentLineItems[0].payment.datePaid.toISOString()
             : null,
           vendorPaymentLineItems: undefined,
         })),

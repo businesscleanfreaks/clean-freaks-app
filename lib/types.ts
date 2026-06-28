@@ -28,9 +28,12 @@ export type ClientWithDetails = Prisma.ClientGetPayload<{
             status: true
             invoiced: true
             scheduleId: true
+            vendorId: true
+            vendorPaid: true
             clientRate: true
             subcontractorRate: true
             subcontractor: { select: { id: true; name: true } }
+            vendor: { select: { id: true; name: true } }
             schedule: { select: { id: true; frequency: true } }
           }
         }
@@ -96,9 +99,12 @@ export interface ClientJobSummary {
   status: string
   invoiced: boolean
   scheduleId: string | null
+  vendorId?: string | null
+  vendorPaid?: boolean
   clientRate: number
   subcontractorRate: number
   subcontractor: { id: string; name: string } | null
+  vendor?: { id: string; name: string } | null
   schedule: {
     id: string
     frequency: string

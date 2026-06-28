@@ -21,7 +21,7 @@ interface PayableAccount {
   status: AccountStatus
   reason: string
   payType: string
-  itemKind?: 'job' | 'addon' // 'addon' = cleaner-assigned add-on account (Payout-B); default 'job'
+  itemKind?: 'job' | 'addon' // 'job' = clean/job ids; 'addon' = add-on ids
   payableItemIds: string[] // job ids (cleaner) / add-on ids (vendor / cleaner add-on) payable now
   allItemIds: string[]
   cleans: Array<{ date: string; amount: number }>
@@ -280,35 +280,90 @@ export async function GET(request: Request) {
             schedule: { select: { location: { select: { client: { select: { id: true, name: true } } } } } },
           },
         },
+        jobs: {
+          where: {
+            vendorPaid: false,
+            scheduleId: null,
+            ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
+            OR: [{ status: 'COMPLETED' }, { status: 'SCHEDULED', date: { lte: today } }],
+          },
+          select: {
+            id: true,
+            subcontractorRate: true,
+            date: true,
+            location: { select: { client: { select: { id: true, name: true } } } },
+          },
+        },
       },
     })
 
     const allVendors: Payable[] = vendorRows
       .map((v) => {
-        const byClient = new Map<string, { clientName: string; ids: string[]; owed: number; cleans: Array<{ date: string; amount: number }> }>()
+        const byClient = new Map<string, {
+          clientName: string
+          addOns: typeof v.addOnServices
+          jobs: typeof v.jobs
+        }>()
         v.addOnServices.forEach((a) => {
           const client = a.job?.location.client || a.schedule?.location.client || null
           const key = client?.id || 'unassigned'
           const name = client?.name || 'Unassigned'
-          const e = byClient.get(key) || { clientName: name, ids: [], owed: 0, cleans: [] }
-          e.ids.push(a.id)
-          e.owed += a.subcontractorRate
-          e.cleans.push({ date: (a.job?.date || a.createdAt).toISOString(), amount: a.subcontractorRate })
+          const e = byClient.get(key) || { clientName: name, addOns: [], jobs: [] }
+          e.addOns.push(a)
           byClient.set(key, e)
         })
-        const accounts: PayableAccount[] = Array.from(byClient.entries()).map(([clientId, e]) => ({
-          id: `${v.id}:${clientId}`,
-          clientName: e.clientName,
-          owed: e.owed,
-          safeOwed: e.owed,
-          waitingOwed: 0,
-          status: 'safe' as AccountStatus,
-          reason: 'Ready to pay',
-          payType: 'PER_CLEAN',
-          payableItemIds: e.ids,
-          allItemIds: e.ids,
-          cleans: e.cleans,
-        }))
+        v.jobs.forEach((job) => {
+          const client = job.location.client
+          const key = client?.id || 'unassigned'
+          const name = client?.name || 'Unassigned'
+          const e = byClient.get(key) || { clientName: name, addOns: [], jobs: [] }
+          e.jobs.push(job)
+          byClient.set(key, e)
+        })
+        const accounts: PayableAccount[] = Array.from(byClient.entries()).flatMap(([clientId, e]) => {
+          const rows: PayableAccount[] = []
+          if (e.addOns.length > 0) {
+            const owed = e.addOns.reduce((sum, addOn) => sum + addOn.subcontractorRate, 0)
+            rows.push({
+              id: `${v.id}:${clientId}:addons`,
+              clientName: e.jobs.length > 0 ? `${e.clientName} · add-ons` : e.clientName,
+              owed,
+              safeOwed: owed,
+              waitingOwed: 0,
+              status: 'safe' as AccountStatus,
+              reason: 'Ready to pay',
+              payType: 'PER_CLEAN',
+              itemKind: 'addon',
+              payableItemIds: e.addOns.map((addOn) => addOn.id),
+              allItemIds: e.addOns.map((addOn) => addOn.id),
+              cleans: e.addOns.map((addOn) => ({
+                date: (addOn.job?.date || addOn.createdAt).toISOString(),
+                amount: addOn.subcontractorRate,
+              })),
+            })
+          }
+          if (e.jobs.length > 0) {
+            const owed = e.jobs.reduce((sum, job) => sum + job.subcontractorRate, 0)
+            rows.push({
+              id: `${v.id}:${clientId}:jobs`,
+              clientName: e.addOns.length > 0 ? `${e.clientName} · one-off jobs` : e.clientName,
+              owed,
+              safeOwed: owed,
+              waitingOwed: 0,
+              status: 'safe' as AccountStatus,
+              reason: 'Vendor-performed one-off job · ready to pay',
+              payType: 'PER_CLEAN',
+              itemKind: 'job',
+              payableItemIds: e.jobs.map((job) => job.id),
+              allItemIds: e.jobs.map((job) => job.id),
+              cleans: e.jobs.map((job) => ({
+                date: job.date.toISOString(),
+                amount: job.subcontractorRate,
+              })),
+            })
+          }
+          return rows
+        })
         const total = accounts.reduce((s, a) => s + a.owed, 0)
         return {
           id: v.id,

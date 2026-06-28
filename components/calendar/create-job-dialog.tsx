@@ -80,6 +80,7 @@ export function CreateJobDialog({
         .catch(() => setVendors([]))
     }
   }, [open])
+  const activeVendors = useMemo(() => vendors.filter(v => v.isActive !== false), [vendors])
   
   const [step, setStep] = useState<1 | 2 | 3>(preSelectedClientId ? 2 : 1)
   
@@ -118,6 +119,12 @@ export function CreateJobDialog({
   const [clientRate, setClientRate] = useState('')
   const [subcontractorRate, setSubcontractorRate] = useState('')
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string>('unassigned')
+
+  useEffect(() => {
+    if (flowType === 'cleaning' && isTrial && selectedSubcontractorId.startsWith('vendor:')) {
+      setSelectedSubcontractorId('unassigned')
+    }
+  }, [flowType, isTrial, selectedSubcontractorId])
   
   // Add-on flow state
   const [addonDescription, setAddonDescription] = useState('')
@@ -237,6 +244,11 @@ export function CreateJobDialog({
       return
     }
 
+    if (isTrial && selectedSubcontractorId.startsWith('vendor:')) {
+      showError('Trials need a cleaner assignment. Vendors can perform standalone one-time jobs.')
+      return
+    }
+
     setLoading(true)
     try {
       let locationIdsToCreate = selectedLocationIds
@@ -261,13 +273,15 @@ export function CreateJobDialog({
       }
 
       const jobResults = await Promise.all(
-        locationIdsToCreate.map(locationId =>
-          fetch('/api/jobs', {
+        locationIdsToCreate.map(locationId => {
+          const isVendorAssignment = selectedSubcontractorId.startsWith('vendor:')
+          return fetch('/api/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               locationId,
-              subcontractorId: selectedSubcontractorId === 'unassigned' ? null : selectedSubcontractorId,
+              subcontractorId: selectedSubcontractorId === 'unassigned' || isVendorAssignment ? null : selectedSubcontractorId,
+              vendorId: isVendorAssignment ? selectedSubcontractorId.replace('vendor:', '') : null,
               date: format(jobDate, 'yyyy-MM-dd'),
               startTime: timeType === 'specific' && startTime ? startTime : null,
               startWindowBegin: timeType === 'window' && startWindowBegin ? startWindowBegin : null,
@@ -278,7 +292,7 @@ export function CreateJobDialog({
               trialNotes: isTrial ? (trialNotes.trim() || null) : null,
             }),
           })
-        )
+        })
       )
 
       if (jobResults.some(r => !r.ok)) throw new Error('Failed to create some jobs')
@@ -1072,10 +1086,10 @@ export function CreateJobDialog({
                             ))}
                           </>
                         )}
-                        {vendors.filter(v => v.isActive !== false).length > 0 && (
+                        {activeVendors.length > 0 && (
                           <>
                             <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Vendors</div>
-                            {vendors.filter(v => v.isActive !== false).map(v => (
+                            {activeVendors.map(v => (
                               <SelectItem key={`vendor:${v.id}`} value={`vendor:${v.id}`}>{v.name}</SelectItem>
                             ))}
                           </>
@@ -1182,7 +1196,7 @@ export function CreateJobDialog({
                   </div>
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-600 mb-1 block">Paying cleaner *</Label>
+                  <Label className="text-xs text-gray-600 mb-1 block">{selectedSubcontractorId.startsWith('vendor:') ? 'Vendor pay *' : 'Paying cleaner *'}</Label>
                   <div className="relative">
                     <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
                     <Input
@@ -1210,7 +1224,7 @@ export function CreateJobDialog({
               )}
               
               <div>
-                <Label className="text-xs text-gray-600 mb-1 block">Assign to</Label>
+                <Label className="text-xs text-gray-600 mb-1 block">Performed by</Label>
                 <Select value={selectedSubcontractorId} onValueChange={setSelectedSubcontractorId}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
@@ -1222,6 +1236,14 @@ export function CreateJobDialog({
                     {activeSubcontractors.map(sub => (
                       <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
                     ))}
+                    {!isTrial && activeVendors.length > 0 && (
+                      <>
+                        <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">Vendors</div>
+                        {activeVendors.map(v => (
+                          <SelectItem key={`vendor:${v.id}`} value={`vendor:${v.id}`}>{v.name}</SelectItem>
+                        ))}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

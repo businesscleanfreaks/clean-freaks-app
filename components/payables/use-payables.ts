@@ -16,7 +16,7 @@ export interface PayableAccount {
   status: AccountStatus
   reason: string
   payType: string
-  itemKind?: "job" | "addon" // "addon" = cleaner-assigned add-on account (Payout-B); default "job"
+  itemKind?: "job" | "addon" // "job" = clean/job ids; "addon" = add-on ids; default "job"
   payableItemIds: string[]
   allItemIds: string[]
   cleans: Array<{ date: string; amount: number }>

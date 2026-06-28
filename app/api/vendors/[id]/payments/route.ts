@@ -6,14 +6,22 @@ import { z } from "zod"
 export const dynamic = 'force-dynamic'
 
 const createPaymentSchema = z.object({
-  addOnServiceIds: z.array(z.string()).min(1, 'At least one add-on service required'),
+  addOnServiceIds: z.array(z.string()).optional().default([]),
+  jobIds: z.array(z.string()).optional().default([]),
   datePaid: z.string().optional(),
   notes: z.string().optional().nullable(),
+}).refine((value) => value.addOnServiceIds.length + value.jobIds.length > 0, {
+  message: 'At least one add-on service or job is required',
+  path: ['addOnServiceIds'],
 })
 
 const updatePaymentStateSchema = z.object({
-  addOnServiceIds: z.array(z.string()).min(1, 'At least one add-on service required'),
+  addOnServiceIds: z.array(z.string()).optional().default([]),
+  jobIds: z.array(z.string()).optional().default([]),
   vendorPaid: z.boolean(),
+}).refine((value) => value.addOnServiceIds.length + value.jobIds.length > 0, {
+  message: 'At least one add-on service or job is required',
+  path: ['addOnServiceIds'],
 })
 
 // POST — record vendor payment
@@ -34,25 +42,55 @@ export async function POST(
       )
     }
 
-    const { addOnServiceIds, datePaid, notes } = result.data
+    const { addOnServiceIds, jobIds, datePaid, notes } = result.data
 
     // Get unpaid add-on services for this vendor
-    const addOns = await prisma.addOnService.findMany({
-      where: {
-        id: { in: addOnServiceIds },
-        vendorId,
-        vendorPaid: false,
-      },
-    })
+    const [addOns, jobs] = await Promise.all([
+      prisma.addOnService.findMany({
+        where: {
+          id: { in: addOnServiceIds },
+          vendorId,
+          vendorPaid: false,
+        },
+      }),
+      prisma.job.findMany({
+        where: {
+          id: { in: jobIds },
+          vendorId,
+          vendorPaid: false,
+          scheduleId: null,
+        },
+      }),
+    ])
 
-    if (addOns.length === 0) {
+    if (addOns.length === 0 && jobs.length === 0) {
       return NextResponse.json(
-        { error: 'No valid unpaid add-on services found for this vendor' },
+        { error: 'No valid unpaid add-on services or jobs found for this vendor' },
         { status: 400 }
       )
     }
 
-    const totalAmount = addOns.reduce((sum, a) => sum + a.subcontractorRate, 0)
+    if (addOns.length < addOnServiceIds.length) {
+      const foundIds = new Set(addOns.map(addon => addon.id))
+      const missing = addOnServiceIds.filter(id => !foundIds.has(id))
+      return NextResponse.json(
+        { error: `${missing.length} add-on(s) already paid or not found`, alreadyPaidAddOnIds: missing },
+        { status: 409 }
+      )
+    }
+
+    if (jobs.length < jobIds.length) {
+      const foundIds = new Set(jobs.map(job => job.id))
+      const missing = jobIds.filter(id => !foundIds.has(id))
+      return NextResponse.json(
+        { error: `${missing.length} job(s) already paid or not found`, alreadyPaidJobIds: missing },
+        { status: 409 }
+      )
+    }
+
+    const totalAmount =
+      addOns.reduce((sum, a) => sum + a.subcontractorRate, 0) +
+      jobs.reduce((sum, job) => sum + job.subcontractorRate, 0)
 
     const payment = await prisma.$transaction(async (tx) => {
       const newPayment = await tx.vendorPayment.create({
@@ -62,10 +100,16 @@ export async function POST(
           totalAmount,
           notes: notes || null,
           lineItems: {
-            create: addOns.map(a => ({
-              addOnServiceId: a.id,
-              amount: a.subcontractorRate,
-            })),
+            create: [
+              ...addOns.map(a => ({
+                addOnServiceId: a.id,
+                amount: a.subcontractorRate,
+              })),
+              ...jobs.map(job => ({
+                jobId: job.id,
+                amount: job.subcontractorRate,
+              })),
+            ],
           },
         },
         include: {
@@ -78,10 +122,19 @@ export async function POST(
       })
 
       // Mark add-on services as vendor-paid
-      await tx.addOnService.updateMany({
-        where: { id: { in: addOnServiceIds } },
-        data: { vendorPaid: true },
-      })
+      if (addOns.length > 0) {
+        await tx.addOnService.updateMany({
+          where: { id: { in: addOns.map(addon => addon.id) }, vendorId },
+          data: { vendorPaid: true },
+        })
+      }
+
+      if (jobs.length > 0) {
+        await tx.job.updateMany({
+          where: { id: { in: jobs.map(job => job.id) }, vendorId },
+          data: { vendorPaid: true },
+        })
+      }
 
       return newPayment
     })
@@ -114,25 +167,37 @@ export async function PATCH(
       )
     }
 
-    const { addOnServiceIds, vendorPaid } = result.data
+    const { addOnServiceIds, jobIds, vendorPaid } = result.data
 
     if (vendorPaid) {
-      const addOns = await prisma.addOnService.findMany({
-        where: {
-          id: { in: addOnServiceIds },
-          vendorId,
-          vendorPaid: false,
-        },
-      })
+      const [addOns, jobs] = await Promise.all([
+        prisma.addOnService.findMany({
+          where: {
+            id: { in: addOnServiceIds },
+            vendorId,
+            vendorPaid: false,
+          },
+        }),
+        prisma.job.findMany({
+          where: {
+            id: { in: jobIds },
+            vendorId,
+            vendorPaid: false,
+            scheduleId: null,
+          },
+        }),
+      ])
 
-      if (addOns.length === 0) {
+      if (addOns.length === 0 && jobs.length === 0) {
         return NextResponse.json(
-          { error: 'No valid unpaid add-on services found for this vendor' },
+          { error: 'No valid unpaid add-on services or jobs found for this vendor' },
           { status: 400 }
         )
       }
 
-      const totalAmount = addOns.reduce((sum, addon) => sum + addon.subcontractorRate, 0)
+      const totalAmount =
+        addOns.reduce((sum, addon) => sum + addon.subcontractorRate, 0) +
+        jobs.reduce((sum, job) => sum + job.subcontractorRate, 0)
 
       await prisma.$transaction(async (tx) => {
         await tx.vendorPayment.create({
@@ -142,18 +207,33 @@ export async function PATCH(
             totalAmount,
             notes: null,
             lineItems: {
-              create: addOns.map(addon => ({
-                addOnServiceId: addon.id,
-                amount: addon.subcontractorRate,
-              })),
+              create: [
+                ...addOns.map(addon => ({
+                  addOnServiceId: addon.id,
+                  amount: addon.subcontractorRate,
+                })),
+                ...jobs.map(job => ({
+                  jobId: job.id,
+                  amount: job.subcontractorRate,
+                })),
+              ],
             },
           },
         })
 
-        await tx.addOnService.updateMany({
-          where: { id: { in: addOns.map(addon => addon.id) }, vendorId },
-          data: { vendorPaid: true },
-        })
+        if (addOns.length > 0) {
+          await tx.addOnService.updateMany({
+            where: { id: { in: addOns.map(addon => addon.id) }, vendorId },
+            data: { vendorPaid: true },
+          })
+        }
+
+        if (jobs.length > 0) {
+          await tx.job.updateMany({
+            where: { id: { in: jobs.map(job => job.id) }, vendorId },
+            data: { vendorPaid: true },
+          })
+        }
       })
 
       return NextResponse.json({ success: true })
@@ -162,8 +242,10 @@ export async function PATCH(
     await prisma.$transaction(async (tx) => {
       const lineItems = await tx.vendorPaymentLineItem.findMany({
         where: {
-          addOnServiceId: { in: addOnServiceIds },
-          addOnService: { vendorId },
+          OR: [
+            { addOnServiceId: { in: addOnServiceIds }, addOnService: { vendorId } },
+            { jobId: { in: jobIds }, job: { vendorId } },
+          ],
         },
         include: {
           payment: {
@@ -194,6 +276,11 @@ export async function PATCH(
 
       await tx.addOnService.updateMany({
         where: { id: { in: addOnServiceIds }, vendorId },
+        data: { vendorPaid: false },
+      })
+
+      await tx.job.updateMany({
+        where: { id: { in: jobIds }, vendorId },
         data: { vendorPaid: false },
       })
     })

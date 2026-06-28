@@ -55,6 +55,10 @@ function getWorkerColor(cleanerName: string | null) {
   return COLOR_KEY_TO_TAILWIND[colorKey] || COLOR_KEY_TO_TAILWIND.default
 }
 
+function getPerformerName(job: { subcontractor?: { name?: string | null } | null; vendor?: { name?: string | null } | null }) {
+  return job.subcontractor?.name || job.vendor?.name || null
+}
+
 // SearchSelect: combobox-style dropdown for the inline header filters (Team / Clients).
 // Per calendar_dev_notes.md item 2: replaces the side-panel filter drawer. Each dropdown has
 // a search input + filtered list of options. Click outside to close.
@@ -921,7 +925,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       if (job.subcontractor) {
         if (!selectedCleanerIds.has(job.subcontractor.id)) return false
       } else {
-        if (!showUnassigned) return false
+        if (!job.vendor && !showUnassigned) return false
       }
 
       if (filterBarClientIds.size > 0 && !filterBarClientIds.has(job.location.client.id)) return false
@@ -929,7 +933,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       if (q) {
         const clientName = job.location.client.name?.toLowerCase() || ''
         const locName = job.location.name?.toLowerCase() || ''
-        const cleanerName = job.subcontractor?.name?.toLowerCase() || ''
+        const cleanerName = getPerformerName(job)?.toLowerCase() || ''
         if (!clientName.includes(q) && !locName.includes(q) && !cleanerName.includes(q)) return false
       }
 
@@ -961,7 +965,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const todayStr = format(today, 'yyyy-MM-dd')
     
     const todayJobs = filteredJobs.filter(j => getDateString(j.date) === todayStr)
-    const unassigned = filteredJobs.filter(j => !j.subcontractor && getDateString(j.date) >= todayStr)
+    const unassigned = filteredJobs.filter(j => !getPerformerName(j) && getDateString(j.date) >= todayStr)
     
     return {
       todayJobs: todayJobs.sort((a, b) => {
@@ -1286,7 +1290,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 {dayJobs.length > 0 && !isSelected && (
                   <div className="flex items-center mt-1" style={{ gap: '2px' }}>
                     {dayJobs.slice(0, 3).map((job, i) => {
-                      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+                      const { hex } = getCleanerColorInfo(getPerformerName(job))
                       return (
                         <div
                           key={i}
@@ -1399,7 +1403,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   {dayJobs.length > 0 && (
                     <div className="flex items-center mt-0.5" style={{ gap: '2px' }}>
                       {dayJobs.slice(0, 3).map((job, i) => {
-                        const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+                        const { hex } = getCleanerColorInfo(getPerformerName(job))
                         return (
                           <div
                             key={i}
@@ -1899,13 +1903,14 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       timedJobsByDay[dayIndex].filter(job => Math.floor(getMinutes(getJobStart(job)) / 60) === hour)
 
     const renderCompactJobCard = (job: JobWithFullRelations, compact = false) => {
-      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+      const performerName = getPerformerName(job)
+      const { hex } = getCleanerColorInfo(performerName)
       const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
       const isSelected = selectedJobIds.has(job.id)
       const timeRange = getJobTimeRange(job)
-      const cleanerShort = getCleanerShort(job.subcontractor?.name)
+      const cleanerShort = getCleanerShort(performerName)
       const locationName = getCompactLocationName(job)
-      const title = `${timeRange} ${job.location.client.name}${job.subcontractor?.name ? ` · ${job.subcontractor.name}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`
+      const title = `${timeRange} ${job.location.client.name}${performerName ? ` · ${performerName}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`
 
       const isDenseCard = compact || weekDensity === 'Dense'
       return (
@@ -1993,7 +1998,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 <div key={day.toString()} className="min-h-[34px] border-r border-gray-100 p-1.5 last:border-r-0">
                   <div className="flex flex-col gap-1">
                     {unscheduledJobsByDay[dayIndex].map(job => {
-                      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+                      const { hex } = getCleanerColorInfo(getPerformerName(job))
                       const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
                       const isSelected = selectedJobIds.has(job.id)
                       return (
@@ -2253,11 +2258,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 <div key={day.toString()} className="min-h-[34px] border-r border-gray-100 last:border-r-0 p-1">
                   <div className="flex flex-col gap-1">
                     {unscheduledJobsByDay[di].map(job => {
-                      const { hex } = getCleanerColorInfo(job.subcontractor?.name || null);
+                      const performerName = getPerformerName(job);
+                      const { hex } = getCleanerColorInfo(performerName);
                       const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id);
                       const isSelected = selectedJobIds.has(job.id);
-                      const cleanerName = job.subcontractor?.name || '';
-                      const tooltipText = `TBD ${job.location.client.name}${cleanerName ? ` · ${cleanerName}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`;
+                      const tooltipText = `TBD ${job.location.client.name}${performerName ? ` · ${performerName}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`;
 
                       return (
                         <div
@@ -2349,7 +2354,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           ? (weekColumnWidth * widthPct) / 100 - 8
                           : 160;
 
-                      const { colorKey } = getCleanerColorInfo(job.subcontractor?.name || null);
+                      const performerName = getPerformerName(job);
+                      const { colorKey } = getCleanerColorInfo(performerName);
                       const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default;
                       const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id);
                       const isSelected = selectedJobIds.has(job.id);
@@ -2357,7 +2363,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       return (
                         <div
                           key={job.id}
-                          title={`${getCompactTime(tStr)} ${job.location.client.name}${job.subcontractor?.name ? ` · ${job.subcontractor.name}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`}
+                          title={`${getCompactTime(tStr)} ${job.location.client.name}${performerName ? ` · ${performerName}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`}
                           onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
                           className={`absolute rounded-md overflow-hidden cursor-pointer shadow-sm border border-white/60 hover:shadow-md focus:shadow-md transition-shadow ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
                           tabIndex={0}
@@ -2403,7 +2409,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           {(() => {
                             const compactTime = getCompactTime(tStr)
                             const clientName = job.location.client.name
-                            const cleanerName = job.subcontractor?.name || ''
+                            const cleanerName = performerName || ''
                             const cleanerParts = cleanerName.split(' ').filter(Boolean)
                             const cleanerShort = cleanerParts.length
                               ? `${cleanerParts[0]}${cleanerParts[1] ? ` ${cleanerParts[1][0]}.` : ''}`
@@ -2610,10 +2616,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                                 {dayJobs.slice(0, 5).map(j => {
                                   const status = getJobStatus(j)
-                                  const { colorKey } = getCleanerColorInfo(j.subcontractor?.name || null)
+                                  const performerName = getPerformerName(j)
+                                  const { colorKey } = getCleanerColorInfo(performerName)
                                   const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default
                                   const timeDisplay = getCompactTime(j.startTime || j.startWindowBegin || null);
-                                  const cleanerInit = j.subcontractor ? j.subcontractor.name.charAt(0) : '';
+                                  const cleanerInit = performerName ? performerName.charAt(0) : '';
 
                                   return (
                                     <div
@@ -2690,7 +2697,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     return timeA.localeCompare(timeB)
                   })
                   .map(job => {
-                    const { hex } = getCleanerColorInfo(job.subcontractor?.name || null)
+                    const performerName = getPerformerName(job)
+                    const { hex } = getCleanerColorInfo(performerName)
                     const status = getJobStatus(job)
                     const timeDisplay = job.startTime
                       ? formatTime(job.startTime)
@@ -2705,7 +2713,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       >
                         <div
                           className="flex-shrink-0 rounded-full"
-                          style={{ width: '8px', height: '8px', backgroundColor: job.subcontractor ? hex : '#D1D5DB' }}
+                          style={{ width: '8px', height: '8px', backgroundColor: performerName ? hex : '#D1D5DB' }}
                         />
                         <div className="min-w-0 flex-1">
                           <p style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }} className="truncate">
@@ -2714,7 +2722,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           <p style={{ fontSize: '12px', color: '#6B7280' }} className="truncate">
                             {job.location.name}
                             {timeDisplay ? ` · ${timeDisplay}` : ''}
-                            {job.subcontractor ? ` · ${job.subcontractor.name}` : ' · Unassigned'}
+                            {performerName ? ` · ${performerName}` : ' · Unassigned'}
                           </p>
                         </div>
                         <span
@@ -2736,7 +2744,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
         <DragOverlay dropAnimation={null}>
           {draggedJob && (() => {
-            const { colorKey } = getCleanerColorInfo(draggedJob.subcontractor?.name || null)
+            const { colorKey } = getCleanerColorInfo(getPerformerName(draggedJob))
             const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default
             const durationHours = 2
             let timeRangeText: string | null = null

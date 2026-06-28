@@ -48,9 +48,17 @@ async function getClientWithDetails(id: string) {
               status: true,
               invoiced: true,
               scheduleId: true,
+              vendorId: true,
+              vendorPaid: true,
               clientRate: true,
               subcontractorRate: true,
               subcontractor: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              vendor: {
                 select: {
                   id: true,
                   name: true,
@@ -360,12 +368,17 @@ export async function DELETE(
       }),
       prisma.vendorPaymentLineItem.count({
         where: {
-          addOnService: {
-            OR: [
-              { job: { location: { clientId: params.id } } },
-              { schedule: { location: { clientId: params.id } } },
-            ],
-          },
+          OR: [
+            {
+              addOnService: {
+                OR: [
+                  { job: { location: { clientId: params.id } } },
+                  { schedule: { location: { clientId: params.id } } },
+                ],
+              },
+            },
+            { job: { location: { clientId: params.id } } },
+          ],
         },
       }),
     ])

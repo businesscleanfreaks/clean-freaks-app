@@ -137,6 +137,7 @@ model Job {
   id                   String      @id @default(uuid())
   locationId           String
   subcontractorId      String?
+  vendorId             String?
   scheduleId           String?
   date                 DateTime
   startTime            String?
@@ -147,6 +148,7 @@ model Job {
   status               String      @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
   invoiced             Boolean     @default(false)
   subcontractorPaid    Boolean     @default(false)
+  vendorPaid           Boolean     @default(false)
   notes                String?
   isTrial              Boolean     @default(false)
   trialNotes           String?
@@ -155,16 +157,19 @@ model Job {
 
   location             Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
   subcontractor        Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
+  vendor               Vendor?     @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   schedule             Schedule?   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   invoiceLineItems     InvoiceLineItem[]
   paymentLineItems     SubcontractorPaymentLineItem[]
+  vendorPaymentLineItems VendorPaymentLineItem[]
   addOnServices        AddOnService[]
 
   @@unique([scheduleId, date], name: "unique_schedule_date")
   @@index([date])
   @@index([status])
   @@index([subcontractorId])
+  @@index([vendorId])
   @@index([locationId])
   @@index([status, subcontractorId])
   @@index([status, invoiced])
@@ -359,6 +364,7 @@ model Vendor {
   updatedAt DateTime @updatedAt
 
   addOnServices  AddOnService[]
+  jobs           Job[]
   payments       VendorPayment[]
 
   @@index([isActive])
@@ -384,14 +390,18 @@ model VendorPayment {
 model VendorPaymentLineItem {
   id             String   @id @default(uuid())
   paymentId      String
-  addOnServiceId String
+  addOnServiceId String?
+  jobId          String?
   amount         Float
 
   payment      VendorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  addOnService AddOnService  @relation(fields: [addOnServiceId], references: [id], onDelete: Cascade)
+  addOnService AddOnService? @relation(fields: [addOnServiceId], references: [id], onDelete: Cascade)
+  job          Job?          @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@unique([paymentId, addOnServiceId])
+  @@unique([paymentId, jobId])
   @@index([addOnServiceId])
+  @@index([jobId])
   @@map("vendor_payment_line_items")
 }
 

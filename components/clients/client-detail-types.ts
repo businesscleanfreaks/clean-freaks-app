@@ -38,9 +38,10 @@ export interface ActivityEntry {
 
 /** Job data sent to POST /api/jobs */
 export interface CreateJobPayload {
-  scheduleId: string
+  scheduleId?: string | null
   locationId: string
   subcontractorId: string | null
+  vendorId?: string | null
   date: string
   clientRate: number
   subcontractorRate: number

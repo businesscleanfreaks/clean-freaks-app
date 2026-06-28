@@ -104,6 +104,7 @@ export const changeScheduleGoingForwardSchema = createScheduleSchema.extend({
 export const createJobSchema = z.object({
   locationId: z.string().uuid('Invalid location ID'),
   subcontractorId: z.string().uuid('Invalid subcontractor ID').optional().nullable(),
+  vendorId: z.string().uuid('Invalid vendor ID').optional().nullable(),
   scheduleId: z.string().uuid('Invalid schedule ID').optional().nullable(), // For one-time jobs linked to a schedule
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
   startTime: z.string().optional().nullable(),
@@ -114,11 +115,28 @@ export const createJobSchema = z.object({
   notes: z.string().max(5000, 'Notes too long').optional().nullable(),
   isTrial: z.boolean().optional().default(false),
   trialNotes: z.string().max(5000, 'Trial notes too long').optional().nullable(),
+}).superRefine((value, ctx) => {
+  if (value.vendorId && value.subcontractorId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['vendorId'],
+      message: 'Choose either a cleaner or a vendor, not both',
+    })
+  }
+
+  if (value.vendorId && value.scheduleId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['vendorId'],
+      message: 'Vendor-performed jobs must be standalone one-off jobs',
+    })
+  }
 })
 
 export const updateJobSchema = z.object({
   locationId: z.string().uuid('Invalid location ID').optional(),
   subcontractorId: z.string().uuid('Invalid subcontractor ID').optional().nullable(),
+  vendorId: z.string().uuid('Invalid vendor ID').optional().nullable(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
   startTime: z.string().optional().nullable(),
   startWindowBegin: z.string().optional().nullable(),
@@ -127,9 +145,18 @@ export const updateJobSchema = z.object({
   subcontractorRate: z.number().min(0, 'Subcontractor rate must be positive').optional(),
   status: z.enum(['SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
   subcontractorPaid: z.boolean().optional(),
+  vendorPaid: z.boolean().optional(),
   notes: z.string().max(5000, 'Notes too long').optional().nullable(),
   isTrial: z.boolean().optional(),
   trialNotes: z.string().max(5000, 'Trial notes too long').optional().nullable(),
+}).superRefine((value, ctx) => {
+  if (value.vendorId && value.subcontractorId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['vendorId'],
+      message: 'Choose either a cleaner or a vendor, not both',
+    })
+  }
 })
 
 // Invoice schemas

@@ -185,6 +185,8 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
   const recurringScheduleRecord = job.schedule as ScheduleRecord | null
   const clientBillingType = job.location.client.billingType
   const clientCleanerPayType = job.location.client.cleanerPayType
+  const performerName = job.subcontractor?.name || job.vendor?.name || null
+  const performerColor = performerName ? getCleanerColorInfo(performerName).hex : undefined
 
   // Status-line schedule summary (e.g. "Weekly · Thu") for recurring jobs — the handoff wants the
   // schedule here, not the location (location lives only in the info card's Location cell).
@@ -1133,11 +1135,11 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
       <div className="grid grid-cols-2 gap-2">
         {renderSummaryCard('Date', format(displayDate, isMobile ? 'EEE, MMM d' : 'EEE, MMM d, yyyy'), isMobile)}
         {renderSummaryCard('Time', jobTimeDisplay, isMobile)}
-        {renderSummaryCard('Cleaner', job.subcontractor?.name || 'Unassigned', isMobile, !job.subcontractor, job.subcontractor ? getCleanerColorInfo(job.subcontractor.name).hex : undefined)}
+        {renderSummaryCard('Performed By', performerName || 'Unassigned', isMobile, !performerName, performerColor)}
         {renderSummaryCard('Client Price', formatCurrency(job.clientRate ?? 0), isMobile)}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {renderSummaryCard('Cleaner Pay', formatCurrency(job.subcontractorRate ?? 0), isMobile)}
+        {renderSummaryCard(job.vendor ? 'Vendor Pay' : 'Cleaner Pay', formatCurrency(job.subcontractorRate ?? 0), isMobile)}
         {renderSummaryCard('Margin', formatCurrency((job.clientRate ?? 0) - (job.subcontractorRate ?? 0)), isMobile)}
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -1958,11 +1960,11 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
                     >
                       <span
                         className="text-[15px] font-medium"
-                        style={{ color: !job.subcontractor ? '#00A896' : '#111111' }}
+                        style={{ color: !job.subcontractor && !job.vendor ? '#00A896' : '#111111' }}
                       >
                         Unassigned
                       </span>
-                      {!job.subcontractor && <Check className="h-4 w-4" style={{ color: '#00A896' }} />}
+                      {!job.subcontractor && !job.vendor && <Check className="h-4 w-4" style={{ color: '#00A896' }} />}
                     </button>
                     {activeSubcontractors.map(sub => (
                       <button

@@ -28,6 +28,10 @@ interface Job {
     id: string
     name: string
   } | null
+  vendor?: {
+    id: string
+    name: string
+  } | null
   schedule: {
     id: string
     frequency: string
@@ -256,7 +260,7 @@ export function UpcomingJobsSection({ jobs, locations, onDataChange }: UpcomingJ
             {/* Cleaner */}
             <div className="flex items-center gap-1.5 text-sm text-gray-600">
               <User className="w-4 h-4 text-stone-400" />
-              <span>{job.subcontractor?.name || 'Unassigned'}</span>
+              <span>{job.subcontractor?.name || job.vendor?.name || 'Unassigned'}</span>
             </div>
 
             {/* Frequency (for recurring) */}
@@ -424,4 +428,3 @@ export function UpcomingJobsSection({ jobs, locations, onDataChange }: UpcomingJ
     </>
   )
 }
-

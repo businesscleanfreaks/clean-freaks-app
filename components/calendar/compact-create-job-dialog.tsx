@@ -129,8 +129,9 @@ export function CompactCreateJobDialog({
     [subcontractors]
   )
   // Vendors for the add-on "Performed by" selector (vendor add-ons are payable via the vendor list)
-  const { data: vendorData } = useSWR<Array<{ id: string; name: string }>>(open ? '/api/vendors' : null, fetcher)
+  const { data: vendorData } = useSWR<Array<{ id: string; name: string; isActive?: boolean }>>(open ? '/api/vendors' : null, fetcher)
   const addOnVendors = vendorData || []
+  const activeVendors = useMemo(() => addOnVendors.filter(v => v.isActive !== false), [addOnVendors])
   const selectedClient = clients.find(client => client.id === selectedClientId)
   const locations = selectedClient?.locations || []
   const typedClientName = search.trim()
@@ -198,6 +199,12 @@ export function CompactCreateJobDialog({
     setAddOnDraft({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' })
     setDropOpen(false)
   }, [clients, open, preSelectedClientId, selectedDate, selectedTime])
+
+  useEffect(() => {
+    if (isTrial && subcontractorId.startsWith("vendor:")) {
+      setSubcontractorId("unassigned")
+    }
+  }, [isTrial, subcontractorId])
 
   // Close the client dropdown when clicking outside the picker container.
   useEffect(() => {
@@ -294,6 +301,10 @@ export function CompactCreateJobDialog({
       showError("Choose a client, location, time, and rates before creating the job")
       return
     }
+    if (isTrial && subcontractorId.startsWith("vendor:")) {
+      showError("Trials need a cleaner assignment. Vendors can perform standalone one-time jobs.")
+      return
+    }
 
     setLoading(true)
     try {
@@ -363,12 +374,14 @@ export function CompactCreateJobDialog({
       }
 
       await Promise.all(locationIds.map(async locationId => {
+        const isVendorAssignment = subcontractorId.startsWith("vendor:")
         const response = await fetch("/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             locationId,
-            subcontractorId: subcontractorId === "unassigned" ? null : subcontractorId,
+            subcontractorId: subcontractorId === "unassigned" || isVendorAssignment ? null : subcontractorId,
+            vendorId: isVendorAssignment ? subcontractorId.replace("vendor:", "") : null,
             date: format(jobDate, "yyyy-MM-dd"),
             startTime: timeMode === "specific" ? startTime || null : null,
             startWindowBegin: timeMode === "window" ? startWindowBegin || null : null,
@@ -624,12 +637,18 @@ export function CompactCreateJobDialog({
 
           <section className="space-y-2">
             <div>
-              <Label className="mb-1 block text-[11px] text-slate-500">Assigned to</Label>
+              <Label className="mb-1 block text-[11px] text-slate-500">Performed by</Label>
               <Select value={subcontractorId} onValueChange={setSubcontractorId}>
                 <SelectTrigger className={`h-9 text-sm ${subcontractorId === "unassigned" ? "text-amber-700" : ""}`}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassigned"><span className="text-amber-700">Unassigned</span></SelectItem>
                   {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
+                  {!isTrial && activeVendors.length > 0 && (
+                    <>
+                      <div className="mt-1 border-t border-slate-100 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Vendors</div>
+                      {activeVendors.map(vendor => <SelectItem key={`vendor:${vendor.id}`} value={`vendor:${vendor.id}`}>{vendor.name}</SelectItem>)}
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -642,7 +661,7 @@ export function CompactCreateJobDialog({
                 </div>
               </div>
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">Cleaner pay *</Label>
+                <Label className="mb-1 block text-[11px] text-slate-500">{subcontractorId.startsWith("vendor:") ? "Vendor pay *" : "Cleaner pay *"}</Label>
                 <div className="relative">
                   <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                   <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0.00" />

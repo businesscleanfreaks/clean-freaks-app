@@ -61,6 +61,7 @@ export async function GET(request: Request) {
         },
         schedule: true,
         subcontractor: true,
+        vendor: true,
         addOnServices: true,
         invoiceLineItems: {
           include: {

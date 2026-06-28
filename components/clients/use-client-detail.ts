@@ -305,7 +305,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
           title: 'Service Completed',
           location: loc.name,
           date: new Date(job.date),
-          worker: job.subcontractor?.name || 'Team'
+          worker: job.subcontractor?.name || job.vendor?.name || 'Team'
         })
       })
     })
@@ -975,7 +975,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       date: dateStr,
       time: timeStr,
       location: stats.nextJobLocation,
-      worker: job.subcontractor?.name,
+      worker: job.subcontractor?.name || job.vendor?.name,
     }
   }, [stats.nextJob, stats.nextJobLocation])
 
