@@ -121,10 +121,9 @@ export async function PUT(
         cleanUpdateData[key] = updateData[key]
       }
     })
-    
-    const schedule = await prisma.schedule.update({
+
+    const existingSchedule = await prisma.schedule.findUnique({
       where: { id: params.id },
-      data: cleanUpdateData,
       include: {
         location: {
           include: {
@@ -132,6 +131,58 @@ export async function PUT(
           },
         },
       },
+    })
+
+    if (!existingSchedule) {
+      return NextResponse.json(
+        { error: 'Schedule not found' },
+        { status: 404 }
+      )
+    }
+
+    const hasUpdatedStartDate = Object.prototype.hasOwnProperty.call(cleanUpdateData, 'startDate')
+    const hasUpdatedEndDate = Object.prototype.hasOwnProperty.call(cleanUpdateData, 'endDate')
+    const nextStartDate = hasUpdatedStartDate
+      ? (cleanUpdateData.startDate as Date)
+      : existingSchedule.startDate
+    const nextEndDate = hasUpdatedEndDate
+      ? (cleanUpdateData.endDate as Date | null)
+      : existingSchedule.endDate
+
+    if (nextEndDate && nextEndDate < nextStartDate) {
+      return NextResponse.json(
+        { error: 'The schedule end date cannot be before its start date.' },
+        { status: 400 }
+      )
+    }
+
+    const clientUpdateData: { billingType?: string; cleanerPayType?: string } = {}
+    if (typeof cleanUpdateData.clientPayType === 'string') {
+      clientUpdateData.billingType = cleanUpdateData.clientPayType
+    }
+    if (typeof cleanUpdateData.subcontractorPayType === 'string') {
+      clientUpdateData.cleanerPayType = cleanUpdateData.subcontractorPayType
+    }
+
+    const schedule = await prisma.$transaction(async (tx) => {
+      if (Object.keys(clientUpdateData).length > 0) {
+        await tx.client.update({
+          where: { id: existingSchedule.location.client.id },
+          data: clientUpdateData,
+        })
+      }
+
+      return tx.schedule.update({
+        where: { id: params.id },
+        data: cleanUpdateData,
+        include: {
+          location: {
+            include: {
+              client: true,
+            },
+          },
+        },
+      })
     })
 
     // Regenerate all jobs with updated settings (an explicit edit rebuilds this
