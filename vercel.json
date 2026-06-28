@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "prisma generate && next build",
+  "buildCommand": "npm test && prisma generate && next build",
   "installCommand": "npm install",
   "crons": [
     {
