@@ -7,6 +7,7 @@ const ALLOWED_FIELDS = new Set([
   "revenue",
   "cleanerPayout",
   "billingType",
+  "propertyType",
   "cleanerPayType",
   "frequency",
   "recurring",
@@ -73,6 +74,16 @@ export async function PUT(
 
     if (field === "cleanerAssignedId" && (value === "" || value === "unassigned")) {
       processedValue = null
+    }
+
+    if (field === "propertyType") {
+      if (value === null || value === "" || value === undefined) {
+        processedValue = null
+      } else if (value === "RESIDENTIAL" || value === "COMMERCIAL") {
+        processedValue = value
+      } else {
+        return NextResponse.json({ error: "Invalid property type" }, { status: 400 })
+      }
     }
 
     if (field === "startDate") {

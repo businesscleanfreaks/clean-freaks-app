@@ -29,6 +29,7 @@ model Client {
   billingType         String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN
   cleanerPayType      String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid)
   invoiceFrequency    String     @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
+  propertyType        String?    // RESIDENTIAL or COMMERCIAL
   preferredPaymentMethod String?  // ZELLE, DIRECT_DEPOSIT, CHECK, OTHER — client's preferred way to pay
   startDate           DateTime?  // When the client relationship started
   isActive            Boolean    @default(true)
@@ -64,6 +65,7 @@ model Client {
 
   @@index([isActive])
   @@index([billingType])
+  @@index([propertyType])
   @@map("clients")
 }
 

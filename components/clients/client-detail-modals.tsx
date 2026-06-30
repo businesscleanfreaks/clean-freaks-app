@@ -422,6 +422,18 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                 />
                 <p className="text-xs text-stone-400 mt-1.5">When the client relationship started</p>
               </div>
+              <div>
+                <Label className="text-xs text-stone-500 uppercase tracking-wider">Property Type</Label>
+                <select
+                  value={formData.propertyType}
+                  onChange={(e) => setFormData({ ...formData, propertyType: e.target.value })}
+                  className="w-full mt-1.5 h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="">Not set</option>
+                  <option value="RESIDENTIAL">Residential</option>
+                  <option value="COMMERCIAL">Commercial</option>
+                </select>
+              </div>
               <div className="grid gap-4 grid-cols-2">
                 <div>
                   <Label className="text-xs text-stone-500 uppercase tracking-wider">How You Charge</Label>

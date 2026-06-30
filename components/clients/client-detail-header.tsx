@@ -19,6 +19,12 @@ interface ClientDetailHeaderProps {
   state: ClientDetailState
 }
 
+function propertyTypeLabel(type: string | null | undefined) {
+  if (type === 'RESIDENTIAL') return 'Residential'
+  if (type === 'COMMERCIAL') return 'Commercial'
+  return 'Type unset'
+}
+
 export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
   const {
     router,
@@ -38,6 +44,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
     isArchivingClient,
     isDeletingClient,
   } = state
+  const propertyType = propertyTypeLabel(client.propertyType)
 
   const [showOverflow, setShowOverflow] = useState(false)
   const isPauseAction = isTogglingPause ? pauseResumeAction === 'pause' : isActive
@@ -97,6 +104,9 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
                     TRIAL
                   </span>
                 )}
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
+                  {propertyType}
+                </span>
                 <span>{client.billingType === 'FLAT_RATE' ? 'Monthly flat rate' : 'Per clean'}</span>
                 <span className="text-zinc-300">·</span>
                 <span>{locationCount} location{locationCount !== 1 ? 's' : ''}</span>

@@ -27,6 +27,7 @@ interface Client {
   communicationContactName: string | null
   invoicingEmail: string | null
   billingType: string
+  propertyType?: "RESIDENTIAL" | "COMMERCIAL" | null
   cleanerPayType?: string
   notes: string | null
   isActive: boolean
@@ -57,6 +58,7 @@ type ViewMode = "az" | "cleaner" | "map"
 type SortKey = "name" | "contact" | "cleaner" | "rate" | "schedule"
 type SortDir = "asc" | "desc"
 type ClientStatusBucket = "all" | "recurring" | "trial" | "one-time" | "paused" | "cancelled"
+type PropertyTypeFilter = "all" | "residential" | "commercial" | "unset"
 
 const STATUS_TABS: { key: ClientStatusBucket; label: string }[] = [
   { key: "all", label: "All" },
@@ -65,6 +67,13 @@ const STATUS_TABS: { key: ClientStatusBucket; label: string }[] = [
   { key: "one-time", label: "One-Time" },
   { key: "paused", label: "Paused" },
   { key: "cancelled", label: "Cancelled" },
+]
+
+const PROPERTY_TYPE_FILTERS: { key: PropertyTypeFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "residential", label: "Residential" },
+  { key: "commercial", label: "Commercial" },
+  { key: "unset", label: "Unset" },
 ]
 
 function getInitials(name: string): string {
@@ -100,6 +109,16 @@ function isClientNew(client: Client): boolean {
   return !hasHistorical
 }
 
+function propertyTypePill(type: Client["propertyType"]) {
+  if (type === "RESIDENTIAL") {
+    return { label: "Res", background: "#EFF6FF", color: "#2563EB" }
+  }
+  if (type === "COMMERCIAL") {
+    return { label: "Com", background: "#ECFDF5", color: "#059669" }
+  }
+  return null
+}
+
 function ClientRow({
   client,
   showCleaner,
@@ -119,6 +138,7 @@ function ClientRow({
   const billingPillBg = isFlat ? "#F5F3FF" : "#F0FDFA"
   const billingPillColor = isFlat ? "#7C3AED" : "#0D9488"
   const billingPillText = isFlat ? "Mo" : "Per"
+  const propertyPill = propertyTypePill(client.propertyType)
   const locLabel = client.locations.length > 1 ? `${client.locations.length} locations` : (client.locations[0]?.name && client.locations[0].name !== client.name ? client.locations[0].name : "")
   const isNew = isClientNew(client)
 
@@ -146,6 +166,9 @@ function ClientRow({
           {locLabel && <span style={{ fontSize: 11, color: "#94A3B8" }}>· {locLabel}</span>}
           {isNew && (
             <span style={{ fontSize: 9, fontWeight: 700, color: "#0D9488", background: "#F0FDFA", padding: "1px 5px", borderRadius: 3, marginLeft: 2 }}>NEW</span>
+          )}
+          {propertyPill && (
+            <span title={client.propertyType === "RESIDENTIAL" ? "Residential" : "Commercial"} style={{ fontSize: 9, fontWeight: 700, color: propertyPill.color, background: propertyPill.background, padding: "1px 5px", borderRadius: 3, marginLeft: 2 }}>{propertyPill.label}</span>
           )}
           {!client.isActive && (
             <span style={{ fontSize: 9, fontWeight: 700, color: "#92400E", background: "#FEF3C7", padding: "1px 5px", borderRadius: 3, marginLeft: 2 }}>INACTIVE</span>
@@ -325,6 +348,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
   const [searchQuery, setSearchQuery] = useState("")
   const [showWizard, setShowWizard] = useState(false)
   const [statusFilter, setStatusFilter] = useState<ClientStatusBucket>("all")
+  const [propertyTypeFilter, setPropertyTypeFilter] = useState<PropertyTypeFilter>("all")
   const [viewMode, setViewMode] = useState<ViewMode>("az")
   const [sortKey, setSortKey] = useState<SortKey>("name")
   const [sortDir, setSortDir] = useState<SortDir>("asc")
@@ -364,10 +388,29 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
 
   const stats = buckets.counts
 
+  const propertyTypeStats = useMemo(() => {
+    return clients.reduce(
+      (acc, client) => {
+        if (client.propertyType === "RESIDENTIAL") acc.residential += 1
+        else if (client.propertyType === "COMMERCIAL") acc.commercial += 1
+        else acc.unset += 1
+        return acc
+      },
+      { all: clients.length, residential: 0, commercial: 0, unset: 0 }
+    )
+  }, [clients])
+
   const filtered = useMemo(() => {
     let list = clients
     if (statusFilter !== "all") {
       list = list.filter(c => buckets.byClient.get(c.id) === statusFilter)
+    }
+    if (propertyTypeFilter !== "all") {
+      list = list.filter(c => {
+        if (propertyTypeFilter === "residential") return c.propertyType === "RESIDENTIAL"
+        if (propertyTypeFilter === "commercial") return c.propertyType === "COMMERCIAL"
+        return c.propertyType !== "RESIDENTIAL" && c.propertyType !== "COMMERCIAL"
+      })
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -381,7 +424,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
       )
     }
     return list
-  }, [clients, statusFilter, searchQuery, buckets])
+  }, [clients, statusFilter, propertyTypeFilter, searchQuery, buckets])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -540,9 +583,37 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
             )
           })}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-          <span style={{ fontSize: 11, color: "#94A3B8" }}>View:</span>
-          <div style={{ display: "flex", background: "#F1F5F9", borderRadius: 6, padding: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>Type:</span>
+            <div style={{ display: "flex", background: "#F1F5F9", borderRadius: 6, padding: 2, flexWrap: "wrap" }}>
+              {PROPERTY_TYPE_FILTERS.map(option => {
+                const isActive = propertyTypeFilter === option.key
+                return (
+                  <button
+                    key={option.key}
+                    onClick={() => setPropertyTypeFilter(option.key)}
+                    style={{
+                      padding: "3px 8px",
+                      border: "none",
+                      borderRadius: 5,
+                      cursor: "pointer",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      background: isActive ? "#fff" : "transparent",
+                      color: isActive ? "#0F172A" : "#94A3B8",
+                      boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
+                    }}
+                  >
+                    {option.label} {propertyTypeStats[option.key]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>View:</span>
+            <div style={{ display: "flex", background: "#F1F5F9", borderRadius: 6, padding: 2 }}>
             {([
               ["az", "A–Z"],
               ["cleaner", "Cleaner"],
@@ -566,6 +637,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
                 {l}
               </button>
             ))}
+            </div>
           </div>
         </div>
       </div>

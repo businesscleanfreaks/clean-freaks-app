@@ -250,6 +250,7 @@ export async function GET(request: NextRequest) {
       return {
         id: client.id,
         name: client.name,
+        propertyType: client.propertyType ?? null,
         cleanerAssigned: subcontractorName,
         frequency: uniqueFreqs.join('; '),
         clientPayType: formatPayType(primarySchedule.clientPayType || 'PER_CLEAN'),

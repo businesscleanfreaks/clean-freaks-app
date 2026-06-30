@@ -10,6 +10,7 @@ export interface Client {
   notes: string | null
   billingType: 'FLAT_RATE' | 'PER_CLEAN'
   cleanerPayType: 'FLAT_RATE' | 'PER_CLEAN'
+  propertyType: 'RESIDENTIAL' | 'COMMERCIAL' | null
   preferredPaymentMethod: string | null
   startDate: Date | null
   isActive: boolean

@@ -10,6 +10,7 @@ import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
 interface ClientOverviewRow {
   id: string
   name: string
+  propertyType: 'RESIDENTIAL' | 'COMMERCIAL' | null
   cleanerAssigned: string
   frequency: string
   clientPayType: string
@@ -68,6 +69,12 @@ function shortenName(name: string) {
   const parts = cleaned.split(' ').filter(Boolean)
   if (parts.length === 1) return parts[0]
   return `${parts[0]} ${parts[1][0]}.`
+}
+
+function propertyTypeLabel(type: ClientOverviewRow['propertyType']) {
+  if (type === 'RESIDENTIAL') return 'Residential'
+  if (type === 'COMMERCIAL') return 'Commercial'
+  return 'Unset'
 }
 
 function MetricCard({
@@ -153,6 +160,16 @@ export function DashboardClient() {
     }
   }
 
+  const propertyTypeCounts = rows.reduce(
+    (acc, row) => {
+      if (row.propertyType === 'RESIDENTIAL') acc.residential += 1
+      else if (row.propertyType === 'COMMERCIAL') acc.commercial += 1
+      else acc.unset += 1
+      return acc
+    },
+    { residential: 0, commercial: 0, unset: 0 }
+  )
+
   const clientTypeCounts = rows.reduce(
     (acc, row) => {
       if (row.clientPayType.toLowerCase().includes('flat')) acc.flat += 1
@@ -235,15 +252,16 @@ export function DashboardClient() {
         )}
 
         {isLoading ? (
-          <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-5">
-            {[0, 1, 2, 3, 4].map(i => <SkeletonPulse key={i} className="h-24 w-full" rounded="lg" />)}
+          <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-6">
+            {[0, 1, 2, 3, 4, 5].map(i => <SkeletonPulse key={i} className="h-24 w-full" rounded="lg" />)}
           </div>
         ) : (
-          <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-5">
+          <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-6">
             <MetricCard label="Revenue" value={formatCurrency(totals.avgRevenue)} />
             <MetricCard label="Gross Profit" value={formatCurrency(totals.avgProfit)} />
             <MetricCard label="Net Profit" value={formatCurrency(recurringNetProfit)} tone={recurringNetProfit >= 0 ? 'good' : 'bad'} />
             <MetricCard label="Net Margin" value={`${recurringNetMargin.toFixed(1)}%`} />
+            <MetricCard label="Property Mix" value={`${propertyTypeCounts.residential}/${propertyTypeCounts.commercial}`} sub={`${propertyTypeCounts.unset} unset`} />
             <MetricCard label="Clients" value={String(rows.length)} sub={`${clientTypeCounts.flat} flat · ${clientTypeCounts.perClean} per clean`} />
           </div>
         )}
@@ -266,7 +284,7 @@ export function DashboardClient() {
 
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">All Clients · {rows.length}</div>
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
-          <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
+          <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_110px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
             <SortHeader label="Client" active={sortBy === 'name'} dir={sortDir} align="left" onClick={() => toggleSort('name')} />
             <SortHeader label="Revenue" active={sortBy === 'periodRevenue'} dir={sortDir} onClick={() => toggleSort('periodRevenue')} />
             <SortHeader label="Cleaner Pay" active={sortBy === 'periodCleanerCost'} dir={sortDir} onClick={() => toggleSort('periodCleanerCost')} />
@@ -284,7 +302,7 @@ export function DashboardClient() {
                 <Link
                   key={row.id}
                   href={`/clients/${row.id}`}
-                  className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
+                  className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_110px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
                 >
                   <div className="min-w-0">
                     <div className="font-semibold leading-tight">{row.name}</div>
@@ -296,13 +314,16 @@ export function DashboardClient() {
                     {formatCurrency(row.periodProfit)}
                   </div>
                   <div className="text-right text-xs text-stone-500">{shortenName(row.cleanerAssigned)}</div>
-                  <div className="text-right text-xs text-stone-400">{row.clientPayType.replace('Flat Rate', 'Flat')}</div>
+                  <div className="text-right">
+                    <div className="text-xs font-medium text-stone-500">{propertyTypeLabel(row.propertyType)}</div>
+                    <div className="text-[10px] text-stone-400">{row.clientPayType.replace('Flat Rate', 'Flat')}</div>
+                  </div>
                 </Link>
               ))}
             </div>
           )}
           {!isLoading && (
-            <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_86px] border-t-2 border-stone-950 bg-stone-50 px-4 py-2 text-sm font-bold">
+            <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_110px] border-t-2 border-stone-950 bg-stone-50 px-4 py-2 text-sm font-bold">
               <span>Total</span>
               <span className="text-right font-mono">{formatCurrency(totals.periodRevenue)}</span>
               <span className="text-right font-mono text-stone-500">-{formatCurrency(totals.periodCleanerCost)}</span>

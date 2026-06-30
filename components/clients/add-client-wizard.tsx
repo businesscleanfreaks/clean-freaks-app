@@ -49,6 +49,8 @@ interface ExtraLocationData {
   cleanerPayType: 'PER_CLEAN' | 'FLAT_RATE'
 }
 
+type PropertyType = '' | 'RESIDENTIAL' | 'COMMERCIAL'
+
 interface AddClientWizardInitialData {
   sourceProspectId?: string | null
   clientName?: string | null
@@ -667,6 +669,7 @@ export function AddClientWizard({
   const [invoicingContactName, setInvoicingContactName] = useState('')
   const [invoicingPhone, setInvoicingPhone] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [propertyType, setPropertyType] = useState<PropertyType>('')
 
   // Step 2: Location
   const [address, setAddress] = useState('')
@@ -765,6 +768,7 @@ export function AddClientWizard({
     setInvoicingContactName('')
     setInvoicingPhone('')
     setStartDate(new Date().toISOString().split('T')[0])
+    setPropertyType('')
     setAddress('')
     setLocationName('')
     setAccessInfo('')
@@ -965,6 +969,7 @@ export function AddClientWizard({
           invoicingPhone: sameEmail ? (communicationPhone || null) : (invoicingPhone || null),
           billingType,
           cleanerPayType,
+          propertyType: propertyType || null,
           startDate: startDate || null,
           notes: composedNotes,
           sourceProspectId,
@@ -1431,6 +1436,14 @@ export function AddClientWizard({
               <div>
                 <StepLabel text="Client since" />
                 <CleanInput value={startDate} onChange={setStartDate} type="date" />
+              </div>
+            </div>
+            <div style={{ marginTop: '8px' }}>
+              <StepLabel text="Property type" />
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <TogglePill label="Not set" active={propertyType === ''} onClick={() => setPropertyType('')} />
+                <TogglePill label="Residential" active={propertyType === 'RESIDENTIAL'} onClick={() => setPropertyType('RESIDENTIAL')} />
+                <TogglePill label="Commercial" active={propertyType === 'COMMERCIAL'} onClick={() => setPropertyType('COMMERCIAL')} />
               </div>
             </div>
           </section>
@@ -2004,6 +2017,15 @@ export function AddClientWizard({
                     <div>
                       <label style={{ fontSize: '13px', fontWeight: 500, color: '#111111', display: 'block', marginBottom: '6px' }}>Start Date</label>
                       <CleanInput value={startDate} onChange={setStartDate} type="date" />
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <StepLabel text="Property Type" />
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <TogglePill label="Not set" active={propertyType === ''} onClick={() => setPropertyType('')} />
+                      <TogglePill label="Residential" active={propertyType === 'RESIDENTIAL'} onClick={() => setPropertyType('RESIDENTIAL')} />
+                      <TogglePill label="Commercial" active={propertyType === 'COMMERCIAL'} onClick={() => setPropertyType('COMMERCIAL')} />
                     </div>
                   </div>
 

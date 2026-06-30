@@ -20,6 +20,8 @@ interface Location {
   address: string
 }
 
+type PropertyType = 'RESIDENTIAL' | 'COMMERCIAL'
+
 interface ClientFormProps {
   client?: {
     id: string
@@ -35,6 +37,7 @@ interface ClientFormProps {
     billingType: 'FLAT_RATE' | 'PER_CLEAN'
     cleanerPayType: 'FLAT_RATE' | 'PER_CLEAN'
     invoiceFrequency: 'AFTER_EACH_CLEAN' | 'BI_WEEKLY' | 'END_OF_MONTH' | 'CUSTOM'
+    propertyType: PropertyType | null
     preferredPaymentMethod: string | null
     notes: string | null
     locations: Location[]
@@ -56,6 +59,12 @@ const INVOICE_FREQUENCY_OPTIONS = [
   { value: 'CUSTOM', label: 'Custom', description: 'Manually select which cleans to include in each invoice' },
 ]
 
+const PROPERTY_TYPE_OPTIONS = [
+  { value: '', label: 'Not set' },
+  { value: 'RESIDENTIAL', label: 'Residential' },
+  { value: 'COMMERCIAL', label: 'Commercial' },
+]
+
 export function ClientForm({ client }: ClientFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -72,6 +81,7 @@ export function ClientForm({ client }: ClientFormProps) {
     billingType: client?.billingType || 'PER_CLEAN',
     cleanerPayType: client?.cleanerPayType || 'PER_CLEAN',
     invoiceFrequency: client?.invoiceFrequency || 'END_OF_MONTH',
+    propertyType: client?.propertyType || '',
     preferredPaymentMethod: client?.preferredPaymentMethod || '',
     notes: client?.notes || '',
   })
@@ -337,6 +347,22 @@ export function ClientForm({ client }: ClientFormProps) {
                 </SimpleTooltip>
               </div>
             </div>
+          </div>
+
+          {/* Property Type */}
+          <div className="space-y-2">
+            <Label>Property Type</Label>
+            <select
+              value={formData.propertyType}
+              onChange={(e) => setFormData({ ...formData, propertyType: e.target.value as PropertyType | '' })}
+              className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+            >
+              {PROPERTY_TYPE_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Invoice Frequency */}

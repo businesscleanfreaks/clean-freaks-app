@@ -25,6 +25,9 @@ export const createClientSchema = z.object({
   invoiceFrequency: z.enum(['AFTER_EACH_CLEAN', 'BI_WEEKLY', 'END_OF_MONTH', 'CUSTOM'], {
     errorMap: () => ({ message: 'Invoice frequency must be AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, or CUSTOM' }),
   }).optional().default('END_OF_MONTH'),
+  propertyType: z.enum(['RESIDENTIAL', 'COMMERCIAL'], {
+    errorMap: () => ({ message: 'Property type must be RESIDENTIAL or COMMERCIAL' }),
+  }).optional().nullable().or(z.literal('').transform(() => null)),
   preferredPaymentMethod: z.enum(['ZELLE', 'DIRECT_DEPOSIT', 'CHECK', 'OTHER'], {
     errorMap: () => ({ message: 'Payment method must be ZELLE, DIRECT_DEPOSIT, CHECK, or OTHER' }),
   }).optional().nullable().or(z.literal('').transform(() => null)),

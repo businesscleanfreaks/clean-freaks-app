@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       "addon1Name", "addon1Frequency",
       "addon2Name", "addon2Frequency",
       "phone", "communicationContactName", "communicationEmail",
-      "invoicingContactName", "invoicingEmail", "invoicingCcEmail", "invoiceFrequency", "notes",
+      "invoicingContactName", "invoicingEmail", "invoicingCcEmail", "invoiceFrequency", "propertyType", "notes",
     ]
 
     for (const f of floatFields) {
@@ -43,6 +43,13 @@ export async function POST(request: Request) {
       if (rest[f] !== undefined && rest[f] !== null && rest[f] !== "") {
         data[f] = String(rest[f])
       }
+    }
+
+    if (
+      data.propertyType != null &&
+      !["RESIDENTIAL", "COMMERCIAL"].includes(String(data.propertyType))
+    ) {
+      return NextResponse.json({ error: "Invalid property type" }, { status: 400 })
     }
 
     if (rest.startDate) {
@@ -63,6 +70,7 @@ export async function POST(request: Request) {
       clientPrice: client.clientPrice,
       revenue: client.revenue,
       billingType: client.billingType,
+      propertyType: client.propertyType,
       cleanerPayout: client.cleanerPayout,
       cleanerPayType: client.cleanerPayType,
       frequency: client.frequency,
