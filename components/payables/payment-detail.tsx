@@ -174,11 +174,26 @@ export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Pa
         const addOnServiceIds = Array.from(new Set(checkedAccounts.filter((a) => a.itemKind !== "job").flatMap((a) => a.payableItemIds)))
         body = { addOnServiceIds, jobIds, datePaid: date, notes: combinedNotes || null }
       }
-      const res = await fetch(url, {
+      let res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
+      // Cleaner pay-gate: if no matching cleaner invoice is on file, confirm and retry.
+      if (res.status === 409 && payable.type === "cleaner") {
+        const gate = await res.clone().json().catch(() => null)
+        if (gate?.code === "NO_MATCHING_CLEANER_INVOICE") {
+          const periods = Array.isArray(gate.periods) ? gate.periods.join(", ") : ""
+          if (!window.confirm(`No matching cleaner invoice on file${periods ? ` for ${periods}` : ""}. Pay anyway?`)) {
+            return
+          }
+          res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...body, confirmNoInvoice: true }),
+          })
+        }
+      }
       if (!res.ok) { await showApiError(res, "Failed to record payment"); return }
       const payment = await res.json().catch(() => null)
       const recorded = typeof payment?.totalAmount === "number" ? payment.totalAmount : selectedTotal

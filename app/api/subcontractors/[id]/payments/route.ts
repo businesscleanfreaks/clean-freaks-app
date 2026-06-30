@@ -94,6 +94,33 @@ export async function POST(
       )
     }
 
+    // Pay-gate (Josh's rule): don't pay a cleaner for a month unless they've sent
+    // us an invoice that matches what we owe (MATCHED) or a human has RESOLVED a
+    // mismatch. Grace can still pay by passing confirmNoInvoice after reviewing.
+    const periodsBeingPaid = Array.from(new Set(jobs.map(j => format(new Date(j.date), 'yyyy-MM'))))
+    if (periodsBeingPaid.length > 0 && body.confirmNoInvoice !== true) {
+      const matching = await prisma.cleanerInvoice.findMany({
+        where: {
+          subcontractorId: resolvedParams.id,
+          period: { in: periodsBeingPaid },
+          status: { in: ['MATCHED', 'RESOLVED'] },
+        },
+        select: { period: true },
+      })
+      const covered = new Set(matching.map(m => m.period))
+      const uncovered = periodsBeingPaid.filter(p => !covered.has(p))
+      if (uncovered.length > 0) {
+        return NextResponse.json(
+          {
+            code: 'NO_MATCHING_CLEANER_INVOICE',
+            error: `No matching cleaner invoice on file for ${uncovered.join(', ')}. Record or resolve it first, or pay anyway.`,
+            periods: uncovered,
+          },
+          { status: 409 }
+        )
+      }
+    }
+
     // Calculate total amount based on billing type
     // Group jobs by client, schedule, and month to handle FLAT_RATE vs PER_CLEAN
     const jobsByClientSchedule = new Map<string, typeof jobs>()

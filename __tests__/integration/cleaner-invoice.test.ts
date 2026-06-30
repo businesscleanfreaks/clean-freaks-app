@@ -3,12 +3,20 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 vi.mock('@/lib/auth', () => ({
   requireAuth: async () => ({ id: 'test-user', email: 'test@example.com', name: 'Test' }),
 }))
+vi.mock('next/cache', () => ({ revalidatePath: () => {}, revalidateTag: () => {} }))
 
 import { prisma } from '@/lib/db'
 import { resetDb } from './db-helpers'
 import { computeOwedForCleanerPeriod } from '@/lib/cleaner-invoice'
 import { POST as recordInvoice } from '@/app/api/subcontractors/[id]/cleaner-invoices/route'
 import { POST as resolveInvoice } from '@/app/api/subcontractors/[id]/cleaner-invoices/[invoiceId]/resolve/route'
+import { POST as paySubcontractor } from '@/app/api/subcontractors/[id]/payments/route'
+
+const pay = (id: string, body: unknown) =>
+  paySubcontractor(
+    new Request('http://test', { method: 'POST', body: JSON.stringify(body) }),
+    { params: { id } },
+  )
 
 beforeEach(async () => {
   await resetDb()
@@ -78,5 +86,26 @@ describe('cleaner invoice reconciliation', () => {
     const { sub } = await seedCleanerWithOwed()
     const res = await post(sub.id, { period: 'June', claimedAmount: 400 })
     expect(res.status).toBe(400)
+  })
+
+  it('blocks paying a cleaner with no matching invoice, allows with confirm', async () => {
+    const { sub } = await seedCleanerWithOwed()
+    const jobIds = (await prisma.job.findMany({ where: { subcontractorId: sub.id } })).map((j) => j.id)
+
+    const blocked = await pay(sub.id, { jobIds, datePaid: '2026-06-20' })
+    expect(blocked.status).toBe(409)
+    expect((await blocked.json()).code).toBe('NO_MATCHING_CLEANER_INVOICE')
+
+    const forced = await pay(sub.id, { jobIds, datePaid: '2026-06-20', confirmNoInvoice: true })
+    expect(forced.status).toBe(201)
+  })
+
+  it('allows paying once a matching invoice is on file', async () => {
+    const { sub } = await seedCleanerWithOwed()
+    const jobIds = (await prisma.job.findMany({ where: { subcontractorId: sub.id } })).map((j) => j.id)
+    await post(sub.id, { period: '2026-06', claimedAmount: 400 }) // MATCHED
+
+    const res = await pay(sub.id, { jobIds, datePaid: '2026-06-20' })
+    expect(res.status).toBe(201)
   })
 })
