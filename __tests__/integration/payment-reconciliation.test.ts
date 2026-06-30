@@ -8,6 +8,7 @@ vi.mock('@/lib/auth', () => ({
 import { prisma } from '@/lib/db'
 import { resetDb } from './db-helpers'
 import { ingestMessages, runMatchPass, type RawInboxMessage } from '@/lib/payment-ingest'
+import { autoConfirmHighConfidenceMatches } from '@/lib/payment-auto-confirm'
 import { isJobPayable } from '@/lib/payment-cadence'
 import { POST as confirmPayment } from '@/app/api/payments/[id]/confirm/route'
 import { POST as dismissPayment } from '@/app/api/payments/[id]/dismiss/route'
@@ -104,6 +105,33 @@ describe('payment reconciliation', () => {
     expect(second.created).toBe(0)
     expect(second.skipped).toBe(1)
     expect(await prisma.paymentMatch.count()).toBe(1)
+  })
+
+  it('auto-confirms high-confidence known-payer matches', async () => {
+    const { client, job, invoice } = await seedSentInvoiceWithGatedCleaner()
+    await prisma.clientPaymentAlias.create({
+      data: { normalizedSenderName: 'ACME PAYMENTS', clientId: client.id },
+    })
+
+    await ingestMessages(prisma, [msg({ messageId: 'm-auto', text: 'Zelle® payment. Confirmation number: AUTO0001.' })])
+    await runMatchPass(prisma)
+
+    const match = await prisma.paymentMatch.findFirstOrThrow({ where: { messageId: 'm-auto' } })
+    expect(match.confidence).toBe('HIGH')
+    expect(match.matchedInvoiceId).toBe(invoice.id)
+
+    expect(await jobIsPayable(job.id)).toBe(false)
+
+    const auto = await autoConfirmHighConfidenceMatches(prisma)
+    expect(auto).toEqual({ applied: 1, skipped: 0 })
+
+    const paid = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
+    expect(paid.status).toBe('PAID')
+    expect(paid.paymentTransactionId).toBe('AUTO0001')
+
+    const applied = await prisma.paymentMatch.findUniqueOrThrow({ where: { id: match.id } })
+    expect(applied.status).toBe('AUTO_APPLIED')
+    expect(await jobIsPayable(job.id)).toBe(true)
   })
 
   it('rejects confirming an already-confirmed payment (no double-apply)', async () => {

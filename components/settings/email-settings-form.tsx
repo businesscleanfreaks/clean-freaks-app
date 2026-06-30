@@ -15,6 +15,7 @@ interface EmailSettings {
   enableSending: boolean
   allowRealClientEmails: boolean
   enableInboxSync: boolean
+  autoConfirmHighConfidencePayments: boolean
   lastInboxUid: string | null
   gmailAppPasswordSet: boolean
   resendApiKeySet: boolean
@@ -26,6 +27,8 @@ interface InboxScanResult {
   created: number
   skipped: number
   scored: number
+  autoApplied: number
+  autoSkipped: number
   lastInboxUid: string | null
 }
 
@@ -80,6 +83,7 @@ export function EmailSettingsForm() {
   const [enableSending, setEnableSending] = useState(false)
   const [allowReal, setAllowReal] = useState(false)
   const [enableInboxSync, setEnableInboxSync] = useState(false)
+  const [autoConfirmHighConfidencePayments, setAutoConfirmHighConfidencePayments] = useState(false)
   const [lastInboxUid, setLastInboxUid] = useState<string | null>(null)
   const [inboxScanResult, setInboxScanResult] = useState<InboxScanResult | null>(null)
   // Secret inputs (empty = leave unchanged). The *Set flags reflect what's stored.
@@ -101,6 +105,7 @@ export function EmailSettingsForm() {
       setEnableSending(d.enableSending)
       setAllowReal(d.allowRealClientEmails)
       setEnableInboxSync(d.enableInboxSync)
+      setAutoConfirmHighConfidencePayments(d.autoConfirmHighConfidencePayments)
       setLastInboxUid(d.lastInboxUid)
       setGmailPwSet(d.gmailAppPasswordSet)
       setResendKeySet(d.resendApiKeySet)
@@ -120,7 +125,7 @@ export function EmailSettingsForm() {
     try {
       const payload: Record<string, unknown> = {
         provider, fromName, fromEmail, gmailUser, testEmail,
-        enableSending, allowRealClientEmails: allowReal, enableInboxSync,
+        enableSending, allowRealClientEmails: allowReal, enableInboxSync, autoConfirmHighConfidencePayments,
       }
       if (gmailAppPassword.trim()) payload.gmailAppPassword = gmailAppPassword
       if (resendApiKey.trim()) payload.resendApiKey = resendApiKey
@@ -173,7 +178,7 @@ export function EmailSettingsForm() {
       if (!res.ok) { showError(data?.error || "Inbox scan failed"); return }
       setInboxScanResult(data as InboxScanResult)
       setLastInboxUid(data.lastInboxUid || null)
-      showSuccess(`Inbox scan complete: ${data.scanned || 0} emails checked, ${data.created || 0} payments added`)
+      showSuccess(`Inbox scan complete: ${data.scanned || 0} emails checked, ${data.created || 0} payments added, ${data.autoApplied || 0} auto-confirmed`)
     } catch {
       showError("Inbox scan failed")
     } finally {
@@ -324,6 +329,20 @@ export function EmailSettingsForm() {
               <Switch checked={enableInboxSync} onChange={setEnableInboxSync} disabled={provider !== "gmail"} />
             </div>
 
+            <div className="flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: BORDER }}>
+              <div>
+                <p className="text-[14px] font-semibold text-slate-800">Auto-confirm sure matches</p>
+                <p className="text-[12px] text-zinc-500">
+                  Only applies known-payer, exact-amount matches with one open invoice.
+                </p>
+              </div>
+              <Switch
+                checked={autoConfirmHighConfidencePayments}
+                onChange={setAutoConfirmHighConfidencePayments}
+                disabled={provider !== "gmail" || !enableInboxSync}
+              />
+            </div>
+
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-zinc-600">
               {lastInboxUid
                 ? "Previous scans have completed for this mailbox."
@@ -334,7 +353,8 @@ export function EmailSettingsForm() {
             {inboxScanResult && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
                 Last scan checked {inboxScanResult.scanned} email(s), added {inboxScanResult.created} payment(s),
-                skipped {inboxScanResult.skipped}, and scored {inboxScanResult.scored} review item(s).
+                skipped {inboxScanResult.skipped}, scored {inboxScanResult.scored} review item(s),
+                and auto-confirmed {inboxScanResult.autoApplied}.
               </div>
             )}
 

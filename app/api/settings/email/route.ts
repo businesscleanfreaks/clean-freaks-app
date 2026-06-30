@@ -17,6 +17,7 @@ const emailSettingsSchema = z.object({
   enableSending: z.boolean().optional(),
   allowRealClientEmails: z.boolean().optional(),
   enableInboxSync: z.boolean().optional(),
+  autoConfirmHighConfidencePayments: z.boolean().optional(),
   // Secrets — only written when a non-empty value is supplied (blank = keep existing).
   gmailAppPassword: z.string().max(200).optional().nullable(),
   resendApiKey: z.string().max(400).optional().nullable(),
@@ -36,6 +37,7 @@ export async function GET() {
       enableSending: config.enableSending,
       allowRealClientEmails: config.allowRealClientEmails,
       enableInboxSync: row?.enableInboxSync ?? false,
+      autoConfirmHighConfidencePayments: row?.autoConfirmHighConfidencePayments ?? false,
       lastInboxUid: row?.lastInboxUid ?? null,
       gmailAppPasswordSet: !!config.gmailAppPassword,
       resendApiKeySet: !!config.resendApiKey,
@@ -67,6 +69,7 @@ export async function PUT(request: Request) {
       enableSending?: boolean
       allowRealClientEmails?: boolean
       enableInboxSync?: boolean
+      autoConfirmHighConfidencePayments?: boolean
       gmailAppPassword?: string
       resendApiKey?: string
     } = {}
@@ -78,6 +81,7 @@ export async function PUT(request: Request) {
     if (d.enableSending !== undefined) data.enableSending = d.enableSending
     if (d.allowRealClientEmails !== undefined) data.allowRealClientEmails = d.allowRealClientEmails
     if (d.enableInboxSync !== undefined) data.enableInboxSync = d.enableInboxSync
+    if (d.autoConfirmHighConfidencePayments !== undefined) data.autoConfirmHighConfidencePayments = d.autoConfirmHighConfidencePayments
     // Google shows the App Password with spaces ("abcd efgh ijkl mnop") — strip them.
     if (d.gmailAppPassword && d.gmailAppPassword.trim()) {
       data.gmailAppPassword = encryptSecret(d.gmailAppPassword.replace(/\s+/g, ''))

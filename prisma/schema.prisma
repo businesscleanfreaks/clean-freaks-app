@@ -428,6 +428,7 @@ model EmailSettings {
   enableSending         Boolean  @default(false) // master switch
   allowRealClientEmails Boolean  @default(false) // safety: allow sending to real clients
   enableInboxSync       Boolean  @default(false) // opt-in: read the Gmail inbox over IMAP to detect Zelle payments
+  autoConfirmHighConfidencePayments Boolean @default(false) // opt-in: auto-apply HIGH-confidence payment matches
   lastInboxUid          String?  // IMAP watermark — highest UID processed by the payment scan
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt

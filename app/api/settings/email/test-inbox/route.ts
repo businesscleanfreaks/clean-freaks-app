@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth'
 import { getEmailConfig, getEmailSettingsRow } from '@/lib/email-settings'
 import { fetchRecentInbox } from '@/lib/imap-inbox'
 import { ingestMessages, runMatchPass } from '@/lib/payment-ingest'
+import { autoConfirmHighConfidenceMatches } from '@/lib/payment-auto-confirm'
 import { handleApiError } from '@/lib/api-error-handler'
 import { logger } from '@/lib/logger'
 
@@ -59,6 +60,9 @@ export async function POST() {
     })
     const ingest = await ingestMessages(prisma, messages)
     const match = await runMatchPass(prisma)
+    const autoConfirm = settings.autoConfirmHighConfidencePayments
+      ? await autoConfirmHighConfidenceMatches(prisma)
+      : { applied: 0, skipped: 0 }
 
     if (highestUid && highestUid !== settings.lastInboxUid) {
       await prisma.emailSettings.update({
@@ -73,6 +77,8 @@ export async function POST() {
       created: ingest.created,
       skipped: ingest.skipped,
       scored: match.scored,
+      autoApplied: autoConfirm.applied,
+      autoSkipped: autoConfirm.skipped,
       lastInboxUid: highestUid ?? settings.lastInboxUid,
     })
   } catch (error) {

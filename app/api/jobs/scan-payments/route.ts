@@ -5,6 +5,7 @@ import { authorizeCron } from '@/lib/cron-auth'
 import { getEmailSettingsRow } from '@/lib/email-settings'
 import { fetchRecentInbox } from '@/lib/imap-inbox'
 import { ingestMessages, runMatchPass } from '@/lib/payment-ingest'
+import { autoConfirmHighConfidenceMatches } from '@/lib/payment-auto-confirm'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +30,9 @@ export async function POST(request: Request) {
     const { messages, highestUid } = await fetchRecentInbox({ sinceUid: settings.lastInboxUid })
     const ingest = await ingestMessages(prisma, messages)
     const match = await runMatchPass(prisma)
+    const autoConfirm = settings.autoConfirmHighConfidencePayments
+      ? await autoConfirmHighConfidenceMatches(prisma)
+      : { applied: 0, skipped: 0 }
 
     if (highestUid && highestUid !== settings.lastInboxUid) {
       await prisma.emailSettings.update({
@@ -41,6 +45,8 @@ export async function POST(request: Request) {
       scanned: messages.length,
       created: ingest.created,
       scored: match.scored,
+      autoApplied: autoConfirm.applied,
+      autoSkipped: autoConfirm.skipped,
     })
     return NextResponse.json({
       success: true,
@@ -48,6 +54,8 @@ export async function POST(request: Request) {
       created: ingest.created,
       skipped: ingest.skipped,
       scored: match.scored,
+      autoApplied: autoConfirm.applied,
+      autoSkipped: autoConfirm.skipped,
     })
   } catch (error) {
     logger.error('[scan-payments] failed:', error)
