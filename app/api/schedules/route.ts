@@ -7,6 +7,7 @@ import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
 import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { requireAuth } from '@/lib/auth'
+import { cadenceOverrideForClientPaymentRule } from '@/lib/client-payment-rules'
 
 // Type for transaction client
 type TransactionClient = Prisma.TransactionClient
@@ -98,10 +99,34 @@ export async function POST(request: Request) {
       startDate: parseDateOnlyForStorage(validationResult.data.startDate)!,
       endDate: parseDateOnlyForStorage(validationResult.data.endDate),
     }
+    const cadenceOverrideProvided = Object.prototype.hasOwnProperty.call(
+      validationResult.data,
+      'paymentCadenceOverride',
+    )
+
+    const location = await prisma.location.findUnique({
+      where: { id: scheduleData.locationId },
+      select: {
+        client: {
+          select: {
+            paymentRulePreset: true,
+          },
+        },
+      },
+    })
+
+    if (!location) {
+      return createErrorResponse('Location not found', 404, 'NOT_FOUND')
+    }
 
     const schedule = await prisma.$transaction(async (tx) => {
       const newSchedule = await tx.schedule.create({
-        data: scheduleData,
+        data: {
+          ...scheduleData,
+          paymentCadenceOverride: cadenceOverrideProvided
+            ? scheduleData.paymentCadenceOverride
+            : cadenceOverrideForClientPaymentRule(location.client.paymentRulePreset),
+        },
         include: {
           location: {
             include: {

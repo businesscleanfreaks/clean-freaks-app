@@ -65,6 +65,15 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
     handleCreateInvoice,
   } = state
 
+  const choosePaymentRulePreset = (paymentRulePreset: string) => {
+    setFormData({
+      ...formData,
+      paymentRulePreset,
+      ...(paymentRulePreset === 'RESIDENTIAL_STANDARD' ? { propertyType: 'RESIDENTIAL' } : {}),
+      ...(paymentRulePreset === 'COMMERCIAL_STANDARD' ? { propertyType: 'COMMERCIAL' } : {}),
+    })
+  }
+
   return (
     <>
       {/* Add Additional Service Choice Dialog */}
@@ -432,6 +441,18 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                   <option value="">Not set</option>
                   <option value="RESIDENTIAL">Residential</option>
                   <option value="COMMERCIAL">Commercial</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs text-stone-500 uppercase tracking-wider">Cleaner Pay Rule</Label>
+                <select
+                  value={formData.paymentRulePreset}
+                  onChange={(e) => choosePaymentRulePreset(e.target.value)}
+                  className="w-full mt-1.5 h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="">No preset</option>
+                  <option value="RESIDENTIAL_STANDARD">Residential Standard</option>
+                  <option value="COMMERCIAL_STANDARD">Commercial Standard</option>
                 </select>
               </div>
               <div className="grid gap-4 grid-cols-2">

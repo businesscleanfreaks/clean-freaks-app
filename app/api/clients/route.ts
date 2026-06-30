@@ -4,6 +4,7 @@ import { revalidateClientPages } from '@/lib/revalidate'
 import { createClientSchema } from '@/lib/validations'
 import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
+import { propertyTypeForClientPaymentRule } from '@/lib/client-payment-rules'
 
 export async function GET() {
   try {
@@ -42,6 +43,10 @@ export async function POST(request: Request) {
     }
     
     const { locations, startDate, sourceProspectId, ...clientData } = validationResult.data
+    const presetPropertyType = propertyTypeForClientPaymentRule(clientData.paymentRulePreset)
+    if (presetPropertyType) {
+      clientData.propertyType = presetPropertyType
+    }
 
     const client = await prisma.client.create({
       data: {

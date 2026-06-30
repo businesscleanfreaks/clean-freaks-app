@@ -21,6 +21,7 @@ interface Location {
 }
 
 type PropertyType = 'RESIDENTIAL' | 'COMMERCIAL'
+type PaymentRulePreset = 'RESIDENTIAL_STANDARD' | 'COMMERCIAL_STANDARD'
 
 interface ClientFormProps {
   client?: {
@@ -38,6 +39,7 @@ interface ClientFormProps {
     cleanerPayType: 'FLAT_RATE' | 'PER_CLEAN'
     invoiceFrequency: 'AFTER_EACH_CLEAN' | 'BI_WEEKLY' | 'END_OF_MONTH' | 'CUSTOM'
     propertyType: PropertyType | null
+    paymentRulePreset: PaymentRulePreset | null
     preferredPaymentMethod: string | null
     notes: string | null
     locations: Location[]
@@ -65,6 +67,18 @@ const PROPERTY_TYPE_OPTIONS = [
   { value: 'COMMERCIAL', label: 'Commercial' },
 ]
 
+const PAYMENT_RULE_PRESET_OPTIONS = [
+  { value: '', label: 'No preset' },
+  { value: 'RESIDENTIAL_STANDARD', label: 'Residential Standard' },
+  { value: 'COMMERCIAL_STANDARD', label: 'Commercial Standard' },
+]
+
+function propertyTypeForPreset(preset: PaymentRulePreset | ''): PropertyType | '' {
+  if (preset === 'RESIDENTIAL_STANDARD') return 'RESIDENTIAL'
+  if (preset === 'COMMERCIAL_STANDARD') return 'COMMERCIAL'
+  return ''
+}
+
 export function ClientForm({ client }: ClientFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -82,6 +96,7 @@ export function ClientForm({ client }: ClientFormProps) {
     cleanerPayType: client?.cleanerPayType || 'PER_CLEAN',
     invoiceFrequency: client?.invoiceFrequency || 'END_OF_MONTH',
     propertyType: client?.propertyType || '',
+    paymentRulePreset: client?.paymentRulePreset || '',
     preferredPaymentMethod: client?.preferredPaymentMethod || '',
     notes: client?.notes || '',
   })
@@ -358,6 +373,30 @@ export function ClientForm({ client }: ClientFormProps) {
               className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
             >
               {PROPERTY_TYPE_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Pay Rule Preset */}
+          <div className="space-y-2">
+            <Label>Cleaner Pay Rule</Label>
+            <select
+              value={formData.paymentRulePreset}
+              onChange={(e) => {
+                const paymentRulePreset = e.target.value as PaymentRulePreset | ''
+                const presetPropertyType = propertyTypeForPreset(paymentRulePreset)
+                setFormData({
+                  ...formData,
+                  paymentRulePreset,
+                  ...(presetPropertyType ? { propertyType: presetPropertyType } : {}),
+                })
+              }}
+              className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+            >
+              {PAYMENT_RULE_PRESET_OPTIONS.map(option => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

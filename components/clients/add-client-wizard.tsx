@@ -50,6 +50,13 @@ interface ExtraLocationData {
 }
 
 type PropertyType = '' | 'RESIDENTIAL' | 'COMMERCIAL'
+type PaymentRulePreset = '' | 'RESIDENTIAL_STANDARD' | 'COMMERCIAL_STANDARD'
+
+function propertyTypeForPaymentRulePreset(preset: PaymentRulePreset): PropertyType {
+  if (preset === 'RESIDENTIAL_STANDARD') return 'RESIDENTIAL'
+  if (preset === 'COMMERCIAL_STANDARD') return 'COMMERCIAL'
+  return ''
+}
 
 interface AddClientWizardInitialData {
   sourceProspectId?: string | null
@@ -670,6 +677,7 @@ export function AddClientWizard({
   const [invoicingPhone, setInvoicingPhone] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
   const [propertyType, setPropertyType] = useState<PropertyType>('')
+  const [paymentRulePreset, setPaymentRulePreset] = useState<PaymentRulePreset>('')
 
   // Step 2: Location
   const [address, setAddress] = useState('')
@@ -769,6 +777,7 @@ export function AddClientWizard({
     setInvoicingPhone('')
     setStartDate(new Date().toISOString().split('T')[0])
     setPropertyType('')
+    setPaymentRulePreset('')
     setAddress('')
     setLocationName('')
     setAccessInfo('')
@@ -810,6 +819,12 @@ export function AddClientWizard({
 
   const removeAddOn = (id: string) => {
     setAddOns(prev => prev.filter(a => a.id !== id))
+  }
+
+  const choosePaymentRulePreset = (preset: PaymentRulePreset) => {
+    setPaymentRulePreset(preset)
+    const presetPropertyType = propertyTypeForPaymentRulePreset(preset)
+    if (presetPropertyType) setPropertyType(presetPropertyType)
   }
 
   const updateExtraLocation = (id: string, data: Partial<ExtraLocationData>) => {
@@ -970,6 +985,7 @@ export function AddClientWizard({
           billingType,
           cleanerPayType,
           propertyType: propertyType || null,
+          paymentRulePreset: paymentRulePreset || null,
           startDate: startDate || null,
           notes: composedNotes,
           sourceProspectId,
@@ -1444,6 +1460,14 @@ export function AddClientWizard({
                 <TogglePill label="Not set" active={propertyType === ''} onClick={() => setPropertyType('')} />
                 <TogglePill label="Residential" active={propertyType === 'RESIDENTIAL'} onClick={() => setPropertyType('RESIDENTIAL')} />
                 <TogglePill label="Commercial" active={propertyType === 'COMMERCIAL'} onClick={() => setPropertyType('COMMERCIAL')} />
+              </div>
+            </div>
+            <div style={{ marginTop: '8px' }}>
+              <StepLabel text="Cleaner pay rule" />
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <TogglePill label="No preset" active={paymentRulePreset === ''} onClick={() => choosePaymentRulePreset('')} />
+                <TogglePill label="Residential Standard" active={paymentRulePreset === 'RESIDENTIAL_STANDARD'} onClick={() => choosePaymentRulePreset('RESIDENTIAL_STANDARD')} />
+                <TogglePill label="Commercial Standard" active={paymentRulePreset === 'COMMERCIAL_STANDARD'} onClick={() => choosePaymentRulePreset('COMMERCIAL_STANDARD')} />
               </div>
             </div>
           </section>
@@ -2026,6 +2050,14 @@ export function AddClientWizard({
                       <TogglePill label="Not set" active={propertyType === ''} onClick={() => setPropertyType('')} />
                       <TogglePill label="Residential" active={propertyType === 'RESIDENTIAL'} onClick={() => setPropertyType('RESIDENTIAL')} />
                       <TogglePill label="Commercial" active={propertyType === 'COMMERCIAL'} onClick={() => setPropertyType('COMMERCIAL')} />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <StepLabel text="Cleaner Pay Rule" />
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <TogglePill label="No preset" active={paymentRulePreset === ''} onClick={() => choosePaymentRulePreset('')} />
+                      <TogglePill label="Residential Standard" active={paymentRulePreset === 'RESIDENTIAL_STANDARD'} onClick={() => choosePaymentRulePreset('RESIDENTIAL_STANDARD')} />
+                      <TogglePill label="Commercial Standard" active={paymentRulePreset === 'COMMERCIAL_STANDARD'} onClick={() => choosePaymentRulePreset('COMMERCIAL_STANDARD')} />
                     </div>
                   </div>
 

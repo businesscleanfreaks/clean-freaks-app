@@ -85,6 +85,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     cleanerPayType: client.cleanerPayType || 'PER_CLEAN',
     invoiceFrequency: client.invoiceFrequency || 'END_OF_MONTH',
     propertyType: client.propertyType || '',
+    paymentRulePreset: client.paymentRulePreset || '',
     startDate: dateInputValue(client.startDate),
     notes: client.notes || '',
   })
@@ -352,6 +353,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
       cleanerPayType: client.cleanerPayType || 'PER_CLEAN',
       invoiceFrequency: client.invoiceFrequency || 'END_OF_MONTH',
       propertyType: client.propertyType || '',
+      paymentRulePreset: client.paymentRulePreset || '',
       startDate: dateInputValue(client.startDate),
       notes: client.notes || '',
     })

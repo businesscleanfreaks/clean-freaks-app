@@ -53,6 +53,13 @@ export async function POST(
       locationId: _ignoredLocationId,
       ...newScheduleData
     } = validationResult.data
+    const paymentCadenceOverrideProvided = Object.prototype.hasOwnProperty.call(
+      newScheduleData,
+      'paymentCadenceOverride',
+    )
+    const nextPaymentCadenceOverride = paymentCadenceOverrideProvided
+      ? newScheduleData.paymentCadenceOverride ?? null
+      : existingSchedule.paymentCadenceOverride
 
     const parsedNewStartDate = parseDateOnly(newScheduleData.startDate)!
     const newStartDate = startOfDay(parsedNewStartDate)
@@ -98,6 +105,7 @@ export async function POST(
           defaultSubcontractorRate: newScheduleData.defaultSubcontractorRate,
           clientPayType: newScheduleData.clientPayType,
           subcontractorPayType: newScheduleData.subcontractorPayType,
+          paymentCadenceOverride: nextPaymentCadenceOverride,
           subcontractorId: newScheduleData.subcontractorId ?? null,
           timeType: newScheduleData.timeType,
           startTime: newScheduleData.startTime ?? null,
@@ -182,6 +190,7 @@ export async function POST(
           defaultSubcontractorRate: newScheduleData.defaultSubcontractorRate,
           clientPayType: newScheduleData.clientPayType,
           subcontractorPayType: newScheduleData.subcontractorPayType,
+          paymentCadenceOverride: nextPaymentCadenceOverride,
           subcontractorId: newScheduleData.subcontractorId ?? null,
           timeType: newScheduleData.timeType,
           startTime: newScheduleData.startTime ?? null,

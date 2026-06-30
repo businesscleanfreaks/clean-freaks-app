@@ -17,7 +17,17 @@ describe('client property type validation', () => {
     expect(updateClientSchema.parse({ propertyType: '' }).propertyType).toBeNull()
   })
 
+  it('accepts client payment rule presets', () => {
+    expect(updateClientSchema.parse({ paymentRulePreset: 'RESIDENTIAL_STANDARD' }).paymentRulePreset).toBe('RESIDENTIAL_STANDARD')
+    expect(updateClientSchema.parse({ paymentRulePreset: 'COMMERCIAL_STANDARD' }).paymentRulePreset).toBe('COMMERCIAL_STANDARD')
+    expect(updateClientSchema.parse({ paymentRulePreset: '' }).paymentRulePreset).toBeNull()
+  })
+
   it('rejects unknown property types', () => {
     expect(updateClientSchema.safeParse({ propertyType: 'INDUSTRIAL' }).success).toBe(false)
+  })
+
+  it('rejects unknown payment rule presets', () => {
+    expect(updateClientSchema.safeParse({ paymentRulePreset: 'WEEKLY_WHENEVER' }).success).toBe(false)
   })
 })

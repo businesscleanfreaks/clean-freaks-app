@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { parseDateOnlyForStorage } from "@/lib/date-only"
+import {
+  cadenceOverrideForClientPaymentRule,
+  propertyTypeForClientPaymentRule,
+} from "@/lib/client-payment-rules"
 
 const ALLOWED_FIELDS = new Set([
   "clientPrice",
@@ -8,6 +12,7 @@ const ALLOWED_FIELDS = new Set([
   "cleanerPayout",
   "billingType",
   "propertyType",
+  "paymentRulePreset",
   "cleanerPayType",
   "frequency",
   "recurring",
@@ -86,6 +91,16 @@ export async function PUT(
       }
     }
 
+    if (field === "paymentRulePreset") {
+      if (value === null || value === "" || value === undefined) {
+        processedValue = null
+      } else if (value === "RESIDENTIAL_STANDARD" || value === "COMMERCIAL_STANDARD") {
+        processedValue = value
+      } else {
+        return NextResponse.json({ error: "Invalid payment rule preset" }, { status: 400 })
+      }
+    }
+
     if (field === "startDate") {
       if (value === null || value === "" || value === undefined) {
         processedValue = null
@@ -98,17 +113,38 @@ export async function PUT(
       }
     }
 
-    const updated = await prisma.client.update({
-      where: { id: resolvedParams.id },
-      data: { [field]: processedValue },
-      include: {
-        cleanerAssigned: { select: { id: true, name: true } },
-      },
+    const updateData: Record<string, unknown> = { [field]: processedValue }
+    if (field === "paymentRulePreset") {
+      const presetPropertyType = propertyTypeForClientPaymentRule(processedValue as string | null)
+      if (presetPropertyType) updateData.propertyType = presetPropertyType
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const client = await tx.client.update({
+        where: { id: resolvedParams.id },
+        data: updateData,
+        include: {
+          cleanerAssigned: { select: { id: true, name: true } },
+        },
+      })
+
+      if (field === "paymentRulePreset") {
+        await tx.schedule.updateMany({
+          where: { location: { clientId: resolvedParams.id } },
+          data: {
+            paymentCadenceOverride: cadenceOverrideForClientPaymentRule(processedValue as string | null),
+          },
+        })
+      }
+
+      return client
     })
 
     return NextResponse.json({
       success: true,
       cleanerAssignedName: updated.cleanerAssigned?.name ?? null,
+      propertyType: updated.propertyType,
+      paymentRulePreset: updated.paymentRulePreset,
     })
   } catch (error) {
     console.error("Table update error:", error)

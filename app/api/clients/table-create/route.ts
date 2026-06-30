@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import type { Prisma } from "@prisma/client"
 import { parseDateOnlyForStorage } from "@/lib/date-only"
+import { propertyTypeForClientPaymentRule } from "@/lib/client-payment-rules"
 
 export async function POST(request: Request) {
   try {
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
       "addon1Name", "addon1Frequency",
       "addon2Name", "addon2Frequency",
       "phone", "communicationContactName", "communicationEmail",
-      "invoicingContactName", "invoicingEmail", "invoicingCcEmail", "invoiceFrequency", "propertyType", "notes",
+      "invoicingContactName", "invoicingEmail", "invoicingCcEmail", "invoiceFrequency", "propertyType", "paymentRulePreset", "notes",
     ]
 
     for (const f of floatFields) {
@@ -52,6 +53,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid property type" }, { status: 400 })
     }
 
+    if (
+      data.paymentRulePreset != null &&
+      !["RESIDENTIAL_STANDARD", "COMMERCIAL_STANDARD"].includes(String(data.paymentRulePreset))
+    ) {
+      return NextResponse.json({ error: "Invalid payment rule preset" }, { status: 400 })
+    }
+
+    const presetPropertyType = propertyTypeForClientPaymentRule(data.paymentRulePreset as string | null | undefined)
+    if (presetPropertyType) data.propertyType = presetPropertyType
+
     if (rest.startDate) {
       const d = parseDateOnlyForStorage(rest.startDate)
       if (d && !isNaN(d.getTime())) data.startDate = d
@@ -71,6 +82,7 @@ export async function POST(request: Request) {
       revenue: client.revenue,
       billingType: client.billingType,
       propertyType: client.propertyType,
+      paymentRulePreset: client.paymentRulePreset,
       cleanerPayout: client.cleanerPayout,
       cleanerPayType: client.cleanerPayType,
       frequency: client.frequency,

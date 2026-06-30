@@ -6,6 +6,10 @@ import { logger } from '@/lib/logger'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { startOfDay } from 'date-fns'
+import {
+  cadenceOverrideForClientPaymentRule,
+  propertyTypeForClientPaymentRule,
+} from '@/lib/client-payment-rules'
 
 export const dynamic = 'force-dynamic'
 
@@ -153,6 +157,14 @@ export async function PUT(
     }
     
     const { locations, startDate, ...clientData } = validationResult.data
+    const paymentRulePresetProvided = Object.prototype.hasOwnProperty.call(
+      validationResult.data,
+      'paymentRulePreset',
+    )
+    const presetPropertyType = propertyTypeForClientPaymentRule(clientData.paymentRulePreset)
+    if (presetPropertyType) {
+      clientData.propertyType = presetPropertyType
+    }
 
     // Detect if this is a pause/resume operation
     const isActiveChanging = clientData.isActive !== undefined
@@ -166,21 +178,34 @@ export async function PUT(
       previousIsActive = existing?.isActive ?? true
     }
 
-    const client = await prisma.client.update({
-      where: { id: params.id },
-      data: {
-        ...clientData,
-        ...(startDate !== undefined && { startDate: parseDateOnlyForStorage(startDate) }),
-      },
-      include: {
-        locations: {
-          include: {
-            schedules: {
-              include: { subcontractor: true },
+    const client = await prisma.$transaction(async (tx) => {
+      if (paymentRulePresetProvided) {
+        await tx.schedule.updateMany({
+          where: { location: { clientId: params.id } },
+          data: {
+            paymentCadenceOverride: cadenceOverrideForClientPaymentRule(clientData.paymentRulePreset),
+          },
+        })
+      }
+
+      const updatedClient = await tx.client.update({
+        where: { id: params.id },
+        data: {
+          ...clientData,
+          ...(startDate !== undefined && { startDate: parseDateOnlyForStorage(startDate) }),
+        },
+        include: {
+          locations: {
+            include: {
+              schedules: {
+                include: { subcontractor: true },
+              },
             },
           },
         },
-      },
+      })
+
+      return updatedClient
     })
 
     const isPausing = isActiveChanging && previousIsActive === true && clientData.isActive === false

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CLIENT_PAYMENT_RULE_PRESETS } from '@/lib/client-payment-rules'
 
 /**
  * Zod validation schemas for API routes
@@ -6,6 +7,16 @@ import { z } from 'zod'
  */
 
 // Client schemas
+const paymentCadenceSchema = z.enum([
+  'IMMEDIATE',
+  'AFTER_CLIENT_PAYS',
+  'END_OF_MONTH',
+  'SEMI_MONTHLY',
+  'RESIDENTIAL_7_DAY',
+  'COMMERCIAL_CLIENT_PAID_OR_7TH',
+  'ON_CLEANER_INVOICE',
+])
+
 export const createClientSchema = z.object({
   name: z.string().min(1, 'Client name is required').max(200),
   phone: z.string().max(50, 'Phone number too long').optional().nullable(),
@@ -27,6 +38,9 @@ export const createClientSchema = z.object({
   }).optional().default('END_OF_MONTH'),
   propertyType: z.enum(['RESIDENTIAL', 'COMMERCIAL'], {
     errorMap: () => ({ message: 'Property type must be RESIDENTIAL or COMMERCIAL' }),
+  }).optional().nullable().or(z.literal('').transform(() => null)),
+  paymentRulePreset: z.enum(CLIENT_PAYMENT_RULE_PRESETS, {
+    errorMap: () => ({ message: 'Payment rule preset must be Residential Standard or Commercial Standard' }),
   }).optional().nullable().or(z.literal('').transform(() => null)),
   preferredPaymentMethod: z.enum(['ZELLE', 'DIRECT_DEPOSIT', 'CHECK', 'OTHER'], {
     errorMap: () => ({ message: 'Payment method must be ZELLE, DIRECT_DEPOSIT, CHECK, or OTHER' }),
@@ -91,6 +105,7 @@ export const createScheduleSchema = z.object({
     errorMap: () => ({ message: 'Subcontractor pay type must be FLAT_RATE or PER_CLEAN' }),
   }),
   subcontractorId: z.string().uuid('Invalid subcontractor ID').optional().nullable(),
+  paymentCadenceOverride: paymentCadenceSchema.optional().nullable().or(z.literal('').transform(() => null)),
   timeType: z.enum(['SPECIFIC', 'WINDOW']),
   startTime: z.string().optional().nullable(),
   startWindowBegin: z.string().optional().nullable(),
@@ -185,7 +200,7 @@ export const createSubcontractorSchema = z.object({
   email: z.string().email('Invalid email format').optional().nullable().or(z.literal('')),
   notes: z.string().max(5000, 'Notes cannot exceed 5000 characters').optional().nullable(),
   fastPay: z.boolean().optional(),
-  paymentCadence: z.enum(['IMMEDIATE', 'AFTER_CLIENT_PAYS', 'END_OF_MONTH', 'SEMI_MONTHLY', 'RESIDENTIAL_7_DAY', 'COMMERCIAL_CLIENT_PAID_OR_7TH', 'ON_CLEANER_INVOICE']).optional(),
+  paymentCadence: paymentCadenceSchema.optional(),
 })
 
 // Expense schemas

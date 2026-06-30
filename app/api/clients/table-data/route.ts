@@ -191,6 +191,7 @@ export async function GET() {
         revenue: revenueVal || null,
         billingType: client.billingType,
         propertyType: client.propertyType ?? null,
+        paymentRulePreset: client.paymentRulePreset ?? null,
         cleanerPayout: cleanerPayoutVal || null,
         cleanerPayType: client.cleanerPayType,
         frequency: frequencyText,

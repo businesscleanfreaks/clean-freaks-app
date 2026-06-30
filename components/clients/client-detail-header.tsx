@@ -25,6 +25,12 @@ function propertyTypeLabel(type: string | null | undefined) {
   return 'Type unset'
 }
 
+function paymentRuleLabel(preset: string | null | undefined) {
+  if (preset === 'RESIDENTIAL_STANDARD') return 'Residential pay rule'
+  if (preset === 'COMMERCIAL_STANDARD') return 'Commercial pay rule'
+  return null
+}
+
 export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
   const {
     router,
@@ -45,6 +51,7 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
     isDeletingClient,
   } = state
   const propertyType = propertyTypeLabel(client.propertyType)
+  const paymentRule = paymentRuleLabel(client.paymentRulePreset)
 
   const [showOverflow, setShowOverflow] = useState(false)
   const isPauseAction = isTogglingPause ? pauseResumeAction === 'pause' : isActive
@@ -107,6 +114,11 @@ export function ClientDetailHeader({ state }: ClientDetailHeaderProps) {
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' }}>
                   {propertyType}
                 </span>
+                {paymentRule && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0' }}>
+                    {paymentRule}
+                  </span>
+                )}
                 <span>{client.billingType === 'FLAT_RATE' ? 'Monthly flat rate' : 'Per clean'}</span>
                 <span className="text-zinc-300">·</span>
                 <span>{locationCount} location{locationCount !== 1 ? 's' : ''}</span>
