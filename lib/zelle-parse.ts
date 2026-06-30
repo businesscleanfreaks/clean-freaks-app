@@ -1,46 +1,59 @@
 /**
- * Parse a Zelle / bank payment-notification email into structured payment data.
+ * Parse a Chase Zelle payment-notification email into structured payment data.
  *
- * ⚠️ TUNING REQUIRED: the patterns below are modelled on representative Chase /
- * Zelle notification formats. They MUST be validated and extended against 5–10
- * of Grace's REAL notification emails before this is trusted on live mail — bank
- * templates vary and change. The parser is pure and unit-tested so adding a new
- * format is a one-line regex + one test.
+ * Tuned to the real Chase Zelle format (validated against live samples 2026-06-30):
  *
- * Returns null for anything that doesn't look like a payment notification, so a
- * normal inbox message is simply ignored (this is NOT a general email parser).
+ *   RAJIV MENON CONTEMPORARY LLC sent you money
+ *   Here are the details:
+ *   Amount $950.00
+ *   Sent on Jun 29, 2026
+ *   Transaction number 29805205224
+ *   Memo INVOICE 180626-002 ...
+ *
+ * The payer is on the "<NAME> sent you money" line, the amount on its own
+ * "Amount $…" line, and the transaction number is the idempotency key. The memo
+ * frequently names the client or invoice, so we keep it for the human reviewer.
+ *
+ * Returns null for anything that isn't a payment notification, so ordinary inbox
+ * mail is ignored (this is NOT a general email parser). Other banks' formats can
+ * be added as extra patterns + tests.
  */
 
 export interface ParsedZellePayment {
   senderName: string
   amount: number
   confirmationNumber: string | null
+  memo: string | null
   sentAt: Date | null
 }
 
-// $1,234.56  /  $420.00  /  $5
-const AMOUNT_RE = /\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/
+const ZELLE_HINTS = /\bzelle\b|sent you money|sent you|you received|payment/i
 
-// Confirmation / reference number, e.g. "Confirmation number: BAC123XYZ"
-const CONFIRMATION_RE =
-  /(?:confirmation|reference|transaction)\s*(?:number|no\.?|#|id)?\s*[:#]?\s*([A-Z0-9]{6,})/i
+// "Amount $950.00" / "$1,104.00"  (fall back to any $-amount)
+const AMOUNT_LINE = /amount\s*\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/i
+const AMOUNT_ANY = /\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/
 
-// Sender-name patterns. The "from NAME" cases capture the full (possibly
-// multi-word) name up to a delimiter — a period/comma/newline or " via Zelle" —
-// rather than stopping at the first word boundary.
+// Payer name. Chase leads with "<NAME> sent you money".
 const SENDER_PATTERNS: RegExp[] = [
-  // "You received $420.00 from SOUZI ZEROUNIAN [via Zelle]"
+  /^\s*(.+?)\s+sent you money\b/im,
+  // "You received $420.00 from NAME [via Zelle]" (other banks)
   /received\s+\$[0-9,]+(?:\.[0-9]{2})?\s+from\s+(.+?)(?:\s+via\b|[.,\n]|$)/i,
-  // "SOUZI ZEROUNIAN sent you $420.00"
-  /([A-Za-z][A-Za-z .,'\-]+?)\s+sent\s+you\b/i,
-  // "from SOUZI ZEROUNIAN" (fallback, body)
-  /\bfrom\s+(.+?)(?:\s+via\b|[.,\n]|$)/i,
+  /(.+?)\s+sent\s+you\b/i,
 ]
 
-const ZELLE_HINTS = /\bzelle\b|sent you|you received|payment|deposit/i
+// "Transaction number 29805205224" (fall back to confirmation/reference number)
+const TXN_PATTERNS: RegExp[] = [
+  /transaction\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Z0-9]{6,})/i,
+  /(?:confirmation|reference)\s*(?:number|no\.?|#|id)?\s*[:#]?\s*([A-Z0-9]{6,})/i,
+]
+
+// "Memo Clarmeya 6-29"
+const MEMO_RE = /^\s*memo\s+(.+?)\s*$/im
+// "Sent on Jun 29, 2026"
+const SENT_ON_RE = /sent on\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})/i
 
 function parseAmount(text: string): number | null {
-  const m = text.match(AMOUNT_RE)
+  const m = text.match(AMOUNT_LINE) || text.match(AMOUNT_ANY)
   if (!m) return null
   const value = parseFloat(m[1].replace(/,/g, ''))
   return Number.isFinite(value) && value > 0 ? value : null
@@ -58,6 +71,21 @@ function parseSender(text: string): string | null {
   return null
 }
 
+function parseMemo(text: string): string | null {
+  const m = text.match(MEMO_RE)
+  if (!m) return null
+  const memo = m[1].trim()
+  if (!memo || /^n\/?a$/i.test(memo)) return null
+  return memo
+}
+
+function parseSentAt(text: string): Date | null {
+  const m = text.match(SENT_ON_RE)
+  if (!m) return null
+  const d = new Date(m[1])
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 /**
  * @param subject email subject line
  * @param body   plain-text body (fall back to stripped HTML)
@@ -69,17 +97,25 @@ export function parseZelleNotification(
   const subj = subject || ''
   const text = `${subj}\n${body || ''}`
 
-  // Must look like a payment notification at all.
   if (!ZELLE_HINTS.test(text)) return null
 
-  const amount = parseAmount(subj) ?? parseAmount(text)
+  const amount = parseAmount(text)
   if (amount === null) return null
 
-  const senderName = parseSender(subj) ?? parseSender(text)
+  const senderName = parseSender(text)
   if (!senderName) return null
 
-  const confMatch = text.match(CONFIRMATION_RE)
-  const confirmationNumber = confMatch ? confMatch[1] : null
+  let confirmationNumber: string | null = null
+  for (const re of TXN_PATTERNS) {
+    const m = text.match(re)
+    if (m && m[1]) { confirmationNumber = m[1]; break }
+  }
 
-  return { senderName, amount, confirmationNumber, sentAt: null }
+  return {
+    senderName,
+    amount,
+    confirmationNumber,
+    memo: parseMemo(text),
+    sentAt: parseSentAt(text),
+  }
 }

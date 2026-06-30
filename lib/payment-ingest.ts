@@ -65,7 +65,8 @@ export async function ingestMessages(
         amount: parsed.amount,
         sentAt: parsed.sentAt,
         receivedAt: msg.receivedAt,
-        rawSnippet: (msg.text || stripHtml(msg.html) || msg.subject || '').slice(0, 280),
+        // The memo usually names the client/invoice — show it to the reviewer.
+        rawSnippet: (parsed.memo ? `Memo: ${parsed.memo}` : (msg.text || stripHtml(msg.html) || msg.subject || '')).slice(0, 280),
         status: 'NEEDS_REVIEW',
       },
     })
