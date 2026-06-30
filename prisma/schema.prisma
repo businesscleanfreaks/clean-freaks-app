@@ -135,9 +135,35 @@ model Subcontractor {
   payments         SubcontractorPayment[]
   assignedClients  Client[]
   addOnServices    AddOnService[]
+  cleanerInvoices  CleanerInvoice[]
 
   @@index([isActive])
   @@map("subcontractors")
+}
+
+// A cleaner's own invoice (what THEY bill us) for a period, recorded so we can
+// enforce Josh's rule: never pay a cleaner until they've invoiced us AND it
+// matches what we compute we owe. `computedOwed` is snapshotted at intake; a
+// MISMATCH blocks payout until a human RESOLVES it.
+model CleanerInvoice {
+  id              String    @id @default(uuid())
+  subcontractorId String
+  period          String    // the month being billed, "yyyy-MM"
+  claimedAmount   Float     // what the cleaner says we owe
+  computedOwed    Float     // what we computed we owe for that cleaner+period at intake
+  reference       String?   // the cleaner's invoice number/reference
+  notes           String?
+  status          String    @default("PENDING") // PENDING | MATCHED | MISMATCH | RESOLVED
+  receivedAt      DateTime  @default(now())
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@index([subcontractorId])
+  @@index([subcontractorId, period])
+  @@map("cleaner_invoices")
 }
 
 model Job {

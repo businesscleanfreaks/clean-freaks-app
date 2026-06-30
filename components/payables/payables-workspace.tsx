@@ -115,7 +115,7 @@ export function PayablesWorkspace() {
                     )}
                   </div>
                   <div className="lg:sticky lg:top-4 lg:self-start">
-                    <PaymentDetail payable={selected} onPaid={() => ws.mutate()} onEdit={setEditPayable} />
+                    <PaymentDetail payable={selected} period={ws.month} onPaid={() => ws.mutate()} onEdit={setEditPayable} />
                   </div>
                 </div>
               )
