@@ -12,7 +12,7 @@
     "prisma:studio": "prisma studio",
     "create-admin": "tsx scripts/create-admin-user.ts",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts", 
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .gitignore"
   },
   "dependencies": {
@@ -38,7 +38,9 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
+    "imapflow": "^1.4.3",
     "lucide-react": "^0.379.0",
+    "mailparser": "^3.9.12",
     "next": "14.2.20",
     "nodemailer": "^7.0.12",
     "postcss": "^8.4.38",
@@ -55,6 +57,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^2.4.6",
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^20.12.12",
     "@types/nodemailer": "^7.0.4",
     "@types/react": "^18.3.2",

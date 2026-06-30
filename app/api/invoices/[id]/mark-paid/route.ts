@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
 import { markInvoicePaidSchema, formatZodErrors } from '@/lib/validations'
+import { markInvoicePaid } from '@/lib/mark-invoice-paid'
 
 export async function POST(
   request: Request,
@@ -24,29 +25,17 @@ export async function POST(
     
     const { paymentMethod, paymentNotes } = validationResult.data
 
-    // Get invoice
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: resolvedParams.id },
+    const result = await markInvoicePaid(prisma, resolvedParams.id, {
+      method: paymentMethod || 'MANUAL',
+      notes: paymentNotes || 'Marked as paid manually',
     })
 
-    if (!invoice) {
+    if (result.status === 'NOT_FOUND') {
       return NextResponse.json(
         { error: 'Invoice not found' },
         { status: 404 }
       )
     }
-
-    // Update invoice to paid status
-    await prisma.invoice.update({
-      where: { id: resolvedParams.id },
-      data: {
-        status: 'PAID',
-        datePaid: new Date(),
-        paymentReceivedAt: new Date(),
-        paymentMethod: paymentMethod || 'MANUAL',
-        paymentNotes: paymentNotes || 'Marked as paid manually',
-      },
-    })
 
     // Revalidate invoice pages
     revalidatePath('/invoices')

@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { UserCog, Package, Loader2, Plus, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
+import { useState, useEffect } from "react"
+import Link from "next/link"
+import { UserCog, Package, Loader2, Plus, ChevronLeft, ChevronRight, ChevronDown, Inbox } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { usePayables, type Payable, type PayableAccount, type AccountStatus, type PaidEntry } from "./use-payables"
 import { PaymentDetail } from "./payment-detail"
@@ -32,6 +33,14 @@ export function PayablesWorkspace() {
   const { tab, setTab, list, totals, selected, counts, isLoading, error } = ws
   const [addType, setAddType] = useState<"cleaner" | "vendor" | null>(null)
   const [editPayable, setEditPayable] = useState<Payable | null>(null)
+  const [reviewCount, setReviewCount] = useState(0)
+
+  useEffect(() => {
+    fetch("/api/payments/inbox")
+      .then((r) => (r.ok ? r.json() : { count: 0 }))
+      .then((d) => setReviewCount(d.count || 0))
+      .catch(() => {})
+  }, [])
 
   return (
     <div className="min-h-screen bg-stone-50" style={{ fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
@@ -49,6 +58,13 @@ export function PayablesWorkspace() {
                 <button onClick={() => ws.shiftMonth(1)} disabled={ws.isCurrent}
                   className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight size={16} /></button>
               </div>
+              <Link href="/payables/payments"
+                className="relative inline-flex items-center gap-1.5 rounded-md border border-stone-300 px-3 py-1.5 text-[12px] font-semibold text-stone-700 hover:bg-stone-50">
+                <Inbox size={13} /> Payments
+                {reviewCount > 0 && (
+                  <span className="ml-0.5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{reviewCount}</span>
+                )}
+              </Link>
               <button onClick={() => setAddType(tab === "cleaners" ? "cleaner" : "vendor")}
                 className="inline-flex items-center gap-1.5 rounded-md bg-stone-900 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-stone-800">
                 <Plus size={13} /> Add {tab === "cleaners" ? "cleaner" : "vendor"}

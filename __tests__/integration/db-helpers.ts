@@ -4,6 +4,8 @@ const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d, 
 
 /** Wipe all business data between tests (FK-safe order). */
 export async function resetDb() {
+  await prisma.paymentMatch.deleteMany()
+  await prisma.clientPaymentAlias.deleteMany()
   await prisma.subcontractorPaymentLineItem.deleteMany()
   await prisma.vendorPaymentLineItem.deleteMany()
   await prisma.subcontractorPayment.deleteMany()

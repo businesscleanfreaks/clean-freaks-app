@@ -62,6 +62,7 @@ model Client {
   clientNotes         ClientNote[]
   emailMessages       EmailMessage[]
   convertedProspects  Prospect[]
+  paymentAliases      ClientPaymentAlias[]
 
   @@index([isActive])
   @@index([billingType])
@@ -249,6 +250,7 @@ model Invoice {
   client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
   lineItems     InvoiceLineItem[]
   pdfCacheEntry InvoicePdfCache?
+  paymentMatches PaymentMatch[]
 
   @@index([dateCreated])
   @@index([status])
@@ -423,10 +425,50 @@ model EmailSettings {
   testEmail             String?  // where "Send test" goes
   enableSending         Boolean  @default(false) // master switch
   allowRealClientEmails Boolean  @default(false) // safety: allow sending to real clients
+  enableInboxSync       Boolean  @default(false) // opt-in: read the Gmail inbox over IMAP to detect Zelle payments
+  lastInboxUid          String?  // IMAP watermark — highest UID processed by the payment scan
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   @@map("email_settings")
+}
+
+// A detected inbound payment (parsed from a Zelle/bank notification email) awaiting
+// reconciliation to an invoice. Phase 1 = review-only; a human confirms each one.
+model PaymentMatch {
+  id                 String   @id @default(uuid())
+  messageId          String   @unique // email Message-ID (or IMAP UID) — primary idempotency key
+  confirmationNumber String?  @unique // Zelle/bank confirmation # — secondary idempotency key
+  senderName         String   // raw payer name as it appeared in the notification
+  amount             Float
+  sentAt             DateTime? // when the payer says the payment was sent, if parseable
+  receivedAt         DateTime // when the notification email arrived
+  rawSnippet         String?  // short excerpt of the source email for the reviewer
+  status             String   @default("NEEDS_REVIEW") // NEEDS_REVIEW | CONFIRMED | DISMISSED | AUTO_APPLIED
+  confidence         String?  // HIGH | MEDIUM | REVIEW — the matcher's suggestion strength
+  matchedInvoiceId   String?  // the suggested/confirmed invoice
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  matchedInvoice     Invoice? @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([receivedAt])
+  @@map("payment_matches")
+}
+
+// Learned map of payer names → client. Built as the user confirms matches, so the
+// matcher can resolve "VISIONNAIRE LIFESTYLE LLC" → the Visionnaire client.
+model ClientPaymentAlias {
+  id                  String   @id @default(uuid())
+  clientId            String
+  normalizedSenderName String  @unique // uppercased/trimmed/punctuation-stripped payer name
+  createdAt           DateTime @default(now())
+
+  client              Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("client_payment_aliases")
 }
 
 // Singleton workspace-level invoice email template (Settings / composer "Templates").
