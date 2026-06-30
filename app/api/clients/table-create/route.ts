@@ -3,8 +3,10 @@ import { prisma } from "@/lib/db"
 import type { Prisma } from "@prisma/client"
 import { parseDateOnlyForStorage } from "@/lib/date-only"
 import { propertyTypeForClientPaymentRule } from "@/lib/client-payment-rules"
+import { requireAuth } from "@/lib/auth"
 
 export async function POST(request: Request) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const body = await request.json()
     const { name, ...rest } = body

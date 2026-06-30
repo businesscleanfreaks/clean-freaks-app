@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getErrorMessage } from '@/lib/logger'
 import { prisma } from '@/lib/db'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 }
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const { name, email, phone, role, isPrimary, notes } = await request.json()
     if (!name?.trim()) {

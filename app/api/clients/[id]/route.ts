@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { revalidateClientPages } from '@/lib/revalidate'
 import { updateClientSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { startOfDay } from 'date-fns'
@@ -145,9 +146,10 @@ export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const body = await request.json()
-    
+
     const validationResult = updateClientSchema.safeParse(body)
     if (!validationResult.success) {
       return NextResponse.json(
@@ -365,6 +367,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const client = await prisma.client.findUnique({
       where: { id: params.id },

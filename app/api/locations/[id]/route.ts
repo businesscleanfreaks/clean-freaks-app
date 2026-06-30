@@ -3,11 +3,13 @@ import { prisma } from '@/lib/db'
 import { updateLocationSchema } from '@/lib/validations'
 import { revalidateLocationPages, revalidateSchedulePages } from '@/lib/revalidate'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
 
 export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const body = await request.json()
     const validationResult = updateLocationSchema.safeParse(body)
@@ -41,6 +43,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     // Get location with client info before deleting
     const location = await prisma.location.findUnique({

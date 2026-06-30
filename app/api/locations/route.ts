@@ -3,11 +3,13 @@ import { prisma } from '@/lib/db'
 import { createLocationSchema } from '@/lib/validations'
 import { geocodeAddress } from '@/lib/geocode'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
 
 export async function POST(request: Request) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const body = await request.json()
-    
+
     // Validate request body
     const validationResult = createLocationSchema.safeParse(body)
     if (!validationResult.success) {

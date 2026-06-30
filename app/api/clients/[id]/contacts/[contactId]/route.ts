@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getErrorMessage } from '@/lib/logger'
 import { prisma } from '@/lib/db'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,6 +9,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string; contactId: string } }
 ) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const { name, email, phone, role, isPrimary, notes } = await request.json()
 
@@ -47,6 +49,7 @@ export async function DELETE(
   _: Request,
   { params }: { params: { id: string; contactId: string } }
 ) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     await prisma.clientContact.delete({ where: { id: params.contactId } })
     return NextResponse.json({ ok: true })

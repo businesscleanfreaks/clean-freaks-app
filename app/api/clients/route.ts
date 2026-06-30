@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { revalidateClientPages } from '@/lib/revalidate'
 import { createClientSchema } from '@/lib/validations'
 import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
+import { requireAuth } from '@/lib/auth'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { propertyTypeForClientPaymentRule } from '@/lib/client-payment-rules'
 
@@ -29,9 +30,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const body = await request.json()
-    
+
     // Validate request body
     const validationResult = createClientSchema.safeParse(body)
     if (!validationResult.success) {
