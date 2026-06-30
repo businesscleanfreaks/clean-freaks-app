@@ -603,6 +603,8 @@ Typical values:
 - `AFTER_CLIENT_PAYS`
 - `END_OF_MONTH`
 - `SEMI_MONTHLY`
+- `RESIDENTIAL_7_DAY`
+- `COMMERCIAL_CLIENT_PAID_OR_7TH`
 - `ON_CLEANER_INVOICE`
 
 ### Marking And Unmarking Paid

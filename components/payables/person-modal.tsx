@@ -10,6 +10,8 @@ const CADENCES = [
   { value: "AFTER_CLIENT_PAYS", label: "After client pays" },
   { value: "END_OF_MONTH", label: "End of month" },
   { value: "SEMI_MONTHLY", label: "Semi-monthly" },
+  { value: "RESIDENTIAL_7_DAY", label: "Residential 7-day" },
+  { value: "COMMERCIAL_CLIENT_PAID_OR_7TH", label: "Commercial paid/7th" },
   { value: "ON_CLEANER_INVOICE", label: "On cleaner invoice" },
 ]
 

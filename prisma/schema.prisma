@@ -117,6 +117,8 @@ model Subcontractor {
   // AFTER_CLIENT_PAYS — payable only after the job's linked invoice is PAID
   // END_OF_MONTH — payable after the calendar month of the job ends
   // SEMI_MONTHLY — 1st-15th payable after 20th, 16th-end payable after 5th of next month
+  // RESIDENTIAL_7_DAY — payable 7 days after service; fastPay releases after 72h
+  // COMMERCIAL_CLIENT_PAID_OR_7TH — payable when client pays or by the 7th of next month
   // ON_CLEANER_INVOICE — only payable when manually released
   paymentCadenceNotes String?  // Free-text notes about this cleaner's payment rules
   excludeClientIds    String?  // JSON array of client IDs whose jobs are excluded from payouts

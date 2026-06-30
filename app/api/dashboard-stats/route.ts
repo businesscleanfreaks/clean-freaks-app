@@ -463,6 +463,7 @@ export async function GET() {
       const cadenceSub: CadenceSubcontractorInfo = {
         paymentCadence: job.subcontractor.paymentCadence,
         excludeClientIds: job.subcontractor.excludeClientIds,
+        fastPay: job.subcontractor.fastPay,
       }
       const cadenceSchedule: CadenceScheduleInfo | null = job.schedule ? {
         paymentCadenceOverride: job.schedule.paymentCadenceOverride ?? null

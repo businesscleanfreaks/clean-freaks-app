@@ -130,6 +130,7 @@ export async function GET(request: Request) {
         const cadenceSub: CadenceSubcontractorInfo = {
           paymentCadence: sub.paymentCadence,
           excludeClientIds: sub.excludeClientIds,
+          fastPay: sub.fastPay,
         }
         const scheduleMap = new Map<string | null, CadenceScheduleInfo | null>()
         allJobs.forEach((j) => {

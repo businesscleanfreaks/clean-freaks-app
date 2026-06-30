@@ -5,7 +5,7 @@
  * based on the cleaner's payment cadence rules.
  */
 
-import { endOfMonth, addMonths, setDate } from 'date-fns'
+import { addDays, endOfMonth, addMonths, setDate } from 'date-fns'
 
 // ── Cadence types ──────────────────────────────────────────────
 
@@ -14,6 +14,8 @@ export const PAYMENT_CADENCES = {
   AFTER_CLIENT_PAYS: 'AFTER_CLIENT_PAYS',
   END_OF_MONTH: 'END_OF_MONTH',
   SEMI_MONTHLY: 'SEMI_MONTHLY',
+  RESIDENTIAL_7_DAY: 'RESIDENTIAL_7_DAY',
+  COMMERCIAL_CLIENT_PAID_OR_7TH: 'COMMERCIAL_CLIENT_PAID_OR_7TH',
   ON_CLEANER_INVOICE: 'ON_CLEANER_INVOICE',
 } as const
 
@@ -24,6 +26,8 @@ export const CADENCE_LABELS: Record<string, string> = {
   AFTER_CLIENT_PAYS: 'After Client Pays',
   END_OF_MONTH: 'End of Month',
   SEMI_MONTHLY: 'Semi-Monthly',
+  RESIDENTIAL_7_DAY: 'Residential 7-Day',
+  COMMERCIAL_CLIENT_PAID_OR_7TH: 'Commercial Paid/7th',
   ON_CLEANER_INVOICE: 'On Cleaner Invoice',
 }
 
@@ -32,6 +36,8 @@ export const CADENCE_DESCRIPTIONS: Record<string, string> = {
   AFTER_CLIENT_PAYS: 'Payable only after the client\'s invoice covering this job is marked PAID',
   END_OF_MONTH: 'Payable after the calendar month containing the job ends',
   SEMI_MONTHLY: 'Jobs from 1st–15th payable after the 20th; jobs from 16th–end payable after the 5th of next month',
+  RESIDENTIAL_7_DAY: 'Residential work is payable 7 days after service; fast-pay releases after 72 hours',
+  COMMERCIAL_CLIENT_PAID_OR_7TH: 'Commercial work is payable when the client pays or by the 7th of the next month, whichever comes first',
   ON_CLEANER_INVOICE: 'Only payable when manually released (cleaner must submit their own invoice first)',
 }
 
@@ -60,6 +66,7 @@ export interface CadenceJobInfo {
 export interface CadenceSubcontractorInfo {
   paymentCadence: string
   excludeClientIds: string | null
+  fastPay?: boolean
 }
 
 export interface CadenceScheduleInfo {
@@ -97,6 +104,27 @@ export function isClientExcluded(
   }
 }
 
+function hasPaidClientInvoice(job: CadenceJobInfo): boolean {
+  if (!job.invoiced) return false
+  return (job.invoiceLineItems || []).some(li => li.invoice.status === 'PAID')
+}
+
+function isFastPayReady(
+  jobDate: Date,
+  subcontractor: CadenceSubcontractorInfo,
+  now: Date
+): boolean {
+  if (!subcontractor.fastPay) return false
+  return now.getTime() - jobDate.getTime() >= 3 * 86400000
+}
+
+function seventhOfNextMonth(jobDate: Date): Date {
+  const nextMonth = addMonths(jobDate, 1)
+  const seventh = setDate(new Date(nextMonth), 7)
+  seventh.setHours(0, 0, 0, 0)
+  return seventh
+}
+
 /**
  * Determine if a job is eligible for payout based on cadence rules.
  * 
@@ -125,18 +153,8 @@ export function isJobPayable(
       // Payable as soon as job date passes — current default behavior
       return true
 
-    case 'AFTER_CLIENT_PAYS': {
-      // Payable only when the specific linked invoice is PAID
-      // If job is not yet on an invoice, it's NOT payable
-      if (!job.invoiced) return false
-      
-      const lineItems = job.invoiceLineItems || []
-      if (lineItems.length === 0) return false
-
-      // Job is payable if ANY linked invoice is PAID
-      // (a job could theoretically appear on multiple invoices in edge cases)
-      return lineItems.some(li => li.invoice.status === 'PAID')
-    }
+    case 'AFTER_CLIENT_PAYS':
+      return hasPaidClientInvoice(job)
 
     case 'END_OF_MONTH': {
       // Payable after the calendar month of the job ends
@@ -160,6 +178,12 @@ export function isJobPayable(
         return now > payableAfter
       }
     }
+
+    case 'RESIDENTIAL_7_DAY':
+      return isFastPayReady(jobDate, subcontractor, now) || now >= addDays(jobDate, 7)
+
+    case 'COMMERCIAL_CLIENT_PAID_OR_7TH':
+      return isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= seventhOfNextMonth(jobDate)
 
     case 'ON_CLEANER_INVOICE':
       // Never auto-payable — requires manual release
@@ -222,6 +246,20 @@ export function getPayableStatusText(
       const dayOfMonth = new Date(job.date).getDate()
       if (dayOfMonth <= 15) return 'Payable after the 20th'
       return 'Payable after the 5th'
+    }
+
+    case 'RESIDENTIAL_7_DAY': {
+      const jobDate = new Date(job.date)
+      const now = new Date()
+      if (isFastPayReady(jobDate, subcontractor, now) || now >= addDays(jobDate, 7)) return 'Ready to pay'
+      return subcontractor.fastPay ? 'Fast-pay after 72h' : 'Payable 7 days after service'
+    }
+
+    case 'COMMERCIAL_CLIENT_PAID_OR_7TH': {
+      const jobDate = new Date(job.date)
+      const now = new Date()
+      if (isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= seventhOfNextMonth(jobDate)) return 'Ready to pay'
+      return 'Awaiting client payment or 7th of next month'
     }
 
     case 'ON_CLEANER_INVOICE':

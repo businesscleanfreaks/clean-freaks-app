@@ -145,6 +145,7 @@ export async function GET(
     const cadenceSub: CadenceSubcontractorInfo = {
       paymentCadence: sub.paymentCadence,
       excludeClientIds: sub.excludeClientIds,
+      fastPay: sub.fastPay,
     }
 
     const scheduleMap = new Map<string, CadenceScheduleInfo>()
@@ -304,7 +305,7 @@ export async function PATCH(
 
     // Validate paymentCadence value
     if (data.paymentCadence) {
-      const validCadences = ['IMMEDIATE', 'AFTER_CLIENT_PAYS', 'END_OF_MONTH', 'SEMI_MONTHLY', 'ON_CLEANER_INVOICE']
+      const validCadences = ['IMMEDIATE', 'AFTER_CLIENT_PAYS', 'END_OF_MONTH', 'SEMI_MONTHLY', 'RESIDENTIAL_7_DAY', 'COMMERCIAL_CLIENT_PAID_OR_7TH', 'ON_CLEANER_INVOICE']
       if (!validCadences.includes(data.paymentCadence as string)) {
         return NextResponse.json({ error: 'Invalid payment cadence' }, { status: 400 })
       }

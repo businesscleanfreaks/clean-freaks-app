@@ -182,7 +182,7 @@ export const createSubcontractorSchema = z.object({
   email: z.string().email('Invalid email format').optional().nullable().or(z.literal('')),
   notes: z.string().max(5000, 'Notes cannot exceed 5000 characters').optional().nullable(),
   fastPay: z.boolean().optional(),
-  paymentCadence: z.enum(['IMMEDIATE', 'AFTER_CLIENT_PAYS', 'END_OF_MONTH', 'SEMI_MONTHLY', 'ON_CLEANER_INVOICE']).optional(),
+  paymentCadence: z.enum(['IMMEDIATE', 'AFTER_CLIENT_PAYS', 'END_OF_MONTH', 'SEMI_MONTHLY', 'RESIDENTIAL_7_DAY', 'COMMERCIAL_CLIENT_PAID_OR_7TH', 'ON_CLEANER_INVOICE']).optional(),
 })
 
 // Expense schemas
