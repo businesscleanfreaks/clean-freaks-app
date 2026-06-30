@@ -28,6 +28,7 @@ export async function fetchRecentInbox(opts: {
   sinceUid?: string | null
   sinceDate?: Date
   max?: number
+  throwOnError?: boolean
 } = {}): Promise<FetchInboxResult> {
   const config = await getEmailConfig()
   if (!config.gmailUser || !config.gmailAppPassword) {
@@ -78,6 +79,7 @@ export async function fetchRecentInbox(opts: {
     }
   } catch (err) {
     logger.error('[inbox] IMAP fetch failed:', err)
+    if (opts.throwOnError) throw err
     return { messages, highestUid }
   } finally {
     try { await client.logout() } catch { /* ignore */ }

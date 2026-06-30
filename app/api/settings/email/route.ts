@@ -16,6 +16,7 @@ const emailSettingsSchema = z.object({
   testEmail: z.string().max(200, 'Email too long').optional().nullable(),
   enableSending: z.boolean().optional(),
   allowRealClientEmails: z.boolean().optional(),
+  enableInboxSync: z.boolean().optional(),
   // Secrets — only written when a non-empty value is supplied (blank = keep existing).
   gmailAppPassword: z.string().max(200).optional().nullable(),
   resendApiKey: z.string().max(400).optional().nullable(),
@@ -34,6 +35,8 @@ export async function GET() {
       testEmail: config.testEmail,
       enableSending: config.enableSending,
       allowRealClientEmails: config.allowRealClientEmails,
+      enableInboxSync: row?.enableInboxSync ?? false,
+      lastInboxUid: row?.lastInboxUid ?? null,
       gmailAppPasswordSet: !!config.gmailAppPassword,
       resendApiKeySet: !!config.resendApiKey,
       hasRow: !!row,
@@ -63,6 +66,7 @@ export async function PUT(request: Request) {
       testEmail?: string | null
       enableSending?: boolean
       allowRealClientEmails?: boolean
+      enableInboxSync?: boolean
       gmailAppPassword?: string
       resendApiKey?: string
     } = {}
@@ -73,6 +77,7 @@ export async function PUT(request: Request) {
     if (d.testEmail !== undefined) data.testEmail = d.testEmail?.trim() || null
     if (d.enableSending !== undefined) data.enableSending = d.enableSending
     if (d.allowRealClientEmails !== undefined) data.allowRealClientEmails = d.allowRealClientEmails
+    if (d.enableInboxSync !== undefined) data.enableInboxSync = d.enableInboxSync
     // Google shows the App Password with spaces ("abcd efgh ijkl mnop") — strip them.
     if (d.gmailAppPassword && d.gmailAppPassword.trim()) {
       data.gmailAppPassword = encryptSecret(d.gmailAppPassword.replace(/\s+/g, ''))
