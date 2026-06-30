@@ -146,6 +146,7 @@ export const updateJobSchema = z.object({
   status: z.enum(['SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
   subcontractorPaid: z.boolean().optional(),
   vendorPaid: z.boolean().optional(),
+  cancellationFee: z.number().min(0, 'Cancellation fee must be positive').optional().nullable(),
   notes: z.string().max(5000, 'Notes too long').optional().nullable(),
   isTrial: z.boolean().optional(),
   trialNotes: z.string().max(5000, 'Trial notes too long').optional().nullable(),

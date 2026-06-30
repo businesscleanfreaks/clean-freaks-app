@@ -149,6 +149,7 @@ model Job {
   invoiced             Boolean     @default(false)
   subcontractorPaid    Boolean     @default(false)
   vendorPaid           Boolean     @default(false)
+  cancellationFee      Float?      // Set when a clean is cancelled with a fee; billed as a line item on the client's regular invoice
   notes                String?
   isTrial              Boolean     @default(false)
   trialNotes           String?

@@ -11,7 +11,7 @@ export interface InvoiceCandidate {
     description: string
     quantity: number
     price: number
-    sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION'
+    sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION' | 'CANCELLATION_FEE'
     sourceId?: string
     jobId?: string
     scheduleId?: string

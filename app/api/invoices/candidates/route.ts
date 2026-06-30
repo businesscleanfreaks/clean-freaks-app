@@ -201,7 +201,7 @@ export async function GET(request: Request) {
       description: string
       quantity: number
       price: number
-      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION'
+      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION' | 'CANCELLATION_FEE'
       sourceId?: string
       jobId?: string
       scheduleId?: string
@@ -286,9 +286,12 @@ export async function GET(request: Request) {
 
       // Skipped cleans
       skippedJobs.forEach(job => {
+        const fee = job.cancellationFee ?? 0
         exceptions.push({
           type: 'SKIPPED',
-          message: `${format(job.date, 'MMM d')} clean was skipped`,
+          message: fee > 0
+            ? `${format(job.date, 'MMM d')} clean was cancelled — $${fee.toFixed(2)} cancellation fee charged`
+            : `${format(job.date, 'MMM d')} clean was skipped`,
           scheduleId: job.scheduleId,
           locationId: job.locationId,
         })
@@ -540,6 +543,25 @@ export async function GET(request: Request) {
           })
         })
       }
+
+      // Cancellation fees: a cancelled clean carrying a fee bills that fee as a
+      // line item on the client's regular invoice (not a separate invoice).
+      // Reserved by jobId once invoiced, so it never double-bills.
+      jobs.forEach(job => {
+        const fee = job.cancellationFee ?? 0
+        if (job.status !== 'CANCELLED' || fee <= 0 || reservedJobIds.has(job.id)) return
+        lineItems.push({
+          description: `Cancellation fee — ${job.location.name} — ${format(job.date, 'MMM d')}`,
+          quantity: 1,
+          price: fee,
+          sourceType: 'CANCELLATION_FEE',
+          sourceId: job.id,
+          jobId: job.id,
+          scheduleId: job.scheduleId || undefined,
+          locationName: job.location.name,
+        })
+        total += fee
+      })
 
       // Build schedule summary
       const schedules = clientsWithSchedules.find(c => c.id === clientId)?.locations.flatMap(l => l.schedules) || []

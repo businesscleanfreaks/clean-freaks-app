@@ -7,6 +7,9 @@ export interface GuardPeriodJob {
   status: GuardCleanStatus
   onThisInvoice: boolean
   invoicedElsewhere: boolean
+  // A cancelled clean may legitimately appear on an invoice when it carries a
+  // cancellation fee (we're billing the fee, not the un-performed clean).
+  hasCancellationFee?: boolean
 }
 
 export interface InvoiceGuardInput {
@@ -40,7 +43,7 @@ export function checkInvoiceAgainstSchedule(input: InvoiceGuardInput): InvoiceGu
   const findings: InvoiceGuardFinding[] = []
 
   for (const job of input.periodJobs) {
-    if (job.onThisInvoice && job.status === 'CANCELLED') {
+    if (job.onThisInvoice && job.status === 'CANCELLED' && !job.hasCancellationFee) {
       findings.push({
         code: 'BILLED_BUT_CANCELLED',
         message: `This invoice bills a clean that was cancelled (${job.iso}).`,
@@ -114,6 +117,7 @@ export async function evaluateInvoiceForSend(invoiceId: string): Promise<Invoice
       id: true,
       date: true,
       status: true,
+      cancellationFee: true,
       invoiceLineItems: { select: { invoice: { select: { id: true, status: true } } } },
     },
   })
@@ -125,6 +129,7 @@ export async function evaluateInvoiceForSend(invoiceId: string): Promise<Invoice
     invoicedElsewhere: job.invoiceLineItems.some(
       (li) => li.invoice && li.invoice.id !== invoice.id && li.invoice.status !== 'VOID',
     ),
+    hasCancellationFee: (job.cancellationFee ?? 0) > 0,
   }))
 
   return checkInvoiceAgainstSchedule({

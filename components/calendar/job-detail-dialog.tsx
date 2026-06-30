@@ -170,6 +170,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
     handleOpenCancellationSheet, handleOutcomeTypeChange,
     handleOpenOutcomeSheet, openOutcomeQuickFix,
     handleSaveOutcome, handleCancelWithReason,
+    handleUseFullRateForFee,
     buildFutureSchedulePayload,
   } = state
 
@@ -2081,6 +2082,18 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
                             }}
                           />
                         </div>
+                        <div className="flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={handleUseFullRateForFee}
+                            style={{ fontSize: '13px', color: '#00A896', fontWeight: 500 }}
+                          >
+                            Use full rate
+                          </button>
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#999999', textAlign: 'center', marginTop: '8px' }}>
+                          Added to this client&apos;s next invoice
+                        </p>
                       </div>
                     )}
                     {/* Buttons */}
@@ -2360,6 +2373,18 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
                             }}
                           />
                         </div>
+                        <div className="flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={handleUseFullRateForFee}
+                            style={{ fontSize: '13px', color: '#00A896', fontWeight: 500 }}
+                          >
+                            Use full rate
+                          </button>
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#999999', textAlign: 'center', marginTop: '8px' }}>
+                          Added to this client&apos;s next invoice
+                        </p>
                       </div>
                     )}
                     {/* Buttons */}

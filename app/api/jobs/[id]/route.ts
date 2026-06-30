@@ -50,6 +50,7 @@ export async function PUT(
       status,
       subcontractorPaid,
       vendorPaid,
+      cancellationFee,
       notes,
       isTrial,
       trialNotes,
@@ -197,6 +198,7 @@ export async function PUT(
         status?: string
         subcontractorPaid?: boolean
         vendorPaid?: boolean
+        cancellationFee?: number | null
         notes?: string | null
         isTrial?: boolean
         trialNotes?: string | null
@@ -235,6 +237,9 @@ export async function PUT(
       if (vendorPaid !== undefined) {
         updateData.vendorPaid = vendorPaid
       }
+      if (cancellationFee !== undefined) {
+        updateData.cancellationFee = cancellationFee && cancellationFee > 0 ? cancellationFee : null
+      }
       if (notes !== undefined) updateData.notes = notes || null
       if (isTrial !== undefined) updateData.isTrial = isTrial
       if (trialNotes !== undefined) updateData.trialNotes = trialNotes || null
@@ -251,6 +256,10 @@ export async function PUT(
         }
         if (subcontractorRate === undefined && currentJob.subcontractorRate === 0 && currentJob.schedule) {
           updateData.subcontractorRate = currentJob.schedule.defaultSubcontractorRate
+        }
+        // A restored clean is no longer a cancellation — drop any fee that was attached.
+        if (cancellationFee === undefined) {
+          updateData.cancellationFee = null
         }
       }
 

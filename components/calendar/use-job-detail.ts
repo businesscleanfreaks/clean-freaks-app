@@ -1645,6 +1645,13 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     setShowCancellationSheet(true)
   }
 
+  // Pre-fill the fee with this clean's normal rate (the common "charge the full
+  // missed clean" case) and switch the fee toggle on.
+  const handleUseFullRateForFee = () => {
+    setChargeFee(true)
+    setFeeAmount(job.clientRate && job.clientRate > 0 ? String(job.clientRate) : '')
+  }
+
   const canApplyOutcome = !hasFinalInvoice && !job.subcontractorPaid && job.status !== 'CANCELLED'
 
   const handleOutcomeTypeChange = (nextOutcome: OutcomeType) => {
@@ -1789,39 +1796,34 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     const updatedNotes = job.notes ? `${cancellationNote}\n\n${job.notes}` : cancellationNote
     const originalStatus = job.status as 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
     const originalNotes = job.notes ?? null
+    const feeValue = chargeFee ? parseFloat(feeAmount) : 0
+    if (chargeFee && (Number.isNaN(feeValue) || feeValue <= 0)) {
+      showError('Enter a valid fee amount, or turn off "Charge a fee?"')
+      setIsCancelling(false)
+      return
+    }
     try {
+      // The fee rides the client's regular invoice as a line item — set it on the
+      // job in the same update that cancels the clean (no separate invoice).
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'CANCELLED', notes: updatedNotes }),
+        body: JSON.stringify({
+          status: 'CANCELLED',
+          notes: updatedNotes,
+          ...(feeValue > 0 ? { cancellationFee: feeValue } : {}),
+        }),
       })
       if (!response.ok) {
         await showApiError(response, 'Failed to cancel job')
         setIsCancelling(false)
         return
       }
-      const feeValue = chargeFee ? parseFloat(feeAmount) : 0
-      if (feeValue > 0) {
-        const feeResponse = await fetch('/api/jobs/cancellation-fee', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clientId: job.location.client.id,
-            amount: feeValue,
-            description: `Cancellation fee — ${reasonLabel} — ${format(new Date(job.date), 'MMM d, yyyy')}`,
-            serviceDate: new Date(job.date).toISOString(),
-          }),
-        })
-        if (!feeResponse.ok) {
-          await showApiError(feeResponse, 'Job cancelled, but the cancellation fee was not created')
-          return
-        }
-      }
       setShowCancellationSheet(false)
       refreshCalendarData()
       onOpenChange(false)
       if (feeValue > 0) {
-        showSuccess('Job cancelled')
+        showSuccess(`Job cancelled · $${feeValue.toFixed(2)} fee added to the next invoice`)
       } else {
         showJobUndo('Job cancelled', { status: originalStatus, notes: originalNotes })
       }
@@ -1922,6 +1924,7 @@ export function useJobDetail({ job, open, onOpenChange, subcontractors }: UseJob
     handleOpenCancellationSheet, handleOutcomeTypeChange,
     handleOpenOutcomeSheet, openOutcomeQuickFix,
     handleSaveOutcome, handleCancelWithReason,
+    handleUseFullRateForFee,
     buildFutureSchedulePayload,
   }
 }
