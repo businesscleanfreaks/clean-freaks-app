@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidateSchedulePages } from '@/lib/revalidate'
 import { hasFinalInvoice } from '@/lib/invoice-status'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 /**
  * PATCH /api/jobs/[id]/override
@@ -22,6 +24,8 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const body = await request.json()
     const { clientRate, subcontractorRate, subcontractorId, startTime } = body
 
@@ -111,9 +115,6 @@ export async function PATCH(
     return NextResponse.json(updatedJob)
   } catch (error) {
     logger.error('Error overriding job:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update job' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to update job')
   }
 }

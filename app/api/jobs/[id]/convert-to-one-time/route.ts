@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db'
 import { revalidateJobPages } from '@/lib/revalidate'
 import { hasFinalInvoice } from '@/lib/invoice-status'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 /**
  * POST /api/jobs/[id]/convert-to-one-time
@@ -30,6 +32,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const body = await request.json()
     const parsed = bodySchema.safeParse(body)
@@ -150,6 +154,9 @@ export async function POST(
     return NextResponse.json(result)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to convert job'
+    if (message === 'Unauthorized') {
+      return handleApiError(error, 'Failed to convert job')
+    }
     logger.error('[convert-to-one-time] error', { error: message })
     const isUserError = message.includes('invoice') || message.includes('paid') || message.includes('not on a recurring') || message.includes('not found')
     return NextResponse.json({ error: message }, { status: isUserError ? 400 : 500 })

@@ -7,12 +7,16 @@ import { triggerSystemRefresh } from '@/lib/cascading-updates'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { changeScheduleGoingForwardSchema } from '@/lib/validations'
 import { parseDateOnly, parseDateOnlyForStorage } from '@/lib/date-only'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const body = await request.json()
     const validationResult = changeScheduleGoingForwardSchema.safeParse(body)
 
@@ -259,10 +263,6 @@ export async function POST(
     })
   } catch (error) {
     logger.error('Error creating future schedule change:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Failed to create future schedule change'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to create future schedule change')
   }
 }

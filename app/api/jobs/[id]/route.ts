@@ -6,6 +6,7 @@ import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
 import { logger } from '@/lib/logger'
 import { cascadeJobUpdate } from '@/lib/cascading-updates'
 import { hasFinalInvoice } from '@/lib/invoice-status'
+import { requireAuth } from '@/lib/auth'
 
 async function recalculateDraftInvoiceTotal(invoiceId: string, tx: any) {
   const lineItems = await tx.invoiceLineItem.findMany({
@@ -24,6 +25,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const body = await request.json()
     
@@ -459,6 +462,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
 
     // Get job with location info before deleting (for revalidation)

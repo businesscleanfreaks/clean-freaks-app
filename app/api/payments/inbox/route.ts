@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,8 @@ const CENTS = 0.005
  */
 export async function GET() {
   try {
+    await requireAuth()
+
     const [matches, openInvoices] = await Promise.all([
       prisma.paymentMatch.findMany({
         where: { status: 'NEEDS_REVIEW' },
@@ -60,7 +63,6 @@ export async function GET() {
       openInvoices: openInvoices.map(shape),
     })
   } catch (error) {
-    logger.error('[payments/inbox] failed:', error)
-    return NextResponse.json({ error: 'Failed to load payment inbox' }, { status: 500 })
+    return handleApiError(error, 'Failed to load payment inbox')
   }
 }

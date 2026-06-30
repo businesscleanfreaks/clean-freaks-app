@@ -6,6 +6,7 @@ import { createScheduleSchema } from '@/lib/validations'
 import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
 import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
+import { requireAuth } from '@/lib/auth'
 
 // Type for transaction client
 type TransactionClient = Prisma.TransactionClient
@@ -76,6 +77,8 @@ async function generateJobsForSchedule(scheduleId: string, tx?: TransactionClien
 
 export async function POST(request: Request) {
   try {
+    await requireAuth()
+
     const body = await request.json()
     
     // Validate request body

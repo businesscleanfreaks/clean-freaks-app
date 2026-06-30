@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { revalidateInvoicePages } from '@/lib/revalidate'
 import { createInvoiceSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -37,6 +39,8 @@ export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   let isPreviewRequest = false
   try {
+    await requireAuth()
+
     const body = await request.json()
     const { clientId, jobIds, dateDue, notes, showPaymentOptions, status, previewOnly } = body
     isPreviewRequest = Boolean(previewOnly)
@@ -372,6 +376,9 @@ export async function POST(request: Request) {
     return NextResponse.json(invoice)
   } catch (error) {
     logger.error('Error creating invoice:', error)
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return handleApiError(error, 'Failed to create invoice')
+    }
     if (isPreviewRequest) {
       console.error('[invoice:create-preview] failed', {
         requestId,

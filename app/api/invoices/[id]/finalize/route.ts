@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 // Finalize a preview invoice by marking its jobs as invoiced
 export async function POST(
@@ -7,6 +9,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requireAuth()
+
     const { id } = await params
 
     // Get the invoice with its line items
@@ -90,9 +94,6 @@ export async function POST(
     })
   } catch (error) {
     console.error('Error finalizing invoice:', error)
-    return NextResponse.json(
-      { error: 'Failed to finalize invoice' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to finalize invoice')
   }
 }

@@ -9,6 +9,8 @@ import { logger } from '@/lib/logger'
 import { generateInvoiceToken } from '@/lib/invoice-tokens'
 import { getBaseUrl } from '@/lib/url'
 import { evaluateInvoiceForSend } from '@/lib/invoice-guard'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -28,6 +30,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const body = await request.json()
 
@@ -196,6 +200,9 @@ export async function POST(
     })
   } catch (error) {
     logger.error('Error sending invoice email:', error)
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return handleApiError(error, 'Failed to send invoice email')
+    }
     const message = error instanceof Error ? error.message : 'Failed to send invoice email'
     return NextResponse.json(
       { error: `Email was not sent. Invoice remains a draft. ${message}` },

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 
 vi.mock('next/cache', () => ({ revalidatePath: () => {}, revalidateTag: () => {} }))
+vi.mock('@/lib/auth', () => ({
+  requireAuth: async () => ({ id: 'test-user', email: 'test@example.com', name: 'Test' }),
+}))
 
 import { prisma } from '@/lib/db'
 import { resetDb } from './db-helpers'

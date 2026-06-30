@@ -4,12 +4,16 @@ import { revalidateInvoicePages } from '@/lib/revalidate'
 import { updateInvoiceSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { evaluateInvoiceForSend } from '@/lib/invoice-guard'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const invoice = await prisma.invoice.findUnique({
       where: { id: resolvedParams.id },
@@ -40,10 +44,7 @@ export async function GET(
     return NextResponse.json(invoice)
   } catch (error) {
     logger.error('Error fetching invoice:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch invoice' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to fetch invoice')
   }
 }
 
@@ -52,6 +53,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const body = await request.json()
     
@@ -108,10 +111,7 @@ export async function PUT(
     return NextResponse.json(invoice)
   } catch (error) {
     logger.error('Error updating invoice:', error)
-    return NextResponse.json(
-      { error: 'Failed to update invoice' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to update invoice')
   }
 }
 
@@ -120,6 +120,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
 
     logger.debug('[DELETE] Deleting invoice:', resolvedParams.id)
@@ -230,9 +232,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error('[DELETE] Error deleting invoice:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete invoice', details: (error as Error).message },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to delete invoice')
   }
 }

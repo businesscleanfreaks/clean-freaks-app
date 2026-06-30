@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 // Schema for line item updates
 const lineItemSchema = z.object({
@@ -26,6 +28,8 @@ export async function GET(
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(context.params)
     const { id } = resolvedParams
 
@@ -58,10 +62,7 @@ export async function GET(
     })
   } catch (error) {
     logger.error('Error fetching line items:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch line items' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to fetch line items')
   }
 }
 
@@ -74,6 +75,8 @@ export async function PUT(
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(context.params)
     const { id } = resolvedParams
 
@@ -231,9 +234,6 @@ export async function PUT(
     })
   } catch (error) {
     logger.error('Error updating line items:', error)
-    return NextResponse.json(
-      { error: 'Failed to update line items' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to update line items')
   }
 }

@@ -4,9 +4,12 @@ import { revalidateJobPages } from '@/lib/revalidate'
 import { createJobSchema } from '@/lib/validations'
 import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
 import { cascadeJobUpdate } from '@/lib/cascading-updates'
+import { requireAuth } from '@/lib/auth'
 
 export async function POST(request: Request) {
   try {
+    await requireAuth()
+
     const body = await request.json()
     
     // Validate request body

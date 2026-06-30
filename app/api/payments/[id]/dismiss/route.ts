@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 /**
  * POST /api/payments/[id]/dismiss
@@ -14,6 +16,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ) {
   try {
+    await requireAuth()
+
     const { id } = await Promise.resolve(params)
     const match = await prisma.paymentMatch.findUnique({ where: { id } })
     if (!match) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
@@ -26,6 +30,6 @@ export async function POST(
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error('[payments/dismiss] failed:', error)
-    return NextResponse.json({ error: 'Failed to dismiss payment' }, { status: 500 })
+    return handleApiError(error, 'Failed to dismiss payment')
   }
 }

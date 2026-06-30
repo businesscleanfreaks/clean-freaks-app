@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 /**
  * Mark jobs as already invoiced (without creating an invoice)
@@ -8,6 +10,8 @@ import { logger } from '@/lib/logger'
  */
 export async function POST(request: Request) {
   try {
+    await requireAuth()
+
     const body = await request.json()
     const { jobIds } = body
 
@@ -92,11 +96,6 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     logger.error('Error marking jobs as invoiced:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Failed to mark jobs as invoiced'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to mark jobs as invoiced')
   }
 }
-

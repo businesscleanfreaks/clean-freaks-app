@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 import { markInvoicePaidSchema, formatZodErrors } from '@/lib/validations'
 import { markInvoicePaid } from '@/lib/mark-invoice-paid'
 
@@ -10,6 +12,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const body = await request.json()
     
@@ -48,10 +52,6 @@ export async function POST(
     })
   } catch (error) {
     logger.error('Error marking invoice as paid:', error)
-    return NextResponse.json(
-      { error: 'Failed to mark invoice as paid' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to mark invoice as paid')
   }
 }
-

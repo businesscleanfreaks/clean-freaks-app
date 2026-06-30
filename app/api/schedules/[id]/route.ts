@@ -6,12 +6,16 @@ import { logger } from '@/lib/logger'
 import { triggerSystemRefresh } from '@/lib/cascading-updates'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireAuth()
+
     // Get schedule with client info before deleting
     const schedule = await prisma.schedule.findUnique({
       where: { id: params.id },
@@ -75,11 +79,7 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error('Error deleting schedule:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Failed to delete schedule'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to delete schedule')
   }
 }
 
@@ -89,6 +89,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const body = await request.json()
     
     // Validate request body
@@ -201,10 +203,6 @@ export async function PUT(
     return NextResponse.json({ ...schedule, regenerationSummary: summary })
   } catch (error) {
     logger.error('Error updating schedule:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Failed to update schedule'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to update schedule')
   }
 }

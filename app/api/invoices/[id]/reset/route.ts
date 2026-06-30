@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 const FINAL_INVOICE_STATUSES = ['SENT', 'PAID']
 
@@ -22,6 +24,8 @@ export async function POST(
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(context.params)
     const { id } = resolvedParams
     const body = await request.json().catch(() => ({}))
@@ -167,9 +171,6 @@ export async function POST(
     }
   } catch (error) {
     logger.error('Error resetting invoice:', error)
-    return NextResponse.json(
-      { error: 'Failed to reset invoice' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to reset invoice')
   }
 }

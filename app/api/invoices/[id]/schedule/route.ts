@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +24,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ) {
   try {
+    await requireAuth()
+
     const { id } = await Promise.resolve(params)
     const parsed = scheduleSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -65,7 +69,7 @@ export async function POST(
     return NextResponse.json({ success: true, scheduledSendAt: when.toISOString() })
   } catch (error) {
     logger.error('Error scheduling invoice send:', error)
-    return NextResponse.json({ error: 'Failed to schedule send' }, { status: 500 })
+    return handleApiError(error, 'Failed to schedule send')
   }
 }
 
@@ -75,6 +79,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ) {
   try {
+    await requireAuth()
+
     const { id } = await Promise.resolve(params)
     const invoice = await prisma.invoice.findUnique({ where: { id } })
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
@@ -88,6 +94,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     logger.error('Error cancelling scheduled send:', error)
-    return NextResponse.json({ error: 'Failed to cancel scheduled send' }, { status: 500 })
+    return handleApiError(error, 'Failed to cancel scheduled send')
   }
 }

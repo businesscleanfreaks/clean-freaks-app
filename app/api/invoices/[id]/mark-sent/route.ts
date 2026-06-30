@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
 import { evaluateInvoiceForSend } from '@/lib/invoice-guard'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 /**
  * Mark an invoice as SENT without emailing it — for invoices that were sent to
@@ -13,6 +15,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
 
     let confirmMismatch = false
@@ -66,6 +70,6 @@ export async function POST(
     return NextResponse.json({ success: true, message: 'Invoice marked as sent' })
   } catch (error) {
     logger.error('Error marking invoice as sent:', error)
-    return NextResponse.json({ error: 'Failed to mark invoice as sent' }, { status: 500 })
+    return handleApiError(error, 'Failed to mark invoice as sent')
   }
 }

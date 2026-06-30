@@ -5,12 +5,16 @@ import { createPaymentSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { getBillingStartDate } from '@/lib/billing-settings'
 import { format } from 'date-fns'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const body = await request.json()
     
@@ -215,11 +219,7 @@ export async function POST(
     return NextResponse.json(payment, { status: 201 })
   } catch (error) {
     logger.error('Error creating payment:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Failed to create payment'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to create payment')
   }
 }
 
@@ -228,6 +228,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    await requireAuth()
+
     const resolvedParams = await Promise.resolve(params)
     const { jobIds } = await request.json().catch(() => ({ jobIds: [] }))
 
@@ -311,10 +313,6 @@ export async function DELETE(
     })
   } catch (error) {
     logger.error('Error unmarking payment jobs:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Failed to unmark paid jobs'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Failed to unmark paid jobs')
   }
 }

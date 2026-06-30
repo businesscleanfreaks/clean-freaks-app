@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { revalidateInvoicePages } from '@/lib/revalidate'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error-handler'
 
 /**
  * POST /api/invoices/from-candidate
@@ -11,6 +13,8 @@ import { logger } from '@/lib/logger'
  */
 export async function POST(request: Request) {
   try {
+    await requireAuth()
+
     const body = await request.json()
     const {
       clientId,
@@ -169,6 +173,9 @@ export async function POST(request: Request) {
     return NextResponse.json(invoice)
   } catch (error) {
     logger.error('Error creating invoice from candidate:', error)
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return handleApiError(error, 'Failed to create invoice')
+    }
     const message = error instanceof Error ? error.message : 'Failed to create invoice'
     const status = message.includes('already invoiced') ? 409 : 500
     return NextResponse.json({ error: message }, { status })
