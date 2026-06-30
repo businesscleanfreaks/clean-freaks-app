@@ -6,6 +6,8 @@ import { InvoicePDF } from '@/components/invoices/invoice-pdf'
 import type { LogoSettings } from '@/components/invoices/invoice-pdf'
 import { logger } from '@/lib/logger'
 import type { InvoiceWithRelations } from '@/types'
+import { requireAuth } from '@/lib/auth'
+import { decodeInvoiceToken } from '@/lib/invoice-tokens'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -230,6 +232,8 @@ export async function POST(
   const requestId = crypto.randomUUID()
   let resolvedParams: { id: string } | undefined = undefined
   try {
+    // PDF generation (POST) is only triggered by the authenticated admin UI.
+    try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
     resolvedParams = await Promise.resolve(params)
     console.info('[invoice:generate-pdf] start', {
       requestId,
@@ -390,6 +394,19 @@ export async function GET(
   let resolvedParams: { id: string } | undefined = undefined
   try {
     resolvedParams = await Promise.resolve(params)
+
+    // GET serves the PDF bytes and is reached two ways: the authenticated admin
+    // UI (link/iframe, has a session) and the emailed hosted PDF link (no
+    // session — carries ?token=). Require one or the other; never serve an
+    // invoice PDF by raw id alone.
+    let isAdmin = false
+    try { await requireAuth(); isAdmin = true } catch { /* not an admin session */ }
+    if (!isAdmin) {
+      const token = new URL(request.url).searchParams.get('token')
+      if (!token || decodeInvoiceToken(token) !== resolvedParams.id) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    }
 
     const payload = await getInvoicePdfPayload(resolvedParams!.id)
     const invoiceForDownload = payload.invoice

@@ -76,7 +76,9 @@ async function processDueInvoices() {
 
     try {
       const baseUrl = getBaseUrl()
-      const hostedPdfUrl = `${baseUrl}/api/invoices/${invoice.id}/generate-pdf`
+      // Include a signed token so the client can open this PDF link without a
+      // session (the generate-pdf GET now requires auth OR a valid token).
+      const hostedPdfUrl = `${baseUrl}/api/invoices/${invoice.id}/generate-pdf?token=${generateInvoiceToken(invoice.id)}`
       if (!invoice.pdfUrl) {
         await prisma.invoice.update({ where: { id: invoice.id }, data: { pdfUrl: hostedPdfUrl } })
       }

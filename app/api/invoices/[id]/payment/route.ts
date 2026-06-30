@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { revalidatePath } from 'next/cache'
+import { requireAuth } from '@/lib/auth'
+import { decodeInvoiceToken } from '@/lib/invoice-tokens'
 
 export async function POST(
   request: Request,
@@ -10,7 +12,17 @@ export async function POST(
   try {
     const resolvedParams = await Promise.resolve(params)
     const body = await request.json()
-    const { method, amount } = body
+    const { method, amount, token } = body
+
+    // Authorize: this records a payment (the SQUARE path even marks the invoice
+    // PAID), so it must NOT be callable with just a raw invoice id. Allow an
+    // authenticated admin, OR a valid invoice token proving the caller reached
+    // this invoice through its signed public link.
+    let isAdmin = false
+    try { await requireAuth(); isAdmin = true } catch { /* not an admin session */ }
+    if (!isAdmin && (!token || decodeInvoiceToken(token) !== resolvedParams.id)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     if (!method || !amount) {
       return NextResponse.json(
