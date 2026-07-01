@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db'
 import { resetDb } from './db-helpers'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { PUT as putSchedule } from '@/app/api/schedules/[id]/route'
+import { POST as pauseSchedule } from '@/app/api/schedules/[id]/pause/route'
 import { POST as changeGoingForward } from '@/app/api/schedules/[id]/change-going-forward/route'
 
 beforeEach(async () => {
@@ -231,5 +232,92 @@ describe('schedule edit route agreement (real DB)', () => {
     expect(response.status).toBe(400)
     const body = await response.json()
     expect(body.error).toContain('end date')
+  })
+
+  it('trial conversion clears the trial end date and applies the proposed recurring rate', async () => {
+    const start = utcDaysFromToday(2)
+    const { schedule } = await seedSchedule('TRIAL', start)
+    await prisma.schedule.update({
+      where: { id: schedule.id },
+      data: {
+        defaultClientRate: 250,
+        endDate: addUtcDays(start, 14),
+      },
+    })
+    await prisma.job.updateMany({
+      where: { scheduleId: schedule.id },
+      data: { clientRate: 250 },
+    })
+
+    const response = await putSchedule(
+      req({ endDate: null, defaultClientRate: 500 }, 'PUT'),
+      { params: { id: schedule.id } },
+    )
+
+    expect(response.status).toBe(200)
+    const converted = await prisma.schedule.findUniqueOrThrow({ where: { id: schedule.id } })
+    expect(converted.endDate).toBeNull()
+    expect(converted.defaultClientRate).toBe(500)
+
+    const futureJobs = await prisma.job.findMany({
+      where: { scheduleId: schedule.id },
+      orderBy: { date: 'asc' },
+    })
+    expect(futureJobs.length).toBeGreaterThan(0)
+    expect(futureJobs.every((job) => job.clientRate === 500)).toBe(true)
+  })
+
+  it('finite pause removes paused draft cleans and resumes without duplicate dates', async () => {
+    const start = utcDaysFromToday(2)
+    const { schedule } = await seedSchedule('PAUSE', start)
+    const pauseFrom = addUtcDays(start, 7)
+    const pauseTo = addUtcDays(start, 14)
+    const firstResumedClean = addUtcDays(start, 21)
+
+    const before = await normalizedJobSnapshot(schedule.id)
+    expect(before.map((job) => job.date)).toEqual(expect.arrayContaining([
+      iso(start),
+      iso(pauseFrom),
+      iso(pauseTo),
+      iso(firstResumedClean),
+    ]))
+
+    const response = await pauseSchedule(
+      req({ pauseFrom: iso(pauseFrom), pauseTo: iso(pauseTo), indefinite: false }, 'POST'),
+      { params: { id: schedule.id } },
+    )
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.resumeScheduleId).toBeTruthy()
+
+    const paused = await prisma.schedule.findUniqueOrThrow({ where: { id: schedule.id } })
+    const resumed = await prisma.schedule.findUniqueOrThrow({ where: { id: body.resumeScheduleId } })
+    expect(iso(paused.endDate!)).toBe(iso(addUtcDays(start, 6)))
+    expect(iso(resumed.startDate)).toBe(iso(addUtcDays(start, 15)))
+
+    const schedulesToCheck = [schedule.id, body.resumeScheduleId as string]
+    const afterPause = await prisma.job.findMany({
+      where: { scheduleId: { in: schedulesToCheck } },
+      orderBy: { date: 'asc' },
+    })
+    const afterPauseDates = afterPause.map((job) => iso(job.date))
+
+    expect(afterPauseDates).toContain(iso(start))
+    expect(afterPauseDates).not.toContain(iso(pauseFrom))
+    expect(afterPauseDates).not.toContain(iso(pauseTo))
+    expect(afterPauseDates.filter((date) => date === iso(firstResumedClean))).toHaveLength(1)
+
+    await regenerateJobsForSchedule(schedule.id, { rebuildDraftInvoicedJobs: true })
+    await regenerateJobsForSchedule(body.resumeScheduleId as string, { rebuildDraftInvoicedJobs: true })
+
+    const afterSecondRun = await prisma.job.findMany({
+      where: { scheduleId: { in: schedulesToCheck } },
+      orderBy: { date: 'asc' },
+    })
+    const rerunDates = afterSecondRun.map((job) => iso(job.date))
+
+    expect(new Set(rerunDates).size).toBe(rerunDates.length)
+    expect(rerunDates.filter((date) => date === iso(firstResumedClean))).toHaveLength(1)
   })
 })
