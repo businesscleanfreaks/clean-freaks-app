@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { z } from "zod"
+import { format } from "date-fns"
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,7 @@ const createPaymentSchema = z.object({
   jobIds: z.array(z.string()).optional().default([]),
   datePaid: z.string().optional(),
   notes: z.string().optional().nullable(),
+  confirmNoInvoice: z.boolean().optional().default(false),
 }).refine((value) => value.addOnServiceIds.length + value.jobIds.length > 0, {
   message: 'At least one add-on service or job is required',
   path: ['addOnServiceIds'],
@@ -19,10 +21,41 @@ const updatePaymentStateSchema = z.object({
   addOnServiceIds: z.array(z.string()).optional().default([]),
   jobIds: z.array(z.string()).optional().default([]),
   vendorPaid: z.boolean(),
+  confirmNoInvoice: z.boolean().optional().default(false),
 }).refine((value) => value.addOnServiceIds.length + value.jobIds.length > 0, {
   message: 'At least one add-on service or job is required',
   path: ['addOnServiceIds'],
 })
+
+async function requireMatchingVendorInvoice(
+  vendorId: string,
+  periodsBeingPaid: string[],
+  confirmNoInvoice: boolean,
+) {
+  const periods = Array.from(new Set(periodsBeingPaid)).filter(Boolean)
+  if (periods.length === 0 || confirmNoInvoice) return null
+
+  const matching = await prisma.vendorInvoice.findMany({
+    where: {
+      vendorId,
+      period: { in: periods },
+      status: { in: ['MATCHED', 'RESOLVED'] },
+    },
+    select: { period: true },
+  })
+  const covered = new Set(matching.map((m) => m.period))
+  const uncovered = periods.filter((period) => !covered.has(period))
+  if (uncovered.length === 0) return null
+
+  return NextResponse.json(
+    {
+      code: 'NO_MATCHING_VENDOR_INVOICE',
+      error: `No matching vendor invoice on file for ${uncovered.join(', ')}. Record or resolve it first, or pay anyway.`,
+      periods: uncovered,
+    },
+    { status: 409 },
+  )
+}
 
 // POST — record vendor payment
 export async function POST(
@@ -42,7 +75,7 @@ export async function POST(
       )
     }
 
-    const { addOnServiceIds, jobIds, datePaid, notes } = result.data
+    const { addOnServiceIds, jobIds, datePaid, notes, confirmNoInvoice } = result.data
 
     // Get unpaid add-on services for this vendor
     const [addOns, jobs] = await Promise.all([
@@ -52,6 +85,7 @@ export async function POST(
           vendorId,
           vendorPaid: false,
         },
+        include: { job: { select: { date: true } } },
       }),
       prisma.job.findMany({
         where: {
@@ -87,6 +121,16 @@ export async function POST(
         { status: 409 }
       )
     }
+
+    const gate = await requireMatchingVendorInvoice(
+      vendorId,
+      [
+        ...addOns.map((addOn) => format(new Date(addOn.job?.date || addOn.createdAt), 'yyyy-MM')),
+        ...jobs.map((job) => format(new Date(job.date), 'yyyy-MM')),
+      ],
+      confirmNoInvoice,
+    )
+    if (gate) return gate
 
     const totalAmount =
       addOns.reduce((sum, a) => sum + a.subcontractorRate, 0) +
@@ -167,7 +211,7 @@ export async function PATCH(
       )
     }
 
-    const { addOnServiceIds, jobIds, vendorPaid } = result.data
+    const { addOnServiceIds, jobIds, vendorPaid, confirmNoInvoice } = result.data
 
     if (vendorPaid) {
       const [addOns, jobs] = await Promise.all([
@@ -177,6 +221,7 @@ export async function PATCH(
             vendorId,
             vendorPaid: false,
           },
+          include: { job: { select: { date: true } } },
         }),
         prisma.job.findMany({
           where: {
@@ -194,6 +239,16 @@ export async function PATCH(
           { status: 400 }
         )
       }
+
+      const gate = await requireMatchingVendorInvoice(
+        vendorId,
+        [
+          ...addOns.map((addOn) => format(new Date(addOn.job?.date || addOn.createdAt), 'yyyy-MM')),
+          ...jobs.map((job) => format(new Date(job.date), 'yyyy-MM')),
+        ],
+        confirmNoInvoice,
+      )
+      if (gate) return gate
 
       const totalAmount =
         addOns.reduce((sum, addon) => sum + addon.subcontractorRate, 0) +

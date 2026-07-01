@@ -11,6 +11,17 @@ function getInvoiceTokenSecret() {
   return secret
 }
 
+function safeEqualHex(actual: string, expected: string): boolean {
+  try {
+    const actualBuffer = Buffer.from(actual, 'hex')
+    const expectedBuffer = Buffer.from(expected, 'hex')
+    if (actualBuffer.length !== expectedBuffer.length) return false
+    return crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Generate a secure token for public invoice viewing
  * Token format: base64url encoded `invoiceId:timestamp:hash`
@@ -51,14 +62,18 @@ export function decodeInvoiceToken(token: string): string | null {
       .digest('hex')
       .substring(0, 16)
     
-    if (hash !== expectedHash) {
+    if (!safeEqualHex(hash, expectedHash)) {
       return null
     }
     
     // Check expiration (1 year)
-    const tokenAge = Date.now() - parseInt(timestamp)
+    const issuedAt = parseInt(timestamp, 10)
+    if (!Number.isFinite(issuedAt)) {
+      return null
+    }
+    const tokenAge = Date.now() - issuedAt
     const oneYear = 365 * 24 * 60 * 60 * 1000
-    if (tokenAge > oneYear) {
+    if (tokenAge < 0 || tokenAge > oneYear) {
       return null
     }
     

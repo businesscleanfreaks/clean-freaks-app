@@ -405,9 +405,38 @@ model Vendor {
   addOnServices  AddOnService[]
   jobs           Job[]
   payments       VendorPayment[]
+  vendorInvoices VendorInvoice[]
 
   @@index([isActive])
   @@map("vendors")
+}
+
+// A vendor's own invoice (what THEY bill us) for a period, recorded so vendor
+// payouts can use the same "invoice first, then pay" reconciliation gate as
+// cleaner payouts.
+model VendorInvoice {
+  id              String    @id @default(uuid())
+  vendorId        String
+  period          String    // the month being billed, "yyyy-MM"
+  claimedAmount   Float     // what the vendor says we owe
+  computedOwed    Float     // what we computed we owe for that vendor+period at intake
+  reference       String?
+  notes           String?
+  status          String    @default("PENDING") // PENDING | MATCHED | MISMATCH | RESOLVED
+  attachmentFileName String?
+  attachmentMimeType String?
+  attachmentSize Int?
+  attachmentData Bytes?
+  receivedAt      DateTime  @default(now())
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vendor          Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([vendorId, period])
+  @@map("vendor_invoices")
 }
 
 model VendorPayment {

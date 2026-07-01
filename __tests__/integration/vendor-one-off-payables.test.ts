@@ -10,6 +10,7 @@ import { resetDb } from './db-helpers'
 import { POST as createJob } from '@/app/api/jobs/route'
 import { GET as getPayables } from '@/app/api/payables/data/route'
 import { POST as payVendor } from '@/app/api/vendors/[id]/payments/route'
+import { POST as recordVendorInvoice } from '@/app/api/vendors/[id]/vendor-invoices/route'
 
 beforeEach(async () => {
   await resetDb()
@@ -78,6 +79,15 @@ describe('vendor-performed one-off jobs in payables (real DB)', () => {
         payableItemIds: [job.id],
       }),
     ])
+
+    await recordVendorInvoice(
+      jsonReq(`http://test/api/vendors/${vendor.id}/vendor-invoices`, 'POST', {
+        period: date.slice(0, 7),
+        claimedAmount: 180,
+        reference: 'vendor-one-off-test',
+      }),
+      { params: { id: vendor.id } },
+    )
 
     const paymentResponse = await payVendor(
       jsonReq(`http://test/api/vendors/${vendor.id}/payments`, 'POST', {

@@ -43,7 +43,7 @@ function validatePdf(file: File | null): file is File {
  * subcontractor or vendor payment endpoint. Only the payable (safe) portion of
  * an account is ever sent — the gate can't be bypassed from here.
  */
-interface CleanerInvoiceRow {
+interface PayeeInvoiceRow {
   id: string
   period: string
   claimedAmount: number
@@ -59,9 +59,14 @@ interface CleanerInvoiceRow {
  * what we compute we owe (the same payables math). A MISMATCH is flagged so Grace
  * resolves it before paying — Josh's "only pay against a matching invoice" rule.
  */
-function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: string; period: string }) {
-  const { data, mutate } = useSWR<{ invoices: CleanerInvoiceRow[] }>(
-    `/api/subcontractors/${subcontractorId}/cleaner-invoices?period=${period}`,
+function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "cleaner" | "vendor"; payeeId: string; period: string }) {
+  const label = payeeType === "cleaner" ? "Cleaner" : "Vendor"
+  const lowerLabel = label.toLowerCase()
+  const basePath = payeeType === "cleaner"
+    ? `/api/subcontractors/${payeeId}/cleaner-invoices`
+    : `/api/vendors/${payeeId}/vendor-invoices`
+  const { data, mutate } = useSWR<{ invoices: PayeeInvoiceRow[] }>(
+    `${basePath}?period=${period}`,
     (u: string) => fetch(u).then((r) => r.json()),
   )
   const latest = data?.invoices?.[0]
@@ -72,7 +77,7 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
   const [open, setOpen] = useState(false)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
-  const inputId = `cleaner-invoice-file-${subcontractorId}-${period}`
+  const inputId = `${payeeType}-invoice-file-${payeeId}-${period}`
 
   const record = async () => {
     const claimedAmount = parseFloat(amount)
@@ -84,7 +89,7 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
       body.set("claimedAmount", String(claimedAmount))
       if (reference.trim()) body.set("reference", reference.trim())
       if (attachmentFile) body.set("file", attachmentFile)
-      const res = await fetch(`/api/subcontractors/${subcontractorId}/cleaner-invoices`, {
+      const res = await fetch(basePath, {
         method: "POST",
         body,
       })
@@ -105,12 +110,12 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
     try {
       const body = new FormData()
       body.set("file", file)
-      const res = await fetch(`/api/subcontractors/${subcontractorId}/cleaner-invoices/${latest.id}/attachment`, {
+      const res = await fetch(`${basePath}/${latest.id}/attachment`, {
         method: "POST",
         body,
       })
       if (!res.ok) { await showApiError(res, "Failed to attach PDF"); return }
-      showSuccess("Cleaner invoice PDF attached")
+      showSuccess(`${label} invoice PDF attached`)
       mutate()
     } catch {
       showError("Failed to attach PDF")
@@ -121,7 +126,7 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
 
   const resolve = async () => {
     if (!latest) return
-    const res = await fetch(`/api/subcontractors/${subcontractorId}/cleaner-invoices/${latest.id}/resolve`, { method: "POST" })
+    const res = await fetch(`${basePath}/${latest.id}/resolve`, { method: "POST" })
     if (!res.ok) { await showApiError(res, "Failed to resolve"); return }
     showSuccess("Mismatch resolved"); mutate()
   }
@@ -131,14 +136,19 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
     : latest?.status === "RESOLVED" ? { bg: "#EFF6FF", text: "#1D4ED8", label: "Mismatch resolved" }
     : latest?.status === "MISMATCH" ? { bg: "#FEF2F2", text: "#B91C1C", label: "Cleaner invoice doesn't match" }
     : null
+  const statusLabel =
+    latest?.status === "MATCHED" ? `${label} invoiced - matches what we owe`
+    : latest?.status === "RESOLVED" ? "Mismatch resolved"
+    : latest?.status === "MISMATCH" ? `${label} invoice doesn't match`
+    : ""
 
   return (
     <div className="border-b border-stone-100 px-4 py-3">
-      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Cleaner invoice</div>
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{label} invoice</div>
       {latest ? (
         <div className="rounded-md px-3 py-2 text-[12px]" style={{ backgroundColor: tone?.bg }}>
           <div className="flex items-center justify-between gap-2">
-            <span style={{ color: tone?.text, fontWeight: 600 }}>{tone?.label}</span>
+            <span style={{ color: tone?.text, fontWeight: 600 }}>{statusLabel}</span>
             {latest.status === "MISMATCH" && (
               <button onClick={resolve} className="rounded border border-rose-300 px-2 py-0.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">Resolve</button>
             )}
@@ -150,7 +160,7 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {latest.attachmentFileName && (
               <a
-                href={`/api/subcontractors/${subcontractorId}/cleaner-invoices/${latest.id}/attachment`}
+                href={`${basePath}/${latest.id}/attachment`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-600 hover:border-stone-300 hover:text-stone-900"
@@ -178,7 +188,7 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
         </div>
       ) : open ? (
         <div className="space-y-2">
-          <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount the cleaner billed"
+          <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Amount the ${lowerLabel} billed`}
             className="w-full rounded-md border border-stone-300 px-2 py-1.5 text-[13px] outline-none" autoFocus />
           <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Their invoice # (optional)"
             className="w-full rounded-md border border-stone-300 px-2 py-1.5 text-[13px] outline-none" />
@@ -196,7 +206,7 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
           >
             {attachmentFile ? <FileText size={14} /> : <Upload size={14} />}
             <span className="min-w-0 flex-1 truncate">
-              {attachmentFile ? `${attachmentFile.name} ${formatBytes(attachmentFile.size)}` : "Drop cleaner invoice PDF or choose file"}
+              {attachmentFile ? `${attachmentFile.name} ${formatBytes(attachmentFile.size)}` : `Drop ${lowerLabel} invoice PDF or choose file`}
             </span>
             {attachmentFile && (
               <button
@@ -290,12 +300,16 @@ export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Pa
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
-      // Cleaner pay-gate: if no matching cleaner invoice is on file, confirm and retry.
-      if (res.status === 409 && payable.type === "cleaner") {
+      // Pay-gate: if no matching cleaner/vendor invoice is on file, confirm and retry.
+      if (res.status === 409) {
         const gate = await res.clone().json().catch(() => null)
-        if (gate?.code === "NO_MATCHING_CLEANER_INVOICE") {
+        if (
+          (payable.type === "cleaner" && gate?.code === "NO_MATCHING_CLEANER_INVOICE") ||
+          (payable.type === "vendor" && gate?.code === "NO_MATCHING_VENDOR_INVOICE")
+        ) {
+          const label = payable.type === "cleaner" ? "cleaner" : "vendor"
           const periods = Array.isArray(gate.periods) ? gate.periods.join(", ") : ""
-          if (!window.confirm(`No matching cleaner invoice on file${periods ? ` for ${periods}` : ""}. Pay anyway?`)) {
+          if (!window.confirm(`No matching ${label} invoice on file${periods ? ` for ${periods}` : ""}. Pay anyway?`)) {
             return
           }
           res = await fetch(url, {
@@ -373,7 +387,7 @@ export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Pa
         </button>
       </div>
 
-      {payable.type === "cleaner" && <CleanerInvoiceSection subcontractorId={payable.id} period={period} />}
+      <InvoiceIntakeSection payeeType={payable.type} payeeId={payable.id} period={period} />
 
       {payable.accounts.length > 0 ? (
         <>
