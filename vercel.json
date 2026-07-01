@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "npm test && prisma generate && next build",
+  "buildCommand": "npm run vercel-build",
   "installCommand": "npm install",
   "crons": [
     {
