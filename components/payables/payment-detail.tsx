@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import useSWR from "swr"
-import { Mail, Phone, AlertTriangle, Wallet, Send, Zap } from "lucide-react"
+import { Mail, Phone, AlertTriangle, Wallet, Send, Zap, Upload, FileText } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
 import type { Payable, PayableAccount, AccountStatus } from "./use-payables"
@@ -21,6 +21,22 @@ function isoToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
+const PDF_MAX_BYTES = 10 * 1024 * 1024
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (!bytes) return ""
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function validatePdf(file: File | null): file is File {
+  if (!file) return false
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+  if (!isPdf) { showError("Choose a PDF file"); return false }
+  if (file.size > PDF_MAX_BYTES) { showError("PDF must be 10 MB or smaller"); return false }
+  return true
+}
+
 /**
  * Mark-paid rail: check the accounts to pay (waiting ones are locked with the
  * reason), record date / method / reference / notes, then post to the existing
@@ -34,6 +50,8 @@ interface CleanerInvoiceRow {
   computedOwed: number
   reference: string | null
   status: "PENDING" | "MATCHED" | "MISMATCH" | "RESOLVED"
+  attachmentFileName: string | null
+  attachmentSize: number | null
 }
 
 /**
@@ -50,23 +68,55 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
   const [amount, setAmount] = useState("")
   const [reference, setReference] = useState("")
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const inputId = `cleaner-invoice-file-${subcontractorId}-${period}`
 
   const record = async () => {
     const claimedAmount = parseFloat(amount)
     if (!Number.isFinite(claimedAmount) || claimedAmount < 0) { showError("Enter a valid amount"); return }
     setSaving(true)
     try {
+      const body = new FormData()
+      body.set("period", period)
+      body.set("claimedAmount", String(claimedAmount))
+      if (reference.trim()) body.set("reference", reference.trim())
+      if (attachmentFile) body.set("file", attachmentFile)
       const res = await fetch(`/api/subcontractors/${subcontractorId}/cleaner-invoices`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ period, claimedAmount, reference: reference.trim() || null }),
+        body,
       })
       if (!res.ok) { await showApiError(res, "Failed to record invoice"); return }
       const { invoice } = await res.json()
       showSuccess(invoice.status === "MATCHED" ? "Invoice matches what we owe" : "Recorded — does NOT match what we owe")
-      setAmount(""); setReference(""); setOpen(false); mutate()
+      setAmount(""); setReference(""); setAttachmentFile(null); setOpen(false); mutate()
     } catch { showError("Failed to record invoice") } finally { setSaving(false) }
+  }
+
+  const chooseAttachment = (file: File | null) => {
+    if (validatePdf(file)) setAttachmentFile(file)
+  }
+
+  const uploadAttachment = async (file: File | null) => {
+    if (!latest || !validatePdf(file)) return
+    setUploading(true)
+    try {
+      const body = new FormData()
+      body.set("file", file)
+      const res = await fetch(`/api/subcontractors/${subcontractorId}/cleaner-invoices/${latest.id}/attachment`, {
+        method: "POST",
+        body,
+      })
+      if (!res.ok) { await showApiError(res, "Failed to attach PDF"); return }
+      showSuccess("Cleaner invoice PDF attached")
+      mutate()
+    } catch {
+      showError("Failed to attach PDF")
+    } finally {
+      setUploading(false)
+    }
   }
 
   const resolve = async () => {
@@ -97,6 +147,34 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
             Billed <strong>{formatCurrency(latest.claimedAmount)}</strong> · we owe <strong>{formatCurrency(latest.computedOwed)}</strong>
             {latest.reference ? ` · ${latest.reference}` : ""}
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {latest.attachmentFileName && (
+              <a
+                href={`/api/subcontractors/${subcontractorId}/cleaner-invoices/${latest.id}/attachment`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-600 hover:border-stone-300 hover:text-stone-900"
+              >
+                <FileText size={12} />
+                {latest.attachmentFileName}
+                {latest.attachmentSize ? <span className="font-normal text-stone-400">{formatBytes(latest.attachmentSize)}</span> : null}
+              </a>
+            )}
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-500 hover:border-stone-300 hover:text-stone-800">
+              <Upload size={12} />
+              {uploading ? "Uploading..." : latest.attachmentFileName ? "Replace PDF" : "Attach PDF"}
+              <input
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => {
+                  uploadAttachment(e.currentTarget.files?.[0] || null)
+                  e.currentTarget.value = ""
+                }}
+              />
+            </label>
+          </div>
         </div>
       ) : open ? (
         <div className="space-y-2">
@@ -104,6 +182,39 @@ function CleanerInvoiceSection({ subcontractorId, period }: { subcontractorId: s
             className="w-full rounded-md border border-stone-300 px-2 py-1.5 text-[13px] outline-none" autoFocus />
           <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Their invoice # (optional)"
             className="w-full rounded-md border border-stone-300 px-2 py-1.5 text-[13px] outline-none" />
+          <label
+            htmlFor={inputId}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragging(false)
+              chooseAttachment(e.dataTransfer.files?.[0] || null)
+            }}
+            className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 text-[12px]"
+            style={{ borderColor: dragging ? "#00A896" : "#D6D3D1", backgroundColor: dragging ? "#F0FDFA" : "#FAFAF9", color: "#57534E" }}
+          >
+            {attachmentFile ? <FileText size={14} /> : <Upload size={14} />}
+            <span className="min-w-0 flex-1 truncate">
+              {attachmentFile ? `${attachmentFile.name} ${formatBytes(attachmentFile.size)}` : "Drop cleaner invoice PDF or choose file"}
+            </span>
+            {attachmentFile && (
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); setAttachmentFile(null) }}
+                className="text-[11px] font-semibold text-stone-400 hover:text-stone-700"
+              >
+                Remove
+              </button>
+            )}
+            <input
+              id={inputId}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="hidden"
+              onChange={(e) => chooseAttachment(e.currentTarget.files?.[0] || null)}
+            />
+          </label>
           <div className="flex gap-2">
             <button onClick={record} disabled={saving} className="rounded-md px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundColor: "#00A896" }}>Record</button>
             <button onClick={() => setOpen(false)} className="rounded-md border border-stone-300 px-3 py-1.5 text-[12px] text-stone-600">Cancel</button>

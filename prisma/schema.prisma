@@ -154,6 +154,10 @@ model CleanerInvoice {
   reference       String?   // the cleaner's invoice number/reference
   notes           String?
   status          String    @default("PENDING") // PENDING | MATCHED | MISMATCH | RESOLVED
+  attachmentFileName String?
+  attachmentMimeType String?
+  attachmentSize Int?
+  attachmentData Bytes?
   receivedAt      DateTime  @default(now())
   resolvedAt      DateTime?
   createdAt       DateTime  @default(now())

@@ -1,0 +1,17 @@
+export const cleanerInvoiceResponseSelect = {
+  id: true,
+  subcontractorId: true,
+  period: true,
+  claimedAmount: true,
+  computedOwed: true,
+  reference: true,
+  notes: true,
+  status: true,
+  attachmentFileName: true,
+  attachmentMimeType: true,
+  attachmentSize: true,
+  receivedAt: true,
+  resolvedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const

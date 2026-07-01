@@ -10,6 +10,10 @@ import { resetDb } from './db-helpers'
 import { computeOwedForCleanerPeriod } from '@/lib/cleaner-invoice'
 import { POST as recordInvoice } from '@/app/api/subcontractors/[id]/cleaner-invoices/route'
 import { POST as resolveInvoice } from '@/app/api/subcontractors/[id]/cleaner-invoices/[invoiceId]/resolve/route'
+import {
+  GET as downloadInvoiceAttachment,
+  POST as uploadInvoiceAttachment,
+} from '@/app/api/subcontractors/[id]/cleaner-invoices/[invoiceId]/attachment/route'
 import { POST as paySubcontractor } from '@/app/api/subcontractors/[id]/payments/route'
 
 const pay = (id: string, body: unknown) =>
@@ -81,6 +85,22 @@ const post = (id: string, body: unknown) =>
     { params: { id } },
   )
 
+function pdfFile(name = 'cleaner-invoice.pdf') {
+  return new File(['%PDF-1.4\ncleaner invoice'], name, { type: 'application/pdf' })
+}
+
+const postWithPdf = (id: string, file = pdfFile()) => {
+  const form = new FormData()
+  form.set('period', testPeriod)
+  form.set('claimedAmount', '400')
+  form.set('reference', 'INV-PDF')
+  form.set('file', file)
+  return recordInvoice(
+    new Request('http://test', { method: 'POST', body: form }),
+    { params: { id } },
+  )
+}
+
 describe('cleaner invoice reconciliation', () => {
   it('computes what we owe a cleaner for a period from the shared ledger', async () => {
     const { sub } = await seedCleanerWithOwed()
@@ -100,6 +120,43 @@ describe('cleaner invoice reconciliation', () => {
     expect(invoice.status).toBe('MATCHED')
     expect(invoice.computedOwed).toBe(400)
     expect(invoice.claimedAmount).toBe(400)
+  })
+
+  it('records a cleaner invoice PDF and serves it without leaking bytes in JSON', async () => {
+    const { sub } = await seedCleanerWithOwed()
+    const res = await postWithPdf(sub.id, pdfFile('sam-july.pdf'))
+    expect(res.status).toBe(200)
+    const { invoice } = await res.json()
+    expect(invoice.status).toBe('MATCHED')
+    expect(invoice.attachmentFileName).toBe('sam-july.pdf')
+    expect(invoice.attachmentSize).toBeGreaterThan(0)
+    expect(invoice.attachmentData).toBeUndefined()
+
+    const downloaded = await downloadInvoiceAttachment(
+      new Request('http://test'),
+      { params: { id: sub.id, invoiceId: invoice.id } },
+    )
+    expect(downloaded.status).toBe(200)
+    expect(downloaded.headers.get('content-type')).toContain('application/pdf')
+    expect(Buffer.from(await downloaded.arrayBuffer()).toString('utf8')).toContain('%PDF-1.4')
+  })
+
+  it('attaches a cleaner invoice PDF after the invoice record exists', async () => {
+    const { sub } = await seedCleanerWithOwed()
+    const created = await post(sub.id, { period: testPeriod, claimedAmount: 400 })
+    const { invoice } = await created.json()
+    expect(invoice.attachmentFileName).toBeNull()
+
+    const form = new FormData()
+    form.set('file', pdfFile('later.pdf'))
+    const attached = await uploadInvoiceAttachment(
+      new Request('http://test', { method: 'POST', body: form }),
+      { params: { id: sub.id, invoiceId: invoice.id } },
+    )
+    expect(attached.status).toBe(200)
+    const body = await attached.json()
+    expect(body.invoice.attachmentFileName).toBe('later.pdf')
+    expect(body.invoice.attachmentData).toBeUndefined()
   })
 
   it('records a differing invoice as MISMATCH, then resolves it', async () => {
