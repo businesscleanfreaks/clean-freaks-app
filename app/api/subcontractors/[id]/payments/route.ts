@@ -66,7 +66,12 @@ export async function POST(
         subcontractorId: resolvedParams.id,
         subcontractorPaid: false,
       },
-      select: { id: true, subcontractorRate: true },
+      select: {
+        id: true,
+        subcontractorRate: true,
+        createdAt: true,
+        job: { select: { date: true } },
+      },
     })
 
     if (jobs.length === 0 && assignedAddOns.length === 0) {
@@ -97,7 +102,10 @@ export async function POST(
     // Pay-gate (Josh's rule): don't pay a cleaner for a month unless they've sent
     // us an invoice that matches what we owe (MATCHED) or a human has RESOLVED a
     // mismatch. Grace can still pay by passing confirmNoInvoice after reviewing.
-    const periodsBeingPaid = Array.from(new Set(jobs.map(j => format(new Date(j.date), 'yyyy-MM'))))
+    const periodsBeingPaid = Array.from(new Set([
+      ...jobs.map(j => format(new Date(j.date), 'yyyy-MM')),
+      ...assignedAddOns.map(a => format(new Date(a.job?.date || a.createdAt), 'yyyy-MM')),
+    ]))
     if (periodsBeingPaid.length > 0 && body.confirmNoInvoice !== true) {
       const matching = await prisma.cleanerInvoice.findMany({
         where: {

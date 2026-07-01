@@ -10,14 +10,23 @@ import { groupInvoiceLineItems } from "@/lib/invoice-grouping"
 
 interface PublicInvoiceViewProps {
   invoice: InvoiceWithRelations
+  token: string
 }
 
-export function PublicInvoiceView({ invoice }: PublicInvoiceViewProps) {
+export function PublicInvoiceView({ invoice, token }: PublicInvoiceViewProps) {
   const [showAllDetails, setShowAllDetails] = useState(false)
 
   const handleDownloadPDF = () => {
     if (invoice.pdfUrl) {
-      window.open(invoice.pdfUrl, '_blank')
+      try {
+        const url = new URL(invoice.pdfUrl, window.location.origin)
+        if (url.pathname === `/api/invoices/${invoice.id}/generate-pdf`) {
+          url.searchParams.set('token', token)
+        }
+        window.open(url.toString(), '_blank')
+      } catch {
+        window.open(`/api/invoices/${invoice.id}/generate-pdf?token=${encodeURIComponent(token)}`, '_blank')
+      }
     }
   }
 

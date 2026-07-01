@@ -40,17 +40,39 @@ export async function computeOwedForCleanerPeriod(
   period: string,
 ): Promise<number> {
   const { start, end } = periodRange(period)
-  const jobs = await db.job.findMany({
-    where: {
-      subcontractorId,
-      status: { not: 'CANCELLED' },
-      date: { gte: start, lte: end },
-    },
-    include: {
-      location: { include: { client: true } },
-      schedule: true,
-      addOnServices: true,
-    },
-  })
-  return buildSubcontractorPayLedger(jobs as unknown as PayLedgerJob[]).totalOwed
+  const [jobs, assignedAddOns] = await Promise.all([
+    db.job.findMany({
+      where: {
+        subcontractorId,
+        status: { not: 'CANCELLED' },
+        date: { gte: start, lte: end },
+      },
+      include: {
+        location: { include: { client: true } },
+        schedule: true,
+        addOnServices: true,
+      },
+    }),
+    db.addOnService.findMany({
+      where: {
+        subcontractorId,
+        subcontractorPaid: false,
+        OR: [
+          { job: { date: { gte: start, lte: end } } },
+          { jobId: null, createdAt: { gte: start, lte: end } },
+        ],
+      },
+      select: {
+        subcontractorRate: true,
+        job: { select: { subcontractorId: true } },
+        schedule: { select: { subcontractorId: true } },
+      },
+    }),
+  ])
+  const jobOwed = buildSubcontractorPayLedger(jobs as unknown as PayLedgerJob[]).totalOwed
+  const assignedAddOnOwed = assignedAddOns.reduce((sum, addOn) => {
+    const owner = addOn.job?.subcontractorId ?? addOn.schedule?.subcontractorId ?? null
+    return owner === subcontractorId ? sum : sum + addOn.subcontractorRate
+  }, 0)
+  return jobOwed + assignedAddOnOwed
 }

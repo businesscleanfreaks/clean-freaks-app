@@ -56,6 +56,5 @@ export default async function PublicInvoicePage({
     notFound() // Invoice not found
   }
 
-  return <PublicInvoiceView invoice={invoice as unknown as InvoiceWithRelations} />
+  return <PublicInvoiceView invoice={invoice as unknown as InvoiceWithRelations} token={resolvedParams.token} />
 }
-
