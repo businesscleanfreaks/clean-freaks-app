@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { markInvoicePaid } from '@/lib/mark-invoice-paid'
 import { normalizeSenderName } from '@/lib/payment-matching'
+import { paymentMethodFromSnippet, paymentSourceLabelFromSnippet } from '@/lib/payment-email-parse'
 
 export interface AutoConfirmResult {
   applied: number
@@ -42,11 +43,12 @@ export async function autoConfirmHighConfidenceMatches(
         return 'skipped' as const
       }
 
+      const sourceLabel = paymentSourceLabelFromSnippet(match.rawSnippet)
       const paid = await markInvoicePaid(tx, match.matchedInvoiceId, {
-        method: 'ZELLE',
+        method: paymentMethodFromSnippet(match.rawSnippet),
         confirmationNumber: match.confirmationNumber,
         receivedAt: match.receivedAt,
-        notes: `Auto-confirmed Zelle payment from ${match.senderName}`,
+        notes: `Auto-confirmed ${sourceLabel} payment from ${match.senderName}`,
       })
 
       if (paid.status !== 'PAID') return 'skipped' as const

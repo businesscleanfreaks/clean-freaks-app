@@ -486,7 +486,7 @@ model EmailSettings {
   testEmail             String?  // where "Send test" goes
   enableSending         Boolean  @default(false) // master switch
   allowRealClientEmails Boolean  @default(false) // safety: allow sending to real clients
-  enableInboxSync       Boolean  @default(false) // opt-in: read the Gmail inbox over IMAP to detect Zelle payments
+  enableInboxSync       Boolean  @default(false) // opt-in: read the Gmail inbox over IMAP to detect payment notices
   autoConfirmHighConfidencePayments Boolean @default(false) // opt-in: auto-apply HIGH-confidence payment matches
   lastInboxUid          String?  // IMAP watermark — highest UID processed by the payment scan
   createdAt             DateTime @default(now())
@@ -495,12 +495,12 @@ model EmailSettings {
   @@map("email_settings")
 }
 
-// A detected inbound payment (parsed from a Zelle/bank notification email) awaiting
+// A detected inbound payment (parsed from a Zelle/processor notification email) awaiting
 // reconciliation to an invoice. Phase 1 = review-only; a human confirms each one.
 model PaymentMatch {
   id                 String   @id @default(uuid())
   messageId          String   @unique // email Message-ID (or IMAP UID) — primary idempotency key
-  confirmationNumber String?  @unique // Zelle/bank confirmation # — secondary idempotency key
+  confirmationNumber String?  @unique // Payment confirmation/reference # — secondary idempotency key
   senderName         String   // raw payer name as it appeared in the notification
   amount             Float
   sentAt             DateTime? // when the payer says the payment was sent, if parseable

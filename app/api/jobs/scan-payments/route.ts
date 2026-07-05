@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 /**
  * POST /api/jobs/scan-payments
  *
- * Reads new INBOX mail over IMAP, detects Zelle/bank payment notifications, and
+ * Reads new INBOX mail over IMAP, detects Zelle/processor payment notifications, and
  * stores them as NEEDS_REVIEW PaymentMatch rows scored against open invoices.
  * Review-only — never marks an invoice paid (that's the human Confirm action).
  * Gated by CRON_SECRET and the `enableInboxSync` email setting (default off).

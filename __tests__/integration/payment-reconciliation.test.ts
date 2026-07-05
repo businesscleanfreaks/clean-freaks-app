@@ -97,6 +97,47 @@ describe('payment reconciliation', () => {
     expect(await jobIsPayable(job.id)).toBe(true)
   })
 
+  it('ingests a QuickBooks payment email through the same review flow', async () => {
+    const { job, invoice } = await seedSentInvoiceWithGatedCleaner()
+
+    const ingest = await ingestMessages(prisma, [msg({
+      messageId: 'm-qb',
+      from: 'quickbooks@notification.intuit.com',
+      subject: 'Payment received from ACME PAYMENTS',
+      text: [
+        'QuickBooks Payments',
+        'Payment received from ACME PAYMENTS for invoice INV-TEST-0001.',
+        'Payment amount: $420.00',
+        'Payment date: July 3, 2026',
+        'Payment ID: QBPMT123456',
+      ].join('\n'),
+    })])
+    expect(ingest.created).toBe(1)
+
+    await runMatchPass(prisma)
+    const match = await prisma.paymentMatch.findFirstOrThrow({ where: { messageId: 'm-qb' } })
+    expect(match.senderName).toBe('ACME PAYMENTS')
+    expect(match.amount).toBe(420)
+    expect(match.confirmationNumber).toBe('QUICKBOOKS:QBPMT123456')
+    expect(match.rawSnippet).toContain('Source: QUICKBOOKS')
+    expect(match.matchedInvoiceId).toBe(invoice.id)
+
+    expect(await jobIsPayable(job.id)).toBe(false)
+
+    const res = await confirmPayment(
+      new Request('http://test', { method: 'POST', body: JSON.stringify({ invoiceId: invoice.id }) }),
+      { params: { id: match.id } },
+    )
+    expect(res.status).toBe(200)
+
+    const paid = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
+    expect(paid.status).toBe('PAID')
+    expect(paid.paymentMethod).toBe('QUICKBOOKS')
+    expect(paid.paymentTransactionId).toBe('QUICKBOOKS:QBPMT123456')
+    expect(paid.paymentNotes).toBe('QuickBooks payment from ACME PAYMENTS')
+    expect(await jobIsPayable(job.id)).toBe(true)
+  })
+
   it('is idempotent: re-ingesting the same message creates nothing', async () => {
     await seedSentInvoiceWithGatedCleaner()
     const first = await ingestMessages(prisma, [msg({})])

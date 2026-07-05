@@ -5,7 +5,7 @@
  */
 import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
-import { parseZelleNotification } from '@/lib/zelle-parse'
+import { parsePaymentNotification } from '@/lib/payment-email-parse'
 import { scoreMatch } from '@/lib/payment-matching'
 
 type DbClient = typeof prisma | Prisma.TransactionClient
@@ -47,7 +47,7 @@ export async function ingestMessages(
     const seen = await db.paymentMatch.findUnique({ where: { messageId: msg.messageId } })
     if (seen) { skipped++; continue }
 
-    const parsed = parseZelleNotification(msg.subject, msg.text || stripHtml(msg.html))
+    const parsed = parsePaymentNotification(msg.subject, msg.text || stripHtml(msg.html))
     if (!parsed) { skipped++; continue }
 
     if (parsed.confirmationNumber) {
@@ -65,8 +65,12 @@ export async function ingestMessages(
         amount: parsed.amount,
         sentAt: parsed.sentAt,
         receivedAt: msg.receivedAt,
-        // The memo usually names the client/invoice — show it to the reviewer.
-        rawSnippet: (parsed.memo ? `Memo: ${parsed.memo}` : (msg.text || stripHtml(msg.html) || msg.subject || '')).slice(0, 280),
+        // The memo usually names the client/invoice; show it to the reviewer.
+        rawSnippet: (
+          parsed.memo
+            ? `Source: ${parsed.source}. Memo: ${parsed.memo}`
+            : `Source: ${parsed.source}. ${msg.text || stripHtml(msg.html) || msg.subject || ''}`
+        ).slice(0, 280),
         status: 'NEEDS_REVIEW',
       },
     })

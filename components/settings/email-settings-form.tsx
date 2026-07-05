@@ -323,7 +323,7 @@ export function EmailSettingsForm() {
               <div>
                 <p className="text-[14px] font-semibold text-slate-800">Read payment notifications</p>
                 <p className="text-[12px] text-zinc-500">
-                  Uses the Gmail login and App Password above to scan recent inbox mail for Zelle payment notices.
+                  Uses the Gmail login and App Password above to scan recent inbox mail for Zelle and processor payment notices.
                 </p>
               </div>
               <Switch checked={enableInboxSync} onChange={setEnableInboxSync} disabled={provider !== "gmail"} />

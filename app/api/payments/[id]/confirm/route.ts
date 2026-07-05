@@ -6,6 +6,7 @@ import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { markInvoicePaid } from '@/lib/mark-invoice-paid'
 import { normalizeSenderName } from '@/lib/payment-matching'
+import { paymentMethodFromSnippet, paymentSourceLabelFromSnippet } from '@/lib/payment-email-parse'
 
 /**
  * POST /api/payments/[id]/confirm  { invoiceId }
@@ -41,11 +42,12 @@ export async function POST(
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
 
     const result = await prisma.$transaction(async (tx) => {
+      const sourceLabel = paymentSourceLabelFromSnippet(match.rawSnippet)
       const paid = await markInvoicePaid(tx, invoiceId, {
-        method: 'ZELLE',
+        method: paymentMethodFromSnippet(match.rawSnippet),
         confirmationNumber: match.confirmationNumber,
         receivedAt: match.receivedAt,
-        notes: `Zelle payment from ${match.senderName}`,
+        notes: `${sourceLabel} payment from ${match.senderName}`,
       })
       if (paid.status === 'ALREADY_PAID') return { conflict: true as const }
       if (paid.status === 'NOT_FOUND') return { notFound: true as const }

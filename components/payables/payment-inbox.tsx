@@ -128,7 +128,7 @@ export function PaymentInbox() {
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-stone-300 bg-white py-20 text-center">
             <Inbox className="h-7 w-7 text-stone-300" />
             <p className="mt-3 text-[14px] font-medium text-stone-600">No payments to review</p>
-            <p className="mt-1 text-[12px] text-stone-400">Detected Zelle payments will show up here.</p>
+            <p className="mt-1 text-[12px] text-stone-400">Detected Zelle and processor payments will show up here.</p>
           </div>
         ) : (
           <div className="space-y-3">
