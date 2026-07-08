@@ -20,6 +20,16 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+function constantTimeEqualHex(actual: string, expected: string): boolean {
+  const maxLength = Math.max(actual.length, expected.length)
+  let mismatch = actual.length ^ expected.length
+
+  for (let i = 0; i < maxLength; i++) {
+    mismatch |= (actual.charCodeAt(i) || 0) ^ (expected.charCodeAt(i) || 0)
+  }
+
+  return mismatch === 0
+}
 
 // HMAC-SHA256 using Web Crypto API (Edge Runtime compatible)
 async function hmacSha256(secret: string, data: string): Promise<string> {
@@ -61,7 +71,7 @@ async function verifySessionToken(token: string): Promise<boolean> {
     
     // Verify HMAC signature using Web Crypto API
     const expectedSignature = await hmacSha256(secret, data)
-    if (signature !== expectedSignature) return false
+    if (!constantTimeEqualHex(signature, expectedSignature)) return false
     
     // Check expiration
     const dataParts = data.split('::')

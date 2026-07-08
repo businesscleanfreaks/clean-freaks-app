@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "vercel-build": "npm test && tsx scripts/vercel-migrate-deploy.ts && prisma generate && next build",
+    "vercel-build": "npm run verify && tsx scripts/vercel-migrate-deploy.ts && prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "prisma:generate": "prisma generate",
@@ -13,6 +13,8 @@
     "prisma:studio": "prisma studio",
     "create-admin": "tsx scripts/create-admin-user.ts",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm test && npm run typecheck && npm run lint",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .gitignore"
   },

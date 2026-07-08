@@ -92,6 +92,7 @@ Required or commonly used variables:
 | `SESSION_SECRET` | Signs the custom auth cookie. Must be stable and secret. |
 | `NEXT_PUBLIC_BASE_URL` / app URL values | Public app base URL for invoice links and callbacks. |
 | `CRON_SECRET` | Used by cron endpoints when protected. |
+| `ERROR_ALERT_WEBHOOK_URL` / `SLACK_WEBHOOK_URL` | Optional operational alert webhook. Cron failures and scheduled-send partial failures post here when configured. |
 | Gmail / SMTP / Resend values | Some email settings are env-backed, but the app also stores email settings in the database. See Settings and `EmailSettings`. |
 
 The app also has `lib/env-validation.ts`. That file checks several email/SMTP variables. The current product flow also uses database-backed email settings, so treat env validation as a safety net, not the full email source of truth.
@@ -120,6 +121,36 @@ Meaning:
 
 Serverless caveat: Vercel functions do not run persistent background workers. If something must happen reliably in production, put it in an API route called by the UI or a Vercel Cron route. Do not rely on `setInterval`, dev server startup behavior, or long-running background state.
 
+Operational alerts:
+
+- `lib/error-alerting.ts` posts cron failures to `ERROR_ALERT_WEBHOOK_URL` or `SLACK_WEBHOOK_URL` when one is configured.
+- Current alerting coverage: `auto-complete`, `auto-generate`, `send-scheduled`, and `scan-payments`.
+- `send-scheduled` also alerts when the cron completes but one or more individual invoice sends fail.
+
+## 4.1 Backup And Restore Runbook
+
+The production database is the system of record for schedules, invoices, payment history, email settings, and cleaner/vendor invoice intake.
+
+Required production posture:
+
+1. Confirm the Supabase project plan has automated backups enabled. Prefer PITR if available on the plan.
+2. Confirm backup retention is at least 7 days.
+3. Once per quarter, perform a test restore to a scratch Supabase project or scratch Postgres database.
+4. Document the restore date, backup timestamp, target database, and verification notes in the operational handoff outside the repo.
+
+Minimum restore test:
+
+1. Create a scratch database that is not connected to Vercel production.
+2. Restore a recent Supabase backup into the scratch database.
+3. Point a local checkout at the scratch database with `DATABASE_URL`.
+4. Run `npx prisma migrate status` and `npx prisma generate`.
+5. Start the app locally and spot-check: login, clients, calendar, invoices, payables, settings.
+6. Confirm row counts for core tables: `clients`, `jobs`, `invoices`, `subcontractor_payments`, `vendor_payments`, `payment_matches`.
+
+Optional second copy:
+
+- Schedule a `pg_dump` export to storage outside Supabase for defense in depth. Keep credentials out of the repo and rotate them if shared.
+
 ## 5. Directory Map
 
 ```text
@@ -127,7 +158,7 @@ app/
   api/                  Next route handlers. Most business mutations live here.
   calendar/             Calendar page shell.
   clients/              Client list, new client, and client detail pages.
-  invoices/             Current invoicing workspace and classic invoice page.
+  invoices/             Current invoicing workspace; legacy classic route redirects to `/invoices`.
   payables/             Consolidated cleaners + vendors workspace (payment tracking, profiles, history).
   settings/             Email/settings UI.
 
@@ -135,7 +166,7 @@ components/
   calendar/             Calendar UI, job detail dialog, job mutations.
   clients/              Client list/detail, forms, schedule/location UI.
   dashboard/            Dashboard cards/lists.
-  invoices/             Invoice workspace, classic invoice UI, PDF components.
+  invoices/             Invoice workspace and PDF components.
   payables/             Consolidated cleaner + vendor payables UI.
   ui/                   Shared UI primitives.
 
@@ -158,11 +189,10 @@ prisma/
 
 scripts/
   sync-source-of-truth.ts
-  fix-data-accuracy.ts
-  fix-claude-checklist.ts
   backfill-vendors.ts
   backfill-schedule-pay-type.ts
   create-admin-user.ts
+  archive/              Old one-off incident repair scripts. Reference only; do not run without re-auditing.
 
 docs/
   v1.3-testing-checklist.md
@@ -180,7 +210,8 @@ Some old components are still in the repository. These are the currently relevan
 | `/clients` | `app/clients/page.tsx` | `components/clients/clients-client.tsx` / page wrapper | Client list and add-client entry. |
 | `/clients/[id]` | `app/clients/[id]/page.tsx` | `components/clients/client-detail-client.tsx` | Client profile/cockpit/detail experience. |
 | `/invoices` | `app/invoices/page.tsx` | `components/invoices/workspace/invoicing-workspace.tsx` | Current redesigned invoice workspace. |
-| `/invoices/classic` | `app/invoices/classic/page.tsx` | Classic invoice UI | Kept during rollout. Do not assume it is primary. |
+| `/invoices/classic` | `app/invoices/classic/page.tsx` | Redirect | Legacy route now redirects to `/invoices`. |
+| `/schedule` | `app/schedule/page.tsx` | Redirect | Legacy route now redirects to `/calendar`. |
 | `/payables` | `app/payables/page.tsx` | `components/payables/payables-workspace.tsx` | **Single consolidated home for cleaners + vendors** (payment tracking, profiles, history). Replaced the old `/subcontractors` and `/vendors` pages, which were removed 2026-06-19. |
 | `/settings` | `app/settings/page.tsx` | Settings components | Email and app settings. |
 
@@ -462,7 +493,7 @@ components/invoices/use-quick-invoice.ts
 components/invoices/invoice-pdf.tsx
 ```
 
-Classic invoice components still exist:
+Legacy invoice components may still exist in the repository for reference, but `/invoices/classic` redirects to the current workspace:
 
 ```text
 app/invoices/classic/page.tsx
@@ -470,7 +501,7 @@ components/invoices/invoices-page-client.tsx
 components/invoices/invoices-client.tsx
 ```
 
-Do not assume the classic page is the current product surface.
+Do not restyle or extend the classic components during the UI phase.
 
 ### Candidate Generation
 

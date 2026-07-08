@@ -1891,7 +1891,6 @@ export function AddClientWizard({
 
   // Legacy alternate layout — unreachable after the createPortal return above. Kept as dead code to avoid
   // a large surgical removal; intentionally unused.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _legacyRender = (
     <div
       style={{

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { ensureJobsForDateRange } from '@/lib/regenerate-schedule-jobs'
 import { logger } from '@/lib/logger'
 import { authorizeCron } from '@/lib/cron-auth'
+import { alertOperationalIssue } from '@/lib/error-alerting'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     logger.error('Error in nightly auto-generate reconcile:', error)
+    await alertOperationalIssue('cron:auto-generate failed', error)
     const errorMessage = error instanceof Error ? error.message : 'Failed to auto-generate jobs'
     return NextResponse.json({ error: errorMessage }, { status: 500 })
   }

@@ -9,6 +9,7 @@ import { logger } from '@/lib/logger'
 import { generateInvoiceToken } from '@/lib/invoice-tokens'
 import { getBaseUrl } from '@/lib/url'
 import { authorizeCron } from '@/lib/cron-auth'
+import { alertOperationalIssue } from '@/lib/error-alerting'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -143,9 +144,17 @@ async function handle(request: Request) {
   try {
     const summary = await processDueInvoices()
     logger.info('[cron:send-scheduled] run complete', summary)
+    if (summary.failed > 0) {
+      await alertOperationalIssue(
+        'cron:send-scheduled had invoice send failures',
+        new Error(`${summary.failed} scheduled invoice send(s) failed`),
+        { details: { summary }, severity: 'warning' },
+      )
+    }
     return NextResponse.json({ success: true, ...summary })
   } catch (error) {
     logger.error('[cron:send-scheduled] run failed', error)
+    await alertOperationalIssue('cron:send-scheduled failed', error)
     return NextResponse.json({ error: 'Cron run failed' }, { status: 500 })
   }
 }

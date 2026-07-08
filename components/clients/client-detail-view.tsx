@@ -780,7 +780,7 @@ function HistoryTab({ state }: { state: ClientDetailState }) {
       </div>
       <div className="px-5 pb-4">
         {events.length === 0 ? (
-          <p className="text-sm text-slate-500 py-4">No history yet. Once you send invoices or jobs run, they'll show up here.</p>
+          <p className="text-sm text-slate-500 py-4">No history yet. Once you send invoices or jobs run, they&apos;ll show up here.</p>
         ) : (
           <div className="space-y-3">
             {groups.slice(0, 30).map(g => <HistoryDay key={g.key} date={g.date} events={g.events} />)}

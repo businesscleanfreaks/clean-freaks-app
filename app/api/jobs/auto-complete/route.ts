@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { authorizeCron } from '@/lib/cron-auth'
+import { alertOperationalIssue } from '@/lib/error-alerting'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     logger.error('Error auto-completing jobs:', error)
+    await alertOperationalIssue('cron:auto-complete failed', error)
     const errorMessage = error instanceof Error ? error.message : 'Failed to auto-complete jobs'
     return NextResponse.json(
       { error: errorMessage },

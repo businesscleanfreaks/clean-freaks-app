@@ -6,6 +6,7 @@ import { getEmailSettingsRow } from '@/lib/email-settings'
 import { fetchRecentInbox } from '@/lib/imap-inbox'
 import { ingestMessages, runMatchPass } from '@/lib/payment-ingest'
 import { autoConfirmHighConfidenceMatches } from '@/lib/payment-auto-confirm'
+import { alertOperationalIssue } from '@/lib/error-alerting'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     logger.error('[scan-payments] failed:', error)
+    await alertOperationalIssue('cron:scan-payments failed', error)
     return NextResponse.json({ error: 'Failed to scan payments' }, { status: 500 })
   }
 }

@@ -28,6 +28,7 @@
     "node_modules",
     "backups",
     "**/backups/**",
+    "scripts/archive/**",
     "Emergency-Backups",
     "**/Emergency-Backups/**",
     "**/*-OLD.tsx",

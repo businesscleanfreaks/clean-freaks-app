@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
-import Link from "next/link"
 import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
@@ -174,7 +173,6 @@ export function InvoicingWorkspace() {
           className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 px-2.5 py-1.5 text-[12px] font-medium text-stone-600 transition-colors hover:bg-stone-50">
           <Settings size={13} /> Template
         </button>
-        <Link href="/invoices/classic" className="text-[11px] text-stone-400 hover:text-stone-600" title="The previous invoices view">Classic view</Link>
       </div>
 
       {/* ── Three columns ── */}
@@ -633,4 +631,3 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
     </div>
   )
 }
-
