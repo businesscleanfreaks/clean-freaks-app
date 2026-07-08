@@ -91,7 +91,8 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/api/cron/') ||
     pathname === '/api/jobs/auto-complete' ||
-    pathname === '/api/jobs/auto-generate'
+    pathname === '/api/jobs/auto-generate' ||
+    pathname === '/api/jobs/scan-payments'
   ) {
     return NextResponse.next()
   }

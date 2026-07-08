@@ -106,7 +106,8 @@ Current cron jobs:
 [
   { "path": "/api/jobs/auto-complete", "schedule": "0 5 * * *" },
   { "path": "/api/jobs/auto-generate", "schedule": "0 6 * * *" },
-  { "path": "/api/cron/send-scheduled", "schedule": "0 * * * *" }
+  { "path": "/api/cron/send-scheduled", "schedule": "0 * * * *" },
+  { "path": "/api/jobs/scan-payments", "schedule": "*/15 * * * *" }
 ]
 ```
 
@@ -115,6 +116,7 @@ Meaning:
 - `auto-complete`: marks past scheduled jobs complete or otherwise advances completion assumptions.
 - `auto-generate`: ensures future jobs exist from recurring schedules.
 - `send-scheduled`: sends invoices scheduled for later.
+- `scan-payments`: reads the configured inbox for payment notifications when inbox sync is enabled.
 
 Serverless caveat: Vercel functions do not run persistent background workers. If something must happen reliably in production, put it in an API route called by the UI or a Vercel Cron route. Do not rely on `setInterval`, dev server startup behavior, or long-running background state.
 
