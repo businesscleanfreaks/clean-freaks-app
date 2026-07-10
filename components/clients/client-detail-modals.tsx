@@ -12,12 +12,14 @@ import { TimePicker } from "@/components/ui/time-picker"
 import { ClientInvoiceModal } from "./client-invoice-modal"
 import type { ScheduleForModal } from "./client-detail-types"
 import type { ClientDetailState } from "./use-client-detail"
+import { getScheduleFrequencyLabel } from "./client-detail-helpers"
 
 interface ClientDetailModalsProps {
   state: ClientDetailState
+  onOpenRecurringSchedule: (locationId: string) => void
 }
 
-export function ClientDetailModals({ state }: ClientDetailModalsProps) {
+export function ClientDetailModals({ state, onOpenRecurringSchedule }: ClientDetailModalsProps) {
   const {
     client,
     subcontractors,
@@ -90,7 +92,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                   <Plus className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Add Add-on</h2>
+                  <h2 className="text-lg font-bold text-white">Add service</h2>
                   <p className="text-sm text-white/85">{client.name}</p>
                 </div>
               </div>
@@ -103,6 +105,32 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
               </button>
             </div>
             <div className="p-4 space-y-2">
+              {client.locations.length > 0 && (
+                <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <CalendarPlus className="mt-0.5 h-5 w-5 flex-shrink-0 text-teal-600" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-900">Recurring clean</p>
+                      <p className="mt-0.5 text-xs text-gray-500">Weekly, every 2/3/4/6 weeks, or monthly</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {client.locations.map((location) => (
+                          <button
+                            key={location.id}
+                            type="button"
+                            onClick={() => {
+                              setShowAdditionalServiceChoice(false)
+                              onOpenRecurringSchedule(location.id)
+                            }}
+                            className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 hover:bg-teal-100"
+                          >
+                            {client.locations.length === 1 ? 'Create schedule' : location.name || location.address?.split(',')[0] || 'Location'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               <button
                 onClick={() => {
                   setShowAdditionalServiceChoice(false)
@@ -225,10 +253,7 @@ export function ClientDetailModals({ state }: ClientDetailModalsProps) {
                     >
                       <div className="font-medium text-gray-900">{sch.locationName}</div>
                       <div className="text-sm text-gray-500">
-                        {sch.frequency === 'WEEKLY' ? 'Weekly' :
-                          sch.frequency === 'BI_WEEKLY' ? 'Bi-Weekly' :
-                            sch.frequency === 'MONTHLY' ? 'Monthly' :
-                              sch.frequency === '2X_MONTHLY' ? '2x Monthly' : sch.frequency}
+                        {getScheduleFrequencyLabel(sch.frequency)}
                         {sch.startTime && ` • ${sch.startTime}`}
                         {sch.subcontractor?.name && ` • ${sch.subcontractor.name}`}
                       </div>

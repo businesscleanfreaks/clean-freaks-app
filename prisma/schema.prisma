@@ -778,6 +778,7 @@ model BusinessSettings {
   defaultPaymentTerms  String   @default("NET_30")
   autoGenerateInvoices Boolean   @default(true)
   billingStartDate     DateTime?
+  projectedExpenses    Json?    // Dashboard monthly expense assumptions by category
   updatedAt            DateTime  @updatedAt
 
   @@map("business_settings")

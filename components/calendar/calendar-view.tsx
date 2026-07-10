@@ -98,10 +98,10 @@ function SearchSelect({
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => { setOpen(o => !o); setQuery('') }}
-        className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+        className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
           isActive
-            ? 'border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100'
-            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+            ? 'border-[var(--cf-green-rule)] bg-[var(--cf-green-soft)] text-[var(--cf-green)] hover:bg-[var(--cf-green-soft-hover)]'
+            : 'border-[var(--cf-rule)] bg-white text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]'
         }`}
       >
         {selectedOption?.hex && (
@@ -120,9 +120,9 @@ function SearchSelect({
             left: 0,
             marginTop: 4,
             background: '#fff',
-            border: '1px solid #E2E8F0',
+            border: '1px solid #E6E0D4',
             borderRadius: 8,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+            boxShadow: '0 14px 36px rgba(40,30,10,0.14)',
             width: 240,
             zIndex: 50,
             overflow: 'hidden',
@@ -134,7 +134,7 @@ function SearchSelect({
               onChange={e => setQuery(e.target.value)}
               placeholder="Search..."
               autoFocus
-              style={{ width: '100%', padding: '5px 8px', borderRadius: 5, border: '1px solid #E2E8F0', fontSize: 11, outline: 'none', background: '#F8FAFC' }}
+              style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #E6E0D4', fontSize: 11, outline: 'none', background: '#FAF8F3' }}
             />
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto' }}>
@@ -143,8 +143,8 @@ function SearchSelect({
               style={{
                 display: 'flex', alignItems: 'center', width: '100%', padding: '7px 12px',
                 fontSize: 12, fontWeight: !selectedOption ? 600 : 400,
-                color: !selectedOption ? '#0D9488' : '#0F172A',
-                background: !selectedOption ? '#F0FDFA' : 'transparent',
+                color: !selectedOption ? '#0B7A4E' : '#1A1A1A',
+                background: !selectedOption ? '#EEF6F1' : 'transparent',
                 border: 'none', cursor: 'pointer', textAlign: 'left',
               }}
             >
@@ -161,8 +161,8 @@ function SearchSelect({
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '7px 12px',
                     fontSize: 12, fontWeight: active ? 600 : 400,
-                    color: active ? '#0D9488' : '#0F172A',
-                    background: active ? '#F0FDFA' : 'transparent',
+                    color: active ? '#0B7A4E' : '#1A1A1A',
+                    background: active ? '#EEF6F1' : 'transparent',
                     border: 'none', cursor: 'pointer', textAlign: 'left',
                   }}
                 >
@@ -199,7 +199,7 @@ function HeaderSearch({ value, onChange }: { value: string; onChange: (v: string
           onChange={e => onChange(e.target.value)}
           onBlur={() => { if (!value) setOpen(false) }}
           placeholder="Search jobs..."
-          className="w-[160px] rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 outline-none focus:border-gray-400"
+          className="w-[176px] rounded-lg border border-[#e8ecf1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] outline-none focus:border-[var(--cf-green)]"
         />
         {value && (
           <button
@@ -241,7 +241,7 @@ function NavArrow({ direction, label, onClick }: { direction: 'prev' | 'next'; l
         onFocus={() => setHover(true)}
         onBlur={() => setHover(false)}
         aria-label={label}
-        className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 rounded-md transition-colors"
+        className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[var(--cf-rule)] text-[var(--cf-ink-secondary)] transition-colors hover:border-[var(--cf-rule-strong)] hover:bg-[var(--cf-field)]"
       >
         <Icon className="w-4 h-4" />
       </button>
@@ -256,8 +256,8 @@ function NavArrow({ direction, label, onClick }: { direction: 'prev' | 'next'; l
             marginTop: 8,
             padding: '4px 10px',
             borderRadius: 6,
-            background: '#1E293B',
-            color: '#F8FAFC',
+            background: '#1A1A1A',
+            color: '#FFFFFF',
             fontSize: 11,
             fontWeight: 500,
             whiteSpace: 'nowrap',
@@ -1520,12 +1520,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const navLabel = viewMode === 'week' ? 'week' : 'month'
 
     return (
-      <div className="hidden lg:flex flex-col shrink-0 border-b border-gray-200 bg-white">
-        <div className="flex items-center px-5 h-14 gap-3 w-full">
+      <div className="hidden shrink-0 flex-col border-b border-[var(--cf-rule)] bg-[var(--cf-surface-soft)] shadow-[var(--cf-panel-shadow)] lg:flex">
+        <div className="flex h-16 w-full items-center gap-3 px-5">
           {/* LEFT: Today + arrows + month label/picker */}
           <button
             onClick={goToToday}
-            className="px-3.5 py-1 text-xs font-medium text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-gray-300 rounded-full transition-colors"
+            className="rounded-lg border border-[var(--cf-green-rule)] bg-[var(--cf-green-soft)] px-3.5 py-1.5 text-xs font-bold text-[var(--cf-green)] transition-colors hover:bg-[var(--cf-green-soft-hover)]"
           >
             Today
           </button>
@@ -1541,25 +1541,25 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 setMonthPickerYear(currentDate.getFullYear())
                 setShowMonthPicker(!showMonthPicker)
               }}
-              className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-[var(--cf-field)]"
             >
-              <span className="text-[17px] font-bold text-gray-900 leading-none whitespace-nowrap">{monthLabel}</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showMonthPicker ? 'rotate-180' : ''}`} />
+              <span className="whitespace-nowrap text-[18px] font-extrabold leading-none text-[var(--cf-ink)]">{monthLabel}</span>
+              <ChevronDown className={`h-3.5 w-3.5 text-[var(--cf-ink-muted)] transition-transform ${showMonthPicker ? 'rotate-180' : ''}`} />
             </button>
             {showMonthPicker && (
-              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-4 z-50 w-[280px]">
+              <div className="absolute left-0 top-full z-50 mt-1 w-[280px] rounded-lg border border-[var(--cf-rule)] bg-white p-4 shadow-[0_14px_36px_rgba(40,30,10,0.14)]">
                 <div className="flex items-center justify-between mb-3">
                   <button
                     onClick={() => setMonthPickerYear(y => y - 1)}
-                    className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]"
                     aria-label="Previous year"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <span className="text-[15px] font-bold text-gray-900">{monthPickerYear}</span>
+                  <span className="text-[15px] font-extrabold text-[var(--cf-ink)]">{monthPickerYear}</span>
                   <button
                     onClick={() => setMonthPickerYear(y => y + 1)}
-                    className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]"
                     aria-label="Next year"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -1573,7 +1573,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                         key={m}
                         onClick={() => selectMonth(mi)}
                         className={`py-2 text-[13px] font-medium rounded-md transition-colors ${
-                          isActive ? 'bg-teal-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+                          isActive ? 'bg-[var(--cf-green)] text-white' : 'text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]'
                         }`}
                       >
                         {m}
@@ -1581,10 +1581,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     )
                   })}
                 </div>
-                <div className="mt-3 pt-2 border-t border-gray-100 flex justify-end">
+                <div className="mt-3 flex justify-end border-t border-[var(--cf-grid-rule)] pt-2">
                   <button
                     onClick={() => { goToToday(); setShowMonthPicker(false) }}
-                    className="text-[12px] font-medium text-teal-700 hover:text-teal-800"
+                    className="text-[12px] font-bold text-[var(--cf-green)] hover:text-[var(--cf-green-hover)]"
                   >
                     This {navLabel}
                   </button>
@@ -1595,7 +1595,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
           {isLoadingMore && <Loader2 className="w-4 h-4 animate-spin text-teal-600" />}
 
-          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="mx-1 h-6 w-px bg-[var(--cf-rule)]" />
 
           {/* MIDDLE: Inline searchable Team + Clients dropdowns (replaces side-panel drawer) */}
           {(() => {
@@ -1671,15 +1671,15 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           <div className="flex-1" />
 
           {/* RIGHT: View toggle + density slider + Add Job + overflow */}
-          <div className="flex items-center bg-gray-100 rounded-md p-0.5">
+          <div className="flex items-center rounded-lg bg-[#f1f5f9] p-0.5">
             {(['week', 'month'] as ViewMode[]).map(mode => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
                 className={`px-2.5 py-1 text-[11px] font-medium rounded transition-all ${
                   viewMode === mode
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-[var(--cf-ink)] shadow-sm'
+                    : 'text-[#7f8ea3] hover:text-[#334155]'
                 }`}
               >
                 {mode === 'week' ? 'Week' : 'Month'}
@@ -1697,7 +1697,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           >
             <span className="text-[9px] text-gray-300 leading-none">☰</span>
             <div
-              className="relative w-[88px] h-5 flex items-center cursor-pointer"
+              className="relative flex h-5 w-[88px] cursor-pointer items-center"
               onMouseDown={() => {
                 if (viewMode !== 'week') return
                 // Prevent text selection / grabbing cursor while dragging the slider.
@@ -1711,9 +1711,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 window.addEventListener('mouseup', onUp)
               }}
             >
-              <div className="absolute inset-x-0 h-1 bg-gray-200 rounded-full" />
+              <div className="absolute inset-x-0 h-1 rounded-full bg-[var(--cf-rule)]" />
               <div
-                className="absolute h-1 bg-teal-600 rounded-full"
+                className="absolute h-1 rounded-full bg-[var(--cf-green)]"
                 style={{ width: `${sliderValue}%` }}
               />
               <input
@@ -1728,7 +1728,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 className="absolute inset-0 w-full opacity-0 cursor-pointer"
               />
               <div
-                className="absolute w-3.5 h-3.5 bg-white border-2 border-teal-600 rounded-full shadow-sm pointer-events-none transition-all"
+                className="pointer-events-none absolute h-3.5 w-3.5 rounded-full border-2 border-[var(--cf-green)] bg-white shadow-sm transition-all"
                 style={{ left: `calc(${sliderValue}% - 7px)` }}
               />
             </div>
@@ -1737,7 +1737,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
           <button
             onClick={() => handleDateClick(currentDate)}
-            className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors text-[12px] font-semibold shadow-sm"
+            className="flex items-center gap-1 rounded-lg bg-[var(--cf-green)] px-3.5 py-2 text-[12px] font-bold text-white shadow-sm transition-colors hover:bg-[var(--cf-green-hover)]"
           >
             <Plus className="w-3.5 h-3.5" />
             Add Job
@@ -1796,9 +1796,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
         {/* Active Filter Summary Row */}
         {filterCount > 0 && (
-          <div className="flex items-center justify-between px-5 py-1.5 bg-gray-50 border-t border-gray-100 text-xs">
-            <div className="flex items-center gap-2 overflow-hidden text-gray-600">
-              <span className="font-semibold text-gray-700 shrink-0">Filters:</span>
+          <div className="flex items-center justify-between border-t border-[var(--cf-rule-soft)] bg-[var(--cf-surface-hover)] px-5 py-1.5 text-xs">
+            <div className="flex items-center gap-2 overflow-hidden text-[var(--cf-ink-secondary)]">
+              <span className="shrink-0 font-bold text-[var(--cf-ink)]">Filters:</span>
               <span className="truncate">{activeSummaryText}</span>
             </div>
             <button
@@ -1807,7 +1807,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 setShowUnassigned(true)
                 setFilterBarClientIds(new Set())
               }}
-              className="text-teal-600 hover:text-teal-700 font-medium shrink-0 ml-4"
+              className="ml-4 shrink-0 font-bold text-[var(--cf-green)] hover:text-[var(--cf-green-hover)]"
             >
               Clear All
             </button>
@@ -1924,8 +1924,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             else handleJobClick(job)
           }}
           className={[
-            "group block w-full cursor-pointer overflow-hidden rounded-[5px] text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-500",
-            isSelected ? "ring-2 ring-teal-500" : "",
+            "group block w-full cursor-pointer overflow-hidden rounded-md text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--cf-green)]",
+            isSelected ? "ring-2 ring-[var(--cf-green)]" : "",
           ].join(" ")}
           style={{
             border: `1px solid ${hex}33`,
@@ -1937,18 +1937,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           }}
         >
           <div className="flex min-w-0 items-baseline gap-1.5">
-            <span className="shrink-0 font-mono text-[10px] font-semibold text-gray-500">
+            <span className="shrink-0 font-mono text-[10px] font-bold text-[var(--cf-ink-secondary)]">
               {timeRange}
             </span>
-            <span className="min-w-0 truncate text-[13px] font-bold leading-tight text-gray-950">
+            <span className="min-w-0 truncate text-[13px] font-extrabold leading-tight text-[var(--cf-ink)]">
               {job.location.client.name}
             </span>
           </div>
-          <div className={`${weekDensity === 'Dense' ? 'hidden' : 'mt-0.5'} truncate text-[11px] font-medium leading-tight text-gray-600`}>
+          <div className={`${weekDensity === 'Dense' ? 'hidden' : 'mt-0.5'} truncate text-[11px] font-semibold leading-tight text-[var(--cf-ink-secondary)]`}>
             {cleanerShort}
           </div>
           {!isDenseCard && locationName && (
-            <div className="mt-0.5 truncate text-[11px] leading-tight text-gray-500">
+            <div className="mt-0.5 truncate text-[11px] leading-tight text-[var(--cf-ink-muted)]">
               {locationName}
             </div>
           )}
@@ -1957,28 +1957,28 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     }
 
     return (
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#F8F7F4]">
-        <div className="flex shrink-0 border-b-2 border-gray-900 bg-white">
-          <div className="w-12 shrink-0 border-r border-gray-200" />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--cf-canvas)]">
+        <div className="flex shrink-0 border-b border-[var(--cf-rule)] bg-white">
+          <div className="w-12 shrink-0 border-r border-[var(--cf-rule)]" />
           <div className="grid flex-1 grid-cols-7">
             {days.map(day => {
               const isTodayDate = isToday(day)
               // Per calendar_dev_notes.md: today is a teal circle on the date number only,
               // NOT a full-column dark background (which washed out the job block colors).
               return (
-                <div key={day.toString()} className="border-r border-gray-200 py-2 text-center last:border-r-0">
-                  <div className={`text-[10px] font-bold uppercase tracking-[0.08em] ${isTodayDate ? 'text-teal-600' : 'text-gray-400'}`}>
+                <div key={day.toString()} className="border-r border-[var(--cf-rule)] py-2 text-center last:border-r-0">
+                  <div className={`text-[10px] font-extrabold uppercase tracking-[0.06em] ${isTodayDate ? 'text-[var(--cf-green)]' : 'text-[var(--cf-ink-muted)]'}`}>
                     {format(day, 'EEE')}
                   </div>
                   {isTodayDate ? (
                     <span
                       className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full text-base font-bold"
-                      style={{ backgroundColor: '#0D9488', color: '#FFFFFF' }}
+                      style={{ backgroundColor: 'var(--cf-green)', color: '#FFFFFF' }}
                     >
                       {format(day, 'd')}
                     </span>
                   ) : (
-                    <div className="mt-0.5 text-lg font-bold text-gray-950">
+                    <div className="mt-0.5 text-lg font-extrabold text-[var(--cf-ink)]">
                       {format(day, 'd')}
                     </div>
                   )}
@@ -1989,13 +1989,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         </div>
 
         {hasUnscheduledJobs && (
-          <div className="flex shrink-0 border-b border-gray-200 bg-white">
-            <div className="w-12 shrink-0 border-r border-gray-200 px-2 py-2 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">
+          <div className="flex shrink-0 border-b border-[var(--cf-rule)] bg-white">
+            <div className="w-12 shrink-0 border-r border-[var(--cf-rule)] px-2 py-2 text-right text-[10px] font-extrabold uppercase tracking-[0.06em] text-[var(--cf-ink-muted)]">
               TBD
             </div>
             <div className="grid flex-1 grid-cols-7">
               {days.map((day, dayIndex) => (
-                <div key={day.toString()} className="min-h-[34px] border-r border-gray-100 p-1.5 last:border-r-0">
+                <div key={day.toString()} className="min-h-[34px] border-r border-[var(--cf-grid-rule)] p-1.5 last:border-r-0">
                   <div className="flex flex-col gap-1">
                     {unscheduledJobsByDay[dayIndex].map(job => {
                       const { hex } = getCleanerColorInfo(getPerformerName(job))
@@ -2011,7 +2011,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             if (isSelectionMode) toggleJobSelection(job.id)
                             else handleJobClick(job)
                           }}
-                          className={`h-7 cursor-pointer truncate rounded-md bg-white px-2 py-1.5 text-left text-[11px] font-bold leading-none text-gray-900 shadow-sm ring-1 ring-gray-200 ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
+                          className={`h-7 cursor-pointer truncate rounded-md bg-white px-2 py-1.5 text-left text-[11px] font-bold leading-none text-[var(--cf-ink)] shadow-sm ring-1 ring-[var(--cf-rule)] ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
                           style={{ borderLeft: `3px solid ${hex}`, opacity: isDimmed ? 0.3 : 1 }}
                         >
                           TBD · {job.location.client.name}
@@ -2025,7 +2025,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           </div>
         )}
 
-        <div className="flex-1 overflow-auto bg-[#F8F7F4]">
+        <div className="flex-1 overflow-auto bg-[var(--cf-canvas)]">
           <table className="w-full table-fixed border-collapse bg-white">
             <tbody>
               {visibleTimeSlots.map((hour, rowIndex) => {
@@ -2035,8 +2035,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 return (
                   <Fragment key={`slot-${hour}`}>
                     <tr className="align-top">
-                      <td className="w-12 border-b border-gray-200 pr-2 pt-3 text-right align-top">
-                        <span className="font-mono text-[10px] font-bold text-gray-400">
+                      <td className="w-12 border-b border-[var(--cf-rule-soft)] pr-2 pt-3 text-right align-top">
+                        <span className="font-mono text-[10px] font-bold text-[var(--cf-ink-muted)]">
                           {getHourLabel(hour)}
                         </span>
                       </td>
@@ -2045,7 +2045,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                         return (
                           <td
                             key={`${day.toISOString()}-${hour}`}
-                            className="min-h-[62px] border-b border-l border-gray-200 p-1.5 align-top last:border-r"
+                            className="min-h-[62px] border-b border-l border-[var(--cf-rule-soft)] p-1.5 align-top last:border-r"
                             style={{ minHeight: densityConfig.cellMinHeight }}
                             onClick={() => handleTimeSlotClick(day, `${String(hour).padStart(2, '0')}:00`)}
                           >
@@ -2058,8 +2058,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     </tr>
                     {hasLargeGap && (
                       <tr>
-                        <td colSpan={8} className="h-3 border-b border-gray-100 bg-[#F8F7F4]">
-                          <div className="mx-auto h-px w-12 border-t border-dashed border-gray-300 opacity-60" />
+                        <td colSpan={8} className="h-3 border-b border-[var(--cf-rule-soft)] bg-[var(--cf-canvas)]">
+                          <div className="mx-auto h-px w-12 border-t border-dashed border-[#cfc7b6] opacity-70" />
                         </td>
                       </tr>
                     )}
@@ -2483,7 +2483,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   if (!mounted) return null
 
   return (
-    <div ref={calendarWrapperRef} className="flex flex-col relative h-full min-h-0 overflow-hidden lg:h-[calc(100vh-56px)]" style={{ height: '100%' }}>
+    <div ref={calendarWrapperRef} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--cf-canvas)] lg:h-[calc(100vh-56px)]" style={{ height: '100%' }}>
       {renderMobileHeader()}
       {renderHeader()}
       
@@ -2554,7 +2554,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             <div
               key="month-view"
               className="animate-in fade-in slide-in-from-bottom-1 duration-150"
-              style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: '0 12px 12px' }}
+              style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: '12px' }}
             >
               {(() => {
                 const monthStart = startOfMonth(currentDate)
@@ -2572,18 +2572,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   weeks.push(week)
                 }
                 return (
-                  <div style={{ border: '1px solid #E7E7DF', borderRadius: '14px', overflow: 'hidden', backgroundColor: 'white' }}>
+                  <div style={{ border: '1px solid #E6E0D4', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'white', boxShadow: '0 1px 2px rgba(40,30,10,0.04)' }}>
                     {/* Day headers */}
-                    <div className="grid grid-cols-7" style={{ borderBottom: '1px solid #E7E7DF' }}>
-                      {WEEKDAYS.map((wd, i) => (
-                        <div key={i} style={{ padding: '8px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: '#7C7C72', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <div className="grid grid-cols-7" style={{ borderBottom: '1px solid #E6E0D4', backgroundColor: '#FFFDF8' }}>
+                      {WEEKDAYS.map((_, i) => (
+                        <div key={i} style={{ padding: '8px', textAlign: 'center', fontSize: '11px', fontWeight: 800, color: '#8A857A', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][i]}
                         </div>
                       ))}
                     </div>
                     {/* Week rows */}
                     {weeks.map((week, wi) => (
-                      <div key={wi} className="grid grid-cols-7" style={{ borderBottom: wi < weeks.length - 1 ? '1px solid #F0F0EC' : 'none' }}>
+                      <div key={wi} className="grid grid-cols-7" style={{ borderBottom: wi < weeks.length - 1 ? '1px solid #F1EADF' : 'none' }}>
                         {week.map((d, di) => {
                           const dayJobs = getJobsForDate(d)
                           const inMonth = isSameMonth(d, currentDate)
@@ -2593,23 +2593,23 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               key={di}
                               onClick={() => handleDateClick(d)}
                               style={{
-                                minHeight: '88px',
-                                padding: '4px',
-                                borderRight: di < 6 ? '1px solid #F0F0EC' : 'none',
-                                backgroundColor: today ? 'rgba(15,118,110,0.03)' : inMonth ? 'white' : '#FAFAF8',
+                                minHeight: '96px',
+                                padding: '5px',
+                                borderRight: di < 6 ? '1px solid #F1EADF' : 'none',
+                                backgroundColor: today ? 'rgba(11,122,78,0.05)' : inMonth ? 'white' : '#FAF8F3',
                                 cursor: 'pointer',
                                 transition: 'background-color 80ms',
                               }}
-                              onMouseEnter={e => { if (!today) e.currentTarget.style.backgroundColor = '#F5F5F3' }}
-                              onMouseLeave={e => { e.currentTarget.style.backgroundColor = today ? 'rgba(15,118,110,0.03)' : inMonth ? 'white' : '#FAFAF8' }}
+                              onMouseEnter={e => { if (!today) e.currentTarget.style.backgroundColor = '#FBF8F1' }}
+                              onMouseLeave={e => { e.currentTarget.style.backgroundColor = today ? 'rgba(11,122,78,0.05)' : inMonth ? 'white' : '#FAF8F3' }}
                             >
                               <div style={{
                                 fontSize: '12px',
                                 fontWeight: today ? 700 : 500,
-                                color: today ? '#0F766E' : inMonth ? '#111827' : '#B0B0A8',
+                                color: today ? '#0B7A4E' : inMonth ? '#1A1A1A' : '#B0AAA0',
                                 padding: '2px 4px',
                                 marginBottom: '2px',
-                                ...(today ? { backgroundColor: '#0F766E', color: 'white', borderRadius: '6px', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center' } : {}),
+                                ...(today ? { backgroundColor: '#0B7A4E', color: 'white', borderRadius: '6px', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center' } : {}),
                               }}>
                                 {format(d, 'd')}
                               </div>
@@ -2626,7 +2626,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                     <div
                                       key={j.id}
                                       onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(j.id); else handleJobClick(j); }}
-                                      className="px-1.5 h-5 rounded-sm text-[11px] font-semibold leading-5 text-white truncate cursor-pointer hover:opacity-90"
+                                      className="h-5 cursor-pointer truncate rounded px-1.5 text-[11px] font-bold leading-5 text-white hover:opacity-90"
                                       style={{
                                         background: status === 'cancelled' ? '#9CA3AF' : gradient,
                                         opacity: (dimmedClientIds && !dimmedClientIds.has(j.location.client.id)) ? 0.15 : (status === 'cancelled' ? 0.5 : 1),
@@ -2640,7 +2640,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                 {dayJobs.length > 5 && (
                                   <div
                                     onClick={(e) => { e.stopPropagation(); setDayPopoverDate(d); setDayPopoverJobs(dayJobs) }}
-                                    style={{ fontSize: '10px', color: '#0F766E', fontWeight: 600, paddingLeft: '4px', cursor: 'pointer', marginTop: '2px' }}
+                                    style={{ fontSize: '10px', color: '#0B7A4E', fontWeight: 700, paddingLeft: '4px', cursor: 'pointer', marginTop: '2px' }}
                                     className="hover:underline"
                                   >
                                     +{dayJobs.length - 5} more

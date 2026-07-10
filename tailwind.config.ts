@@ -18,7 +18,7 @@ const config = {
     },
     extend: {
       fontFamily: {
-        sans: ['var(--font-lexend)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        sans: ['var(--font-ui)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         mono: ['var(--font-ibm-plex-mono)', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {

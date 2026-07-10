@@ -1,15 +1,15 @@
 import type { Metadata, Viewport } from "next"
-import { Lexend, IBM_Plex_Mono } from "next/font/google"
+import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { LayoutWrapper } from "@/components/layout-wrapper"
 
-const lexend = Lexend({
+const hankenGrotesk = Hanken_Grotesk({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-lexend",
+  variable: "--font-ui",
   display: "swap",
 })
 
@@ -39,9 +39,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${lexend.variable} ${ibmPlexMono.variable}`}>
+    <html lang="en" className={`${hankenGrotesk.variable} ${ibmPlexMono.variable}`}>
       <head>
-        <meta name="theme-color" content="#0f172a" />
+        <meta name="theme-color" content="#f3f0e9" />
       </head>
       <body className="font-sans">
         <TooltipProvider delayDuration={300}>

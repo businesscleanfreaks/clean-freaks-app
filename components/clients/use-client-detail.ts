@@ -705,6 +705,7 @@ export function useClientDetail({ client: initialClient, onDataChange }: UseClie
     
     // Open the Add Job modal
     setShowAddJobModal(true)
+    setAddJobDate(dateInputValue(new Date()))
     // Auto-select if there's only one schedule
     if (allSchedules.length === 1) {
       setAddJobSelectedSchedule(allSchedules[0].id)

@@ -1,16 +1,30 @@
 "use client"
 
+import { addMonths, format, subMonths } from "date-fns"
+import { ChevronLeft, ChevronRight, Pencil } from "lucide-react"
+import Link from "next/link"
 import { useMemo, useState } from "react"
 import useSWR from "swr"
-import { addMonths, format, subMonths } from "date-fns"
-import { ChevronLeft, ChevronRight, Settings2 } from "lucide-react"
-import Link from "next/link"
+import {
+  ExpensesModal,
+  ProjectedExpensesModal,
+  type ExpenseData,
+  type ProjectedExpenses,
+} from "@/components/dashboard/dashboard-expenses"
+import {
+  OperationsRail,
+  TodoView,
+  todoCount,
+  type DashboardCompletionState,
+  type DashboardOperationsData,
+  type DashboardPayablesData,
+} from "@/components/dashboard/dashboard-operations"
 import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
+import { showError, showSuccess } from "@/lib/toast"
 
 interface ClientOverviewRow {
   id: string
   name: string
-  propertyType: 'RESIDENTIAL' | 'COMMERCIAL' | null
   cleanerAssigned: string
   frequency: string
   clientPayType: string
@@ -34,47 +48,46 @@ interface ClientOverviewData {
     periodProfit: number
     periodJobCount: number
   }
-  period: {
-    year: number
-    month: number
-    label: string
-  }
+  period: { year: number; month: number; label: string }
 }
 
-const fetcher = (url: string) => fetch(url).then(res => {
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
+interface ProjectedExpenseResponse {
+  projectedExpenses: ProjectedExpenses
+}
+
+type SortKey = "name" | "periodRevenue" | "periodCleanerCost" | "periodProfit"
+
+const emptyProjected: ProjectedExpenses = {
+  software: 0,
+  insurance: 0,
+  marketing: 0,
+  mistakes: 0,
+  freelancers: 0,
+  miscellaneous: 0,
+}
+
+const fetcher = async <T,>(url: string): Promise<T> => {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Failed to load dashboard")
+  return response.json()
+}
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 })
 
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value || 0)
-
-type SortKey = 'name' | 'periodRevenue' | 'periodCleanerCost' | 'periodProfit' | 'avgRevenue' | 'avgProfit'
-
-function shortenName(name: string) {
-  if (!name || name === 'Unassigned') return name || 'Unassigned'
-  const companyMap: Record<string, string> = {
-    'Celeste Cleaning Co.': 'Celeste C.',
-    'Rose Cleaning Co': 'Rose C.',
-    'Amy\'s Angels': 'Amy\'s A.',
-  }
-  if (companyMap[name]) return companyMap[name]
-
-  const cleaned = name.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim()
-  const parts = cleaned.split(' ').filter(Boolean)
-  if (parts.length === 1) return parts[0]
-  return `${parts[0]} ${parts[1][0]}.`
+function formatCurrency(value: number) {
+  return money.format(Math.abs(value || 0))
 }
 
-function propertyTypeLabel(type: ClientOverviewRow['propertyType']) {
-  if (type === 'RESIDENTIAL') return 'Residential'
-  if (type === 'COMMERCIAL') return 'Commercial'
-  return 'Unset'
+function shortenName(name: string) {
+  if (!name || name === "Unassigned") return name || "Unassigned"
+  const cleaned = name.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim()
+  const parts = cleaned.split(" ").filter(Boolean)
+  return parts.length < 2 ? parts[0] : `${parts[0]} ${parts[1][0]}.`
 }
 
 function MetricCard({
@@ -86,43 +99,61 @@ function MetricCard({
   label: string
   value: string
   sub?: string
-  tone?: 'good' | 'bad'
+  tone?: "good" | "bad"
 }) {
   return (
-    <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-400">
-        {label}
-      </div>
-      <div className={`font-mono text-2xl font-bold tracking-[-0.03em] ${tone === 'good' ? 'text-emerald-600' : tone === 'bad' ? 'text-red-600' : 'text-stone-950'}`}>
-        {value}
-      </div>
-      {sub && <div className="mt-0.5 text-xs text-stone-400">{sub}</div>}
+    <div className="flex min-h-[108px] flex-col justify-center rounded-lg border border-[#e6dfd4] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(40,30,10,0.04)]">
+      <div className="text-[10px] font-extrabold uppercase text-stone-500">{label}</div>
+      <div className={`mt-1 text-[28px] font-extrabold leading-none tabular-nums ${tone === "good" ? "text-[#087c3d]" : tone === "bad" ? "text-[#c33d0e]" : "text-[#07101f]"}`}>{value}</div>
+      {sub && <div className="mt-2 text-[11px] font-medium text-stone-500">{sub}</div>}
+    </div>
+  )
+}
+
+function ActualCell({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" | "muted" }) {
+  return (
+    <div className="min-w-0 px-4 py-3">
+      <div className="text-[10px] font-bold text-stone-500">{label}</div>
+      <div className={`mt-1 truncate text-[19px] font-extrabold leading-none tabular-nums ${tone === "good" ? "text-[#087c3d]" : tone === "bad" ? "text-[#c33d0e]" : tone === "muted" ? "text-stone-500" : "text-[#07101f]"}`}>{value}</div>
     </div>
   )
 }
 
 export function DashboardClient() {
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
-  const [sortBy, setSortBy] = useState<SortKey>('periodRevenue')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [showSettings, setShowSettings] = useState(false)
-  // Default these to 0 so Net Profit ≈ Gross Profit on first load instead of a misleading
-  // negative number. Grace/Josh fill them in below with their real monthly business expenses.
-  const [overhead, setOverhead] = useState(0)
-  const [marketing, setMarketing] = useState(0)
-  const [vaCost, setVaCost] = useState(0)
-  const [taxRate, setTaxRate] = useState(0)
+  const [activeView, setActiveView] = useState<"dashboard" | "todo">("dashboard")
+  const [sortBy, setSortBy] = useState<SortKey>("periodRevenue")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [projectedOpen, setProjectedOpen] = useState(false)
+  const [expensesOpen, setExpensesOpen] = useState(false)
+  const [doneTasks, setDoneTasks] = useState<DashboardCompletionState>({})
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth()
-  const { data, error, isLoading } = useSWR<ClientOverviewData>(
-    `/api/dashboard/client-overview?year=${year}&month=${month}`,
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true }
-  )
+  const period = format(currentMonth, "yyyy-MM")
 
-  const rows = data?.clients || []
-  const totals = data?.totals || {
+  const overview = useSWR<ClientOverviewData>(`/api/dashboard/client-overview?year=${year}&month=${month}`, fetcher, {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+  })
+  const operations = useSWR<DashboardOperationsData>(`/api/dashboard/operations?year=${year}&month=${month}`, fetcher, {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+  })
+  const payables = useSWR<DashboardPayablesData>(`/api/payables/data?period=${period}`, fetcher, {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+  })
+  const projectedSettings = useSWR<ProjectedExpenseResponse>("/api/dashboard/expense-settings", fetcher, {
+    revalidateOnFocus: false,
+  })
+  const expenses = useSWR<ExpenseData>(`/api/expenses?year=${year}&month=${month}`, fetcher, {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+  })
+
+  const rows = useMemo(() => overview.data?.clients || [], [overview.data?.clients])
+  const totals = overview.data?.totals || {
     avgRevenue: 0,
     avgCleanerCost: 0,
     avgProfit: 0,
@@ -131,220 +162,194 @@ export function DashboardClient() {
     periodProfit: 0,
     periodJobCount: 0,
   }
+  const projected = projectedSettings.data?.projectedExpenses || emptyProjected
+  const projectedExpenseTotal = Object.values(projected).reduce((sum, value) => sum + value, 0)
+  const actualExpenseTotal = expenses.data?.total || 0
+  const projectedNet = totals.avgProfit - projectedExpenseTotal
+  const projectedMargin = totals.avgRevenue ? (projectedNet / totals.avgRevenue) * 100 : 0
+  const actualNet = totals.periodProfit - actualExpenseTotal
+  const actualMargin = totals.periodRevenue ? (actualNet / totals.periodRevenue) * 100 : 0
+  const todoTotal = todoCount(operations.data, payables.data, doneTasks)
+  const actualAverage = expenses.data?.months.length
+    ? expenses.data.months.reduce((sum, item) => sum + item.total, 0) / expenses.data.months.length
+    : 0
 
-  const deductions = overhead + marketing + vaCost
-  const taxMultiplier = (100 - taxRate) / 100
-  const recurringNetProfit = Math.round((totals.avgProfit - deductions) * taxMultiplier)
-  const periodNetProfit = Math.round((totals.periodProfit - deductions) * taxMultiplier)
-  const periodNetMargin = totals.periodRevenue > 0 ? (periodNetProfit / totals.periodRevenue) * 100 : 0
-  const recurringNetMargin = totals.avgRevenue > 0 ? (recurringNetProfit / totals.avgRevenue) * 100 : 0
+  const billingCounts = rows.reduce((counts, row) => {
+    if (row.clientPayType.toLowerCase().includes("flat")) counts.flat += 1
+    else counts.perClean += 1
+    return counts
+  }, { flat: 0, perClean: 0 })
 
-  const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) => {
-      if (sortBy === 'name') {
-        const comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-        return sortDir === 'desc' ? -comparison : comparison
-      }
-      const aVal = a[sortBy] || 0
-      const bVal = b[sortBy] || 0
-      return sortDir === 'desc' ? bVal - aVal : aVal - bVal
-    })
-  }, [rows, sortBy, sortDir])
+  const sortedRows = useMemo(() => [...rows].sort((a, b) => {
+    if (sortBy === "name") {
+      const result = a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      return sortDir === "desc" ? -result : result
+    }
+    const result = (a[sortBy] || 0) - (b[sortBy] || 0)
+    return sortDir === "desc" ? -result : result
+  }), [rows, sortBy, sortDir])
 
   const toggleSort = (key: SortKey) => {
-    if (sortBy === key) {
-      setSortDir(current => current === 'desc' ? 'asc' : 'desc')
-    } else {
+    if (sortBy === key) setSortDir((value) => value === "desc" ? "asc" : "desc")
+    else {
       setSortBy(key)
-      setSortDir(key === 'name' ? 'asc' : 'desc')
+      setSortDir(key === "name" ? "asc" : "desc")
     }
   }
 
-  const propertyTypeCounts = rows.reduce(
-    (acc, row) => {
-      if (row.propertyType === 'RESIDENTIAL') acc.residential += 1
-      else if (row.propertyType === 'COMMERCIAL') acc.commercial += 1
-      else acc.unset += 1
-      return acc
-    },
-    { residential: 0, commercial: 0, unset: 0 }
-  )
+  const toggleTask = (taskId: string) => {
+    setDoneTasks((current) => ({ ...current, [taskId]: !current[taskId] }))
+  }
 
-  const clientTypeCounts = rows.reduce(
-    (acc, row) => {
-      if (row.clientPayType.toLowerCase().includes('flat')) acc.flat += 1
-      else acc.perClean += 1
-      return acc
-    },
-    { flat: 0, perClean: 0 }
-  )
+  const saveProjectedExpenses = async (values: ProjectedExpenses) => {
+    try {
+      const response = await fetch("/api/dashboard/expense-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      })
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Failed to save projected expenses")
+      await projectedSettings.mutate({ projectedExpenses: values }, { revalidate: false })
+      showSuccess("Projected expenses saved")
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to save projected expenses")
+      throw error
+    }
+  }
+
+  const error = overview.error || operations.error || payables.error || projectedSettings.error || expenses.error
 
   return (
-    <div className="min-h-full bg-[#F8F7F4] px-5 py-7 text-stone-950 sm:px-8">
-      <div className="mx-auto max-w-[1200px]">
+    <div className="min-h-full bg-[#f3f0e9] text-[#171717]">
+      <div className="mx-auto w-full max-w-[1760px] px-4 pb-8 pt-5 sm:px-7 lg:px-8">
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            <strong>Error loading dashboard:</strong> {error.message}
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700">
+            {error.message || "Some dashboard data could not be loaded."}
           </div>
         )}
 
-        <div className="mb-5 flex items-end justify-between border-b-2 border-stone-950 pb-3">
+        <header className="flex items-start justify-between gap-5 border-b-[1.5px] border-stone-900 pb-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-[-0.04em]">Dashboard</h1>
-            <p className="mt-0.5 text-sm text-stone-400">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
+            <h1 className="text-[28px] font-extrabold leading-none text-[#101010]">Dashboard</h1>
+            <p className="mt-2 text-[13px] font-medium text-stone-500">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
           </div>
-          <div className="flex items-center overflow-hidden rounded-md border border-stone-200 bg-white">
-            <button
-              type="button"
-              onClick={() => setCurrentMonth(d => subMonths(d, 1))}
-              className="border-r border-stone-200 px-2.5 py-1.5 text-stone-500 hover:bg-stone-50"
-            >
-              <ChevronLeft className="h-4 w-4" />
+          <div className="flex h-11 items-center overflow-hidden rounded-lg border border-[#e2dbcf] bg-white">
+            <button type="button" onClick={() => setCurrentMonth((date) => subMonths(date, 1))} className="flex h-full w-11 items-center justify-center border-r border-[#eee8dd] text-stone-500 hover:bg-[#faf8f3]" aria-label="Previous month">
+              <ChevronLeft size={15} />
             </button>
-            <span className="px-5 py-1.5 text-sm font-semibold">{format(currentMonth, 'MMMM yyyy')}</span>
-            <button
-              type="button"
-              onClick={() => setCurrentMonth(d => addMonths(d, 1))}
-              className="border-l border-stone-200 px-2.5 py-1.5 text-stone-500 hover:bg-stone-50"
-            >
-              <ChevronRight className="h-4 w-4" />
+            <span className="min-w-[126px] px-3 text-center text-[13px] font-extrabold">{format(currentMonth, "MMMM yyyy")}</span>
+            <button type="button" onClick={() => setCurrentMonth((date) => addMonths(date, 1))} className="flex h-full w-11 items-center justify-center border-l border-[#eee8dd] text-stone-500 hover:bg-[#faf8f3]" aria-label="Next month">
+              <ChevronRight size={15} />
             </button>
           </div>
-        </div>
+        </header>
 
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">Recurring Monthly</div>
-          <button
-            type="button"
-            onClick={() => setShowSettings(current => !current)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-stone-400 hover:text-stone-700"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            Settings
+        <div className="mt-4 inline-flex h-[53px] items-center rounded-lg border border-[#ded6ca] bg-white p-1">
+          <button type="button" onClick={() => setActiveView("dashboard")} className={`h-[41px] min-w-[122px] rounded-lg px-4 text-[13px] font-extrabold ${activeView === "dashboard" ? "bg-[#07101f] text-white" : "text-stone-600 hover:bg-stone-50"}`}>Dashboard</button>
+          <button type="button" onClick={() => setActiveView("todo")} className={`flex h-[41px] min-w-[112px] items-center justify-center gap-2 rounded-lg px-4 text-[13px] font-extrabold ${activeView === "todo" ? "bg-[#07101f] text-white" : "text-stone-600 hover:bg-stone-50"}`}>
+            To-do
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${activeView === "todo" ? "bg-white/15 text-white" : "bg-[#b63a0d] text-white"}`}>{todoTotal}</span>
           </button>
         </div>
 
-        {showSettings && (
-          <div className="mb-3 rounded-lg border border-stone-200 bg-white p-4">
-            <div className="grid gap-3 sm:grid-cols-4">
-              {[
-                ['Overhead', overhead, setOverhead, '$'],
-                ['Marketing', marketing, setMarketing, '$'],
-                ['VA Cost', vaCost, setVaCost, '$'],
-                ['Tax Rate', taxRate, setTaxRate, '%'],
-              ].map(([label, value, setter, suffix]) => (
-                <label key={label as string} className="block">
-                  <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.06em] text-stone-400">{label as string}</span>
-                  <div className="flex items-center gap-1">
-                    {suffix === '$' && <span className="text-xs text-stone-400">$</span>}
-                    <input
-                      type="number"
-                      value={value as number}
-                      onChange={e => (setter as (value: number) => void)(Number(e.target.value) || 0)}
-                      className="w-full rounded border border-stone-200 bg-[#F8F7F4] px-2 py-1 font-mono text-sm outline-none focus:border-teal-500"
-                    />
-                    {suffix === '%' && <span className="text-xs text-stone-400">%</span>}
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-6">
-            {[0, 1, 2, 3, 4, 5].map(i => <SkeletonPulse key={i} className="h-24 w-full" rounded="lg" />)}
-          </div>
+        {activeView === "todo" ? (
+          <TodoView operations={operations.data} payables={payables.data} doneTasks={doneTasks} onToggleTask={toggleTask} />
         ) : (
-          <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-6">
-            <MetricCard label="Revenue" value={formatCurrency(totals.avgRevenue)} />
-            <MetricCard label="Gross Profit" value={formatCurrency(totals.avgProfit)} />
-            <MetricCard label="Net Profit" value={formatCurrency(recurringNetProfit)} tone={recurringNetProfit >= 0 ? 'good' : 'bad'} />
-            <MetricCard label="Net Margin" value={`${recurringNetMargin.toFixed(1)}%`} />
-            <MetricCard label="Property Mix" value={`${propertyTypeCounts.residential}/${propertyTypeCounts.commercial}`} sub={`${propertyTypeCounts.unset} unset`} />
-            <MetricCard label="Clients" value={String(rows.length)} sub={`${clientTypeCounts.flat} flat · ${clientTypeCounts.perClean} per clean`} />
+          <div className="mt-4 grid items-start gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_340px] min-[1500px]:grid-cols-[minmax(0,1fr)_370px]">
+            <main className="min-w-0">
+              <div className="mb-2 flex items-center justify-between gap-4">
+                <h2 className="text-[11px] font-extrabold uppercase text-stone-500">Recurring monthly / projected</h2>
+                <button type="button" onClick={() => setProjectedOpen(true)} className="inline-flex items-center gap-1.5 text-[12px] font-bold text-stone-500 hover:text-stone-900">
+                  <Pencil size={13} /> Projected expenses
+                </button>
+              </div>
+
+              {overview.isLoading || projectedSettings.isLoading ? (
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">{Array.from({ length: 5 }, (_, index) => <SkeletonPulse key={index} className="h-[108px] w-full" rounded="lg" />)}</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                  <MetricCard label="Net profit" value={`${projectedNet < 0 ? "-" : ""}${formatCurrency(projectedNet)}`} sub={`after ${money.format(projectedExpenseTotal)}/mo expenses`} tone={projectedNet >= 0 ? "good" : "bad"} />
+                  <MetricCard label="Net margin" value={`${projectedMargin.toFixed(1)}%`} />
+                  <MetricCard label="Revenue" value={formatCurrency(totals.avgRevenue)} />
+                  <MetricCard label="Gross profit" value={formatCurrency(totals.avgProfit)} sub="after cleaner pay" />
+                  <MetricCard label="Clients" value={String(rows.length)} sub={`${billingCounts.flat} flat / ${billingCounts.perClean} per clean`} />
+                </div>
+              )}
+
+              <div className="mb-2 mt-4 flex items-center justify-between gap-4">
+                <h2 className="text-[11px] font-extrabold uppercase text-stone-500">{format(currentMonth, "MMMM yyyy")} actuals</h2>
+                <button type="button" onClick={() => setExpensesOpen(true)} className="inline-flex items-center gap-1.5 text-[12px] font-bold text-stone-500 hover:text-stone-900">
+                  <Pencil size={13} /> Manage expenses
+                </button>
+              </div>
+              <div className="overflow-hidden rounded-lg border border-[#e6dfd4] bg-white shadow-[0_1px_2px_rgba(40,30,10,0.04)]">
+                {overview.isLoading || expenses.isLoading ? <SkeletonPulse className="h-[78px] w-full" /> : (
+                  <div className="grid grid-cols-2 divide-x divide-[#eee8dd] sm:grid-cols-3 lg:grid-cols-6">
+                    <ActualCell label="Net Profit" value={`${actualNet < 0 ? "-" : ""}${formatCurrency(actualNet)}`} tone={actualNet >= 0 ? "good" : "bad"} />
+                    <ActualCell label="Net Margin" value={`${actualMargin.toFixed(1)}%`} />
+                    <ActualCell label="Revenue" value={formatCurrency(totals.periodRevenue)} />
+                    <ActualCell label="Cleaner Pay" value={`-${formatCurrency(totals.periodCleanerCost)}`} tone="muted" />
+                    <ActualCell label="Gross Profit" value={formatCurrency(totals.periodProfit)} />
+                    <ActualCell label="Expenses" value={`-${formatCurrency(actualExpenseTotal)}`} tone="bad" />
+                  </div>
+                )}
+              </div>
+
+              <h2 className="mb-2 mt-4 text-[11px] font-extrabold uppercase text-stone-500">All clients / {rows.length}</h2>
+              <div className="overflow-x-auto rounded-lg border border-[#e6dfd4] bg-white shadow-[0_1px_2px_rgba(40,30,10,0.04)]">
+                <div className="grid min-w-[820px] grid-cols-[minmax(260px,1fr)_120px_120px_110px_100px_110px] border-b border-[#e9e2d7] px-4 py-2.5 text-[10px] font-bold text-stone-500">
+                  <SortHeader label="Client" active={sortBy === "name"} dir={sortDir} align="left" onClick={() => toggleSort("name")} />
+                  <SortHeader label="Revenue" active={sortBy === "periodRevenue"} dir={sortDir} onClick={() => toggleSort("periodRevenue")} />
+                  <SortHeader label="Cleaner Pay" active={sortBy === "periodCleanerCost"} dir={sortDir} onClick={() => toggleSort("periodCleanerCost")} />
+                  <SortHeader label="Profit" active={sortBy === "periodProfit"} dir={sortDir} onClick={() => toggleSort("periodProfit")} />
+                  <span className="text-right uppercase">Cleaner</span>
+                  <span className="text-right uppercase">Type</span>
+                </div>
+                {overview.isLoading ? (
+                  <div className="p-4"><SkeletonPulse className="h-[320px] w-full" rounded="lg" /></div>
+                ) : sortedRows.length ? (
+                  <div className="max-h-[420px] overflow-y-auto">
+                    {sortedRows.map((row) => (
+                      <Link key={row.id} href={`/clients/${row.id}`} className="grid min-w-[820px] grid-cols-[minmax(260px,1fr)_120px_120px_110px_100px_110px] items-center border-b border-[#eee8dd] px-4 py-3 text-[13px] last:border-b-0 hover:bg-[#fffdf8]">
+                        <div className="min-w-0">
+                          <div className="truncate text-[14px] font-extrabold text-[#171717]">{row.name}</div>
+                          <div className="truncate text-[11px] text-stone-500">{row.frequency || `${row.periodJobCount} jobs`}</div>
+                        </div>
+                        <div className="text-right font-extrabold tabular-nums">{formatCurrency(row.periodRevenue)}</div>
+                        <div className="text-right font-semibold tabular-nums text-stone-500">-{formatCurrency(row.periodCleanerCost)}</div>
+                        <div className={`text-right font-extrabold tabular-nums ${row.periodProfit >= 0 ? "text-[#087c3d]" : "text-[#c33d0e]"}`}>{row.periodProfit < 0 ? "-" : ""}{formatCurrency(row.periodProfit)}</div>
+                        <div className="truncate text-right text-[12px] font-medium text-stone-600">{shortenName(row.cleanerAssigned)}</div>
+                        <div className="truncate text-right text-[12px] font-medium text-stone-600">{row.clientPayType.replace("Flat Rate", "Monthly Flat")}</div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-14 text-center text-[13px] text-stone-400">No active clients with schedules.</div>
+                )}
+              </div>
+            </main>
+
+            <OperationsRail operations={operations.data} payables={payables.data} doneTasks={doneTasks} onToggleTask={toggleTask} />
           </div>
         )}
-
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">{format(currentMonth, 'MMMM yyyy')} Actuals</div>
-        <div className="mb-5 overflow-hidden rounded-lg border border-stone-200 bg-white">
-          {isLoading ? (
-            <SkeletonPulse className="h-20 w-full" />
-          ) : (
-            <div className="grid grid-cols-2 divide-x divide-stone-100 sm:grid-cols-6">
-              <PnlCell label="Revenue" value={formatCurrency(totals.periodRevenue)} />
-              <PnlCell label="Cleaner Pay" value={`-${formatCurrency(totals.periodCleanerCost)}`} />
-              <PnlCell label="Gross Profit" value={formatCurrency(totals.periodProfit)} />
-              <PnlCell label="Deductions" value={`-${formatCurrency(deductions)}`} />
-              <PnlCell label="Net Profit" value={formatCurrency(periodNetProfit)} tone={periodNetProfit >= 0 ? 'good' : 'bad'} />
-              <PnlCell label="Net Margin" value={`${periodNetMargin.toFixed(1)}%`} />
-            </div>
-          )}
-        </div>
-
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">All Clients · {rows.length}</div>
-        <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
-          <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_110px] border-b border-stone-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.06em] text-stone-500">
-            <SortHeader label="Client" active={sortBy === 'name'} dir={sortDir} align="left" onClick={() => toggleSort('name')} />
-            <SortHeader label="Revenue" active={sortBy === 'periodRevenue'} dir={sortDir} onClick={() => toggleSort('periodRevenue')} />
-            <SortHeader label="Cleaner Pay" active={sortBy === 'periodCleanerCost'} dir={sortDir} onClick={() => toggleSort('periodCleanerCost')} />
-            <SortHeader label="Profit" active={sortBy === 'periodProfit'} dir={sortDir} onClick={() => toggleSort('periodProfit')} />
-            <span className="text-right">Cleaner</span>
-            <span className="text-right">Type</span>
-          </div>
-          {isLoading ? (
-            <div className="p-4">
-              <SkeletonPulse className="h-64 w-full" rounded="lg" />
-            </div>
-          ) : (
-            <div className="max-h-[480px] overflow-y-auto">
-              {sortedRows.map((row) => (
-                <Link
-                  key={row.id}
-                  href={`/clients/${row.id}`}
-                  className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_110px] items-center border-b border-stone-100 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-stone-50"
-                >
-                  <div className="min-w-0">
-                    <div className="font-semibold leading-tight">{row.name}</div>
-                    <div className="truncate text-xs text-stone-400">{row.frequency || `${row.periodJobCount} jobs`}</div>
-                  </div>
-                  <div className="text-right font-mono font-semibold">{formatCurrency(row.periodRevenue)}</div>
-                  <div className="text-right font-mono font-semibold text-stone-500">-{formatCurrency(row.periodCleanerCost)}</div>
-                  <div className={`text-right font-mono font-semibold ${row.periodProfit > 0 ? 'text-emerald-600' : row.periodProfit < 0 ? 'text-red-600' : 'text-stone-400'}`}>
-                    {formatCurrency(row.periodProfit)}
-                  </div>
-                  <div className="text-right text-xs text-stone-500">{shortenName(row.cleanerAssigned)}</div>
-                  <div className="text-right">
-                    <div className="text-xs font-medium text-stone-500">{propertyTypeLabel(row.propertyType)}</div>
-                    <div className="text-[10px] text-stone-400">{row.clientPayType.replace('Flat Rate', 'Flat')}</div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-          {!isLoading && (
-            <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_120px_100px_110px] border-t-2 border-stone-950 bg-stone-50 px-4 py-2 text-sm font-bold">
-              <span>Total</span>
-              <span className="text-right font-mono">{formatCurrency(totals.periodRevenue)}</span>
-              <span className="text-right font-mono text-stone-500">-{formatCurrency(totals.periodCleanerCost)}</span>
-              <span className="text-right font-mono text-emerald-600">{formatCurrency(totals.periodProfit)}</span>
-              <span />
-              <span />
-            </div>
-          )}
-        </div>
       </div>
-    </div>
-  )
-}
 
-function PnlCell({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
-  return (
-    <div className="px-4 py-3">
-      <div className="mb-0.5 text-[10px] text-stone-400">{label}</div>
-      <div className={`font-mono text-lg font-bold tracking-[-0.03em] ${tone === 'good' ? 'text-emerald-600' : tone === 'bad' ? 'text-red-600' : 'text-stone-950'}`}>
-        {value}
-      </div>
+      <ProjectedExpensesModal
+        open={projectedOpen}
+        onClose={() => setProjectedOpen(false)}
+        values={projected}
+        actualAverage={actualAverage}
+        onSave={saveProjectedExpenses}
+      />
+      <ExpensesModal
+        open={expensesOpen}
+        onClose={() => setExpensesOpen(false)}
+        selectedMonth={currentMonth}
+        data={expenses.data}
+        isLoading={expenses.isLoading}
+        mutate={expenses.mutate}
+        onSelectMonth={setCurrentMonth}
+      />
     </div>
   )
 }
@@ -353,18 +358,18 @@ function SortHeader({
   label,
   active,
   dir,
-  align = 'right',
+  align = "right",
   onClick,
 }: {
   label: string
   active: boolean
-  dir: 'asc' | 'desc'
-  align?: 'left' | 'right'
+  dir: "asc" | "desc"
+  align?: "left" | "right"
   onClick: () => void
 }) {
   return (
-    <button type="button" onClick={onClick} className={`${align === 'left' ? 'text-left' : 'text-right'} hover:text-stone-950 ${active ? 'text-stone-950' : 'text-stone-500'}`}>
-      {label} {active ? (dir === 'desc' ? '↓' : '↑') : ''}
+    <button type="button" onClick={onClick} className={`${align === "left" ? "text-left" : "text-right"} uppercase hover:text-stone-900 ${active ? "text-stone-900" : "text-stone-500"}`}>
+      {label} {active ? (dir === "desc" ? "v" : "^") : ""}
     </button>
   )
 }

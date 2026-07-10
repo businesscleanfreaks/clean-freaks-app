@@ -109,9 +109,15 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
 
   return (
     <>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');`}</style>
       <ConfirmDialog />
-      <ClientDetailModals state={state} />
+      <ClientDetailModals
+        state={state}
+        onOpenRecurringSchedule={(locationId) => {
+          state.setExpandedLocation(locationId)
+          state.setAddingScheduleToLocation(locationId)
+          setActiveTab('schedule')
+        }}
+      />
       {pauseOpen && (
         <PauseServiceModal
           schedules={activeSchedules}
@@ -120,7 +126,7 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
         />
       )}
 
-      <div style={{ minHeight: '100vh', background: '#FAFAF9', overscrollBehavior: 'none', fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+      <div className="min-h-screen bg-[var(--cf-canvas)]" style={{ overscrollBehavior: 'none' }}>
         <ClientDetailHeader state={state} />
 
         {/* At-a-glance strip — visible above every tab */}

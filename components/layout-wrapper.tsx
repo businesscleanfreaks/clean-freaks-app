@@ -77,7 +77,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
         >
           <Menu className="w-6 h-6" />
         </button>
-        <h1 style={{ color: '#ffffff', fontSize: '1.125rem', fontWeight: 600, margin: 0 }}>{pageTitle}</h1>
+        <h1 style={{ color: '#171717', fontSize: '1.125rem', fontWeight: 700, margin: 0 }}>{pageTitle}</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           {headerActions}
         </div>
@@ -98,12 +98,12 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
         >
           <X className="w-6 h-6" />
         </button>
-        <NavSidebar onNavigate={() => setIsMobileMenuOpen(false)} />
+        <NavSidebar variant="mobile" onNavigate={() => setIsMobileMenuOpen(false)} />
       </div>
 
       {/* Desktop Sidebar - Always visible */}
       <aside className="desktop-sidebar">
-        <NavSidebar />
+        <NavSidebar variant="desktop" />
       </aside>
 
       {/* Main Content */}
@@ -120,7 +120,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile Bottom Tab Navigation */}
-      <MobileBottomTabs />
+      {!isMobileMenuOpen && <MobileBottomTabs />}
 
       {/* Global Search Command Palette (⌘K) */}
       <GlobalSearch />

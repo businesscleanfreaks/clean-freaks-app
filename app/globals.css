@@ -70,6 +70,26 @@ button, a, [role="button"], input, select, textarea, label, nav {
     --cf-icon-muted: #9CA3AF;
     --cf-skeleton-base: #F0F0F0;
     --cf-skeleton-shine: #F8F8F8;
+
+    /* Clean Freaks UI foundation: shared across operational workspaces. */
+    --cf-canvas: #f3f0e9;
+    --cf-surface: #ffffff;
+    --cf-surface-soft: #fffdf8;
+    --cf-surface-hover: #fbf8f1;
+    --cf-field: #faf8f3;
+    --cf-rule: #e5ded2;
+    --cf-rule-soft: #efe9dd;
+    --cf-grid-rule: #f1eadf;
+    --cf-rule-strong: #d8cdbd;
+    --cf-ink: #1a1a1a;
+    --cf-ink-secondary: #6f6a60;
+    --cf-ink-muted: #8a857a;
+    --cf-green: #0b7a4e;
+    --cf-green-hover: #075f3b;
+    --cf-green-soft: #eef6f1;
+    --cf-green-soft-hover: #e2f1ea;
+    --cf-green-rule: #a9ddd1;
+    --cf-panel-shadow: 0 1px 2px rgba(40, 30, 10, 0.04);
   }
 
   /* Modern Design - Premium Navy Blue & Teal with Unique Brand Colors */
@@ -225,7 +245,7 @@ button, a, [role="button"], input, select, textarea, label, nav {
 
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-lexend), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-ui), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-feature-settings: 'kern' 1, 'liga' 1;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -248,7 +268,7 @@ button, a, [role="button"], input, select, textarea, label, nav {
   [data-design="modern"] h4,
   [data-design="modern"] h5,
   [data-design="modern"] h6 {
-    font-family: var(--font-lexend), sans-serif;
+    font-family: var(--font-ui), sans-serif;
     font-weight: 700;
     letter-spacing: var(--letter-spacing-tight);
     line-height: var(--line-height-tight);
@@ -314,7 +334,7 @@ button, a, [role="button"], input, select, textarea, label, nav {
 
   /* Premium number styling - solid zeros, no dots */
   .number-display {
-    font-family: var(--font-lexend), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-ui), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum' 1, 'zero' 1;
     letter-spacing: -0.02em;
@@ -1079,7 +1099,7 @@ button, a, [role="button"], input, select, textarea, label, nav {
   height: 100vh;
   height: 100dvh;
   overflow: clip;
-  background: #f9fafb;
+  background: var(--cf-canvas);
 }
 
 .mobile-header {
@@ -1089,8 +1109,8 @@ button, a, [role="button"], input, select, textarea, label, nav {
   left: 0;
   right: 0;
   height: 56px;
-  background: linear-gradient(to right, #0f172a, #1e293b);
-  border-bottom: 1px solid #334155;
+  background: #ffffff;
+  border-bottom: 1px solid var(--cf-rule);
   z-index: 40;
   align-items: center;
   justify-content: space-between;
@@ -1103,7 +1123,7 @@ button, a, [role="button"], input, select, textarea, label, nav {
   justify-content: center;
   width: 44px;
   height: 44px;
-  color: white;
+  color: var(--cf-green);
   background: transparent;
   border: none;
   border-radius: 10px;
@@ -1112,7 +1132,7 @@ button, a, [role="button"], input, select, textarea, label, nav {
 }
 
 .mobile-menu-btn:active {
-  background: rgba(255,255,255,0.1);
+  background: var(--cf-green-soft);
   transform: scale(0.95);
 }
 
@@ -1157,8 +1177,9 @@ button, a, [role="button"], input, select, textarea, label, nav {
   justify-content: center;
   width: 44px;
   height: 44px;
-  background: rgba(51, 65, 85, 0.8);
-  color: white;
+  background: #ffffff;
+  color: var(--cf-ink-secondary);
+  border: 1px solid var(--cf-rule);
   border: none;
   border-radius: 10px;
   cursor: pointer;
@@ -1166,7 +1187,7 @@ button, a, [role="button"], input, select, textarea, label, nav {
 }
 
 .mobile-close-btn:active {
-  background: rgba(71, 85, 105, 1);
+  background: var(--cf-surface-hover);
   transform: scale(0.95);
 }
 
@@ -1177,10 +1198,16 @@ button, a, [role="button"], input, select, textarea, label, nav {
 
 .main-content {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  background: #f9fafb;
+  background: var(--cf-canvas);
+}
+
+.main-content > div {
+  min-width: 0;
+  width: 100%;
 }
 
 /* Mobile: show mobile chrome, hide desktop sidebar */
