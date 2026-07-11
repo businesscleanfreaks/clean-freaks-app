@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
-import { Check, DollarSign, MapPin, Search, X } from "lucide-react"
+import { ArrowLeft, Check, DollarSign, MapPin, Search, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -512,8 +512,8 @@ export function CompactCreateJobDialog({
   return (
     <Dialog open={open} onOpenChange={value => !value && close()}>
       <DialogContent hideClose className="flex max-h-[92vh] w-[min(94vw,440px)] max-w-[440px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
-        <div className="flex-shrink-0 flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <DialogTitle className="text-[15px] font-extrabold tracking-tight text-slate-950">New booking</DialogTitle>
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div className="flex items-center gap-2"><button type="button" aria-label="Back to calendar" onClick={close} className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /></button><DialogTitle className="text-[15px] font-extrabold tracking-tight text-slate-950">New booking</DialogTitle></div>
           <DialogDescription className="sr-only">Add a new job: pick client, schedule, rates, and notes in one quick pass.</DialogDescription>
           <button aria-label="Close add job" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X className="h-4 w-4" />

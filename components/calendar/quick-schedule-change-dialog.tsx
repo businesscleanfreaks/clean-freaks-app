@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { addDays, addMonths, endOfMonth, format, isSameDay, startOfMonth, startOfWeek } from "date-fns"
-import { Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2, Plus, X } from "lucide-react"
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { showApiError, showError, showSuccess, showUndoToast } from "@/lib/toast"
@@ -15,6 +15,7 @@ type ScheduleJob = JobWithFullRelations & {
     subcontractorPayType?: string | null
     paymentCadenceOverride?: string | null
     monthlyPattern?: string | null
+    customDates?: string | null
   }) | null
 }
 
@@ -22,6 +23,7 @@ interface QuickScheduleChangeDialogProps {
   job: ScheduleJob | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  onBack: () => void
 }
 
 const weeklyCadences: Record<string, number> = {
@@ -57,10 +59,17 @@ function cadenceLabel(frequency: string) {
     EVERY_6_WEEKS: "Every 6 weeks",
     MONTHLY: "Monthly",
     "2X_MONTHLY": "Twice monthly",
+    CUSTOM: "One-time / custom dates",
   }[frequency] || frequency
 }
 
-function previewDates(startDate: Date, frequency: string, selectedDays: number[], count = 18) {
+function previewDates(startDate: Date, frequency: string, selectedDays: number[], customDates: string[], count = 18) {
+  if (frequency === "CUSTOM") {
+    return customDates
+      .filter(Boolean)
+      .map(value => new Date(`${value}T12:00:00`))
+      .filter(date => !Number.isNaN(date.getTime()))
+  }
   const dates: Date[] = []
   const cadenceWeeks = weeklyCadences[frequency]
   const anchorWeek = startOfWeek(startDate, { weekStartsOn: 0 })
@@ -98,10 +107,11 @@ function MiniMonth({ month, highlighted, effectiveDate }: { month: Date; highlig
   )
 }
 
-export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickScheduleChangeDialogProps) {
+export function QuickScheduleChangeDialog({ job, open, onOpenChange, onBack }: QuickScheduleChangeDialogProps) {
   const [frequency, setFrequency] = useState("WEEKLY")
   const [days, setDays] = useState<number[]>([])
   const [effectiveFrom, setEffectiveFrom] = useState("")
+  const [customDates, setCustomDates] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -112,17 +122,27 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickSche
     setFrequency(job.schedule.frequency || "WEEKLY")
     setDays(parseDays(job.schedule.daysOfWeek).length ? parseDays(job.schedule.daysOfWeek) : [new Date(`${initialEffective}T12:00:00`).getDay()])
     setEffectiveFrom(initialEffective)
+    try {
+      const parsed = JSON.parse(job.schedule.customDates || "[]")
+      setCustomDates(Array.isArray(parsed) && parsed.length ? parsed : [initialEffective])
+    } catch {
+      setCustomDates([initialEffective])
+    }
   }, [job, open])
 
   const effectiveDate = effectiveFrom ? new Date(`${effectiveFrom}T12:00:00`) : new Date()
-  const highlighted = previewDates(effectiveDate, frequency, days)
+  const highlighted = previewDates(effectiveDate, frequency, days, customDates)
   if (!job?.schedule || !job.scheduleId) return null
 
   const weeklyLike = Boolean(weeklyCadences[frequency])
-  const summaryDays = weeklyLike ? days.map(day => dayNames[day]).join(", ") : format(effectiveDate, "MMM d")
+  const summaryDays = weeklyLike
+    ? days.map(day => dayNames[day]).join(", ")
+    : frequency === "CUSTOM"
+      ? `${customDates.filter(Boolean).length} selected date${customDates.filter(Boolean).length === 1 ? "" : "s"}`
+      : format(effectiveDate, "MMM d")
 
   const confirm = async () => {
-    if (!effectiveFrom || (weeklyLike && days.length === 0)) {
+    if (!effectiveFrom || (weeklyLike && days.length === 0) || (frequency === "CUSTOM" && customDates.filter(Boolean).length === 0)) {
       showError("Choose an effective date and at least one service day")
       return
     }
@@ -134,6 +154,9 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickSche
         : frequency === "2X_MONTHLY"
           ? JSON.stringify({ type: "FIXED_DATES", dates: [effectiveDate.getDate(), Math.min(effectiveDate.getDate() + 14, 28)] })
           : null
+      const nextCustomDates = frequency === "CUSTOM"
+        ? JSON.stringify(Array.from(new Set(customDates.filter(Boolean))).sort())
+        : null
       const existingEndDate = dateOnly(schedule.endDate)
       const response = await fetch(`/api/schedules/${job.scheduleId}/change-going-forward`, {
         method: "POST",
@@ -143,6 +166,7 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickSche
           frequency,
           daysOfWeek: weeklyLike ? JSON.stringify(days) : null,
           monthlyPattern,
+          customDates: nextCustomDates,
           startDate: effectiveFrom,
           endDate: existingEndDate && existingEndDate >= effectiveFrom ? existingEndDate : null,
           defaultClientRate: schedule.defaultClientRate ?? job.clientRate ?? 0,
@@ -163,11 +187,11 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickSche
         return
       }
       const result = await response.json() as { oldScheduleId?: string; newSchedule?: { id?: string } }
-      refreshCalendarData()
       const originalPayload = {
         frequency: schedule.frequency,
         daysOfWeek: schedule.daysOfWeek ?? null,
         monthlyPattern: schedule.monthlyPattern ?? null,
+        customDates: schedule.customDates ?? null,
         startDate: dateOnly(schedule.startDate),
         endDate: dateOnly(schedule.endDate) || null,
         defaultClientRate: schedule.defaultClientRate ?? job.clientRate ?? 0,
@@ -181,28 +205,33 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickSche
         startWindowBegin: schedule.startWindowBegin ?? job.startWindowBegin ?? null,
         startWindowEnd: schedule.startWindowEnd ?? job.startWindowEnd ?? null,
       }
-      showUndoToast("Schedule updated", async () => {
-        const newScheduleId = result.newSchedule?.id
-        if (newScheduleId && newScheduleId !== job.scheduleId) {
-          const deleteResponse = await fetch(`/api/schedules/${newScheduleId}`, { method: "DELETE" })
-          if (!deleteResponse.ok) {
-            await showApiError(deleteResponse, "Failed to remove the changed schedule")
+      onOpenChange(false)
+      void refreshCalendarData().catch(() => {})
+      try {
+        showUndoToast("Schedule updated", async () => {
+          const newScheduleId = result.newSchedule?.id
+          if (newScheduleId && newScheduleId !== job.scheduleId) {
+            const deleteResponse = await fetch(`/api/schedules/${newScheduleId}`, { method: "DELETE" })
+            if (!deleteResponse.ok) {
+              await showApiError(deleteResponse, "Failed to remove the changed schedule")
+              return
+            }
+          }
+          const undoResponse = await fetch(`/api/schedules/${job.scheduleId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(originalPayload),
+          })
+          if (!undoResponse.ok) {
+            await showApiError(undoResponse, "Failed to undo schedule change")
             return
           }
-        }
-        const undoResponse = await fetch(`/api/schedules/${job.scheduleId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(originalPayload),
+          void refreshCalendarData().catch(() => {})
+          showSuccess("Change undone")
         })
-        if (!undoResponse.ok) {
-          await showApiError(undoResponse, "Failed to undo schedule change")
-          return
-        }
-        refreshCalendarData()
-        showSuccess("Change undone")
-      })
-      onOpenChange(false)
+      } catch {
+        showSuccess("Schedule updated")
+      }
     } catch {
       showError("Failed to change schedule. Please try again.")
     } finally {
@@ -212,16 +241,35 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickSche
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent hideClose className="w-[min(94vw,578px)] max-w-[578px] gap-0 overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.30)]">
-        <DialogTitle className="px-7 pt-6 text-[21px] font-extrabold text-[#172033]">Change schedule: {job.location.client.name}</DialogTitle>
-        <DialogDescription className="px-7 pt-1 text-[13px] text-[#66758b]">Pick the new pattern and when it starts.</DialogDescription>
-        <div className="max-h-[72vh] space-y-4 overflow-y-auto px-7 py-4">
-          <div className="grid grid-cols-3 gap-2">
-            {[['WEEKLY', 'Weekly'], ['BI_WEEKLY', 'Every other week'], ['MONTHLY', 'Monthly']].map(([value, label]) => <button key={value} type="button" onClick={() => setFrequency(value)} className={`rounded-xl border px-3 py-3 text-[14px] font-extrabold ${frequency === value ? 'border-[#0b8557] bg-[#e7f3ee] text-[#076342]' : 'border-[#d9e1ea] text-[#536177]'}`}>{label}</button>)}
+      <DialogContent hideClose className="flex max-h-[92vh] w-[min(94vw,578px)] max-w-[578px] flex-col gap-0 overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.30)]">
+        <div className="shrink-0 border-b border-[#edf0f3] px-5 pb-4 pt-5">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onBack} aria-label="Back to booking" className="flex h-8 w-8 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6]"><ArrowLeft className="h-4 w-4" /></button>
+            <DialogTitle className="min-w-0 truncate text-[21px] font-extrabold text-[#172033]">Change schedule: {job.location.client.name}</DialogTitle>
           </div>
-          <label className="block text-[11px] font-extrabold text-[#66758b]">OTHER CADENCE<select value={frequency} onChange={event => setFrequency(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-[#d9e1ea] bg-[#f8fafc] px-3 text-[13px] font-semibold text-[#263246]"><option value="WEEKLY">Every week</option><option value="BI_WEEKLY">Every other week</option><option value="EVERY_3_WEEKS">Every 3 weeks</option><option value="EVERY_4_WEEKS">Every 4 weeks</option><option value="EVERY_6_WEEKS">Every 6 weeks</option><option value="2X_MONTHLY">Twice monthly</option><option value="MONTHLY">Monthly</option></select></label>
+          <DialogDescription className="pl-10 pt-1 text-[13px] text-[#66758b]">Pick the new pattern and when it starts.</DialogDescription>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-7">
+          <label className="block text-[11px] font-extrabold text-[#66758b]">FREQUENCY
+            <select value={frequency} onChange={event => setFrequency(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#cfd8e3] bg-white px-3 text-[14px] font-semibold text-[#263246] outline-none focus:border-[#0b8557]">
+              <option value="WEEKLY">Every week</option>
+              <option value="BI_WEEKLY">Bi-weekly</option>
+              <option value="EVERY_3_WEEKS">Every 3 weeks</option>
+              <option value="EVERY_4_WEEKS">Every 4 weeks</option>
+              <option value="EVERY_6_WEEKS">Every 6 weeks</option>
+              <option value="2X_MONTHLY">2x monthly</option>
+              <option value="MONTHLY">Monthly</option>
+              <option value="CUSTOM">One-time / custom dates</option>
+            </select>
+          </label>
           {weeklyLike && <div><p className="mb-2 text-[11px] font-extrabold text-[#66758b]">ON THESE DAYS</p><div className="flex gap-2">{dayLetters.map((letter, index) => <button key={index} type="button" onClick={() => setDays(current => current.includes(index) ? current.filter(day => day !== index) : [...current, index].sort())} className={`flex h-10 flex-1 items-center justify-center rounded-lg border text-[12px] font-extrabold ${days.includes(index) ? 'border-[#0b8557] bg-[#0b8557] text-white' : 'border-[#d9e1ea] bg-white text-[#66758b]'}`}>{letter}</button>)}</div></div>}
           <label className="block text-[11px] font-extrabold text-[#66758b]">EFFECTIVE FROM<input type="date" min={format(new Date(), "yyyy-MM-dd")} value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#cfd8e3] bg-[#f8fafc] px-3 text-[14px] font-semibold text-[#172033]" /></label>
+          {frequency === "CUSTOM" && (
+            <div>
+              <div className="mb-2 flex items-center justify-between"><p className="text-[11px] font-extrabold text-[#66758b]">CUSTOM DATES</p><button type="button" onClick={() => setCustomDates(current => [...current, effectiveFrom])} className="flex items-center gap-1 text-[11px] font-extrabold text-[#08744f]"><Plus className="h-3.5 w-3.5" /> Add date</button></div>
+              <div className="space-y-2">{customDates.map((value, index) => <div key={`${index}-${value}`} className="flex gap-2"><input type="date" min={effectiveFrom} value={value} onChange={event => setCustomDates(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} className="h-10 min-w-0 flex-1 rounded-lg border border-[#cfd8e3] bg-[#f8fafc] px-3 text-[13px] font-semibold" /><button type="button" aria-label="Remove custom date" onClick={() => setCustomDates(current => current.filter((_, itemIndex) => itemIndex !== index))} className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#d9e1ea] text-[#7f8ea3] hover:bg-[#f8fafc]"><X className="h-4 w-4" /></button></div>)}</div>
+            </div>
+          )}
           <div className="rounded-xl border border-[#bddbd0] bg-[#e8f4ef] p-4">
             <p className="text-[10px] font-extrabold tracking-[0.05em] text-[#177454]">NEW SCHEDULE</p>
             <p className="mt-1 text-[15px] font-extrabold text-[#172033]">{cadenceLabel(frequency)} · {summaryDays}, starting {format(effectiveDate, "EEE, MMM d")}</p>
@@ -229,7 +277,7 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange }: QuickSche
             <div className="mt-3 flex gap-4 text-[10px] text-[#66758b]"><span className="flex items-center gap-1"><i className="h-3 w-3 rounded-full bg-[#111827]" /> Effective date</span><span className="flex items-center gap-1"><i className="h-3 w-3 rounded-full bg-[#0b8557]" /> New clean</span></div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#edf0f3] px-7 py-3.5"><button type="button" onClick={() => onOpenChange(false)} className="rounded-lg border border-[#d9e1ea] px-4 py-2.5 text-[13px] font-bold text-[#66758b]">Cancel</button><button type="button" onClick={confirm} disabled={saving} className="flex min-w-[144px] items-center justify-center gap-2 rounded-lg bg-[#078556] px-4 py-2.5 text-[13px] font-extrabold text-white disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Updating...' : 'Confirm change'}</button></div>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-[#edf0f3] bg-white px-5 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-7"><button type="button" onClick={onBack} className="rounded-lg border border-[#d9e1ea] px-4 py-2.5 text-[13px] font-bold text-[#66758b]">Back</button><button type="button" onClick={confirm} disabled={saving} className="flex min-w-[144px] items-center justify-center gap-2 rounded-lg bg-[#078556] px-4 py-2.5 text-[13px] font-extrabold text-white disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Updating...' : 'Confirm change'}</button></div>
       </DialogContent>
     </Dialog>
   )

@@ -94,6 +94,7 @@ export const createScheduleSchema = z.object({
   frequency: z.enum(['WEEKLY', 'BI_WEEKLY', 'EVERY_3_WEEKS', 'EVERY_4_WEEKS', 'EVERY_6_WEEKS', 'MONTHLY', '2X_MONTHLY', 'CUSTOM']),
   daysOfWeek: z.string().optional().nullable(), // JSON string of array - optional for 2X_MONTHLY
   monthlyPattern: z.string().optional().nullable(), // JSON string of pattern config for 2X_MONTHLY
+  customDates: z.string().optional().nullable(), // JSON array of YYYY-MM-DD dates for CUSTOM
   startDate: z.string().or(z.date()),
   endDate: z.string().or(z.date()).optional().nullable(),
   defaultClientRate: z.number().min(0, 'Client rate must be positive'),

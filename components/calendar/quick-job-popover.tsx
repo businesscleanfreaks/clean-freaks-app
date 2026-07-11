@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { format } from "date-fns"
-import { Loader2, Plus, Repeat2, X } from "lucide-react"
+import { ArrowLeft, Loader2, Plus, Repeat2, X } from "lucide-react"
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -295,20 +295,30 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       }
       setCancelOpen(false)
       onOpenChange(false)
-      refreshCalendarData()
-      showUndoToast("Clean cancelled", async () => {
-        const undoResponse = await fetch(`/api/jobs/${job.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "SCHEDULED", cancellationFee: null }),
+      void refreshCalendarData({
+        jobId: job.id,
+        updates: { status: "CANCELLED", cancellationFee: fee > 0 ? fee : null },
+      }).catch(() => {})
+      try {
+        showUndoToast("Clean cancelled", async () => {
+          const undoResponse = await fetch(`/api/jobs/${job.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "SCHEDULED", cancellationFee: null }),
+          })
+          if (!undoResponse.ok) {
+            await showApiError(undoResponse, "Failed to undo cancellation")
+            return
+          }
+          void refreshCalendarData({
+            jobId: job.id,
+            updates: { status: "SCHEDULED", cancellationFee: null },
+          }).catch(() => {})
+          showSuccess("Change undone")
         })
-        if (!undoResponse.ok) {
-          await showApiError(undoResponse, "Failed to undo cancellation")
-          return
-        }
-        refreshCalendarData()
-        showSuccess("Change undone")
-      })
+      } catch {
+        showSuccess("Clean cancelled")
+      }
     } catch {
       showError("Failed to cancel clean. Please try again.")
     } finally {
@@ -463,12 +473,15 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent hideClose className="!w-[min(94vw,398px)] !max-w-[398px] gap-2 overflow-hidden rounded-xl border border-[#dfe5eb] bg-white p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
+      <DialogContent hideClose className="flex max-h-[92vh] !w-[min(94vw,398px)] !max-w-[398px] flex-col gap-0 overflow-hidden rounded-xl border border-[#dfe5eb] bg-white p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
         <DialogTitle className="sr-only">Quick edit {job.location.client.name}</DialogTitle>
         <DialogDescription className="sr-only">Update this booking or open the complete job details.</DialogDescription>
 
-        <div className="border-b border-[#edf0f3] px-3 pb-4 pt-4">
+        <div className="shrink-0 border-b border-[#edf0f3] px-4 pb-3 pt-3">
           <div className="flex items-center gap-2 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">
+            <button type="button" onClick={() => onOpenChange(false)} aria-label="Back to calendar" className="mr-0.5 flex h-7 w-7 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6] hover:text-[#263246]">
+              <ArrowLeft className="h-4 w-4" />
+            </button>
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: type.color }} />
             {type.label}
             <button type="button" onClick={() => onOpenChange(false)} aria-label="Close" className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-[#aeb7c3] hover:bg-[#f1f4f6] hover:text-[#64748b]">
@@ -476,25 +489,24 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
             </button>
           </div>
           <h2 className="mt-2 truncate text-[20px] font-extrabold text-[#111827]">{job.location.client.name}</h2>
-          <div className="mt-2.5 max-w-[250px]">
+          <div className="mt-2.5 flex max-w-[270px] items-center gap-2">
             {job.vendor ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-[#e7ebef] bg-[#f7f8fa] py-1 pl-1 pr-3 text-[13px] font-semibold text-[#425066]"><span className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-extrabold text-white" style={{ backgroundColor: type.color }}>{initials}</span>{job.vendor.name} · vendor</div>
             ) : (
-              <Select value={subcontractorId} onValueChange={setSubcontractorId} disabled={locked}>
-                <SelectTrigger className="h-9 rounded-full border-[#e7ebef] bg-[#f7f8fa] px-1 pr-3 text-[13px] font-semibold text-[#425066] shadow-none focus:ring-1 focus:ring-[#9ad6c4]">
-                  <span className="mr-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white" style={{ backgroundColor: type.color }}>{initials}</span>
+              <><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white text-[10px] font-extrabold text-white shadow-sm" style={{ backgroundColor: type.color }}>{initials}</span><Select value={subcontractorId} onValueChange={setSubcontractorId} disabled={locked}>
+                <SelectTrigger className="h-9 min-w-0 flex-1 rounded-lg border-[#e1e7ed] bg-[#f7f8fa] px-3 text-[13px] font-semibold text-[#425066] shadow-none focus:ring-1 focus:ring-[#9ad6c4]">
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent className="max-h-64 rounded-lg border-[#dfe5eb] p-1 shadow-xl">
                   <SelectItem value="unassigned" className="rounded-md">Unassigned</SelectItem>
                   {activeSubcontractors.map(person => <SelectItem key={person.id} value={person.id} className="rounded-md">{person.name}</SelectItem>)}
                 </SelectContent>
-              </Select>
+              </Select></>
             )}
           </div>
         </div>
 
-        <div className="max-h-[64vh] space-y-3.5 overflow-y-auto px-4 py-3.5">
+        <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 py-3.5">
           {locked && <div className="rounded-md border border-[#f1d6a8] bg-[#fff8e8] px-3 py-2 text-[11px] font-semibold text-[#8a5a12]">This job is locked because it is cancelled, paid, or on a finalized invoice. More options explains the available next step.</div>}
 
           <section>
@@ -558,7 +570,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           <textarea value={notes} onChange={event => setNotes(event.target.value)} disabled={locked} placeholder="Add a note..." rows={2} className="w-full resize-none rounded-lg border border-[#dfe5ec] px-3 py-2.5 text-[13px] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" />
         </div>
 
-        <div className="flex items-center gap-3 border-t border-[#edf0f3] px-4 py-3">
+        <div className="flex shrink-0 items-center gap-3 border-t border-[#edf0f3] bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {job.status === 'CANCELLED' ? <button type="button" onClick={restoreClean} disabled={busyAction === 'restore'} className="text-[12px] font-bold text-[#08744f]">Restore clean</button> : <button type="button" onClick={() => setCancelOpen(true)} disabled={locked} className="text-[12px] font-bold text-[#c11f1f] disabled:opacity-40">Cancel this job</button>}
           {job.scheduleId && job.status !== 'CANCELLED' && <button type="button" onClick={() => setPauseOpen(true)} disabled={locked} className="text-[12px] font-bold text-[#66758b] disabled:opacity-40">Pause schedule...</button>}
           <button type="button" onClick={save} disabled={saving || locked} className="ml-auto flex min-w-[82px] items-center justify-center gap-1.5 rounded-lg bg-[#078556] px-4 py-2.5 text-[13px] font-extrabold text-white shadow-sm hover:bg-[#067348] disabled:cursor-not-allowed disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{saving ? "Saving" : "Save"}</button>
@@ -568,11 +580,17 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
 
     <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
       <DialogContent hideClose className="w-[min(92vw,516px)] max-w-[516px] gap-0 rounded-2xl border-0 p-0 shadow-2xl">
-        <DialogTitle className="px-6 pt-6 text-[19px] font-extrabold text-[#172033]">Cancel this clean?</DialogTitle>
+        <div className="flex items-center gap-2 px-5 pt-5">
+          <button type="button" onClick={() => setCancelOpen(false)} aria-label="Back to booking" className="flex h-8 w-8 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6]"><ArrowLeft className="h-4 w-4" /></button>
+          <DialogTitle className="text-[19px] font-extrabold text-[#172033]">Cancel this clean?</DialogTitle>
+        </div>
         <DialogDescription className="px-6 pt-1 text-[13px] text-[#66758b]">{job.location.client.name}{job.scheduleId ? ' is recurring. How much should be cancelled?' : ' is a one-time clean.'}</DialogDescription>
         <div className="space-y-2.5 px-6 py-4">
           <label className="mb-2 block text-[10px] font-bold text-[#718096]">Cancellation fee for this clean (optional)<input type="number" min="0" step="0.01" value={cancelFee} onChange={event => setCancelFee(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#d9e1ea] px-3 text-[13px]" /></label>
-          <button type="button" onClick={cancelSingleClean} disabled={Boolean(busyAction)} className="w-full rounded-xl border border-[#dfe5eb] px-4 py-3 text-left hover:bg-[#f8fafc]"><span className="block text-[14px] font-extrabold text-[#263246]">Cancel just this clean</span><span className="mt-0.5 block text-[11px] text-[#718096]">{format(new Date(job.date), 'EEE, MMM d')} only · the schedule continues</span></button>
+          <button type="button" onClick={cancelSingleClean} disabled={Boolean(busyAction)} aria-busy={busyAction === 'cancel-single'} className="flex w-full items-center gap-3 rounded-xl border border-[#dfe5eb] px-4 py-3 text-left hover:bg-[#f8fafc] disabled:cursor-wait disabled:opacity-70">
+            {busyAction === 'cancel-single' && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#078556]" />}
+            <span><span className="block text-[14px] font-extrabold text-[#263246]">{busyAction === 'cancel-single' ? 'Cancelling clean...' : 'Cancel just this clean'}</span><span className="mt-0.5 block text-[11px] text-[#718096]">{format(new Date(job.date), 'EEE, MMM d')} only · the schedule continues</span></span>
+          </button>
           {job.scheduleId && <button type="button" onClick={stopFutureCleans} disabled={Boolean(busyAction)} className="w-full rounded-xl border border-[#dfe5eb] px-4 py-3 text-left hover:bg-[#f8fafc]"><span className="block text-[14px] font-extrabold text-[#263246]">Cancel this &amp; all future cleans</span><span className="mt-0.5 block text-[11px] text-[#718096]">Ends the schedule from this date forward</span></button>}
           {job.scheduleId && <button type="button" onClick={deleteSchedule} disabled={Boolean(busyAction)} className="w-full rounded-xl border border-[#f5b6b6] px-4 py-3 text-left hover:bg-[#fff7f7]"><span className="block text-[14px] font-extrabold text-[#c11f1f]">Delete entire schedule</span><span className="mt-0.5 block text-[11px] text-[#d97878]">Removes the schedule and all unprotected cleans</span></button>}
           <button type="button" onClick={() => setCancelOpen(false)} className="w-full py-2 text-[12px] font-bold text-[#66758b]">Keep job</button>
@@ -582,7 +600,10 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
 
     <Dialog open={pauseOpen} onOpenChange={setPauseOpen}>
       <DialogContent hideClose className="w-[min(94vw,650px)] max-w-[650px] gap-0 rounded-2xl border-0 p-0 shadow-2xl">
-        <DialogTitle className="px-6 pt-6 text-[19px] font-extrabold text-[#172033]">Pause schedule</DialogTitle>
+        <div className="flex items-center gap-2 px-5 pt-5">
+          <button type="button" onClick={() => setPauseOpen(false)} aria-label="Back to booking" className="flex h-8 w-8 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6]"><ArrowLeft className="h-4 w-4" /></button>
+          <DialogTitle className="text-[19px] font-extrabold text-[#172033]">Pause schedule</DialogTitle>
+        </div>
         <DialogDescription className="px-6 pt-1 text-[13px] text-[#66758b]">{job.location.client.name} · cleans in this range are skipped, then the schedule resumes automatically.</DialogDescription>
         <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
           <label className="text-[10px] font-extrabold text-[#66758b]">FIRST DAY OFF<input type="date" min={format(new Date(), 'yyyy-MM-dd')} value={pauseFrom} onChange={event => setPauseFrom(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d9e1ea] bg-[#f8fafc] px-3 text-[13px] font-semibold" /></label>

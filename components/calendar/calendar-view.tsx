@@ -506,7 +506,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [weekDensity, setWeekDensity] = useState<WeekDensity>('Compact')
   const [expandedOverlapJobId, setExpandedOverlapJobId] = useState<string | null>(null)
   const [hoveredOverlapJobId, setHoveredOverlapJobId] = useState<string | null>(null)
-  const [specialRailOpen, setSpecialRailOpen] = useState(true)
+  const [specialRailOpen, setSpecialRailOpen] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<JobWithFullRelations | null>(null)
@@ -912,6 +912,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const openQuickScheduleDialog = () => {
     setQuickJobOpen(false)
     setQuickScheduleOpen(true)
+  }
+
+  const backToQuickJob = () => {
+    setQuickScheduleOpen(false)
+    setQuickJobOpen(true)
   }
 
   const handleDateClick = (date: Date) => {
@@ -2860,6 +2865,23 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       handleTimeSlotClick(day, `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
                     }}
                   >
+                    {createJobDialogOpen && selectedDateForNewJob && isSameDay(day, selectedDateForNewJob) && (() => {
+                      const draftStart = timeToMinutes(selectedTimeForNewJob || '09:00')
+                      const visibleStart = Math.max(draftStart, startHour * 60)
+                      const top = ((visibleStart / 60) - startHour) * hourHeight
+                      const height = Math.max(44, hourHeight * 2 - 3)
+                      return (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute z-40 overflow-hidden rounded-[5px] border-2 border-[#078556] bg-[#fff6ea] px-2 py-1.5 text-left shadow-[0_6px_18px_rgba(15,23,42,0.16)] ring-4 ring-[#078556]/10"
+                          style={{ top: `${top}px`, height: `${height}px`, left: '3px', right: '3px' }}
+                        >
+                          <div className="truncate text-[11px] font-extrabold text-[#1e293b]">(No title)</div>
+                          <div className="mt-0.5 text-[9.5px] font-bold text-[#526072]">{formatTimelineRange(draftStart, draftStart + 120)}</div>
+                          <span className="mt-1 inline-block rounded bg-[#fff0b8] px-1.5 py-0.5 text-[8px] font-extrabold text-[#92400e]">New booking</span>
+                        </div>
+                      )
+                    })()}
                     {/* Scheduled Jobs */}
                     {timelineLayout.positions.map(positioned => {
                       const { job, start, end, column, columnCount } = positioned
@@ -3486,6 +3508,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         job={selectedJob}
         open={quickScheduleOpen}
         onOpenChange={setQuickScheduleOpen}
+        onBack={backToQuickJob}
       />
 
       {/* Full Job Detail Dialog */}
@@ -3502,6 +3525,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         onOpenChange={(open) => {
           setCreateJobDialogOpen(open)
           if (!open) {
+            setSelectedDateForNewJob(null)
             setSelectedTimeForNewJob(undefined)
           }
         }}

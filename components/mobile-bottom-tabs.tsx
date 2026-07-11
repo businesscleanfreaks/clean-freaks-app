@@ -115,7 +115,7 @@ export function MobileBottomTabs() {
 
       {/* Bottom Tab Bar */}
       <nav 
-        className="mobile-bottom-tabs"
+        className="mobile-bottom-tabs hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="flex items-center justify-around h-full max-w-md mx-auto">

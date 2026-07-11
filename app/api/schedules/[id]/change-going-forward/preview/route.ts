@@ -118,7 +118,7 @@ export async function POST(
         endDate: persistedEndDate ?? existingSchedule.endDate,
         daysOfWeek: newScheduleData.daysOfWeek ?? null,
         monthlyPattern: newScheduleData.monthlyPattern ?? null,
-        customDates: null,
+        customDates: newScheduleData.customDates ?? null,
         excludedDates: existingSchedule.excludedDates,
       })
 
@@ -203,7 +203,7 @@ export async function POST(
       endDate: persistedEndDate ?? null,
       daysOfWeek: newScheduleData.daysOfWeek ?? null,
       monthlyPattern: newScheduleData.monthlyPattern ?? null,
-      customDates: null,
+      customDates: newScheduleData.customDates ?? null,
       excludedDates: existingSchedule.excludedDates,
     })
 
