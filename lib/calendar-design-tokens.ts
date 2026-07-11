@@ -101,6 +101,23 @@ export const CLEANER_HEX_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
   default: '#64748B',
 }
 
+// Deeper companions for the 5px performer spine used by solid calendar cards.
+// Keeping this separate from the filter-dot color preserves the mockup's
+// dark leading edge without making picker swatches look muddy.
+export const JOB_SPINE_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
+  teal: '#0F766E',
+  purple: '#5B3FB0',
+  amber: '#9A6700',
+  orange: '#C2410C',
+  rose: '#BE185D',
+  red: '#B91C1C',
+  blue: '#1E40AF',
+  emerald: '#047857',
+  indigo: '#4338CA',
+  slate: '#334155',
+  default: '#334155',
+}
+
 // Get color for a cleaner name (returns color key and hex)
 export function getCleanerColorInfo(cleanerName: string | null): { colorKey: keyof typeof JOB_GRADIENTS; hex: string } {
   if (!cleanerName) {
@@ -168,4 +185,3 @@ export const TRANSITIONS = {
   slow: `${ANIMATION_DURATION.slow}ms ${EASING.easeOut}`,
   spring: `${ANIMATION_DURATION.normal}ms ${EASING.spring}`,
 } as const
-

@@ -1,11 +1,11 @@
 "use client"
 
-import { Fragment, useState, useMemo, useEffect, useRef } from "react"
+import { Fragment, type CSSProperties, type ReactNode, useState, useMemo, useEffect, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { 
   ChevronLeft, ChevronRight,
   AlertCircle, Plus, ChevronDown, X, Loader2,
-  Search, MoreHorizontal, SlidersHorizontal
+  Search, MoreHorizontal, SlidersHorizontal, Check, Star
 } from "lucide-react"
 import { 
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, 
@@ -21,8 +21,9 @@ import { BulkJobActions } from "./bulk-job-actions"
 
 import { JobWithFullRelations, ClientWithLocations, Subcontractor } from "@/types"
 import { refreshCalendarData } from "./calendar-client"
-import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor, TouchSensor, closestCenter } from '@dnd-kit/core'
-import { getCleanerColorInfo, JOB_GRADIENTS, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
+import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor, TouchSensor, closestCenter, useDraggable, useDroppable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
+import { getCleanerColorInfo, JOB_GRADIENTS, JOB_SPINE_COLORS, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
 import { useCalendarFilters } from '@/lib/calendar-filter-context'
 import { CalendarFilterDrawer } from './calendar-filter-drawer'
 import { hasFinalInvoice } from '@/lib/invoice-status'
@@ -33,7 +34,7 @@ interface CalendarViewProps {
   subcontractors: Subcontractor[]
 }
 
-type ViewMode = 'week' | 'month'
+type ViewMode = 'day' | 'week' | 'month' | 'list'
 type MobileViewMode = 'day' | '3day' | 'week' | 'month'
 type WeekDensity = 'Comfortable' | 'Compact' | 'Dense'
 
@@ -59,27 +60,164 @@ function getPerformerName(job: { subcontractor?: { name?: string | null } | null
   return job.subcontractor?.name || job.vendor?.name || null
 }
 
+// Design rule: the ★ marks ONE-OFF cleans only (no recurring schedule). Trials,
+// first cleans, and add-ons are NOT starred — the reference calendar's special
+// rail is "one-offs flagged ahead".
+function isSpecialClean(job: JobWithFullRelations) {
+  return !job.scheduleId
+}
+
+function getSpecialCleanLabel(job: JobWithFullRelations) {
+  if (job.isTrial) return 'Trial'
+  if (!job.scheduleId) return 'One-off'
+  if (job.schedule?.startDate && isSameDay(new Date(job.date), new Date(job.schedule.startDate))) return 'First clean'
+  return 'Add-on'
+}
+
+type TimelinePosition = {
+  job: JobWithFullRelations
+  start: number
+  end: number
+  column: number
+  columnCount: number
+  groupId: number
+}
+
+type TimelineOverflow = {
+  groupId: number
+  jobs: JobWithFullRelations[]
+  start: number
+  end: number
+  column: number
+  columnCount: number
+}
+
+function timeToMinutes(time: string | null | undefined) {
+  if (!time) return 0
+  const [hour, minute] = time.split(':').map(Number)
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return 0
+  return hour * 60 + minute
+}
+
+function minutesToShortTime(totalMinutes: number, includePeriod = true) {
+  const hour24 = Math.floor(totalMinutes / 60) % 24
+  const minute = totalMinutes % 60
+  const period = hour24 >= 12 ? 'pm' : 'am'
+  const hour = hour24 % 12 || 12
+  return `${hour}${minute ? `:${String(minute).padStart(2, '0')}` : ''}${includePeriod ? period : ''}`
+}
+
+function formatTimelineRange(start: number, end: number) {
+  const samePeriod = (start >= 12 * 60) === (end >= 12 * 60)
+  return `${minutesToShortTime(start, !samePeriod)} - ${minutesToShortTime(end)}`
+}
+
+export function buildTimelineLayout(jobs: JobWithFullRelations[], maxColumns = 3) {
+  const timed = jobs
+    .map(job => {
+      const startValue = job.startTime || job.startWindowBegin
+      if (!startValue) return null
+      const start = timeToMinutes(startValue)
+      const explicitEnd = job.startWindowBegin ? job.startWindowEnd : null
+      let end = explicitEnd ? timeToMinutes(explicitEnd) : start + 60
+      if (end <= start) end = start + 60
+      return { job, start, end: Math.max(end, start + 15) }
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((a, b) => a.start - b.start || a.end - b.end)
+
+  const clusters: Array<typeof timed> = []
+  let activeCluster: typeof timed | null = null
+  let activeEnd = -1
+
+  for (const item of timed) {
+    if (!activeCluster || item.start >= activeEnd) {
+      activeCluster = [item]
+      clusters.push(activeCluster)
+      activeEnd = item.end
+    } else {
+      activeCluster.push(item)
+      activeEnd = Math.max(activeEnd, item.end)
+    }
+  }
+
+  const positions: TimelinePosition[] = []
+  const overflow: TimelineOverflow[] = []
+
+  clusters.forEach((cluster, groupId) => {
+    const laneEnds: number[] = []
+    const assigned = cluster.map(item => {
+      let column = laneEnds.findIndex(end => end <= item.start)
+      if (column === -1) {
+        column = laneEnds.length
+        laneEnds.push(item.end)
+      } else {
+        laneEnds[column] = item.end
+      }
+      return { ...item, column }
+    })
+    const actualColumnCount = Math.max(laneEnds.length, 1)
+    const visibleColumnCount = Math.min(actualColumnCount, maxColumns)
+    const hidden = actualColumnCount > maxColumns
+      ? assigned.filter(item => item.column >= maxColumns - 1)
+      : []
+
+    assigned.forEach(item => {
+      if (hidden.includes(item)) return
+      positions.push({
+        ...item,
+        columnCount: visibleColumnCount,
+        groupId,
+      })
+    })
+
+    if (hidden.length > 0) {
+      overflow.push({
+        groupId,
+        jobs: hidden.map(item => item.job),
+        start: Math.min(...hidden.map(item => item.start)),
+        end: Math.max(...hidden.map(item => item.end)),
+        column: maxColumns - 1,
+        columnCount: maxColumns,
+      })
+    }
+  })
+
+  return { positions, overflow }
+}
+
 // SearchSelect: combobox-style dropdown for the inline header filters (Team / Clients).
 // Per calendar_dev_notes.md item 2: replaces the side-panel filter drawer. Each dropdown has
 // a search input + filtered list of options. Click outside to close.
-type SearchSelectOption = { value: string; label: string; hex?: string }
+type SearchSelectOption = { value: string; label: string; hex?: string; badge?: string }
 
 function SearchSelect({
   defaultLabel,
-  selectedValue,
+  selectedValues,
   options,
-  onSelect,
+  allSelected,
+  onToggle,
+  onSelectOnly,
+  onSelectAll,
 }: {
   defaultLabel: string
-  selectedValue: string | null
+  selectedValues: Set<string>
   options: SearchSelectOption[]
-  onSelect: (value: string | null) => void
+  allSelected: boolean
+  onToggle: (value: string) => void
+  onSelectOnly: (value: string) => void
+  onSelectAll: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement | null>(null)
-  const selectedOption = selectedValue ? options.find(o => o.value === selectedValue) : null
-  const isActive = !!selectedOption
+  const selectedOptions = options.filter(option => selectedValues.has(option.value))
+  const isActive = !allSelected
+  const label = allSelected
+    ? defaultLabel
+    : selectedOptions.length === 1
+      ? selectedOptions[0].label
+      : `${defaultLabel} (${selectedOptions.length})`
   const filtered = query.trim() ? options.filter(o => o.label.toLowerCase().includes(query.toLowerCase())) : options
 
   useEffect(() => {
@@ -104,11 +242,11 @@ function SearchSelect({
             : 'border-[var(--cf-rule)] bg-white text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]'
         }`}
       >
-        {selectedOption?.hex && (
-          <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: selectedOption.hex, flexShrink: 0 }} />
+        {selectedOptions.length === 1 && selectedOptions[0].hex && (
+          <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: selectedOptions[0].hex, flexShrink: 0 }} />
         )}
         <span style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selectedOption ? selectedOption.label : defaultLabel}
+          {label}
         </span>
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: isActive ? '#0D9488' : '#94A3B8' }} />
       </button>
@@ -128,7 +266,13 @@ function SearchSelect({
             overflow: 'hidden',
           }}
         >
-          <div style={{ padding: '6px 8px', borderBottom: '1px solid #F1F5F9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px 6px' }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7F8EA3' }}>{defaultLabel}</span>
+            <button type="button" onClick={onSelectAll} style={{ border: 0, background: 'transparent', color: '#0B7A4E', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              {allSelected ? 'Clear' : 'Select all'}
+            </button>
+          </div>
+          <div style={{ padding: '0 8px 7px', borderBottom: '1px solid #F1F5F9' }}>
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
@@ -137,40 +281,38 @@ function SearchSelect({
               style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #E6E0D4', fontSize: 11, outline: 'none', background: '#FAF8F3' }}
             />
           </div>
-          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-            <button
-              onClick={() => { onSelect(null); setOpen(false); setQuery('') }}
-              style={{
-                display: 'flex', alignItems: 'center', width: '100%', padding: '7px 12px',
-                fontSize: 12, fontWeight: !selectedOption ? 600 : 400,
-                color: !selectedOption ? '#0B7A4E' : '#1A1A1A',
-                background: !selectedOption ? '#EEF6F1' : 'transparent',
-                border: 'none', cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              {defaultLabel}
-            </button>
+          <div style={{ maxHeight: 280, overflowY: 'auto', padding: 5 }}>
             {filtered.length === 0 ? (
               <div style={{ padding: '10px 12px', fontSize: 11, color: '#94A3B8', textAlign: 'center' }}>No results</div>
             ) : filtered.map(o => {
-              const active = o.value === selectedValue
+              const active = selectedValues.has(o.value)
               return (
-                <button
+                <div
                   key={o.value}
-                  onClick={() => { onSelect(o.value); setOpen(false); setQuery('') }}
+                  onClick={() => onToggle(o.value)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '7px 12px',
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '7px',
                     fontSize: 12, fontWeight: active ? 600 : 400,
-                    color: active ? '#0B7A4E' : '#1A1A1A',
-                    background: active ? '#EEF6F1' : 'transparent',
+                    color: '#1A1A1A', background: 'transparent', borderRadius: 7,
                     border: 'none', cursor: 'pointer', textAlign: 'left',
                   }}
                 >
+                  <span style={{ width: 15, height: 15, borderRadius: 4, border: `1.5px solid ${active ? '#0B7A4E' : '#CBD5E1'}`, background: active ? '#0B7A4E' : '#FFFFFF', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {active && <Check style={{ width: 10, height: 10, strokeWidth: 3 }} />}
+                  </span>
                   {o.hex && (
                     <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: o.hex, flexShrink: 0 }} />
                   )}
-                  {o.label}
-                </button>
+                  <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                  {o.badge && <span style={{ fontSize: 9, fontWeight: 800, color: '#64748B', background: '#EEF2F6', padding: '1px 5px', borderRadius: 4 }}>{o.badge}</span>}
+                  <button
+                    type="button"
+                    onClick={(event) => { event.stopPropagation(); onSelectOnly(o.value); setOpen(false); setQuery('') }}
+                    style={{ border: 0, background: 'transparent', color: '#AAB2BD', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Only
+                  </button>
+                </div>
               )
             })}
           </div>
@@ -182,7 +324,12 @@ function SearchSelect({
 
 // HeaderSearch: expandable search icon → input. Sits next to the filter dropdowns in the
 // calendar header per Josh's feedback ("still missing the search function right next to the filters").
-function HeaderSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function HeaderSearch({ value, onChange, results, onPick }: {
+  value: string
+  onChange: (v: string) => void
+  results: Array<{ id: string; primary: string; secondary: string; kind: string; hex: string }>
+  onPick: (id: string) => void
+}) {
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -190,39 +337,101 @@ function HeaderSearch({ value, onChange }: { value: string; onChange: (v: string
     if (open) inputRef.current?.focus()
   }, [open])
 
-  if (open || value) {
-    return (
-      <div className="flex items-center gap-1" style={{ animation: 'fadeIn 100ms ease' }}>
+  return (
+      <div className="relative flex min-w-[160px] max-w-[222px] flex-1 items-center" style={{ animation: 'fadeIn 100ms ease' }}>
+        <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-[#7f8ea3]" />
         <input
           ref={inputRef}
           value={value}
           onChange={e => onChange(e.target.value)}
-          onBlur={() => { if (!value) setOpen(false) }}
-          placeholder="Search jobs..."
-          className="w-[176px] rounded-lg border border-[#e8ecf1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] outline-none focus:border-[var(--cf-green)]"
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          placeholder="Search clients, jobs, notes..."
+          className="w-full rounded-lg border border-[#d2d8e0] bg-[#f6f7f9] py-1.5 pl-8 pr-7 text-xs font-medium text-[#334155] outline-none focus:border-[var(--cf-green)]"
         />
         {value && (
           <button
-            onClick={() => { onChange(''); setOpen(false) }}
+            onClick={() => onChange('')}
             aria-label="Clear search"
-            className="flex h-5 w-5 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"
+            className="absolute right-1.5 flex h-5 w-5 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"
           >
             <X className="h-3 w-3" />
           </button>
         )}
+        {open && value.trim() && results.length > 0 && (
+          <div className="absolute left-0 top-full z-[70] mt-1.5 w-[308px] max-w-[80vw] rounded-lg border border-[#e6e9ee] bg-white p-1 shadow-[0_14px_36px_rgba(16,24,40,0.18)]">
+            {results.map(result => (
+              <button
+                type="button"
+                key={result.id}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => { onPick(result.id); setOpen(false) }}
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-[#f5f8fa]"
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: result.hex }} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-bold text-[#1e293b]">{result.primary}</span>
+                  <span className="block truncate text-[10px] text-[#7f8ea3]">{result.secondary}</span>
+                </span>
+                <span className="text-[9px] font-bold uppercase tracking-[0.04em] text-[#b6bdc7]">{result.kind}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    )
-  }
+  )
+}
+
+function DraggableTimelineJob({ job, disabled, title, className, style, onClick, onMouseEnter, onMouseLeave, children }: {
+  job: JobWithFullRelations
+  disabled: boolean
+  title: string
+  className: string
+  style: CSSProperties
+  onClick: (event: React.MouseEvent<HTMLDivElement>) => void
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
+  children: ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: job.id,
+    data: { job, date: new Date(job.date) },
+    disabled,
+  })
 
   return (
-    <button
-      onClick={() => setOpen(true)}
-      aria-label="Search jobs"
-      title="Search"
-      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      title={title}
+      data-calendar-job-id={job.id}
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className={className}
+      style={{ ...style, transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.35 : style.opacity }}
     >
-      <Search className="h-3.5 w-3.5" />
-    </button>
+      {children}
+    </div>
+  )
+}
+
+function TimelineDayColumn({ date, children, onCreate }: { date: Date; children: ReactNode; onCreate: (event: React.MouseEvent<HTMLDivElement>) => void }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `timeline-${format(date, 'yyyy-MM-dd')}`,
+    data: { date, type: 'day-cell' },
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={onCreate}
+      className="relative overflow-visible border-r border-[#eef1f4] last:border-r-0"
+      style={{ backgroundColor: isOver ? 'rgba(13,148,136,0.08)' : isToday(date) ? 'rgba(13,148,136,0.025)' : '#FFFFFF' }}
+    >
+      {children}
+    </div>
   )
 }
 
@@ -293,6 +502,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [mobileView, setMobileView] = useState<MobileViewMode>('3day')
   const [weekDensity, setWeekDensity] = useState<WeekDensity>('Compact')
+  const [expandedOverlapJobId, setExpandedOverlapJobId] = useState<string | null>(null)
+  const [hoveredOverlapJobId, setHoveredOverlapJobId] = useState<string | null>(null)
+  const [specialRailOpen, setSpecialRailOpen] = useState(true)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<JobWithFullRelations | null>(null)
@@ -332,6 +544,22 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   
   // Lazy loading state for calendar navigation
   const [allJobs, setAllJobs] = useState<JobWithFullRelations[]>(initialJobs)
+  const vendorOptions = useMemo(() => {
+    const vendors = new Map<string, string>()
+    for (const job of allJobs) {
+      const vendor = (job as JobWithFullRelations & { vendor?: { id: string; name: string } | null }).vendor
+      if (vendor) vendors.set(vendor.id, vendor.name)
+    }
+    return Array.from(vendors, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [allJobs])
+  const [selectedVendorIds, setSelectedVendorIds] = useState<Set<string>>(() => {
+    const ids = new Set<string>()
+    for (const job of initialJobs) {
+      const vendor = (job as JobWithFullRelations & { vendor?: { id: string } | null }).vendor
+      if (vendor) ids.add(vendor.id)
+    }
+    return ids
+  })
   const [loadedRanges, setLoadedRanges] = useState<Set<string>>(() => {
     const ranges = new Set<string>()
     const now = new Date()
@@ -343,13 +571,28 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   
   // Use allJobs instead of initialJobs throughout the component
   const jobs = allJobs
+
+  useEffect(() => {
+    setSelectedVendorIds(current => {
+      const next = new Set(current)
+      let changed = false
+      for (const vendor of vendorOptions) {
+        if (!next.has(vendor.id)) {
+          next.add(vendor.id)
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [vendorOptions])
   
   const calFilters = useCalendarFilters()
   const noop = useMemo(() => (() => {}) as (...args: unknown[]) => void, [])
   const defaultCleanerIds = useMemo(() => new Set(subcontractors.map(s => s.id)), [subcontractors])
+  const emptyClientIds = useMemo(() => new Set<string>(), [])
   const selectedCleanerIds = calFilters?.selectedCleanerIds ?? defaultCleanerIds
   const setSelectedCleanerIds = calFilters?.setSelectedCleanerIds ?? noop
-  const filterBarClientIds = calFilters?.filterBarClientIds ?? new Set<string>()
+  const filterBarClientIds = calFilters?.filterBarClientIds ?? emptyClientIds
   const setFilterBarClientIds = calFilters?.setFilterBarClientIds ?? noop
   const toggleFilterBarClient = calFilters?.toggleFilterBarClient ?? noop
   const showUnassigned = calFilters?.showUnassigned ?? true
@@ -368,6 +611,23 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     if (showOverflowMenu) document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showOverflowMenu])
+
+  useEffect(() => {
+    if (!expandedOverlapJobId) return
+    const collapse = (event: MouseEvent) => {
+      const target = event.target as Element | null
+      if (!target?.closest(`[data-calendar-job-id="${expandedOverlapJobId}"]`)) {
+        setExpandedOverlapJobId(null)
+      }
+    }
+    document.addEventListener('mousedown', collapse)
+    return () => document.removeEventListener('mousedown', collapse)
+  }, [expandedOverlapJobId])
+
+  useEffect(() => {
+    setExpandedOverlapJobId(null)
+    setHoveredOverlapJobId(null)
+  }, [currentDate, viewMode])
 
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null)
 
@@ -917,29 +1177,24 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
   const [headerSearch, setHeaderSearch] = useState('')
   const filteredJobs = useMemo(() => {
-    const q = headerSearch.trim().toLowerCase()
     return jobs.filter(job => {
       if (selectedClientId && job.location.client.id !== selectedClientId) return false
       if (selectedSubcontractorId && job.subcontractor?.id !== selectedSubcontractorId) return false
 
       if (job.subcontractor) {
         if (!selectedCleanerIds.has(job.subcontractor.id)) return false
+      } else if ((job as JobWithFullRelations & { vendor?: { id: string } | null }).vendor) {
+        const vendor = (job as JobWithFullRelations & { vendor?: { id: string } | null }).vendor
+        if (!vendor || !selectedVendorIds.has(vendor.id)) return false
       } else {
-        if (!job.vendor && !showUnassigned) return false
+        if (!showUnassigned) return false
       }
 
       if (filterBarClientIds.size > 0 && !filterBarClientIds.has(job.location.client.id)) return false
 
-      if (q) {
-        const clientName = job.location.client.name?.toLowerCase() || ''
-        const locName = job.location.name?.toLowerCase() || ''
-        const cleanerName = getPerformerName(job)?.toLowerCase() || ''
-        if (!clientName.includes(q) && !locName.includes(q) && !cleanerName.includes(q)) return false
-      }
-
       return true
     })
-  }, [jobs, selectedClientId, selectedSubcontractorId, selectedCleanerIds, filterBarClientIds, showUnassigned, headerSearch])
+  }, [jobs, selectedClientId, selectedSubcontractorId, selectedCleanerIds, selectedVendorIds, filterBarClientIds, showUnassigned])
 
   const dimmedClientIds = matchingClientIds
 
@@ -981,6 +1236,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const navigate = (direction: 'prev' | 'next') => {
     if (viewMode === 'month') {
       setCurrentDate(d => direction === 'next' ? addMonths(d, 1) : subMonths(d, 1))
+    } else if (viewMode === 'day') {
+      setCurrentDate(d => addDays(d, direction === 'next' ? 1 : -1))
     } else {
       setCurrentDate(d => direction === 'next' ? addWeeks(d, 1) : subWeeks(d, 1))
     }
@@ -1074,7 +1331,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
   // Get week days for Google Calendar-style week strip
   const getWeekDays = () => {
-    const start = startOfWeek(currentDate)
+    const start = startOfWeek(currentDate, { weekStartsOn: 1 })
     return Array.from({ length: 7 }, (_, i) => addDays(start, i))
   }
 
@@ -1083,21 +1340,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const isAllActive = selectedCleanerIds.size === subcontractors.length && showUnassigned
 
     return (
-    <div className="lg:hidden relative" style={{ background: 'linear-gradient(180deg, #F6F6F1 0%, #FFFFFF 78%)' }}>
-      <div className="px-3 pt-3 pb-2">
+    <div className="relative bg-white lg:hidden">
+      <div className="border-b border-[var(--cf-rule)] px-3 py-2">
         <div
-          className="rounded-[18px] px-3 py-3"
-          style={{
-            border: '1px solid #E7E7DF',
-            backgroundColor: 'rgba(255,255,255,0.92)',
-            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
-          }}
+          className="px-1"
         >
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7C7C72', marginBottom: '6px' }}>
-                Schedule
-              </p>
               <button
                 onClick={() => {
                   setMonthPickerYear(currentDate.getFullYear())
@@ -1105,7 +1354,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 }}
                 className="flex items-center gap-1"
               >
-                <span style={{ fontSize: '20px', fontWeight: 700, color: '#111827', lineHeight: 1.1 }}>
+                <span style={{ fontSize: '19px', fontWeight: 800, color: '#111827', lineHeight: 1.1 }}>
                   {monthLabel}
                 </span>
                 <ChevronDown
@@ -1113,10 +1362,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   style={{ color: '#5F6368' }}
                 />
               </button>
-              <p style={{ fontSize: '12px', color: '#6B7280', marginTop: '6px' }}>
-                {calendarSummaryLabel}
-                {activeFilterCount > 0 ? ` | ${activeFilterCount} filters on` : ' | All filters open'}
-              </p>
             </div>
 
             <button
@@ -1134,20 +1379,20 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mt-3">
+          <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-[#f1f5f9] p-0.5">
             {(['3day', 'week'] as MobileViewMode[]).map((view) => (
               <button
                 key={view}
                 onClick={() => changeMobileView(view)}
                 style={{
-                  minHeight: '40px',
-                  borderRadius: '12px',
-                  fontSize: '13px',
+                  minHeight: '32px',
+                  borderRadius: '7px',
+                  fontSize: '12px',
                   fontWeight: 600,
                   transition: 'all 0.15s ease',
-                  backgroundColor: mobileView === view ? '#0F766E' : '#F8FAF9',
+                  backgroundColor: mobileView === view ? '#0F766E' : 'transparent',
                   color: mobileView === view ? 'white' : '#4B5563',
-                  border: mobileView === view ? '1px solid #0F766E' : '1px solid #E5E7EB',
+                  border: 'none',
                 }}
               >
                 {view === '3day' ? '3 Day View' : 'Week View'}
@@ -1157,20 +1402,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         </div>
       </div>
 
-      <div className="px-3 pb-2">
+      <div className="border-b border-[var(--cf-rule)] px-3 py-1.5">
         <div
-          className="overflow-x-auto rounded-[16px]"
+          className="overflow-x-auto"
           style={{
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
-            border: '1px solid #ECEDE7',
-            backgroundColor: 'rgba(255,255,255,0.94)',
-            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.04)',
+            backgroundColor: '#FFFFFF',
           }}
         >
         <div
           className="flex items-center"
-          style={{ paddingLeft: '12px', paddingRight: '10px', paddingTop: '10px', paddingBottom: '10px', gap: '8px', width: 'max-content' }}
+          style={{ paddingLeft: '2px', paddingRight: '4px', gap: '6px', width: 'max-content' }}
         >
           {/* All pill */}
           <button
@@ -1179,10 +1422,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               setShowUnassigned(true)
             }}
             style={{
-              height: '30px',
-              padding: '0 12px',
-              borderRadius: '15px',
-              fontSize: '13px',
+              height: '28px',
+              padding: '0 10px',
+              borderRadius: '14px',
+              fontSize: '12px',
               fontWeight: 600,
               backgroundColor: isAllActive ? '#0F766E' : '#FFFFFF',
               color: isAllActive ? 'white' : '#5F6368',
@@ -1209,10 +1452,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   setSelectedCleanerIds(next)
                 }}
                 style={{
-                  height: '30px',
-                  padding: '0 12px',
-                  borderRadius: '15px',
-                  fontSize: '13px',
+                  height: '28px',
+                  padding: '0 10px',
+                  borderRadius: '14px',
+                  fontSize: '12px',
                   fontWeight: 600,
                   backgroundColor: isActive ? hex : 'white',
                   color: isActive ? 'white' : '#5F6368',
@@ -1231,10 +1474,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           <button
             onClick={() => setShowUnassigned(!showUnassigned)}
             style={{
-              height: '30px',
-              padding: '0 12px',
-              borderRadius: '15px',
-              fontSize: '13px',
+              height: '28px',
+              padding: '0 10px',
+              borderRadius: '14px',
+              fontSize: '12px',
               fontWeight: 600,
               backgroundColor: showUnassigned ? '#6b7280' : 'white',
               color: showUnassigned ? 'white' : '#5F6368',
@@ -1262,7 +1505,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               <button
                 key={idx}
                 onClick={() => setCurrentDate(day)}
-                className="flex-1 py-2 flex flex-col items-center"
+                className="flex flex-1 flex-col items-center py-1.5"
               >
                 <span
                   style={{
@@ -1272,7 +1515,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     marginBottom: '4px',
                   }}
                 >
-                  {WEEKDAYS[idx]}
+                  {format(day, 'EEEEE')}
                 </span>
                 {/* 32px diameter circle */}
                 <span
@@ -1282,7 +1525,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     isTodayDate ? 'bg-teal-600 text-white' :
                     'text-gray-900'
                   }`}
-                  style={{ width: '32px', height: '32px', fontSize: '15px', fontWeight: 700 }}
+                  style={{ width: '28px', height: '28px', fontSize: '14px', fontWeight: 700 }}
                 >
                   {format(day, 'd')}
                 </span>
@@ -1438,25 +1681,67 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       )
     }
 
+    const rangeStart = mobileView === 'week' ? startOfWeek(currentDate, { weekStartsOn: 1 }) : currentDate
+    const dayCount = mobileView === 'day' ? 1 : mobileView === 'week' ? 7 : 3
+    const visibleDays = Array.from({ length: dayCount }, (_, index) => addDays(rangeStart, index))
+
     return (
       <div
-        className="lg:hidden flex flex-col flex-1 min-h-0"
+        className="min-h-0 flex-1 overflow-y-auto bg-[var(--cf-canvas)] px-3 pb-28 pt-2 lg:hidden"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        {renderWeekView()}
+        {visibleDays.map(day => {
+          const dayJobs = getJobsForDate(day).sort((a, b) => (a.startTime || a.startWindowBegin || '99:99').localeCompare(b.startTime || b.startWindowBegin || '99:99'))
+          return (
+            <section key={day.toISOString()} className="mb-3 overflow-hidden rounded-lg border border-[var(--cf-rule)] bg-white">
+              <div className="flex items-center justify-between border-b border-[var(--cf-grid-rule)] px-3 py-2">
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-sm font-extrabold ${isToday(day) ? 'text-[var(--cf-green)]' : 'text-[var(--cf-ink)]'}`}>{format(day, 'EEEE')}</span>
+                  <span className="text-xs font-semibold text-[var(--cf-ink-muted)]">{format(day, 'MMM d')}</span>
+                </div>
+                <button type="button" onClick={() => handleDateClick(day)} aria-label={`Add job on ${format(day, 'MMMM d')}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--cf-green)] hover:bg-[var(--cf-green-soft)]">
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+              {dayJobs.length > 0 ? (
+                <div className="divide-y divide-[var(--cf-grid-rule)]">
+                  {dayJobs.map(job => {
+                    const performerName = getPerformerName(job)
+                    const { hex } = getCleanerColorInfo(performerName)
+                    const status = getJobStatus(job)
+                    const time = job.startTime || job.startWindowBegin
+                    return (
+                      <button
+                        type="button"
+                        key={job.id}
+                        onClick={() => handleJobClick(job)}
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left active:bg-[var(--cf-field)]"
+                      >
+                        <span className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: status === 'cancelled' ? '#9CA3AF' : hex }} />
+                        <span className="w-[58px] shrink-0 text-xs font-extrabold text-[var(--cf-ink-secondary)]">{time ? formatTime(time) : 'TBD'}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className={`block truncate text-sm font-bold text-[var(--cf-ink)] ${status === 'cancelled' ? 'line-through opacity-60' : ''}`}>{job.location.client.name}</span>
+                          <span className="mt-0.5 block truncate text-[11px] text-[var(--cf-ink-muted)]">{performerName || 'Unassigned'}{job.location.name && job.location.name !== job.location.client.name ? ` | ${job.location.name}` : ''}</span>
+                        </span>
+                        {isSpecialClean(job) && <Star className="h-3 w-3 shrink-0 fill-[#FCD34D] text-[#D97706]" />}
+                        {job.isTrial && <span className="shrink-0 rounded bg-[#fff0dc] px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-[#9a4c0d]">Trial</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <button type="button" onClick={() => handleDateClick(day)} className="w-full px-3 py-5 text-center text-xs font-semibold text-[var(--cf-ink-muted)]">No jobs scheduled</button>
+              )}
+            </section>
+          )
+        })}
       </div>
     )
   }
 
   const isAllCleanersSelected = selectedCleanerIds.size === subcontractors.length && showUnassigned
-  const visibleClientCount = useMemo(() => new Set(filteredJobs.map(job => job.location.client.id)).size, [filteredJobs])
-  const activeFilterCount =
-    (isAllCleanersSelected ? 0 : 1) +
-    (filterBarClientIds.size > 0 ? 1 : 0) +
-    (clientSearchQuery.trim() ? 1 : 0)
   const monthLabel = format(currentDate, 'MMMM yyyy')
-  const calendarSummaryLabel = `${filteredJobs.length} jobs | ${visibleClientCount} clients`
 
   const handleCleanerClick = (clickedId: string) => {
     if (isAllCleanersSelected) {
@@ -1498,12 +1783,14 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const renderHeader = () => {
     const isAllCleanersSelected = selectedCleanerIds.size === subcontractors.length && showUnassigned
     const isAllClientsSelected = filterBarClientIds.size === 0
-    const filterCount = (isAllCleanersSelected ? 0 : 1) + (isAllClientsSelected ? 0 : 1)
+    const isAllTeamSelected = isAllCleanersSelected && selectedVendorIds.size === vendorOptions.length
+    const filterCount = (isAllTeamSelected ? 0 : 1) + (isAllClientsSelected ? 0 : 1)
     
     // Build active filter summary text
     let activeSummaryParts: string[] = []
-    if (!isAllCleanersSelected) {
+    if (!isAllTeamSelected) {
       const names = Array.from(selectedCleanerIds).map(id => subcontractors.find(s => s.id === id)?.name.split(' ')[0]).filter(Boolean)
+      names.push(...Array.from(selectedVendorIds).map(id => vendorOptions.find(vendor => vendor.id === id)?.name).filter(Boolean) as string[])
       if (showUnassigned) names.push("Unassigned")
       if (names.length > 0) activeSummaryParts.push(names.join(", "))
     }
@@ -1517,19 +1804,63 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const densityToSlider = (d: WeekDensity) => d === 'Comfortable' ? 0 : d === 'Compact' ? 50 : 100
     const sliderToDensity = (v: number): WeekDensity => v < 25 ? 'Comfortable' : v < 75 ? 'Compact' : 'Dense'
     const sliderValue = densityToSlider(weekDensity)
-    const navLabel = viewMode === 'week' ? 'week' : 'month'
+    const navLabel = viewMode === 'month' ? 'month' : viewMode === 'day' ? 'day' : 'week'
+    const desktopHeaderLabel = viewMode === 'day'
+      ? format(currentDate, 'EEE, MMM d, yyyy')
+      : viewMode === 'month'
+        ? monthLabel
+        : `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d')} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d, yyyy')}`
+    const selectedTeamValues = new Set<string>([
+      ...Array.from(selectedCleanerIds),
+      ...Array.from(selectedVendorIds).map(id => `vendor:${id}`),
+      ...(showUnassigned ? ['__unassigned__'] : []),
+    ])
+    const teamOptions: SearchSelectOption[] = [
+      ...subcontractors.map(subcontractor => ({ value: subcontractor.id, label: subcontractor.name, hex: getCleanerColorInfo(subcontractor.name).hex })),
+      ...vendorOptions.map(vendor => ({ value: `vendor:${vendor.id}`, label: vendor.name, hex: getCleanerColorInfo(vendor.name).hex, badge: 'Vendor' })),
+      { value: '__unassigned__', label: 'Unassigned', hex: '#64748B' },
+    ]
+    const selectedClientValues = isAllClientsSelected
+      ? new Set(clients.map(client => client.id))
+      : filterBarClientIds
+    const clientOptions: SearchSelectOption[] = clients.map(client => ({ value: client.id, label: client.name }))
+    const specialRangeStart = viewMode === 'month' ? startOfMonth(currentDate) : startOfWeek(currentDate, { weekStartsOn: 1 })
+    const specialRangeEnd = viewMode === 'month' ? endOfMonth(currentDate) : addDays(specialRangeStart, 6)
+    const specialCount = filteredJobs.filter(job => {
+      const jobTime = new Date(job.date).getTime()
+      return isSpecialClean(job)
+        && jobTime >= new Date(specialRangeStart).setHours(0, 0, 0, 0)
+        && jobTime <= new Date(specialRangeEnd).setHours(23, 59, 59, 999)
+    }).length
+    const searchResults = headerSearch.trim()
+      ? jobs
+          .filter(job => {
+            const query = headerSearch.trim().toLowerCase()
+            return job.location.client.name.toLowerCase().includes(query)
+              || job.location.name.toLowerCase().includes(query)
+              || ((job as JobWithFullRelations & { notes?: string | null }).notes || '').toLowerCase().includes(query)
+              || (getPerformerName(job) || '').toLowerCase().includes(query)
+          })
+          .slice(0, 6)
+          .map(job => ({
+            id: job.id,
+            primary: job.location.client.name,
+            secondary: `${format(new Date(job.date), 'EEE, MMM d')} | ${getPerformerName(job) || 'Unassigned'}`,
+            kind: job.isTrial ? 'Trial' : job.scheduleId ? 'Job' : 'One-off',
+            hex: getCleanerColorInfo(getPerformerName(job)).hex,
+          }))
+      : []
+
+    const setTeamSelection = (values: Set<string>) => {
+      setSelectedCleanerIds(new Set(Array.from(values).filter(value => !value.startsWith('vendor:') && value !== '__unassigned__')))
+      setSelectedVendorIds(new Set(Array.from(values).filter(value => value.startsWith('vendor:')).map(value => value.slice(7))))
+      setShowUnassigned(values.has('__unassigned__'))
+    }
 
     return (
       <div className="hidden shrink-0 flex-col border-b border-[var(--cf-rule)] bg-[var(--cf-surface-soft)] shadow-[var(--cf-panel-shadow)] lg:flex">
-        <div className="flex h-16 w-full items-center gap-3 px-5">
-          {/* LEFT: Today + arrows + month label/picker */}
-          <button
-            onClick={goToToday}
-            className="rounded-lg border border-[var(--cf-green-rule)] bg-[var(--cf-green-soft)] px-3.5 py-1.5 text-xs font-bold text-[var(--cf-green)] transition-colors hover:bg-[var(--cf-green-soft-hover)]"
-          >
-            Today
-          </button>
-
+        <div className="flex h-16 w-full items-center gap-2 px-3">
+          {/* LEFT: arrows + month label/picker + Today */}
           <div className="flex items-center gap-0.5">
             <NavArrow direction="prev" label={`Previous ${navLabel}`} onClick={() => navigate('prev')} />
             <NavArrow direction="next" label={`Next ${navLabel}`} onClick={() => navigate('next')} />
@@ -1543,7 +1874,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               }}
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-[var(--cf-field)]"
             >
-              <span className="whitespace-nowrap text-[18px] font-extrabold leading-none text-[var(--cf-ink)]">{monthLabel}</span>
+              <span className="whitespace-nowrap text-[18px] font-extrabold leading-none text-[var(--cf-ink)]">{desktopHeaderLabel}</span>
               <ChevronDown className={`h-3.5 w-3.5 text-[var(--cf-ink-muted)] transition-transform ${showMonthPicker ? 'rotate-180' : ''}`} />
             </button>
             {showMonthPicker && (
@@ -1593,86 +1924,89 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             )}
           </div>
 
+          <button
+            onClick={goToToday}
+            className="rounded-lg border border-[var(--cf-green-rule)] bg-[var(--cf-green-soft)] px-3 py-1.5 text-xs font-bold text-[var(--cf-green)] transition-colors hover:bg-[var(--cf-green-soft-hover)]"
+          >
+            Today
+          </button>
+
           {isLoadingMore && <Loader2 className="w-4 h-4 animate-spin text-teal-600" />}
 
           <div className="mx-1 h-6 w-px bg-[var(--cf-rule)]" />
 
-          {/* MIDDLE: Inline searchable Team + Clients dropdowns (replaces side-panel drawer) */}
-          {(() => {
-            const teamOptions: SearchSelectOption[] = [
-              { value: '__unassigned__', label: 'Unassigned', hex: '#64748B' },
-              ...subcontractors.map(s => ({ value: s.id, label: s.name, hex: getCleanerColorInfo(s.name).hex })),
-            ]
-            const clientOptions: SearchSelectOption[] = clients.map(c => ({ value: c.id, label: c.name }))
-            // Selected team: single-select via this dropdown (special __unassigned__ = filter to only unassigned)
-            const selectedTeam = !isAllCleanersSelected
-              ? (selectedCleanerIds.size === 1 && !showUnassigned
-                  ? Array.from(selectedCleanerIds)[0]
-                  : selectedCleanerIds.size === 0 && showUnassigned
-                    ? '__unassigned__'
-                    : null)
-              : null
-            const selectedClientFromDropdown = filterBarClientIds.size === 1 ? Array.from(filterBarClientIds)[0] : null
-            const handleSelectTeam = (value: string | null) => {
-              if (value === null) {
-                setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
-                setShowUnassigned(true)
-              } else if (value === '__unassigned__') {
-                setSelectedCleanerIds(new Set())
-                setShowUnassigned(true)
-              } else {
-                setSelectedCleanerIds(new Set([value]))
-                setShowUnassigned(false)
-              }
-            }
-            const handleSelectClient = (value: string | null) => {
-              if (value === null) {
+          <HeaderSearch
+            value={headerSearch}
+            onChange={setHeaderSearch}
+            results={searchResults}
+            onPick={(jobId) => {
+              const job = jobs.find(item => item.id === jobId)
+              if (!job) return
+              setCurrentDate(new Date(job.date))
+              setHeaderSearch(job.location.client.name)
+              handleJobClick(job)
+            }}
+          />
+          <SearchSelect
+            defaultLabel="Team"
+            selectedValues={selectedTeamValues}
+            options={teamOptions}
+            allSelected={isAllTeamSelected}
+            onToggle={(value) => {
+              const next = new Set(selectedTeamValues)
+              if (next.has(value)) next.delete(value)
+              else next.add(value)
+              setTeamSelection(next)
+            }}
+            onSelectOnly={(value) => setTeamSelection(new Set([value]))}
+            onSelectAll={() => setTeamSelection(isAllTeamSelected ? new Set() : new Set(teamOptions.map(option => option.value)))}
+          />
+          <SearchSelect
+            defaultLabel="Clients"
+            selectedValues={selectedClientValues}
+            options={clientOptions}
+            allSelected={isAllClientsSelected}
+            onToggle={(value) => {
+              const next = new Set(selectedClientValues)
+              if (next.has(value)) next.delete(value)
+              else next.add(value)
+              setFilterBarClientIds(next.size === clients.length ? new Set() : next)
+            }}
+            onSelectOnly={(value) => setFilterBarClientIds(new Set([value]))}
+            onSelectAll={() => setFilterBarClientIds(isAllClientsSelected ? new Set(['__none__']) : new Set())}
+          />
+          {filterCount > 0 && (
+            <button
+              onClick={() => {
+                setTeamSelection(new Set(teamOptions.map(option => option.value)))
                 setFilterBarClientIds(new Set())
-              } else {
-                setFilterBarClientIds(new Set([value]))
-              }
-            }
-            return (
-              <>
-                <SearchSelect
-                  defaultLabel="Team"
-                  selectedValue={selectedTeam}
-                  options={teamOptions}
-                  onSelect={handleSelectTeam}
-                />
-                <SearchSelect
-                  defaultLabel="Clients"
-                  selectedValue={selectedClientFromDropdown}
-                  options={clientOptions}
-                  onSelect={handleSelectClient}
-                />
-                {filterCount > 0 && (
-                  <button
-                    onClick={() => {
-                      setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
-                      setShowUnassigned(true)
-                      setFilterBarClientIds(new Set())
-                    }}
-                    aria-label="Clear all filters"
-                    title="Clear all filters"
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-red-500 hover:bg-red-50"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <HeaderSearch
-                  value={headerSearch}
-                  onChange={setHeaderSearch}
-                />
-              </>
-            )
-          })()}
+              }}
+              aria-label="Clear all filters"
+              title="Clear all filters"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-red-500 hover:bg-red-50"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
 
           <div className="flex-1" />
 
           {/* RIGHT: View toggle + density slider + Add Job + overflow */}
+          <button
+            type="button"
+            onClick={() => setSpecialRailOpen(current => !current)}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+              specialRailOpen
+                ? 'border-[#99e6db] bg-[#ecfdf9] text-[#0f766e]'
+                : 'border-[var(--cf-rule)] bg-white text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]'
+            }`}
+          >
+            <Star className="h-3.5 w-3.5 fill-[#d97706] text-[#d97706]" />
+            Special cleans
+            <span className="rounded-full bg-[#d97706] px-1.5 py-0.5 text-[9px] leading-none text-white">{specialCount}</span>
+          </button>
           <div className="flex items-center rounded-lg bg-[#f1f5f9] p-0.5">
-            {(['week', 'month'] as ViewMode[]).map(mode => (
+            {(['day', 'week', 'month', 'list'] as ViewMode[]).map(mode => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
@@ -1682,7 +2016,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     : 'text-[#7f8ea3] hover:text-[#334155]'
                 }`}
               >
-                {mode === 'week' ? 'Week' : 'Month'}
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
               </button>
             ))}
           </div>
@@ -1690,16 +2024,16 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           {/* Density slider — always rendered to reserve space so the Week/Month toggle and
               Add Job button don't shift when switching views. Visibility is hidden in month view. */}
           <div
-            className="hidden xl:flex items-center gap-2"
+            className="hidden 2xl:flex items-center gap-2"
             title={`Density: ${weekDensity}`}
-            style={{ visibility: viewMode === 'week' ? 'visible' : 'hidden' }}
-            aria-hidden={viewMode !== 'week'}
+            style={{ visibility: viewMode === 'week' || viewMode === 'day' ? 'visible' : 'hidden' }}
+            aria-hidden={viewMode !== 'week' && viewMode !== 'day'}
           >
             <span className="text-[9px] text-gray-300 leading-none">☰</span>
             <div
               className="relative flex h-5 w-[88px] cursor-pointer items-center"
               onMouseDown={() => {
-                if (viewMode !== 'week') return
+                if (viewMode !== 'week' && viewMode !== 'day') return
                 // Prevent text selection / grabbing cursor while dragging the slider.
                 document.body.style.userSelect = 'none'
                 document.body.style.cursor = 'grabbing'
@@ -1724,7 +2058,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                 value={sliderValue}
                 onChange={(e) => changeWeekDensity(sliderToDensity(Number(e.target.value)))}
                 aria-label="Week density"
-                disabled={viewMode !== 'week'}
+                disabled={viewMode !== 'week' && viewMode !== 'day'}
                 className="absolute inset-0 w-full opacity-0 cursor-pointer"
               />
               <div
@@ -1737,7 +2071,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
           <button
             onClick={() => handleDateClick(currentDate)}
-            className="flex items-center gap-1 rounded-lg bg-[var(--cf-green)] px-3.5 py-2 text-[12px] font-bold text-white shadow-sm transition-colors hover:bg-[var(--cf-green-hover)]"
+            className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-[var(--cf-green)] px-3.5 py-2 text-[12px] font-bold text-white shadow-sm transition-colors hover:bg-[var(--cf-green-hover)]"
           >
             <Plus className="w-3.5 h-3.5" />
             Add Job
@@ -1803,8 +2137,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             </div>
             <button
               onClick={() => {
-                setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
-                setShowUnassigned(true)
+                setTeamSelection(new Set(teamOptions.map(option => option.value)))
                 setFilterBarClientIds(new Set())
               }}
               className="ml-4 shrink-0 font-bold text-[var(--cf-green)] hover:text-[var(--cf-green-hover)]"
@@ -1905,6 +2238,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const renderCompactJobCard = (job: JobWithFullRelations, compact = false) => {
       const performerName = getPerformerName(job)
       const { hex } = getCleanerColorInfo(performerName)
+      const isCancelledCard = job.status === 'CANCELLED'
       const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
       const isSelected = selectedJobIds.has(job.id)
       const timeRange = getJobTimeRange(job)
@@ -1928,10 +2262,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             isSelected ? "ring-2 ring-[var(--cf-green)]" : "",
           ].join(" ")}
           style={{
-            border: `1px solid ${hex}33`,
-            borderLeft: `4px solid ${hex}`,
-            backgroundColor: `${hex}1A`,
-            opacity: isDimmed ? 0.3 : 1,
+            border: `1px solid ${isCancelledCard ? '#D1D5DB' : `${hex}33`}`,
+            borderLeft: `4px solid ${isCancelledCard ? '#9CA3AF' : hex}`,
+            backgroundColor: isCancelledCard ? '#F3F4F6' : `${hex}1A`,
+            opacity: isDimmed ? 0.3 : isCancelledCard ? 0.65 : 1,
             padding: isDenseCard ? densityConfig.cardPadding : '7px 9px',
             minHeight: isDenseCard ? `${densityConfig.cardMinHeight}px` : '58px',
           }}
@@ -1940,7 +2274,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             <span className="shrink-0 font-mono text-[10px] font-bold text-[var(--cf-ink-secondary)]">
               {timeRange}
             </span>
-            <span className="min-w-0 truncate text-[13px] font-extrabold leading-tight text-[var(--cf-ink)]">
+            <span className={`min-w-0 truncate text-[13px] font-extrabold leading-tight ${isCancelledCard ? 'text-[#7f8ea3] line-through' : 'text-[var(--cf-ink)]'}`}>
               {job.location.client.name}
             </span>
           </div>
@@ -2073,153 +2407,333 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     )
   }
 
+  const renderListView = () => {
+    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
+    const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+
+    return (
+      <div className="grid min-h-0 flex-1 grid-cols-7 overflow-x-auto bg-white" style={{ minWidth: 980 }}>
+        {days.map(day => {
+          const dayJobs = getJobsForDate(day).sort((a, b) => (a.startTime || a.startWindowBegin || '99:99').localeCompare(b.startTime || b.startWindowBegin || '99:99'))
+          const today = isToday(day)
+          return (
+            <section key={day.toISOString()} className="flex min-w-0 flex-col border-r border-[#eef1f4] last:border-r-0" style={{ backgroundColor: today ? 'rgba(13,148,136,0.025)' : '#FFFFFF' }}>
+              <button type="button" onClick={() => handleDateClick(day)} className="border-b border-[#eef1f4] px-2.5 py-3 text-center hover:bg-[#f8faf9]">
+                <span className={`block text-[10px] font-extrabold uppercase tracking-[0.06em] ${today ? 'text-[var(--cf-green)]' : 'text-[#7f8ea3]'}`}>{format(day, 'EEE')}</span>
+                <span className={`mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-base font-extrabold ${today ? 'bg-[var(--cf-green)] text-white' : 'text-[#1e293b]'}`}>{format(day, 'd')}</span>
+                <span className="mt-1 block text-[10px] font-semibold text-[#7f8ea3]">{dayJobs.length} clean{dayJobs.length === 1 ? '' : 's'}</span>
+              </button>
+              <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">
+                {dayJobs.map(job => {
+                  const performerName = getPerformerName(job)
+                  const { colorKey } = getCleanerColorInfo(performerName)
+                  const spineColor = JOB_SPINE_COLORS[colorKey]
+                  const status = getJobStatus(job)
+                  const time = job.startTime || job.startWindowBegin
+                  const unassigned = !performerName && status !== 'cancelled'
+                  return (
+                    <button
+                      type="button"
+                      key={job.id}
+                      onClick={() => handleJobClick(job)}
+                      className="relative rounded-md border p-2 text-left transition-transform hover:-translate-y-px hover:shadow-md"
+                      style={{
+                        background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
+                        borderColor: status === 'cancelled' ? '#D1D5DB' : unassigned ? '#E3A44A' : 'rgba(255,255,255,0.88)',
+                        borderStyle: unassigned ? 'dashed' : 'solid',
+                        borderLeft: `5px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
+                        boxShadow: '0 2px 0 rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.08)',
+                        opacity: status === 'cancelled' ? 0.65 : 1,
+                      }}
+                    >
+                      {isSpecialClean(job) && status !== 'cancelled' && <Star className="absolute right-1.5 top-1.5 h-2.5 w-2.5 fill-[#FCD34D] text-[#D97706]" />}
+                      {status === 'cancelled' && <span className="mb-1 block text-[8px] font-extrabold uppercase tracking-[0.05em] text-[#b42318]">Cancelled</span>}
+                      <span className={`block truncate pr-3 text-xs font-extrabold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1e293b]' : 'text-white'}`}>{job.location.client.name}</span>
+                      <span className={`mt-1 block text-[10px] font-bold ${status === 'cancelled' || unassigned ? 'text-[#526072]' : 'text-white/95'}`}>{time ? formatTime(time) : 'Time TBD'}</span>
+                      <span className={`mt-0.5 block truncate text-[10px] ${status === 'cancelled' || unassigned ? 'text-[#7f8ea3]' : 'text-white/85'}`}>{performerName || 'Unassigned'}</span>
+                    </button>
+                  )
+                })}
+                {dayJobs.length === 0 && <div className="py-8 text-center text-xs text-[#c3cad2]">No jobs</div>}
+              </div>
+            </section>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const renderSpecialCleansRail = () => {
+    const rangeStart = viewMode === 'month'
+      ? startOfMonth(currentDate)
+      : startOfWeek(currentDate, { weekStartsOn: 1 })
+    const rangeEnd = viewMode === 'month'
+      ? endOfMonth(currentDate)
+      : addDays(rangeStart, 6)
+    const rangeStartTime = new Date(rangeStart).setHours(0, 0, 0, 0)
+    const rangeEndTime = new Date(rangeEnd).setHours(23, 59, 59, 999)
+    const specialJobs = filteredJobs
+      .filter(isSpecialClean)
+      .filter(job => {
+        const jobTime = new Date(job.date).getTime()
+        return jobTime >= rangeStartTime && jobTime <= rangeEndTime
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || timeToMinutes(a.startTime || a.startWindowBegin) - timeToMinutes(b.startTime || b.startWindowBegin))
+
+    const groups = Array.from(new Set(specialJobs.map(job => format(new Date(job.date), 'yyyy-MM-dd'))))
+      .map(dateKey => ({
+        dateKey,
+        jobs: specialJobs.filter(job => format(new Date(job.date), 'yyyy-MM-dd') === dateKey),
+      }))
+
+    return (
+      <aside className="flex w-56 shrink-0 flex-col overflow-hidden border-l border-[#e6eaee] bg-[#fbfdfc]">
+        <div className="border-b border-[#e6eaee] px-3.5 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-[13px] font-extrabold text-[#0f172a]">Special cleans</h2>
+              <span className="text-[11px] font-bold text-[#7f8ea3]">{specialJobs.length}</span>
+            </div>
+            <button type="button" onClick={() => setSpecialRailOpen(false)} aria-label="Close special cleans" title="Close special cleans" className="flex h-7 w-7 items-center justify-center rounded-md text-[#aab2bd] hover:bg-[#eef2f4] hover:text-[#64748b]">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <p className="mt-0.5 text-[10.5px] leading-snug text-[#7f8ea3]">First cleans, trials and one-offs flagged ahead.</p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+          {groups.map(group => (
+            <section key={group.dateKey} className="mb-3">
+              <h3 className="mb-1 px-0.5 text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#a6afba]">{format(new Date(`${group.dateKey}T12:00:00`), 'EEEE · MMM d')}</h3>
+              <div className="space-y-1.5">
+                {group.jobs.map(job => {
+                  const performerName = getPerformerName(job)
+                  const { colorKey, hex } = getCleanerColorInfo(performerName)
+                  const spineColor = JOB_SPINE_COLORS[colorKey]
+                  const time = job.startTime || job.startWindowBegin
+                  const minutes = timeToMinutes(time)
+                  const outsideHours = Boolean(time && (minutes < 9 * 60 || minutes >= 17 * 60))
+                  return (
+                    <button
+                      type="button"
+                      key={job.id}
+                      onClick={() => handleJobClick(job)}
+                      className="w-full rounded-md border border-[#e7ebef] bg-white px-2 py-1.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.07)] transition-shadow hover:shadow-md"
+                      style={{ borderLeft: `3px solid ${spineColor}` }}
+                    >
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="shrink-0 text-[11px] font-extrabold tabular-nums text-[#0f172a]">{time ? formatTime(time) : 'TBD'}</span>
+                        <span className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-[#1e293b]">{job.location.client.name}</span>
+                        {outsideHours && <span className="shrink-0 rounded bg-[#fef3c7] px-1 text-[8px] font-extrabold uppercase text-[#9a5a08]">{minutes < 9 * 60 ? 'Early' : 'Late'}</span>}
+                      </div>
+                      <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                        <span className="shrink-0 rounded px-1 py-0.5 text-[8px] font-extrabold uppercase tracking-[0.03em]" style={{ backgroundColor: `${hex}20`, color: spineColor }}>{getSpecialCleanLabel(job)}</span>
+                        <span className="min-w-0 truncate text-[10px] text-[#7f8ea3]">{performerName || 'Unassigned'}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+          {specialJobs.length === 0 && <div className="px-3 py-10 text-center text-[11px] text-[#b1b9c3]">No special cleans in this range</div>}
+        </div>
+      </aside>
+    )
+  }
+
+  const renderDayCrewView = () => {
+    const startHour = 5
+    const endHour = 23
+    const hoursCount = endHour - startHour
+    const hourHeight = weekDensity === 'Comfortable' ? 72 : weekDensity === 'Compact' ? 56 : 44
+    const now = new Date()
+    const nowMinutes = now.getHours() * 60 + now.getMinutes()
+    const showCurrentTimeLine = isToday(currentDate) && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
+    const currentTimeTop = ((nowMinutes / 60) - startHour) * hourHeight
+    const dayJobs = getJobsForDate(currentDate)
+    const crewColumns = [
+      ...(showUnassigned ? [{ key: '__unassigned__', name: 'Unassigned', vendor: false, hex: '#94A3B8' }] : []),
+      ...subcontractors
+        .filter(person => selectedCleanerIds.has(person.id))
+        .map(person => ({ key: person.id, name: person.name, vendor: false, hex: getCleanerColorInfo(person.name).hex })),
+      ...vendorOptions
+        .filter(vendor => selectedVendorIds.has(vendor.id))
+        .map(vendor => ({ key: `vendor:${vendor.id}`, name: vendor.name, vendor: true, hex: getCleanerColorInfo(vendor.name).hex })),
+    ]
+
+    const jobsForCrew = (crewKey: string) => dayJobs.filter(job => {
+      if (crewKey === '__unassigned__') return !job.subcontractor && !(job as JobWithFullRelations & { vendor?: { id: string } | null }).vendor
+      if (crewKey.startsWith('vendor:')) return (job as JobWithFullRelations & { vendor?: { id: string } | null }).vendor?.id === crewKey.slice(7)
+      return job.subcontractor?.id === crewKey
+    })
+
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <div className="min-w-[1080px]">
+            <div className="sticky top-0 z-30 flex border-b border-[#EEF1F4] bg-white">
+              <div className="w-14 shrink-0 border-r border-[#EEF1F4]" />
+              <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${Math.max(crewColumns.length, 1)}, minmax(112px, 1fr))` }}>
+                {crewColumns.map(crew => {
+                  const crewJobs = jobsForCrew(crew.key).filter(job => job.status !== 'CANCELLED')
+                  const totalHours = crewJobs.reduce((sum, job) => {
+                    const start = timeToMinutes(job.startTime || job.startWindowBegin)
+                    const end = job.startWindowBegin && job.startWindowEnd ? timeToMinutes(job.startWindowEnd) : start + 60
+                    return sum + Math.max(0, end - start) / 60
+                  }, 0)
+                  const initials = crew.key === '__unassigned__' ? '?' : crew.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()
+                  return (
+                    <div key={crew.key} className={`flex min-w-0 items-center gap-2 border-r border-[#EEF1F4] px-2 py-2 last:border-r-0 ${crewJobs.length === 0 ? 'opacity-50' : ''}`}>
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-extrabold text-white" style={{ backgroundColor: crew.hex }}>{initials}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1">
+                          <span className="block truncate text-[11px] font-bold text-[#1E293B]">{crew.name}</span>
+                          {crew.vendor && <span className="rounded bg-[#F0EEFF] px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-[0.04em] text-[#7C6FC7]">Vendor</span>}
+                        </span>
+                        <span className="block truncate text-[9px] font-semibold text-[#7F8EA3]">{crewJobs.length} job{crewJobs.length === 1 ? '' : 's'} | {Math.round(totalHours * 10) / 10}h</span>
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex" style={{ height: hoursCount * hourHeight }}>
+              <div className="relative z-10 w-14 shrink-0 border-r border-[#EEF1F4] bg-white">
+                {Array.from({ length: hoursCount + 1 }, (_, index) => {
+                  const hour = startHour + index
+                  return <div key={hour} className="absolute w-full pr-2 text-right text-[10px] font-semibold text-[#64748B]" style={{ top: index * hourHeight - (index === 0 ? -2 : 6) }}>{minutesToShortTime(hour * 60)}</div>
+                })}
+              </div>
+              <div className="relative grid flex-1" style={{ gridTemplateColumns: `repeat(${Math.max(crewColumns.length, 1)}, minmax(112px, 1fr))` }}>
+                <div className="pointer-events-none absolute inset-0">
+                  {Array.from({ length: hoursCount + 1 }, (_, index) => <div key={index} className="absolute w-full border-t border-[#EEF1F4]" style={{ top: index * hourHeight }} />)}
+                </div>
+                {showCurrentTimeLine && (
+                  <div className="pointer-events-none absolute inset-x-0 z-[95] h-0.5 bg-[#0D9488]/60" style={{ top: currentTimeTop }}>
+                    <span className="absolute -left-1 -top-[3px] h-2 w-2 rounded-full bg-[#0D9488]" />
+                  </div>
+                )}
+                {crewColumns.map(crew => {
+                  const layout = buildTimelineLayout(jobsForCrew(crew.key))
+                  const activeOverlapJobId = hoveredOverlapJobId || expandedOverlapJobId
+                  const activeOverlapPosition = layout.positions.find(position => position.job.id === activeOverlapJobId)
+                  return (
+                    <div
+                      key={crew.key}
+                      className="relative border-r border-[#EEF1F4] last:border-r-0"
+                      style={{ backgroundColor: crew.vendor ? 'rgba(124,111,199,0.035)' : '#FFFFFF' }}
+                      onClick={(event) => {
+                        if (event.target !== event.currentTarget) return
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        const rawMinutes = startHour * 60 + ((event.clientY - rect.top) / hourHeight) * 60
+                        const rounded = Math.max(startHour * 60, Math.min(endHour * 60 - 30, Math.round(rawMinutes / 30) * 30))
+                        handleTimeSlotClick(currentDate, `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`)
+                      }}
+                    >
+                      {layout.positions.map(positioned => {
+                        const { job, start, end, column, columnCount } = positioned
+                        const visibleStart = Math.max(start, startHour * 60)
+                        const visibleEnd = Math.min(end, endHour * 60)
+                        if (visibleEnd <= visibleStart) return null
+                        const top = ((visibleStart / 60) - startHour) * hourHeight
+                        const height = Math.max(22, ((visibleEnd - visibleStart) / 60) * hourHeight - 3)
+                        const widthPct = 100 / columnCount
+                        const leftPct = column * widthPct
+                        const overlaps = columnCount > 1
+                        const expanded = overlaps && activeOverlapJobId === job.id
+                        const expandedWidthPct = Math.min(100 - leftPct, widthPct * (columnCount >= 3 ? 1.65 : 1.5))
+                        const staysAboveExpanded = Boolean(
+                          activeOverlapPosition &&
+                          activeOverlapPosition.groupId === positioned.groupId &&
+                          column > activeOverlapPosition.column &&
+                          start > activeOverlapPosition.start
+                        )
+                        const performerName = getPerformerName(job)
+                        const { colorKey } = getCleanerColorInfo(performerName)
+                        const spineColor = JOB_SPINE_COLORS[colorKey]
+                        const status = getJobStatus(job)
+                        const unassigned = !performerName && status !== 'cancelled'
+                        return (
+                          <DraggableTimelineJob
+                            key={job.id}
+                            job={job}
+                            disabled={hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || Boolean((job as JobWithFullRelations & { vendorPaid?: boolean }).vendorPaid) || job.status === 'CANCELLED'}
+                            title={`${formatTimelineRange(start, end)} ${job.location.client.name}`}
+                            onMouseEnter={() => overlaps && setHoveredOverlapJobId(job.id)}
+                            onMouseLeave={() => setHoveredOverlapJobId(current => current === job.id ? null : current)}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              if (overlaps && expandedOverlapJobId !== job.id) {
+                                setExpandedOverlapJobId(job.id)
+                                return
+                              }
+                              handleJobClick(job)
+                            }}
+                            className={`absolute cursor-pointer overflow-hidden rounded-md border transition-[width,box-shadow] duration-150 ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:shadow-lg'}`}
+                            style={{
+                              top: `${top}px`,
+                              height: `${height}px`,
+                              left: `calc(${leftPct}% + 2px)`,
+                              width: expanded ? `calc(${expandedWidthPct}% - 4px)` : `calc(${widthPct}% - 4px)`,
+                              maxWidth: expanded ? '240px' : undefined,
+                              background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
+                              borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'rgba(255,255,255,0.88)',
+                              borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
+                              borderLeft: `5px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
+                              boxShadow: expanded
+                                ? '0 10px 26px rgba(16,24,40,0.28)'
+                                : '0 2px 0 rgba(15,23,42,0.12), 0 1px 3px rgba(15,23,42,0.10)',
+                              zIndex: expanded ? 80 : staysAboveExpanded ? 90 : 10 + column,
+                              opacity: status === 'cancelled' ? 0.65 : 1,
+                            }}
+                          >
+                            <div className="absolute inset-0 overflow-hidden px-2 py-1.5">
+                              <div className={`truncate pr-3 text-[11px] font-extrabold ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1E293B]' : 'text-white'}`}>{job.location.client.name}</div>
+                              {height >= 32 && <div className={`mt-0.5 truncate text-[9.5px] font-bold ${status === 'cancelled' || unassigned ? 'text-[#526072]' : 'text-white/95'}`}>{formatTimelineRange(start, end)}</div>}
+                              {job.addOnServices?.[0] && height >= 54 && <span className="mt-1 inline-block max-w-full truncate rounded bg-[#FFF3B0] px-1.5 py-0.5 text-[8px] font-extrabold text-[#92400E]">+ {job.addOnServices[0].description}</span>}
+                              {isSpecialClean(job) && status !== 'cancelled' && <Star className="absolute right-1.5 top-1.5 h-2.5 w-2.5 fill-[#FCD34D] text-[#D97706]" />}
+                            </div>
+                          </DraggableTimelineJob>
+                        )
+                      })}
+                      {layout.overflow.map(chip => {
+                        const top = ((Math.max(chip.start, startHour * 60) / 60) - startHour) * hourHeight
+                        const height = Math.max(34, ((Math.min(chip.end, endHour * 60) - Math.max(chip.start, startHour * 60)) / 60) * hourHeight - 3)
+                        const widthPct = 100 / chip.columnCount
+                        return (
+                          <button
+                            type="button"
+                            key={`day-overflow-${crew.key}-${chip.groupId}`}
+                            onClick={(event) => { event.stopPropagation(); setDayPopoverDate(currentDate); setDayPopoverJobs(chip.jobs) }}
+                            className="absolute z-20 flex flex-col items-center justify-center rounded-md border border-dashed border-[#C8CFD8] bg-[#EEF1F5] text-[#475569] hover:bg-[#E3E8EF]"
+                            style={{ top, height, left: `calc(${chip.column * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)` }}
+                          >
+                            <span className="text-xs font-extrabold">+{chip.jobs.length}</span>
+                            {height >= 44 && <span className="text-[8px] font-extrabold uppercase tracking-[0.05em] text-[#7F8EA3]">More</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderWeekView = () => {
-    const weekStart = startOfWeek(currentDate)
+    if (viewMode === 'day') return renderDayCrewView()
+    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-    return renderCompactWeekTable(days)
-    
-    let minHour = 5;
-    let maxHour = 23; // 11 PM
 
-    days.forEach(day => {
-      getJobsForDate(day).forEach(job => {
-        const t = job.startTime || job.startWindowBegin;
-        if (t) {
-          const [h] = t.split(':').map(Number);
-          if (!isNaN(h) && h < minHour) minHour = h;
-          
-          const e = job.startWindowBegin ? job.startWindowEnd : null;
-          if (e) {
-            const [eh] = e.split(':').map(Number);
-            if (!isNaN(eh) && eh + 1 > maxHour) maxHour = Math.min(24, eh + 1);
-          } else {
-            if (!isNaN(h) && h + 2 > maxHour) maxHour = Math.min(24, h + 2);
-          }
-        }
-      });
-    });
-
-    const startHour = minHour;
-    const endHour = maxHour;
-    const hoursCount = endHour - startHour; // 18
-    const hourHeight = weekDensity === 'Comfortable' ? 72 : weekDensity === 'Compact' ? 56 : 44; // px
-    
-    const getTopOffset = (timeStr: string | null) => {
-      if (!timeStr) return 0;
-      const [h, m] = timeStr.split(':').map(Number);
-      if (isNaN(h) || isNaN(m)) return 0;
-      return (h - startHour) * hourHeight + (m / 60) * hourHeight;
-    };
-
-    const getMinutes = (timeStr: string | null | undefined) => {
-      if (!timeStr) return 0;
-      const [h, m] = timeStr.split(':').map(Number);
-      if (isNaN(h) || isNaN(m)) return 0;
-      return h * 60 + m;
-    };
-
-    const getJobInterval = (job: any) => {
-      const startRaw = job.startTime || job.startWindowBegin;
-      if (!startRaw) return null;
-
-      const start = getMinutes(startRaw);
-      const explicitWindowEnd = job.startWindowBegin ? job.startWindowEnd : null;
-      let end = explicitWindowEnd ? getMinutes(explicitWindowEnd) : start + 60;
-
-      if (end <= start) end = start + 60;
-      return { job, start, end: Math.max(end, start + 15) };
-    };
-
-    const eventsOverlap = (
-      a: { start: number; end: number },
-      b: { start: number; end: number }
-    ) => a.start < b.end && b.start < a.end;
-
-    const getPositionedJobs = (jobs: any[]) => {
-      const minReadableWidth = 120;
-      const stackWidthRatio = 0.84;
-      const stackOffset = 14;
-      const maxVisibleStackCards = 8;
-      const timedJobs = jobs
-        .map(getJobInterval)
-        .filter((item): item is NonNullable<ReturnType<typeof getJobInterval>> => item !== null)
-        .sort((a, b) => a.start - b.start || a.end - b.end);
-
-      const clusters: typeof timedJobs[] = [];
-      let activeCluster: typeof timedJobs | null = null;
-      let activeClusterEnd = -1;
-
-      timedJobs.forEach(item => {
-        if (!activeCluster || item.start >= activeClusterEnd) {
-          activeCluster = [item];
-          clusters.push(activeCluster);
-          activeClusterEnd = item.end;
-          return;
-        }
-
-        activeCluster.push(item);
-        activeClusterEnd = Math.max(activeClusterEnd, item.end);
-      });
-
-      return clusters.flatMap((cluster, clusterIndex) => {
-        const laneEnds: number[] = [];
-        const assigned = cluster.map(item => {
-          let lane = laneEnds.findIndex(end => end <= item.start);
-          if (lane === -1) {
-            lane = laneEnds.length;
-            laneEnds.push(item.end);
-          } else {
-            laneEnds[lane] = item.end;
-          }
-
-          return { ...item, column: lane };
-        });
-
-        const laneCount = Math.max(laneEnds.length, 1);
-        const splitWidth = weekColumnWidth > 0 ? weekColumnWidth / laneCount : Number.POSITIVE_INFINITY;
-        const useStack = cluster.length >= 3 || splitWidth < minReadableWidth;
-        const byColumn = Array.from({ length: laneCount }, (_, column) =>
-          assigned.filter(item => item.column === column)
-        );
-
-        return assigned.map((item, groupIndex) => {
-          let span = 1;
-          for (let nextColumn = item.column + 1; !useStack && nextColumn < laneCount; nextColumn++) {
-            const blocked = byColumn[nextColumn].some(other => eventsOverlap(item, other));
-            if (blocked) break;
-            span++;
-          }
-
-          const stackIndex = useStack ? groupIndex : 0;
-          const overlayDepth = Math.min(stackIndex, maxVisibleStackCards - 1);
-          const overlayLeft = 4 + overlayDepth * stackOffset;
-          const targetOverlayWidth = Math.min(Math.max(minReadableWidth, weekColumnWidth * stackWidthRatio), Math.max(minReadableWidth, weekColumnWidth - 12));
-          const overlayWidth = weekColumnWidth > 0
-            ? targetOverlayWidth
-            : 0;
-
-          return {
-            ...item,
-            groupIndex,
-            groupSize: cluster.length,
-            hiddenInStack: useStack && groupIndex >= maxVisibleStackCards,
-            stackOverflowCount: useStack && groupIndex === maxVisibleStackCards - 1
-              ? Math.max(0, cluster.length - maxVisibleStackCards)
-              : 0,
-            stackOverflowJobs: useStack && groupIndex === maxVisibleStackCards - 1
-              ? cluster.slice(maxVisibleStackCards).map(({ job }) => job)
-              : [],
-            columnCount: laneCount,
-            columnSpan: useStack ? 1 : span,
-            clusterIndex,
-            layoutMode: useStack ? 'stack' : 'lanes',
-            stackIndex,
-            overlayLeft,
-            overlayWidth,
-          };
-        });
-      });
-    };
+    const startHour = 5
+    const endHour = 23
+    const hoursCount = endHour - startHour
+    const hourHeight = weekDensity === 'Comfortable' ? 72 : weekDensity === 'Compact' ? 56 : 44
 
     const unscheduledJobsByDay = days.map(day =>
       getJobsForDate(day).filter(job => !(job.startTime || job.startWindowBegin))
@@ -2231,7 +2745,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         {/* Header Row */}
         <div className="flex border-b border-gray-200 shrink-0">
           <div className="w-14 shrink-0 border-r border-gray-200" />
-          <div className="flex-1 grid grid-cols-7">
+          <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
             {days.map(day => {
               const isTodayDate = isToday(day);
               return (
@@ -2253,7 +2767,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             <div className="w-14 shrink-0 border-r border-gray-200 px-2 py-1.5 text-right text-[10px] font-semibold uppercase text-gray-500">
               TBD
             </div>
-            <div className="flex-1 grid grid-cols-7">
+            <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
               {days.map((day, di) => (
                 <div key={day.toString()} className="min-h-[34px] border-r border-gray-100 last:border-r-0 p-1">
                   <div className="flex flex-col gap-1">
@@ -2291,23 +2805,21 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           <div className="flex" style={{ height: hoursCount * hourHeight }}>
             {/* Time Gutter */}
             <div className="w-14 shrink-0 border-r border-gray-200 relative bg-white z-10">
-              {Array.from({ length: hoursCount }).map((_, i) => {
+              {Array.from({ length: hoursCount + 1 }).map((_, i) => {
                 const h = startHour + i;
-                const isPM = h >= 12;
-                const displayH = h % 12 || 12;
                 return (
                   <div key={i} className="absolute w-full text-right pr-2 text-[10px] font-medium text-gray-500" style={{ top: i * hourHeight - 6 }}>
-                    {displayH} {isPM ? 'PM' : 'AM'}
+                    {minutesToShortTime(h * 60)}
                   </div>
                 );
               })}
             </div>
 
             {/* Grid */}
-            <div className="flex-1 grid grid-cols-7 relative">
+            <div className="relative grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
               {/* Hour lines */}
               <div className="absolute inset-0 pointer-events-none">
-                {Array.from({ length: hoursCount }).map((_, i) => (
+                {Array.from({ length: hoursCount + 1 }).map((_, i) => (
                   <div key={i} className="absolute w-full border-t border-gray-100" style={{ top: i * hourHeight }} />
                 ))}
               </div>
@@ -2316,11 +2828,145 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               {days.map((day, di) => {
                 const dayJobs = getJobsForDate(day);
                 const scheduledJobs = dayJobs.filter(job => job.startTime || job.startWindowBegin);
-                const positionedJobs = getPositionedJobs(scheduledJobs);
+                const timelineLayout = buildTimelineLayout(scheduledJobs)
+                const activeOverlapJobId = hoveredOverlapJobId || expandedOverlapJobId
+                const activeOverlapPosition = timelineLayout.positions.find(position => position.job.id === activeOverlapJobId)
+                const positionedJobs: any[] = []
 
                 return (
-                  <div key={di} className="relative overflow-visible border-r border-gray-100 last:border-r-0">
+                  <TimelineDayColumn
+                    key={di}
+                    date={day}
+                    onCreate={(event) => {
+                      if (event.target !== event.currentTarget) return
+                      const rect = event.currentTarget.getBoundingClientRect()
+                      const rawMinutes = startHour * 60 + ((event.clientY - rect.top) / hourHeight) * 60
+                      const roundedMinutes = Math.max(startHour * 60, Math.min(endHour * 60 - 15, Math.round(rawMinutes / 15) * 15))
+                      const hour = Math.floor(roundedMinutes / 60)
+                      const minute = roundedMinutes % 60
+                      handleTimeSlotClick(day, `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
+                    }}
+                  >
                     {/* Scheduled Jobs */}
+                    {timelineLayout.positions.map(positioned => {
+                      const { job, start, end, column, columnCount } = positioned
+                      const visibleStart = Math.max(start, startHour * 60)
+                      const visibleEnd = Math.min(end, endHour * 60)
+                      if (visibleEnd <= visibleStart) return null
+
+                      const top = ((visibleStart / 60) - startHour) * hourHeight
+                      const height = Math.max(22, ((visibleEnd - visibleStart) / 60) * hourHeight - 3)
+                      const widthPct = 100 / columnCount
+                      const leftPct = column * widthPct
+                      const overlaps = columnCount > 1
+                      const expanded = overlaps && activeOverlapJobId === job.id
+                      const expandedWidthPct = Math.min(100 - leftPct, widthPct * (columnCount >= 3 ? 1.65 : 1.5))
+                      const staysAboveExpanded = Boolean(
+                        activeOverlapPosition &&
+                        activeOverlapPosition.groupId === positioned.groupId &&
+                        column > activeOverlapPosition.column &&
+                        start > activeOverlapPosition.start
+                      )
+                      const performerName = getPerformerName(job)
+                      const { colorKey } = getCleanerColorInfo(performerName)
+                      const spineColor = JOB_SPINE_COLORS[colorKey]
+                      const status = getJobStatus(job)
+                      const unassigned = !performerName && status !== 'cancelled'
+                      const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
+                      const isSelected = selectedJobIds.has(job.id)
+                      const addOn = job.addOnServices?.[0]
+
+                      return (
+                        <DraggableTimelineJob
+                          key={job.id}
+                          job={job}
+                          disabled={hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || Boolean((job as JobWithFullRelations & { vendorPaid?: boolean }).vendorPaid) || job.status === 'CANCELLED'}
+                          title={`${formatTimelineRange(start, end)} ${job.location.client.name}${performerName ? ` - ${performerName}` : ''}`}
+                          onMouseEnter={() => overlaps && setHoveredOverlapJobId(job.id)}
+                          onMouseLeave={() => setHoveredOverlapJobId(current => current === job.id ? null : current)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            if (isSelectionMode) {
+                              toggleJobSelection(job.id)
+                              return
+                            }
+                            if (overlaps && expandedOverlapJobId !== job.id) {
+                              setExpandedOverlapJobId(job.id)
+                              return
+                            }
+                            handleJobClick(job)
+                          }}
+                          className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left transition-[width,box-shadow,transform] duration-150 focus:outline-none ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(16,24,40,0.18)]'} ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
+                          style={{
+                            top: `${top}px`,
+                            height: `${height}px`,
+                            left: `calc(${leftPct}% + 2px)`,
+                            width: expanded ? `calc(${expandedWidthPct}% - 4px)` : `calc(${widthPct}% - 4px)`,
+                            maxWidth: expanded ? '240px' : undefined,
+                            background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
+                            borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'rgba(255,255,255,0.88)',
+                            borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
+                            borderLeft: `5px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
+                            boxShadow: expanded
+                              ? '0 10px 26px rgba(16,24,40,0.28)'
+                              : '0 2px 0 rgba(15,23,42,0.12), 0 1px 3px rgba(15,23,42,0.10)',
+                            opacity: isDimmed ? 0.22 : status === 'cancelled' ? 0.65 : 1,
+                            zIndex: expanded ? 80 : staysAboveExpanded ? 90 : 10 + column,
+                          }}
+                        >
+                          <div className="absolute inset-0 overflow-hidden px-2 py-1.5">
+                            <div className={`truncate pr-3 text-[11px] font-extrabold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1e293b]' : 'text-white'}`}>
+                              {job.location.client.name}
+                            </div>
+                            {height >= 32 && (
+                              <div className={`mt-0.5 truncate text-[9.5px] font-bold leading-tight ${status === 'cancelled' || unassigned ? 'text-[#526072]' : 'text-white/95'}`}>
+                                {formatTimelineRange(start, end)}
+                              </div>
+                            )}
+                            {addOn && height >= 54 && (
+                              <span className="mt-1 inline-block max-w-full truncate rounded bg-[#FFF3B0] px-1.5 py-0.5 text-[8px] font-extrabold text-[#92400E]">
+                                + {addOn.description}
+                              </span>
+                            )}
+                            {isSpecialClean(job) && status !== 'cancelled' && <Star className="absolute right-1.5 top-1.5 h-2.5 w-2.5 fill-[#FCD34D] text-[#D97706]" />}
+                          </div>
+                        </DraggableTimelineJob>
+                      )
+                    })}
+
+                    {timelineLayout.overflow.map(chip => {
+                      const visibleStart = Math.max(chip.start, startHour * 60)
+                      const visibleEnd = Math.min(chip.end, endHour * 60)
+                      if (visibleEnd <= visibleStart) return null
+                      const widthPct = 100 / chip.columnCount
+                      const top = ((visibleStart / 60) - startHour) * hourHeight
+                      const height = Math.max(34, ((visibleEnd - visibleStart) / 60) * hourHeight - 3)
+                      return (
+                        <button
+                          type="button"
+                          key={`overflow-${chip.groupId}`}
+                          title={`Open ${format(day, 'EEEE')} to see all ${chip.jobs.length} additional jobs`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setCurrentDate(day)
+                            setExpandedOverlapJobId(null)
+                            setHoveredOverlapJobId(null)
+                            setViewMode('day')
+                          }}
+                          className="absolute z-20 flex flex-col items-center justify-center overflow-hidden rounded-[5px] border border-dashed border-[#C8CFD8] bg-[#EEF1F5] text-[#475569] transition-colors hover:bg-[#E3E8EF]"
+                          style={{
+                            top: `${top}px`,
+                            height: `${height}px`,
+                            left: `calc(${chip.column * widthPct}% + 2px)`,
+                            width: `calc(${widthPct}% - 4px)`,
+                          }}
+                        >
+                          <span className="text-xs font-extrabold leading-none">+{chip.jobs.length}</span>
+                          {height >= 44 && <span className="mt-1 text-[8px] font-extrabold uppercase tracking-[0.06em] text-[#7F8EA3]">More</span>}
+                        </button>
+                      )
+                    })}
+
                     {positionedJobs.map((positioned: any) => {
                       const {
                         job,
@@ -2355,18 +3001,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           : 160;
 
                       const performerName = getPerformerName(job);
-                      const { colorKey } = getCleanerColorInfo(performerName);
-                      const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default;
+                      const { hex } = getCleanerColorInfo(performerName);
                       const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id);
                       const isSelected = selectedJobIds.has(job.id);
 
                       return (
-                        <div
+                        <DraggableTimelineJob
                           key={job.id}
+                          job={job}
+                          disabled={hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || Boolean((job as JobWithFullRelations & { vendorPaid?: boolean }).vendorPaid) || job.status === 'CANCELLED'}
                           title={`${getCompactTime(tStr)} ${job.location.client.name}${performerName ? ` · ${performerName}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`}
                           onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
-                          className={`absolute rounded-md overflow-hidden cursor-pointer shadow-sm border border-white/60 hover:shadow-md focus:shadow-md transition-shadow ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
-                          tabIndex={0}
+                          className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-[box-shadow,transform] hover:z-[90] hover:-translate-y-px hover:shadow-md focus:z-[90] focus:outline-none ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
                           style={{
                             top: `${top}px`,
                             height: `${height}px`,
@@ -2375,21 +3021,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             width: useOverlay
                               ? (overlayWidth > 0 ? `${overlayWidth}px` : '82%')
                               : `calc(${widthPct}% - 8px)`,
-                            background: gradient,
+                            background: job.status === 'CANCELLED' ? '#F3F4F6' : `${hex}20`,
+                            borderColor: job.status === 'CANCELLED' ? '#D1D5DB' : `${hex}55`,
+                            borderLeft: `4px solid ${job.status === 'CANCELLED' ? '#9CA3AF' : hex}`,
                             opacity: isDimmed ? 0.3 : 1,
                             zIndex: useOverlay ? 20 + stackIndex : 10 + column,
-                          }}
-                          onMouseEnter={(e) => {
-                            if (useOverlay) e.currentTarget.style.zIndex = '80';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (useOverlay) e.currentTarget.style.zIndex = String(20 + stackIndex);
-                          }}
-                          onFocus={(e) => {
-                            if (useOverlay) e.currentTarget.style.zIndex = '80';
-                          }}
-                          onBlur={(e) => {
-                            if (useOverlay) e.currentTarget.style.zIndex = String(20 + stackIndex);
                           }}
                         >
                           {stackOverflowCount > 0 && (
@@ -2427,7 +3063,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             if (showOneLine) {
                               return (
                                 <div className="absolute inset-0 overflow-hidden px-1.5 py-1">
-                                  <div className="truncate text-[11px] font-semibold leading-tight text-white">
+                                  <div className="truncate text-[10px] font-bold leading-tight text-[#1e293b]">
                                     {trialBadge}{compactTime} {clientName}
                                   </div>
                                 </div>
@@ -2437,11 +3073,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             if (showTwoLines) {
                               return (
                                 <div className="absolute inset-0 overflow-hidden px-1.5 py-1">
-                                  <div className="truncate text-[11px] font-semibold leading-tight text-white">
+                                  <div className="truncate text-[10px] font-bold leading-tight text-[#1e293b]">
                                     {trialBadge}{compactTime} {clientName}
                                   </div>
                                   {cleanerShort && (
-                                    <div className="truncate text-[10px] leading-tight text-white/85">
+                                    <div className="truncate text-[9px] font-semibold leading-tight text-[#526072]">
                                       {cleanerShort}
                                     </div>
                                   )}
@@ -2451,26 +3087,26 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
                             return (
                               <div className="absolute inset-0 overflow-hidden px-1.5 py-1">
-                                <div className="truncate text-[11px] font-semibold leading-tight text-white">
+                                <div className="truncate text-[10px] font-bold leading-tight text-[#1e293b]">
                                   {trialBadge}{compactTime} {clientName}
                                 </div>
                                 {cleanerShort && (
-                                  <div className="truncate text-[10px] leading-tight text-white/85">
+                                  <div className="truncate text-[9px] font-semibold leading-tight text-[#526072]">
                                     {cleanerShort}
                                   </div>
                                 )}
                                 {locationName && (
-                                  <div className="truncate text-[10px] leading-tight text-white/75">
+                                  <div className="truncate text-[9px] leading-tight text-[#7f8ea3]">
                                     {locationName}
                                   </div>
                                 )}
                               </div>
                             )
                           })()}
-                        </div>
+                        </DraggableTimelineJob>
                       )
                     })}
-                  </div>
+                  </TimelineDayColumn>
                 )
               })}
             </div>
@@ -2539,12 +3175,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             </button>
           </div>
         )}
-        <div>
-          {viewMode === 'week' && (
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+          {(viewMode === 'week' || viewMode === 'day') && (
             <div
-              key="week-view"
+              key={viewMode}
               className="animate-in fade-in slide-in-from-bottom-1 duration-150"
-              style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto' }}
+              style={{ flex: '1 1 0%', minHeight: 0, overflow: 'hidden' }}
             >
               {renderWeekView()}
             </div>
@@ -2554,7 +3191,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             <div
               key="month-view"
               className="animate-in fade-in slide-in-from-bottom-1 duration-150"
-              style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: '12px' }}
+              style={{ flex: '1 1 0%', minHeight: 0, overflow: 'auto' }}
             >
               {(() => {
                 const monthStart = startOfMonth(currentDate)
@@ -2572,7 +3209,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   weeks.push(week)
                 }
                 return (
-                  <div style={{ border: '1px solid #E6E0D4', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'white', boxShadow: '0 1px 2px rgba(40,30,10,0.04)' }}>
+                  <div style={{ minWidth: 920, overflow: 'hidden', backgroundColor: 'white' }}>
                     {/* Day headers */}
                     <div className="grid grid-cols-7" style={{ borderBottom: '1px solid #E6E0D4', backgroundColor: '#FFFDF8' }}>
                       {WEEKDAYS.map((_, i) => (
@@ -2583,7 +3220,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     </div>
                     {/* Week rows */}
                     {weeks.map((week, wi) => (
-                      <div key={wi} className="grid grid-cols-7" style={{ borderBottom: wi < weeks.length - 1 ? '1px solid #F1EADF' : 'none' }}>
+                      <div key={wi} className="grid min-h-[124px] grid-cols-7" style={{ borderBottom: wi < weeks.length - 1 ? '1px solid #eef1f4' : 'none' }}>
                         {week.map((d, di) => {
                           const dayJobs = getJobsForDate(d)
                           const inMonth = isSameMonth(d, currentDate)
@@ -2593,7 +3230,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               key={di}
                               onClick={() => handleDateClick(d)}
                               style={{
-                                minHeight: '96px',
+                                minHeight: '124px',
                                 padding: '5px',
                                 borderRight: di < 6 ? '1px solid #F1EADF' : 'none',
                                 backgroundColor: today ? 'rgba(11,122,78,0.05)' : inMonth ? 'white' : '#FAF8F3',
@@ -2617,8 +3254,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                 {dayJobs.slice(0, 5).map(j => {
                                   const status = getJobStatus(j)
                                   const performerName = getPerformerName(j)
-                                  const { colorKey } = getCleanerColorInfo(performerName)
-                                  const gradient = JOB_GRADIENTS[colorKey] || JOB_GRADIENTS.default
+                                  const { colorKey, hex } = getCleanerColorInfo(performerName)
+                                  const spineColor = JOB_SPINE_COLORS[colorKey]
                                   const timeDisplay = getCompactTime(j.startTime || j.startWindowBegin || null);
                                   const cleanerInit = performerName ? performerName.charAt(0) : '';
 
@@ -2626,14 +3263,16 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                     <div
                                       key={j.id}
                                       onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(j.id); else handleJobClick(j); }}
-                                      className="h-5 cursor-pointer truncate rounded px-1.5 text-[11px] font-bold leading-5 text-white hover:opacity-90"
+                                      className={`relative h-5 cursor-pointer truncate rounded-[5px] border border-white/80 border-l-[3px] px-1.5 pr-4 text-[10px] font-bold leading-5 shadow-[0_1px_2px_rgba(15,23,42,0.10)] hover:brightness-[0.98] ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : 'text-[#1e293b]'}`}
                                       style={{
-                                        background: status === 'cancelled' ? '#9CA3AF' : gradient,
+                                        background: status === 'cancelled' ? '#F3F4F6' : `${hex}20`,
+                                        borderLeftColor: status === 'cancelled' ? '#9CA3AF' : spineColor,
                                         opacity: (dimmedClientIds && !dimmedClientIds.has(j.location.client.id)) ? 0.15 : (status === 'cancelled' ? 0.5 : 1),
                                         transition: 'opacity 0.2s ease',
                                       }}
                                     >
-                                      {(j as any).isTrial && <span style={{ fontSize: '8px', fontWeight: 800, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: '2px', padding: '0 3px', marginRight: '3px', verticalAlign: 'middle', letterSpacing: '0.04em' }}>TRIAL</span>}{timeDisplay && `${timeDisplay} `}{j.location.client.name}{cleanerInit ? ` · ${cleanerInit}` : ''}
+                                      {timeDisplay && `${timeDisplay} `}{j.location.client.name}{cleanerInit ? ` · ${cleanerInit}` : ''}
+                                      {isSpecialClean(j) && status !== 'cancelled' && <Star className="absolute right-1 top-1 h-2.5 w-2.5 fill-[#FCD34D] text-[#D97706]" />}
                                     </div>
                                   )
                                 })}
@@ -2658,6 +3297,17 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             </div>
           )}
 
+          {viewMode === 'list' && (
+            <div
+              key="list-view"
+              className="flex min-h-0 flex-1 animate-in fade-in slide-in-from-bottom-1 overflow-x-auto duration-150"
+            >
+              {renderListView()}
+            </div>
+          )}
+
+          </div>
+          {specialRailOpen && renderSpecialCleansRail()}
         </div>
 
         {/* Day popover for "+N more" in month view */}
@@ -2716,7 +3366,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           style={{ width: '8px', height: '8px', backgroundColor: performerName ? hex : '#D1D5DB' }}
                         />
                         <div className="min-w-0 flex-1">
-                          <p style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }} className="truncate">
+                          <p style={{ fontSize: '14px', fontWeight: 600, color: job.status === 'CANCELLED' ? '#7f8ea3' : '#111827' }} className={`truncate ${job.status === 'CANCELLED' ? 'line-through' : ''}`}>
                             {job.location.client.name}
                           </p>
                           <p style={{ fontSize: '12px', color: '#6B7280' }} className="truncate">

@@ -59,10 +59,10 @@ const fetcher = (url: string) => fetch(url).then(res => {
 // Simple loading state - avoids rendering a duplicate calendar grid
 function CalendarLoadingSkeleton() {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="flex min-h-[60vh] items-center justify-center bg-[var(--cf-canvas)]">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-gray-500 font-medium">Loading calendar...</p>
+        <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-[var(--cf-green-rule)] border-t-[var(--cf-green)]" />
+        <p className="text-xs font-bold text-[var(--cf-ink-muted)]">Loading calendar...</p>
       </div>
     </div>
   )
@@ -108,15 +108,15 @@ export function CalendarClient() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Calendar</h1>
-          <p className="text-gray-600 mb-4">{error.message}</p>
+      <div className="flex min-h-[60vh] items-center justify-center bg-[var(--cf-canvas)] p-4">
+        <div className="w-full max-w-md rounded-lg border border-[var(--cf-rule)] bg-white p-7 text-center shadow-[var(--cf-panel-shadow)]">
+          <h1 className="mb-2 text-xl font-extrabold text-[var(--cf-ink)]">Calendar could not load</h1>
+          <p className="mb-5 text-sm text-[var(--cf-ink-secondary)]">{error.message}</p>
           <button
             onClick={() => window.location.reload()}
-            className="inline-block px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+            className="inline-block rounded-lg bg-[var(--cf-green)] px-4 py-2 text-sm font-bold text-white hover:bg-[var(--cf-green-hover)]"
           >
-            Reload Page
+            Try again
           </button>
         </div>
       </div>
