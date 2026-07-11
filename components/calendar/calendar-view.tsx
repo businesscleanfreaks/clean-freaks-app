@@ -14,6 +14,8 @@ import {
 } from "date-fns"
 import { formatTime } from "@/lib/utils"
 import { JobDetailDialog } from "./job-detail-dialog"
+import { QuickJobPopover } from "./quick-job-popover"
+import { QuickScheduleChangeDialog } from "./quick-schedule-change-dialog"
 import { CompactCreateJobDialog } from "./compact-create-job-dialog"
 import { QuickAssignModal } from "./quick-assign-modal"
 import { BulkJobActions } from "./bulk-job-actions"
@@ -508,6 +510,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<JobWithFullRelations | null>(null)
+  const [quickJobOpen, setQuickJobOpen] = useState(false)
+  const [quickScheduleOpen, setQuickScheduleOpen] = useState(false)
   const [jobDialogOpen, setJobDialogOpen] = useState(false)
   const [createJobDialogOpen, setCreateJobDialogOpen] = useState(false)
   const [selectedDateForNewJob, setSelectedDateForNewJob] = useState<Date | null>(null)
@@ -898,7 +902,16 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
   const handleJobClick = (job: JobWithFullRelations) => {
     setSelectedJob(job)
-    setJobDialogOpen(true)
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+      setQuickJobOpen(true)
+    } else {
+      setJobDialogOpen(true)
+    }
+  }
+
+  const openQuickScheduleDialog = () => {
+    setQuickJobOpen(false)
+    setQuickScheduleOpen(true)
   }
 
   const handleDateClick = (date: Date) => {
@@ -3460,7 +3473,22 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
       {/* Desktop "+" button moved to header toolbar */}
 
-      {/* Job Detail Dialog */}
+      {/* Compact desktop quick editor; complex money and schedule workflows remain in the full dialog. */}
+      <QuickJobPopover
+        job={selectedJob}
+        open={quickJobOpen}
+        onOpenChange={setQuickJobOpen}
+        onChangeSchedule={openQuickScheduleDialog}
+        subcontractors={subcontractors}
+      />
+
+      <QuickScheduleChangeDialog
+        job={selectedJob}
+        open={quickScheduleOpen}
+        onOpenChange={setQuickScheduleOpen}
+      />
+
+      {/* Full Job Detail Dialog */}
       <JobDetailDialog
         job={selectedJob}
         open={jobDialogOpen}

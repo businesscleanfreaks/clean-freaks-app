@@ -46,6 +46,10 @@ export async function GET() {
           invoiced: true,
           subcontractorPaid: true,
           vendorPaid: true,
+          notes: true,
+          isTrial: true,
+          trialNotes: true,
+          cancellationFee: true,
           createdAt: true,
           updatedAt: true,
           location: {
@@ -60,6 +64,7 @@ export async function GET() {
                   name: true,
                   billingType: true,
                   cleanerPayType: true,
+                  notes: true,
                   isActive: true,
                   createdAt: true,
                 },

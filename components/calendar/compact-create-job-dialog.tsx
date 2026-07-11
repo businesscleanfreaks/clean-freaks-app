@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
-import { CalendarDays, Check, DollarSign, MapPin, Search, X } from "lucide-react"
+import { Check, DollarSign, MapPin, Search, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -27,17 +27,26 @@ interface CompactCreateJobDialogProps {
 
 type ClientMode = "existing" | "one-time"
 type TimeMode = "specific" | "window" | "tbd"
+type ServiceType = "cleaning" | "addon"
 type JobType = "regular" | "deep_clean" | "post_construction" | "move_in_out" | "event"
 type ClientLocation = ClientListItem["locations"][number]
 type ClientSchedule = ClientLocation["schedules"][number]
 
 const jobTypes: Array<{ value: JobType; label: string }> = [
-  { value: "regular", label: "Regular clean" },
-  { value: "deep_clean", label: "Deep clean" },
+  { value: "regular", label: "Standard" },
+  { value: "deep_clean", label: "Deep" },
   { value: "post_construction", label: "Post-construction" },
-  { value: "move_in_out", label: "Move in/out" },
+  { value: "move_in_out", label: "Move-out" },
   { value: "event", label: "Event" },
 ]
+
+const jobTypeDescriptions: Record<JobType, string> = {
+  regular: "Regular upkeep clean",
+  deep_clean: "Top-to-bottom detail clean",
+  post_construction: "Debris and dust after a build",
+  move_in_out: "Empty home, inside cabinets and appliances",
+  event: "Event setup or cleanup",
+}
 
 // Trials are short recurring runs, so only weekly-based cadences make sense here.
 type TrialDuration = "1wk" | "2wk" | "3wk" | "1mo"
@@ -98,6 +107,8 @@ export function CompactCreateJobDialog({
   const [oneTimePhone, setOneTimePhone] = useState("")
   const [oneTimeEmail, setOneTimeEmail] = useState("")
   const [jobType, setJobType] = useState<JobType>("regular")
+  const [serviceType, setServiceType] = useState<ServiceType>("cleaning")
+  const [isRecurring, setIsRecurring] = useState(false)
   const [isTrial, setIsTrial] = useState(false)
   const [jobDate, setJobDate] = useState<Date | null>(selectedDate)
   const [timeMode, setTimeMode] = useState<TimeMode>(selectedTime ? "specific" : "window")
@@ -130,7 +141,7 @@ export function CompactCreateJobDialog({
   )
   // Vendors for the add-on "Performed by" selector (vendor add-ons are payable via the vendor list)
   const { data: vendorData } = useSWR<Array<{ id: string; name: string; isActive?: boolean }>>(open ? '/api/vendors' : null, fetcher)
-  const addOnVendors = vendorData || []
+  const addOnVendors = useMemo(() => vendorData || [], [vendorData])
   const activeVendors = useMemo(() => addOnVendors.filter(v => v.isActive !== false), [addOnVendors])
   const selectedClient = clients.find(client => client.id === selectedClientId)
   const locations = selectedClient?.locations || []
@@ -158,14 +169,17 @@ export function CompactCreateJobDialog({
   const canCreate =
     !!jobDate &&
     hasValidTime &&
+    (!isRecurring || timeMode !== "tbd") &&
     trialReady &&
+    (!isRecurring || trialDaysOfWeek.length > 0) &&
     Number(clientRate) >= 0 &&
     Number(cleanerPay) >= 0 &&
     clientRate !== "" &&
     cleanerPay !== "" &&
     (clientMode === "one-time"
       ? !!oneTimeName.trim() && !!oneTimeAddress.trim()
-      : !!selectedClientId && selectedLocationIds.length > 0)
+      : !!selectedClientId && selectedLocationIds.length > 0) &&
+    (serviceType === "cleaning" || !!addOnDraft.description.trim())
 
   useEffect(() => {
     if (!open) return
@@ -179,6 +193,8 @@ export function CompactCreateJobDialog({
     setOneTimePhone("")
     setOneTimeEmail("")
     setJobType("regular")
+    setServiceType("cleaning")
+    setIsRecurring(false)
     setIsTrial(false)
     setJobDate(selectedDate)
     setTimeMode(selectedTime ? "specific" : "window")
@@ -201,10 +217,10 @@ export function CompactCreateJobDialog({
   }, [clients, open, preSelectedClientId, selectedDate, selectedTime])
 
   useEffect(() => {
-    if (isTrial && subcontractorId.startsWith("vendor:")) {
+    if ((isTrial || (isRecurring && serviceType === "cleaning")) && subcontractorId.startsWith("vendor:")) {
       setSubcontractorId("unassigned")
     }
-  }, [isTrial, subcontractorId])
+  }, [isRecurring, isTrial, serviceType, subcontractorId])
 
   // Close the client dropdown when clicking outside the picker container.
   useEffect(() => {
@@ -305,6 +321,10 @@ export function CompactCreateJobDialog({
       showError("Trials need a cleaner assignment. Vendors can perform standalone one-time jobs.")
       return
     }
+    if (serviceType === "addon" && isRecurring && clientMode === "one-time") {
+      showError("Choose an existing client schedule for a recurring add-on")
+      return
+    }
 
     setLoading(true)
     try {
@@ -336,6 +356,32 @@ export function CompactCreateJobDialog({
         if (!clientResponse.ok) throw new Error((await clientResponse.json()).error || "Failed to add one-time client")
         const newClient = await clientResponse.json()
         locationIds = [newClient.locations[0].id]
+      }
+
+      if (serviceType === "addon" && isRecurring) {
+        const location = selectedClient?.locations.find(item => item.id === locationIds[0])
+        const schedule = primaryScheduleForLocation(location)
+        if (!schedule) throw new Error("This location needs an active recurring cleaning schedule before adding a recurring service")
+        const response = await fetch("/api/add-on-services", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scheduleId: schedule.id,
+            description: addOnDraft.description.trim(),
+            clientRate: Number(clientRate),
+            subcontractorRate: Number(cleanerPay),
+            frequency: trialFrequency,
+            isRecurring: true,
+            vendorId: subcontractorId.startsWith("vendor:") ? subcontractorId.replace("vendor:", "") : null,
+            subcontractorId: !subcontractorId.startsWith("vendor:") && subcontractorId !== "unassigned" ? subcontractorId : null,
+            dayOfWeek: trialDaysOfWeek[0] ?? jobDate.getDay(),
+          }),
+        })
+        if (!response.ok) throw new Error((await response.json()).error || "Failed to add recurring service")
+        showSuccess("Recurring service added")
+        refreshCalendarData()
+        close()
+        return
       }
 
       if (isTrial) {
@@ -373,6 +419,36 @@ export function CompactCreateJobDialog({
         return
       }
 
+      if (isRecurring) {
+        await Promise.all(locationIds.map(async locationId => {
+          const response = await fetch("/api/schedules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              locationId,
+              frequency: trialFrequency,
+              daysOfWeek: JSON.stringify(trialDaysOfWeek),
+              startDate: format(jobDate, "yyyy-MM-dd"),
+              endDate: null,
+              defaultClientRate: Number(clientRate),
+              defaultSubcontractorRate: Number(cleanerPay),
+              clientPayType: "PER_CLEAN",
+              subcontractorPayType: "PER_CLEAN",
+              subcontractorId: subcontractorId === "unassigned" || subcontractorId.startsWith("vendor:") ? null : subcontractorId,
+              timeType: timeMode === "specific" ? "SPECIFIC" : "WINDOW",
+              startTime: timeMode === "specific" ? startTime || null : null,
+              startWindowBegin: timeMode === "window" ? startWindowBegin || null : null,
+              startWindowEnd: timeMode === "window" ? startWindowEnd || null : null,
+            }),
+          })
+          if (!response.ok) throw new Error((await response.json()).error || "Failed to create recurring schedule")
+        }))
+        showSuccess(locationIds.length > 1 ? `${locationIds.length} recurring schedules added` : "Recurring schedule added")
+        refreshCalendarData()
+        close()
+        return
+      }
+
       await Promise.all(locationIds.map(async locationId => {
         const isVendorAssignment = subcontractorId.startsWith("vendor:")
         const response = await fetch("/api/jobs", {
@@ -386,8 +462,8 @@ export function CompactCreateJobDialog({
             startTime: timeMode === "specific" ? startTime || null : null,
             startWindowBegin: timeMode === "window" ? startWindowBegin || null : null,
             startWindowEnd: timeMode === "window" ? startWindowEnd || null : null,
-            clientRate: Number(clientRate),
-            subcontractorRate: Number(cleanerPay),
+            clientRate: serviceType === "addon" ? 0 : Number(clientRate),
+            subcontractorRate: serviceType === "addon" ? 0 : Number(cleanerPay),
             notes: notes.trim() || null,
             isTrial,
             trialNotes: isTrial ? trialNotes.trim() || null : null,
@@ -397,9 +473,17 @@ export function CompactCreateJobDialog({
         if (!response.ok) throw new Error((await response.json()).error || "Failed to create job")
 
         // Attach any add-ons to the created job. A vendor add-on becomes payable via the vendor list.
-        if (addOns.length > 0) {
+        const servicesToAttach = serviceType === "addon"
+          ? [{
+              description: addOnDraft.description.trim(),
+              vendorId: isVendorAssignment ? subcontractorId.replace("vendor:", "") : "",
+              clientRate,
+              subcontractorRate: cleanerPay,
+            }]
+          : addOns
+        if (servicesToAttach.length > 0) {
           const createdJob = await response.json()
-          for (const ao of addOns) {
+          for (const ao of servicesToAttach) {
             await fetch("/api/add-on-services", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -427,9 +511,9 @@ export function CompactCreateJobDialog({
 
   return (
     <Dialog open={open} onOpenChange={value => !value && close()}>
-      <DialogContent hideClose className="flex flex-col max-h-[92vh] max-w-[400px] overflow-hidden p-0">
+      <DialogContent hideClose className="flex max-h-[92vh] w-[min(94vw,440px)] max-w-[440px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
         <div className="flex-shrink-0 flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <DialogTitle className="text-[19px] font-bold tracking-tight text-slate-950">Add Job</DialogTitle>
+          <DialogTitle className="text-[15px] font-extrabold tracking-tight text-slate-950">New booking</DialogTitle>
           <DialogDescription className="sr-only">Add a new job: pick client, schedule, rates, and notes in one quick pass.</DialogDescription>
           <button aria-label="Close add job" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X className="h-4 w-4" />
@@ -448,9 +532,9 @@ export function CompactCreateJobDialog({
             {clientMode === "existing" ? (
               <>
                 {selectedClient ? (
-                  <div className="flex items-start justify-between gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+                  <div className="flex items-start justify-between gap-2 border-b border-[#dfe5eb] px-0 py-2">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-slate-950">{selectedClient.name}</div>
+                      <div className="truncate text-[23px] font-extrabold leading-tight text-[#263246]">{selectedClient.name}</div>
                       <div className="truncate text-xs text-slate-500">
                         {locations[0]?.address || `${locations.length} location${locations.length === 1 ? "" : "s"}`}
                       </div>
@@ -475,8 +559,8 @@ export function CompactCreateJobDialog({
                           setSearch(event.target.value)
                           setDropOpen(true)
                         }}
-                        placeholder="Search or type new client name..."
-                        className="h-9 pl-8 text-sm"
+                        placeholder="Client name"
+                        className="h-12 border-x-0 border-t-0 border-b border-[#dfe5eb] pl-8 text-[20px] font-bold shadow-none focus-visible:ring-0"
                       />
                     </div>
                     {dropOpen && (
@@ -567,34 +651,40 @@ export function CompactCreateJobDialog({
 
           <div className="h-px bg-slate-100" />
 
-          <section className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
+          <section className="space-y-3">
+            <div>
+              <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">Service type</Label>
+              <div className="flex h-10 w-[200px] rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
+                {([['cleaning', 'Cleaning'], ['addon', 'Add-on']] as const).map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => { setServiceType(value); if (value === 'addon') setIsTrial(false) }} className={`flex-1 rounded-md transition-colors ${serviceType === value ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {serviceType === 'cleaning' ? (
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">Job type</Label>
-                <div className="flex h-9 rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
-                  {([
-                    { trial: false, label: "One-Time" },
-                    { trial: true, label: "Trial" },
-                  ] as const).map(option => (
-                    <button
-                      key={option.label}
-                      type="button"
-                      onClick={() => setIsTrial(option.trial)}
-                      className={`flex-1 rounded transition-colors ${isTrial === option.trial ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-                    >
-                      {option.label}
+                <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">Type of clean</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {jobTypes.filter(type => type.value !== 'event').map(type => (
+                    <button key={type.value} type="button" onClick={() => setJobType(type.value)} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${jobType === type.value ? 'border-[#0b8557] bg-[#eaf5f0]' : 'border-[#d9e1ea] bg-white hover:border-[#a9cfc6]'}`}>
+                      <span className="block text-[12px] font-extrabold text-[#263246]">{type.label}</span>
+                      <span className="mt-0.5 block text-[10px] leading-snug text-[#718096]">{jobTypeDescriptions[type.value]}</span>
                     </button>
                   ))}
                 </div>
               </div>
+            ) : (
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">Clean type</Label>
-                <Select value={jobType} onValueChange={value => setJobType(value as JobType)}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {jobTypes.map(type => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">Choose a service</Label>
+                <Input value={addOnDraft.description} onChange={event => setAddOnDraft(current => ({ ...current, description: event.target.value }))} placeholder="Window cleaning, carpet cleaning..." className="h-11 rounded-lg border-[#d9e1ea] bg-[#f8fafc]" />
+              </div>
+            )}
+
+            <div>
+              <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">When</Label>
+              <div className="flex h-10 w-[210px] rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
+                <button type="button" onClick={() => { setIsRecurring(false); setIsTrial(false) }} className={`flex-1 rounded-md ${!isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>One-time</button>
+                <button type="button" onClick={() => setIsRecurring(true)} className={`flex-1 rounded-md ${isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>Recurring</button>
               </div>
             </div>
 
@@ -633,6 +723,13 @@ export function CompactCreateJobDialog({
                 <div className="flex-1"><TimePicker value={startWindowEnd} onChange={setStartWindowEnd} /></div>
               </div>
             )}
+
+            {serviceType === 'cleaning' && (
+              <button type="button" onClick={() => { const next = !isTrial; setIsTrial(next); if (next) setIsRecurring(true) }} className="flex w-full items-center gap-2 border-t border-[#edf0f3] pt-3 text-left">
+                <span className={`relative h-6 w-10 rounded-full transition-colors ${isTrial ? 'bg-[#0d9488]' : 'bg-[#cbd5e1]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isTrial ? 'translate-x-5' : 'translate-x-1'}`} /></span>
+                <span><span className="block text-[13px] font-bold text-[#263246]">Trial</span><span className="block text-[10px] text-[#7f8ea3]">Probationary period at a trial rate</span></span>
+              </button>
+            )}
           </section>
 
           <section className="space-y-2">
@@ -643,7 +740,7 @@ export function CompactCreateJobDialog({
                 <SelectContent>
                   <SelectItem value="unassigned"><span className="text-amber-700">Unassigned</span></SelectItem>
                   {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
-                  {!isTrial && activeVendors.length > 0 && (
+                  {!isTrial && (!isRecurring || serviceType === 'addon') && activeVendors.length > 0 && (
                     <>
                       <div className="mt-1 border-t border-slate-100 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Vendors</div>
                       {activeVendors.map(vendor => <SelectItem key={`vendor:${vendor.id}`} value={`vendor:${vendor.id}`}>{vendor.name}</SelectItem>)}
@@ -652,7 +749,7 @@ export function CompactCreateJobDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <div>
                 <Label className="mb-1 block text-[11px] text-slate-500">Client rate *</Label>
                 <div className="relative">
@@ -667,18 +764,14 @@ export function CompactCreateJobDialog({
                   <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
                 </div>
               </div>
-            </div>
-            {(Number(clientRate) > 0 || Number(cleanerPay) > 0) && (
-              <div className="text-right text-[11px]">
-                <span className="text-slate-400">Margin: </span>
-                <span className={`font-mono font-bold ${profit < 0 ? "text-red-600" : "text-emerald-700"}`}>
-                  ${profit.toFixed(2)}
-                </span>
+              <div className="rounded-lg bg-[#e7f2ee] px-2.5 py-2">
+                <span className="block text-[9px] font-extrabold text-[#4b9b82]">MARGIN</span>
+                <span className={`font-mono text-[15px] font-extrabold ${profit < 0 ? 'text-red-600' : 'text-[#066846]'}`}>${profit.toFixed(2)}</span>
               </div>
-            )}
+            </div>
           </section>
 
-          {!isTrial && (
+          {!isTrial && serviceType === 'cleaning' && (
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-[11px] text-slate-500">Add-ons</Label>
@@ -739,9 +832,9 @@ export function CompactCreateJobDialog({
             </section>
           )}
 
-          {isTrial && (
-            <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <div>
+          {(isTrial || isRecurring) && (
+            <section className="space-y-3 rounded-lg border border-[#cce4db] bg-[#f1f8f5] p-3">
+              {isTrial && <div>
                 <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial length</Label>
                 <div className="flex gap-1.5">
                   {trialDurations.map(option => (
@@ -764,7 +857,7 @@ export function CompactCreateJobDialog({
                     Runs {format(jobDate, "MMM d")} → {format(addTrialDuration(jobDate, trialDuration), "MMM d")}
                   </p>
                 )}
-              </div>
+              </div>}
 
               <div>
                 <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Frequency</Label>
@@ -776,8 +869,8 @@ export function CompactCreateJobDialog({
                       onClick={() => setTrialFrequency(option.value)}
                       className={`rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${
                         trialFrequency === option.value
-                          ? "border-amber-500 bg-amber-100 text-amber-900"
-                          : "border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
+                          ? "border-[#0b8557] bg-[#dff0e9] text-[#075f40]"
+                          : "border-[#cce4db] bg-white text-[#49675c] hover:bg-[#e8f4ef]"
                       }`}
                     >
                       {option.label}
@@ -803,7 +896,7 @@ export function CompactCreateJobDialog({
                           )
                         }
                         className={`flex h-8 flex-1 items-center justify-center rounded-md text-[12px] font-bold transition-colors ${
-                          selected ? "bg-amber-500 text-white" : "border border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
+                          selected ? "bg-[#0b8557] text-white" : "border border-[#cce4db] bg-white text-[#49675c] hover:bg-[#e8f4ef]"
                         }`}
                       >
                         {letter}
@@ -812,11 +905,11 @@ export function CompactCreateJobDialog({
                   })}
                 </div>
                 {trialDaysOfWeek.length === 0 && (
-                  <p className="mt-1 text-[10.5px] font-medium text-amber-700">Pick at least one day for the trial visits.</p>
+                  <p className="mt-1 text-[10.5px] font-medium text-[#49675c]">Pick at least one service day.</p>
                 )}
               </div>
 
-              <div>
+              {isTrial && <div>
                 <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial notes</Label>
                 <textarea
                   value={trialNotes}
@@ -825,7 +918,7 @@ export function CompactCreateJobDialog({
                   rows={2}
                   className="w-full resize-none rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none"
                 />
-              </div>
+              </div>}
             </section>
           )}
 
@@ -870,18 +963,18 @@ export function CompactCreateJobDialog({
           )}
         </div>
 
-        <div className="flex-shrink-0 border-t border-slate-100 bg-white px-5 py-3">
+        <div className="flex flex-shrink-0 justify-end border-t border-slate-100 bg-white px-5 py-3">
           <button
             type="button"
             disabled={!canCreate || loading}
             onClick={createJob}
-            className={`w-full h-11 rounded-md text-[14px] font-bold transition-colors ${
+            className={`h-11 min-w-[150px] rounded-lg px-5 text-[14px] font-bold transition-colors ${
               canCreate && !loading
-                ? "bg-slate-900 text-white hover:bg-slate-800"
+                ? "bg-[#078556] text-white hover:bg-[#067348]"
                 : "bg-slate-200 text-slate-400 cursor-not-allowed"
             }`}
           >
-            {loading ? "Adding..." : isTrial ? "Schedule Trial" : "Schedule Job"}
+            {loading ? "Saving..." : "Save booking"}
           </button>
         </div>
       </DialogContent>
