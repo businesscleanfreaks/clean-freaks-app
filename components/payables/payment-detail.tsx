@@ -21,6 +21,18 @@ function isoToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
+function accountDisplayName(name: string): string {
+  const separator = " — "
+  const separatorIndex = name.indexOf(separator)
+  if (separatorIndex === -1) return name
+
+  const clientName = name.slice(0, separatorIndex).trim()
+  const locationName = name.slice(separatorIndex + separator.length).trim()
+  return clientName.localeCompare(locationName, undefined, { sensitivity: "accent" }) === 0
+    ? clientName
+    : name
+}
+
 const PDF_MAX_BYTES = 10 * 1024 * 1024
 
 function formatBytes(bytes: number | null | undefined): string {
@@ -59,7 +71,28 @@ interface PayeeInvoiceRow {
  * what we compute we owe (the same payables math). A MISMATCH is flagged so Grace
  * resolves it before paying — Josh's "only pay against a matching invoice" rule.
  */
-function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "cleaner" | "vendor"; payeeId: string; period: string }) {
+export function InvoiceIntakePanel({
+  payeeType,
+  payeeId,
+  payeeName,
+  period,
+  onChanged,
+  presentation = "inline",
+  expectedAmount,
+  itemCount,
+  onClose,
+}: {
+  payeeType: "cleaner" | "vendor"
+  payeeId: string
+  payeeName?: string
+  period: string
+  onChanged: () => void
+  presentation?: "inline" | "dialog"
+  expectedAmount?: number
+  itemCount?: number
+  onClose?: () => void
+}) {
+  const isDialog = presentation === "dialog"
   const label = payeeType === "cleaner" ? "Cleaner" : "Vendor"
   const lowerLabel = label.toLowerCase()
   const basePath = payeeType === "cleaner"
@@ -74,7 +107,7 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
   const [reference, setReference] = useState("")
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(isDialog)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const inputId = `${payeeType}-invoice-file-${payeeId}-${period}`
@@ -96,7 +129,8 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
       if (!res.ok) { await showApiError(res, "Failed to record invoice"); return }
       const { invoice } = await res.json()
       showSuccess(invoice.status === "MATCHED" ? "Invoice matches what we owe" : "Recorded — does NOT match what we owe")
-      setAmount(""); setReference(""); setAttachmentFile(null); setOpen(false); mutate()
+      setAmount(""); setReference(""); setAttachmentFile(null); setOpen(false); void mutate(); onChanged()
+      if (isDialog) onClose?.()
     } catch { showError("Failed to record invoice") } finally { setSaving(false) }
   }
 
@@ -116,7 +150,7 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
       })
       if (!res.ok) { await showApiError(res, "Failed to attach PDF"); return }
       showSuccess(`${label} invoice PDF attached`)
-      mutate()
+      void mutate(); onChanged()
     } catch {
       showError("Failed to attach PDF")
     } finally {
@@ -128,7 +162,7 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
     if (!latest) return
     const res = await fetch(`${basePath}/${latest.id}/resolve`, { method: "POST" })
     if (!res.ok) { await showApiError(res, "Failed to resolve"); return }
-    showSuccess("Mismatch resolved"); mutate()
+    showSuccess("Mismatch resolved"); void mutate(); onChanged()
   }
 
   const tone =
@@ -141,12 +175,40 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
     : latest?.status === "RESOLVED" ? "Mismatch resolved"
     : latest?.status === "MISMATCH" ? `${label} invoice doesn't match`
     : ""
+  const [periodYear, periodMonth] = period.split("-").map(Number)
+  const periodLabel = new Date(periodYear, periodMonth - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
 
   return (
-    <div className="border-b border-stone-100 px-4 py-3">
-      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{label} invoice</div>
+    <div className={isDialog ? "min-w-0" : "border-b border-stone-100 px-4 py-3"}>
+      {isDialog ? (
+        <>
+          <div className="border-b border-[var(--cf-rule-soft)] px-5 py-5 pr-12 sm:px-6 sm:py-6">
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-[var(--cf-green-soft)] text-[var(--cf-green)]"><FileText size={19} /></span>
+              <div className="min-w-0">
+                <h2 className="truncate text-[18px] font-extrabold text-[var(--cf-ink)]">{latest ? `Review ${lowerLabel} invoice` : `Add ${lowerLabel} invoice`}</h2>
+                <p className="mt-0.5 truncate text-[12px] font-medium text-stone-500">{payeeName} · {periodLabel}</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 border-b border-[var(--cf-rule-soft)] bg-[#faf9f6] px-5 py-4 sm:px-6">
+            <div>
+              <div className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-stone-400">Expected amount</div>
+              <div className="mt-1 text-[21px] font-extrabold tabular-nums text-[var(--cf-ink)]">{formatCurrency(expectedAmount || 0)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-stone-400">Coverage</div>
+              <div className="mt-1 text-[14px] font-bold text-[var(--cf-ink)]">{itemCount || 0} payable item{itemCount === 1 ? "" : "s"}</div>
+              <div className="mt-0.5 text-[11px] text-stone-500">All {periodLabel} work</div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{label} invoice</div>
+      )}
+      <div className={isDialog ? "px-5 py-5 sm:px-6" : ""}>
       {latest ? (
-        <div className="rounded-md px-3 py-2 text-[12px]" style={{ backgroundColor: tone?.bg }}>
+        <div className="rounded-lg px-4 py-3 text-[12px]" style={{ backgroundColor: tone?.bg }}>
           <div className="flex items-center justify-between gap-2">
             <span style={{ color: tone?.text, fontWeight: 600 }}>{statusLabel}</span>
             {latest.status === "MISMATCH" && (
@@ -187,11 +249,23 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
           </div>
         </div>
       ) : open ? (
-        <div className="space-y-2">
-          <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Amount the ${lowerLabel} billed`}
-            className="w-full rounded-md border border-stone-300 px-2 py-1.5 text-[13px] outline-none" autoFocus />
-          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Their invoice # (optional)"
-            className="w-full rounded-md border border-stone-300 px-2 py-1.5 text-[13px] outline-none" />
+        <div className={isDialog ? "space-y-4" : "space-y-2"}>
+          <div className={isDialog ? "grid gap-4 sm:grid-cols-2" : "contents"}>
+            <label className="block min-w-0">
+              {isDialog && <span className="text-[11px] font-bold text-stone-600">Invoice amount</span>}
+              <div className="relative mt-1">
+                {isDialog && <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-stone-400">$</span>}
+                <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Amount the ${lowerLabel} billed`}
+                  className={`w-full rounded-md border border-stone-300 text-[13px] outline-none focus:border-[var(--cf-green)] ${isDialog ? "h-11 pl-7 pr-3" : "px-2 py-1.5"}`} autoFocus />
+              </div>
+            </label>
+            <label className="block min-w-0">
+              {isDialog && <span className="text-[11px] font-bold text-stone-600">Invoice number <span className="font-medium text-stone-400">(optional)</span></span>}
+              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. INV-1042"
+                className={`mt-1 w-full rounded-md border border-stone-300 text-[13px] outline-none focus:border-[var(--cf-green)] ${isDialog ? "h-11 px-3" : "px-2 py-1.5"}`} />
+            </label>
+          </div>
+          {isDialog && <div className="text-[11px] leading-4 text-stone-500">Enter the total shown on the invoice. We will compare it with the expected amount above and flag any difference for review.</div>}
           <label
             htmlFor={inputId}
             onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
@@ -201,11 +275,11 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
               setDragging(false)
               chooseAttachment(e.dataTransfer.files?.[0] || null)
             }}
-            className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 text-[12px]"
+            className={`flex cursor-pointer items-center gap-3 rounded-lg border border-dashed text-[12px] ${isDialog ? "min-h-[104px] flex-col justify-center px-5 py-4 text-center" : "px-3 py-2"}`}
             style={{ borderColor: dragging ? "#00A896" : "#D6D3D1", backgroundColor: dragging ? "#F0FDFA" : "#FAFAF9", color: "#57534E" }}
           >
             {attachmentFile ? <FileText size={14} /> : <Upload size={14} />}
-            <span className="min-w-0 flex-1 truncate">
+            <span className={isDialog ? "min-w-0" : "min-w-0 flex-1 truncate"}>
               {attachmentFile ? `${attachmentFile.name} ${formatBytes(attachmentFile.size)}` : `Drop ${lowerLabel} invoice PDF or choose file`}
             </span>
             {attachmentFile && (
@@ -225,9 +299,9 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
               onChange={(e) => chooseAttachment(e.currentTarget.files?.[0] || null)}
             />
           </label>
-          <div className="flex gap-2">
-            <button onClick={record} disabled={saving} className="rounded-md px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundColor: "#00A896" }}>Record</button>
-            <button onClick={() => setOpen(false)} className="rounded-md border border-stone-300 px-3 py-1.5 text-[12px] text-stone-600">Cancel</button>
+          <div className={`flex gap-2 ${isDialog ? "justify-end border-t border-[var(--cf-rule-soft)] pt-4" : ""}`}>
+            <button onClick={() => isDialog ? onClose?.() : setOpen(false)} className={`rounded-md border border-stone-300 font-semibold text-stone-600 hover:bg-stone-50 ${isDialog ? "h-10 px-4 text-[12px]" : "px-3 py-1.5 text-[12px]"}`}>Cancel</button>
+            <button onClick={record} disabled={saving} className={`rounded-md font-semibold text-white disabled:opacity-50 ${isDialog ? "h-10 min-w-[132px] px-4 text-[12px]" : "px-3 py-1.5 text-[12px]"}`} style={{ backgroundColor: "#00A896" }}>{saving ? "Recording..." : "Record invoice"}</button>
           </div>
         </div>
       ) : (
@@ -235,11 +309,31 @@ function InvoiceIntakeSection({ payeeType, payeeId, period }: { payeeType: "clea
           No invoice recorded for this month — <span style={{ color: "#00A896" }}>record one</span>
         </button>
       )}
+      {isDialog && latest && (
+        <div className="mt-4 flex justify-end border-t border-[var(--cf-rule-soft)] pt-4">
+          <button onClick={onClose} className="h-10 rounded-md bg-[var(--cf-green)] px-5 text-[12px] font-bold text-white hover:bg-[var(--cf-green-hover)]">Done</button>
+        </div>
+      )}
+      </div>
     </div>
   )
 }
 
-export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Payable | null; onPaid: () => void; onEdit: (p: Payable) => void; period: string }) {
+export function PaymentDetail({
+  payable,
+  onPaid,
+  onEdit,
+  period,
+  initialAccountId,
+  onInvoiceChanged,
+}: {
+  payable: Payable | null
+  onPaid: () => void
+  onEdit: (p: Payable) => void
+  period: string
+  initialAccountId?: string | null
+  onInvoiceChanged?: () => void
+}) {
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [date, setDate] = useState(isoToday())
   const [method, setMethod] = useState<(typeof METHODS)[number]>("Zelle")
@@ -250,12 +344,15 @@ export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Pa
   // Reset per payable: pre-check everything that's payable right now.
   useEffect(() => {
     if (!payable) { setChecked(new Set()); return }
-    setChecked(new Set(payable.accounts.filter((a) => a.payableItemIds.length > 0).map((a) => a.id)))
+    const requested = initialAccountId
+      ? payable.accounts.find((account) => account.id === initialAccountId && account.payableItemIds.length > 0)
+      : null
+    setChecked(new Set(requested ? [requested.id] : payable.accounts.filter((a) => a.payableItemIds.length > 0).map((a) => a.id)))
     setDate(isoToday())
     setMethod("Zelle")
     setReference("")
     setNotes("")
-  }, [payable?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [payable?.id, initialAccountId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkedAccounts = useMemo(
     () => (payable ? payable.accounts.filter((a) => checked.has(a.id) && a.payableItemIds.length > 0) : []),
@@ -359,7 +456,7 @@ export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Pa
   }
 
   return (
-    <div className="rounded-lg border border-stone-200 bg-white">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-stone-200 bg-white">
       {/* Header */}
       <div className="flex items-start gap-3 border-b border-stone-100 px-4 pt-4 pb-3">
         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-stone-200 text-[13px] font-bold text-stone-600">{payable.initials}</span>
@@ -387,7 +484,7 @@ export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Pa
         </button>
       </div>
 
-      <InvoiceIntakeSection payeeType={payable.type} payeeId={payable.id} period={period} />
+      <InvoiceIntakePanel payeeType={payable.type} payeeId={payable.id} payeeName={payable.name} period={period} onChanged={onInvoiceChanged || onPaid} />
 
       {payable.accounts.length > 0 ? (
         <>
@@ -398,16 +495,16 @@ export function PaymentDetail({ payable, onPaid, onEdit, period }: { payable: Pa
 
       {/* Payment fields */}
       <div className="space-y-3 border-t border-stone-100 px-4 py-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="min-w-0">
             <label className="text-[11px] font-semibold text-stone-500">Payment date</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-              className="mt-1 w-full rounded-md border border-stone-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-stone-400" />
+              className="mt-1 min-w-0 w-full rounded-md border border-stone-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-stone-400" />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="text-[11px] font-semibold text-stone-500">Method</label>
             <select value={method} onChange={(e) => setMethod(e.target.value as (typeof METHODS)[number])}
-              className="mt-1 w-full rounded-md border border-stone-200 px-2 py-1.5 text-[13px] outline-none focus:border-stone-400">
+              className="mt-1 min-w-0 w-full rounded-md border border-stone-200 px-2 py-1.5 text-[13px] outline-none focus:border-stone-400">
               {METHODS.map((m) => <option key={m}>{m}</option>)}
             </select>
           </div>
@@ -486,12 +583,12 @@ function AccountCheckRow({ account, checked, onToggle }: { account: PayableAccou
   const st = STATUS[account.status]
   const locked = account.payableItemIds.length === 0
   return (
-    <label className={`flex items-start gap-2.5 rounded-md border px-3 py-2 ${locked ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-stone-50"}`}
+    <label className={`flex min-w-0 max-w-full items-start gap-2.5 rounded-md border px-3 py-2 ${locked ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-stone-50"}`}
       style={{ borderColor: checked && !locked ? "#A7F3D0" : "#F5F5F4", background: checked && !locked ? "#F0FDF9" : "#fff" }}>
       <input type="checkbox" checked={checked && !locked} disabled={locked} onChange={onToggle} className="mt-0.5 h-3.5 w-3.5 accent-emerald-600" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[12.5px] font-medium text-stone-800">{account.clientName}</span>
+          <span className="truncate text-[12.5px] font-medium text-stone-800">{accountDisplayName(account.clientName)}</span>
           <span className="flex-shrink-0 font-mono text-[12.5px] font-semibold text-stone-800">{formatCurrency(locked ? account.owed : account.safeOwed)}</span>
         </div>
         <div className="flex items-center justify-between gap-2">

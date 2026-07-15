@@ -20,6 +20,11 @@ export interface PayableAccount {
   payableItemIds: string[]
   allItemIds: string[]
   cleans: Array<{ date: string; amount: number }>
+  propertyType: string | null
+  payablePeriods: string[]
+  payeeInvoiceStatus: "matched" | "missing" | "mismatch" | "not-required"
+  clientInvoiceIds: string[]
+  canMarkClientPaid: boolean
 }
 
 export interface Payable {

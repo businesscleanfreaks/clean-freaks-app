@@ -3,7 +3,7 @@ import { format } from "date-fns"
 import { prisma } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { getBillingStartDate } from "@/lib/billing-settings"
-import { isJobPayable, getPayableStatusText } from "@/lib/payment-cadence"
+import { getEffectiveCadence, isJobPayable, getPayableStatusText } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo, CadenceJobInfo } from "@/lib/payment-cadence"
 import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
@@ -25,6 +25,11 @@ interface PayableAccount {
   payableItemIds: string[] // job ids (cleaner) / add-on ids (vendor / cleaner add-on) payable now
   allItemIds: string[]
   cleans: Array<{ date: string; amount: number }>
+  propertyType: string | null
+  payablePeriods: string[]
+  payeeInvoiceStatus: 'matched' | 'missing' | 'mismatch' | 'not-required'
+  clientInvoiceIds: string[]
+  canMarkClientPaid: boolean
 }
 
 interface Payable {
@@ -40,6 +45,46 @@ interface Payable {
   waiting: number
   payToday: number
   fastPay: boolean
+}
+
+type PayeeInvoiceCoverageRow = {
+  payeeId: string
+  period: string
+  status: string
+}
+
+function applyPayeeInvoiceCoverage(payees: Payable[], rows: PayeeInvoiceCoverageRow[]) {
+  const byPayeePeriod = new Map<string, Set<string>>()
+  rows.forEach((row) => {
+    const key = `${row.payeeId}:${row.period}`
+    const statuses = byPayeePeriod.get(key) || new Set<string>()
+    statuses.add(row.status)
+    byPayeePeriod.set(key, statuses)
+  })
+
+  payees.forEach((payee) => {
+    payee.accounts.forEach((account) => {
+      if (account.payableItemIds.length === 0 || account.payablePeriods.length === 0) {
+        account.payeeInvoiceStatus = 'not-required'
+        return
+      }
+
+      const uncovered = account.payablePeriods.filter((period) => {
+        const statuses = byPayeePeriod.get(`${payee.id}:${period}`)
+        return !statuses || (!statuses.has('MATCHED') && !statuses.has('RESOLVED'))
+      })
+
+      if (uncovered.length === 0) {
+        account.payeeInvoiceStatus = 'matched'
+        return
+      }
+
+      account.payeeInvoiceStatus = uncovered.some((period) => {
+        const statuses = byPayeePeriod.get(`${payee.id}:${period}`)
+        return statuses?.has('MISMATCH') || statuses?.has('PENDING')
+      }) ? 'mismatch' : 'missing'
+    })
+  })
 }
 
 function initialsOf(name: string): string {
@@ -111,7 +156,7 @@ export async function GET(request: Request) {
         location: { include: { client: true } },
         addOnServices: true,
         schedule: true,
-        invoiceLineItems: { include: { invoice: { select: { status: true } } } },
+        invoiceLineItems: { include: { invoice: { select: { id: true, status: true } } } },
       },
       orderBy: { date: 'asc' },
     })
@@ -155,6 +200,21 @@ export async function GET(request: Request) {
             let status: AccountStatus = waitingOwed === 0 ? 'safe' : safeOwed === 0 ? 'waiting' : 'partial'
             const groupJobs = allJobs.filter((j) => ledgerKey(j) === g.clientId)
             const waitingJob = groupJobs.find((j) => !payableOf(j))
+            const waitingCadence = waitingJob
+              ? getEffectiveCadence(cadenceSub, scheduleFor(waitingJob.scheduleId))
+              : null
+            const clientInvoiceIds = Array.from(new Set(
+              groupJobs.flatMap((job) =>
+                job.invoiceLineItems
+                  .filter((lineItem) => lineItem.invoice.status !== 'PAID')
+                  .map((lineItem) => lineItem.invoice.id),
+              ),
+            ))
+            const canMarkClientPaid = Boolean(
+              waitingJob &&
+              clientInvoiceIds.length > 0 &&
+              (waitingCadence === 'AFTER_CLIENT_PAYS' || waitingCadence === 'COMMERCIAL_CLIENT_PAID_OR_7TH'),
+            )
             let reason = waitingJob
               ? getPayableStatusText(waitingJob as unknown as CadenceJobInfo, cadenceSub, scheduleFor(waitingJob.scheduleId))
               : 'Ready to pay'
@@ -183,6 +243,11 @@ export async function GET(request: Request) {
                 date: j.date.toISOString(),
                 amount: (j.subcontractorRate || 0) + (j.addOnServices?.reduce((s, a) => s + ((!a.vendorId && (!a.subcontractorId || a.subcontractorId === sub.id)) ? (a.subcontractorRate || 0) : 0), 0) || 0),
               })),
+              propertyType: groupJobs[0]?.location.client.propertyType || null,
+              payablePeriods: Array.from(new Set(groupJobs.filter(payableOf).map((job) => format(job.date, 'yyyy-MM')))),
+              payeeInvoiceStatus: 'not-required' as const,
+              clientInvoiceIds,
+              canMarkClientPaid,
             }
           })
 
@@ -215,12 +280,12 @@ export async function GET(request: Request) {
         subcontractorRate: true,
         subcontractorId: true,
         createdAt: true,
-        job: { select: { date: true, subcontractorId: true, location: { select: { client: { select: { id: true, name: true } } } } } },
-        schedule: { select: { subcontractorId: true, location: { select: { client: { select: { id: true, name: true } } } } } },
+        job: { select: { date: true, subcontractorId: true, location: { select: { client: { select: { id: true, name: true, propertyType: true } } } } } },
+        schedule: { select: { subcontractorId: true, location: { select: { client: { select: { id: true, name: true, propertyType: true } } } } } },
       },
     })
     // performer id → clientId → account accumulator
-    const addOnsBySub = new Map<string, Map<string, { clientName: string; owed: number; ids: string[]; cleans: Array<{ date: string; amount: number }> }>>()
+    const addOnsBySub = new Map<string, Map<string, { clientName: string; propertyType: string | null; owed: number; ids: string[]; cleans: Array<{ date: string; amount: number }> }>>()
     for (const a of assignedAddOns) {
       const performer = a.subcontractorId
       if (!performer) continue
@@ -231,7 +296,7 @@ export async function GET(request: Request) {
       const clientId = client?.id || 'unassigned'
       const clientName = client?.name ? `${client.name} · add-ons` : 'Add-ons performed'
       const byClient = addOnsBySub.get(performer) || new Map()
-      const e = byClient.get(clientId) || { clientName, owed: 0, ids: [] as string[], cleans: [] as Array<{ date: string; amount: number }> }
+      const e = byClient.get(clientId) || { clientName, propertyType: client?.propertyType || null, owed: 0, ids: [] as string[], cleans: [] as Array<{ date: string; amount: number }> }
       e.owed += a.subcontractorRate
       e.ids.push(a.id)
       e.cleans.push({ date: (a.job?.date || a.createdAt).toISOString(), amount: a.subcontractorRate })
@@ -256,6 +321,11 @@ export async function GET(request: Request) {
           payableItemIds: e.ids,
           allItemIds: e.ids,
           cleans: e.cleans,
+          propertyType: e.propertyType,
+          payablePeriods: Array.from(new Set(e.cleans.map((clean) => format(new Date(clean.date), 'yyyy-MM')))),
+          payeeInvoiceStatus: 'not-required',
+          clientInvoiceIds: [],
+          canMarkClientPaid: false,
         })
         c.total += e.owed
         c.safe += e.owed
@@ -277,8 +347,8 @@ export async function GET(request: Request) {
             subcontractorRate: true,
             description: true,
             createdAt: true,
-            job: { select: { id: true, date: true, location: { select: { client: { select: { id: true, name: true } } } } } },
-            schedule: { select: { location: { select: { client: { select: { id: true, name: true } } } } } },
+            job: { select: { id: true, date: true, location: { select: { client: { select: { id: true, name: true, propertyType: true } } } } } },
+            schedule: { select: { location: { select: { client: { select: { id: true, name: true, propertyType: true } } } } } },
           },
         },
         jobs: {
@@ -292,7 +362,7 @@ export async function GET(request: Request) {
             id: true,
             subcontractorRate: true,
             date: true,
-            location: { select: { client: { select: { id: true, name: true } } } },
+            location: { select: { client: { select: { id: true, name: true, propertyType: true } } } },
           },
         },
       },
@@ -302,6 +372,7 @@ export async function GET(request: Request) {
       .map((v) => {
         const byClient = new Map<string, {
           clientName: string
+          propertyType: string | null
           addOns: typeof v.addOnServices
           jobs: typeof v.jobs
         }>()
@@ -309,7 +380,7 @@ export async function GET(request: Request) {
           const client = a.job?.location.client || a.schedule?.location.client || null
           const key = client?.id || 'unassigned'
           const name = client?.name || 'Unassigned'
-          const e = byClient.get(key) || { clientName: name, addOns: [], jobs: [] }
+          const e = byClient.get(key) || { clientName: name, propertyType: client?.propertyType || null, addOns: [], jobs: [] }
           e.addOns.push(a)
           byClient.set(key, e)
         })
@@ -317,7 +388,7 @@ export async function GET(request: Request) {
           const client = job.location.client
           const key = client?.id || 'unassigned'
           const name = client?.name || 'Unassigned'
-          const e = byClient.get(key) || { clientName: name, addOns: [], jobs: [] }
+          const e = byClient.get(key) || { clientName: name, propertyType: client?.propertyType || null, addOns: [], jobs: [] }
           e.jobs.push(job)
           byClient.set(key, e)
         })
@@ -341,6 +412,11 @@ export async function GET(request: Request) {
                 date: (addOn.job?.date || addOn.createdAt).toISOString(),
                 amount: addOn.subcontractorRate,
               })),
+              propertyType: e.propertyType,
+              payablePeriods: Array.from(new Set(e.addOns.map((addOn) => format(new Date(addOn.job?.date || addOn.createdAt), 'yyyy-MM')))),
+              payeeInvoiceStatus: 'not-required',
+              clientInvoiceIds: [],
+              canMarkClientPaid: false,
             })
           }
           if (e.jobs.length > 0) {
@@ -361,6 +437,11 @@ export async function GET(request: Request) {
                 date: job.date.toISOString(),
                 amount: job.subcontractorRate,
               })),
+              propertyType: e.propertyType,
+              payablePeriods: Array.from(new Set(e.jobs.map((job) => format(job.date, 'yyyy-MM')))),
+              payeeInvoiceStatus: 'not-required',
+              clientInvoiceIds: [],
+              canMarkClientPaid: false,
             })
           }
           return rows
@@ -383,6 +464,28 @@ export async function GET(request: Request) {
       })
     const vendors = allVendors.filter((v) => v.accounts.length > 0)
     const othersVendors = allVendors.filter((v) => v.accounts.length === 0)
+
+    // Surface the payee-invoice gate in the workspace. Payment endpoints still
+    // enforce this independently; this is only the read model that tells Grace
+    // which rows are genuinely ready and which need an invoice or review first.
+    const [cleanerInvoiceRows, vendorInvoiceRows] = await Promise.all([
+      prisma.cleanerInvoice.findMany({
+        where: { subcontractorId: { in: subIds } },
+        select: { subcontractorId: true, period: true, status: true },
+      }),
+      prisma.vendorInvoice.findMany({
+        where: { vendorId: { in: vendorRows.map((vendor) => vendor.id) } },
+        select: { vendorId: true, period: true, status: true },
+      }),
+    ])
+    applyPayeeInvoiceCoverage(
+      allCleaners,
+      cleanerInvoiceRows.map((invoice) => ({ payeeId: invoice.subcontractorId, period: invoice.period, status: invoice.status })),
+    )
+    applyPayeeInvoiceCoverage(
+      allVendors,
+      vendorInvoiceRows.map((invoice) => ({ payeeId: invoice.vendorId, period: invoice.period, status: invoice.status })),
+    )
 
     const sumBy = (arr: Payable[], f: (p: Payable) => number) => arr.reduce((s, x) => s + f(x), 0)
     const totals = {
