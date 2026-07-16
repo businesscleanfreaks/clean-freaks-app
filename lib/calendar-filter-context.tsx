@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
+import { createContext, useContext, useState, useCallback, useMemo, useRef, type ReactNode } from "react"
 
 interface CalendarFilterState {
   selectedCleanerIds: Set<string>
@@ -31,26 +31,36 @@ export function CalendarFilterProvider({ children }: { children: ReactNode }) {
       return next
     })
   }, [])
-  const [initialized, setInitialized] = useState(false)
+  const knownCleanerIdsRef = useRef<Set<string>>(new Set())
 
   const initCleaners = useCallback((ids: string[]) => {
-    if (!initialized) {
-      setSelectedCleanerIds(new Set(ids))
-      setInitialized(true)
-    }
-  }, [initialized])
+    setSelectedCleanerIds(previous => {
+      const next = new Set(previous)
+      let changed = false
+      for (const id of ids) {
+        if (!knownCleanerIdsRef.current.has(id)) {
+          next.add(id)
+          changed = true
+        }
+      }
+      knownCleanerIdsRef.current = new Set(ids)
+      return changed ? next : previous
+    })
+  }, [])
+
+  const value = useMemo<CalendarFilterState>(() => ({
+    selectedCleanerIds,
+    showUnassigned,
+    filterBarClientIds,
+    setSelectedCleanerIds,
+    setShowUnassigned,
+    setFilterBarClientIds,
+    toggleFilterBarClient,
+    initCleaners,
+  }), [filterBarClientIds, initCleaners, selectedCleanerIds, showUnassigned, toggleFilterBarClient])
 
   return (
-    <CalendarFilterContext.Provider value={{
-      selectedCleanerIds,
-      showUnassigned,
-      filterBarClientIds,
-      setSelectedCleanerIds,
-      setShowUnassigned,
-      setFilterBarClientIds,
-      toggleFilterBarClient,
-      initCleaners,
-    }}>
+    <CalendarFilterContext.Provider value={value}>
       {children}
     </CalendarFilterContext.Provider>
   )

@@ -103,8 +103,8 @@ function MetricCard({
 }) {
   return (
     <div className="flex min-h-[108px] flex-col justify-center rounded-lg border border-[#e6dfd4] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(40,30,10,0.04)]">
-      <div className="text-[10px] font-extrabold uppercase text-stone-500">{label}</div>
-      <div className={`mt-1 text-[28px] font-extrabold leading-none tabular-nums ${tone === "good" ? "text-[#087c3d]" : tone === "bad" ? "text-[#c33d0e]" : "text-[#07101f]"}`}>{value}</div>
+      <div className="text-[10px] font-extrabold uppercase tracking-[0.5px] text-[#8a857a]">{label}</div>
+      <div className={`mt-1 text-[18px] font-extrabold leading-none tabular-nums ${tone === "good" ? "text-[#15803d]" : tone === "bad" ? "text-[#c33d0e]" : "text-[#1a1a1a]"}`}>{value}</div>
       {sub && <div className="mt-2 text-[11px] font-medium text-stone-500">{sub}</div>}
     </div>
   )
@@ -258,7 +258,7 @@ export function DashboardClient() {
           <div className="mt-4 grid items-start gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_340px] min-[1500px]:grid-cols-[minmax(0,1fr)_370px]">
             <main className="min-w-0">
               <div className="mb-2 flex items-center justify-between gap-4">
-                <h2 className="text-[11px] font-extrabold uppercase text-stone-500">Recurring monthly / projected</h2>
+                <h2 className="text-[11px] font-extrabold uppercase text-stone-500">Recurring monthly · projected</h2>
                 <button type="button" onClick={() => setProjectedOpen(true)} className="inline-flex items-center gap-1.5 text-[12px] font-bold text-stone-500 hover:text-stone-900">
                   <Pencil size={13} /> Projected expenses
                 </button>
@@ -272,7 +272,7 @@ export function DashboardClient() {
                   <MetricCard label="Net margin" value={`${projectedMargin.toFixed(1)}%`} />
                   <MetricCard label="Revenue" value={formatCurrency(totals.avgRevenue)} />
                   <MetricCard label="Gross profit" value={formatCurrency(totals.avgProfit)} sub="after cleaner pay" />
-                  <MetricCard label="Clients" value={String(rows.length)} sub={`${billingCounts.flat} flat / ${billingCounts.perClean} per clean`} />
+                  <MetricCard label="Clients" value={String(rows.length)} sub={`${billingCounts.flat} flat · ${billingCounts.perClean} per clean`} />
                 </div>
               )}
 

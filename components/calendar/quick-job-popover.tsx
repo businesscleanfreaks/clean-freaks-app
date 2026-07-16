@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
 import { ArrowLeft, Loader2, Plus, Repeat2, X } from "lucide-react"
 
@@ -23,6 +23,7 @@ interface QuickJobPopoverProps {
   onOpenChange: (open: boolean) => void
   onChangeSchedule: () => void
   subcontractors: Subcontractor[]
+  anchor?: { left: number; top: number } | null
 }
 
 const timeOptions = Array.from({ length: 48 }, (_, index) => {
@@ -74,7 +75,7 @@ function jobType(job: QuickJob) {
   return { label: "ONE-OFF CLEAN", color: "#0D9488" }
 }
 
-export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, subcontractors }: QuickJobPopoverProps) {
+export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, subcontractors, anchor }: QuickJobPopoverProps) {
   const [date, setDate] = useState("")
   const [startTime, setStartTime] = useState("")
   const [endTime, setEndTime] = useState("")
@@ -95,11 +96,12 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   const [serviceStartDate, setServiceStartDate] = useState("")
   const [serviceFrequency, setServiceFrequency] = useState("WEEKLY")
   const [serviceDays, setServiceDays] = useState<number[]>([])
-  const [serviceClientRate, setServiceClientRate] = useState("0")
-  const [serviceProviderRate, setServiceProviderRate] = useState("0")
+  const [serviceClientRate, setServiceClientRate] = useState("")
+  const [serviceProviderRate, setServiceProviderRate] = useState("")
   const [cancelFee, setCancelFee] = useState("0")
   const [pauseFrom, setPauseFrom] = useState("")
   const [pauseTo, setPauseTo] = useState("")
+  const addServicePanelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!job || !open) return
@@ -121,8 +123,8 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
     setServiceStartDate(format(new Date(job.date), "yyyy-MM-dd"))
     setServiceFrequency("WEEKLY")
     setServiceDays([new Date(job.date).getDay()])
-    setServiceClientRate("0")
-    setServiceProviderRate("0")
+    setServiceClientRate("")
+    setServiceProviderRate("")
     setCancelFee("0")
     const today = format(new Date(), "yyyy-MM-dd")
     const jobDate = format(new Date(job.date), "yyyy-MM-dd")
@@ -138,6 +140,14 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       .then(data => setVendors(Array.isArray(data) ? data.filter(vendor => vendor.isActive !== false) : []))
       .catch(() => setVendors([]))
   }, [open])
+
+  useEffect(() => {
+    if (!addServiceOpen) return
+    const frame = window.requestAnimationFrame(() => {
+      addServicePanelRef.current?.scrollIntoView({ block: "end", behavior: "auto" })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [addServiceOpen])
 
   const locked = Boolean(job && (hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || job.vendorPaid || job.status === "CANCELLED"))
   const margin = (Number(clientRate) || 0) - (Number(providerRate) || 0)
@@ -473,7 +483,13 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent hideClose className="flex max-h-[92vh] !w-[min(94vw,398px)] !max-w-[398px] flex-col gap-0 overflow-hidden rounded-xl border border-[#dfe5eb] bg-white p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
+      <DialogContent
+        data-calendar-quick-editor
+        hideClose
+        overlayClassName={anchor ? "bg-transparent" : undefined}
+        className={`flex max-h-[92vh] !w-[min(94vw,398px)] !max-w-[398px] flex-col gap-0 overflow-hidden rounded-xl border border-[#dfe5eb] bg-white p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
+        style={anchor ? { left: anchor.left, top: anchor.top, transform: "none", animation: "none" } : undefined}
+      >
         <DialogTitle className="sr-only">Quick edit {job.location.client.name}</DialogTitle>
         <DialogDescription className="sr-only">Update this booking or open the complete job details.</DialogDescription>
 
@@ -506,7 +522,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 py-3.5">
+        <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 py-3.5 pb-6">
           {locked && <div className="rounded-md border border-[#f1d6a8] bg-[#fff8e8] px-3 py-2 text-[11px] font-semibold text-[#8a5a12]">This job is locked because it is cancelled, paid, or on a finalized invoice. More options explains the available next step.</div>}
 
           <section>
@@ -525,8 +541,8 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           <section>
             <p className="mb-2 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">RATE</p>
             <div className="grid grid-cols-3 gap-2">
-              <label className="text-[9px] font-bold text-[#7f8ea3]">Client charged<input type="number" min="0" step="0.01" value={clientRate} onChange={event => setClientRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
-              <label className="text-[9px] font-bold text-[#7f8ea3]">{job.vendor ? "Vendor is paid" : "Cleaner is paid"}<input type="number" min="0" step="0.01" value={providerRate} onChange={event => setProviderRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
+              <label className="text-[9px] font-bold text-[#7f8ea3]">Client charged<input type="number" min="0" step="0.01" value={clientRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setClientRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
+              <label className="text-[9px] font-bold text-[#7f8ea3]">{job.vendor ? "Vendor is paid" : "Cleaner is paid"}<input type="number" min="0" step="0.01" value={providerRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setProviderRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
               <div className="rounded-lg bg-[#e7f2ee] px-2.5 py-2"><span className="block text-[8px] font-extrabold text-[#4b9b82]">MARGIN</span><span className={`text-[15px] font-extrabold ${margin < 0 ? "text-[#b42318]" : "text-[#066846]"}`}>${margin.toFixed(2)}</span></div>
             </div>
           </section>
@@ -537,7 +553,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
             {!addServiceOpen ? (
               <button type="button" onClick={() => setAddServiceOpen(true)} disabled={locked} className="flex w-full items-center gap-2 rounded-lg border border-[#d7dee7] bg-[#f8fafc] px-3 py-2.5 text-left text-[13px] font-semibold text-[#718096] hover:border-[#a9cfc6] hover:bg-[#f3fbf8] disabled:opacity-50"><Plus className="h-3.5 w-3.5" /> Add a service...</button>
             ) : (
-              <div className="space-y-3 rounded-xl border border-[#b9d8cd] bg-[#eaf5f0] p-3">
+              <div ref={addServicePanelRef} className="scroll-mb-5 space-y-3 rounded-xl border border-[#b9d8cd] bg-[#eaf5f0] p-3">
                 <Select value={serviceDescription} onValueChange={setServiceDescription}>
                   <SelectTrigger className="h-11 rounded-lg border-[#b9d8cd] bg-white text-[13px] font-semibold"><SelectValue placeholder="Choose a service..." /></SelectTrigger>
                   <SelectContent><SelectItem value="Window Cleaning">Window Cleaning</SelectItem><SelectItem value="Carpet Cleaning">Carpet Cleaning</SelectItem><SelectItem value="Fridge Deep Clean">Fridge Deep Clean</SelectItem><SelectItem value="Pressure Washing">Pressure Washing</SelectItem><SelectItem value="Custom service">Custom service</SelectItem></SelectContent>
@@ -546,8 +562,8 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
                 <div><p className="mb-1.5 text-[9px] font-extrabold text-[#08744f]">SCHEDULE</p><div className="flex h-9 w-[200px] rounded-lg bg-[#e4e9ee] p-1 text-[11px] font-bold"><button type="button" onClick={() => setServiceRecurring(false)} className={`flex-1 rounded-md ${!serviceRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>One-time</button><button type="button" onClick={() => setServiceRecurring(true)} disabled={!job.scheduleId} className={`flex-1 rounded-md ${serviceRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'} disabled:opacity-50`}>Recurring</button></div></div>
                 <label className="block text-[9px] font-bold text-[#718096]">Start date<input type="date" value={serviceStartDate} onChange={event => setServiceStartDate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#c9d8d2] bg-white px-3 text-[13px]" /></label>
                 {serviceRecurring && <><div className="grid grid-cols-3 gap-2">{[['WEEKLY', 'Weekly'], ['BI_WEEKLY', 'Every 2 wks'], ['MONTHLY', 'Monthly']].map(([value, label]) => <button key={value} type="button" onClick={() => setServiceFrequency(value)} className={`rounded-lg border px-2 py-2 text-[11px] font-bold ${serviceFrequency === value ? 'border-[#0b8557] bg-[#dff0e9] text-[#075f40]' : 'border-white bg-white text-[#66758b]'}`}>{label}</button>)}</div>{serviceFrequency !== 'MONTHLY' && <div className="flex gap-1.5">{['S','M','T','W','T','F','S'].map((letter, index) => <button key={index} type="button" onClick={() => setServiceDays(current => current.includes(index) ? current.filter(day => day !== index) : [...current, index].sort())} className={`flex h-8 flex-1 items-center justify-center rounded-md text-[10px] font-bold ${serviceDays.includes(index) ? 'bg-[#0b8557] text-white' : 'bg-white text-[#66758b]'}`}>{letter}</button>)}</div>}</>}
-                <div className="grid grid-cols-3 gap-2"><label className="text-[9px] font-bold text-[#718096]">Client charged<input type="number" min="0" step="0.01" value={serviceClientRate} onChange={event => setServiceClientRate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-white bg-white px-2 text-[13px] font-bold" /></label><label className="text-[9px] font-bold text-[#718096]">We pay<input type="number" min="0" step="0.01" value={serviceProviderRate} onChange={event => setServiceProviderRate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-white bg-white px-2 text-[13px] font-bold" /></label><div className="pt-4 text-[9px] font-extrabold text-[#4b9b82]">MARGIN<span className="block text-[14px] text-[#066846]">${((Number(serviceClientRate) || 0) - (Number(serviceProviderRate) || 0)).toFixed(2)}</span></div></div>
-                <div className="flex justify-end gap-2"><button type="button" onClick={() => setAddServiceOpen(false)} className="rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-[#66758b]">Cancel</button><button type="button" onClick={addService} disabled={busyAction === 'add-service'} className="flex min-w-[106px] items-center justify-center gap-1.5 rounded-lg bg-[#078556] px-3 py-2 text-[11px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'add-service' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Add to clean</button></div>
+                <div className="grid grid-cols-3 gap-2"><label className="text-[9px] font-bold text-[#718096]">Client charged<input type="number" min="0" step="0.01" placeholder="0" value={serviceClientRate} onChange={event => setServiceClientRate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-white bg-white px-2 text-[13px] font-bold" /></label><label className="text-[9px] font-bold text-[#718096]">We pay<input type="number" min="0" step="0.01" placeholder="0" value={serviceProviderRate} onChange={event => setServiceProviderRate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-white bg-white px-2 text-[13px] font-bold" /></label><div className="pt-4 text-[9px] font-extrabold text-[#4b9b82]">MARGIN<span className="block text-[14px] text-[#066846]">${((Number(serviceClientRate) || 0) - (Number(serviceProviderRate) || 0)).toFixed(2)}</span></div></div>
+                <div className="flex justify-end gap-2"><button type="button" onClick={() => setAddServiceOpen(false)} className="rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-[#66758b]">Cancel</button><button type="button" onClick={addService} disabled={busyAction === 'add-service'} className="flex min-w-[106px] items-center justify-center gap-1.5 rounded-lg bg-[#0B7A4E] px-3 py-2 text-[11px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'add-service' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Add to clean</button></div>
               </div>
             )}
           </section>
@@ -573,7 +589,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
         <div className="flex shrink-0 items-center gap-3 border-t border-[#edf0f3] bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {job.status === 'CANCELLED' ? <button type="button" onClick={restoreClean} disabled={busyAction === 'restore'} className="text-[12px] font-bold text-[#08744f]">Restore clean</button> : <button type="button" onClick={() => setCancelOpen(true)} disabled={locked} className="text-[12px] font-bold text-[#c11f1f] disabled:opacity-40">Cancel this job</button>}
           {job.scheduleId && job.status !== 'CANCELLED' && <button type="button" onClick={() => setPauseOpen(true)} disabled={locked} className="text-[12px] font-bold text-[#66758b] disabled:opacity-40">Pause schedule...</button>}
-          <button type="button" onClick={save} disabled={saving || locked} className="ml-auto flex min-w-[82px] items-center justify-center gap-1.5 rounded-lg bg-[#078556] px-4 py-2.5 text-[13px] font-extrabold text-white shadow-sm hover:bg-[#067348] disabled:cursor-not-allowed disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{saving ? "Saving" : "Save"}</button>
+          <button type="button" onClick={save} disabled={saving || locked} className="ml-auto flex min-w-[82px] items-center justify-center gap-1.5 rounded-lg bg-[#0B7A4E] px-4 py-2.5 text-[13px] font-extrabold text-white shadow-sm hover:bg-[#08633F] disabled:cursor-not-allowed disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{saving ? "Saving" : "Save"}</button>
         </div>
       </DialogContent>
     </Dialog>
@@ -610,7 +626,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           <label className="text-[10px] font-extrabold text-[#66758b]">LAST DAY OFF<input type="date" min={pauseFrom} value={pauseTo} onChange={event => setPauseTo(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d9e1ea] bg-[#f8fafc] px-3 text-[13px] font-semibold" /></label>
           <div className="sm:col-span-2 rounded-xl border border-[#bddbd0] bg-[#eaf5f0] px-4 py-3 text-[12px] text-[#49675c]"><div className="flex justify-between"><span>Pause starts</span><strong>{pauseFrom ? format(new Date(`${pauseFrom}T12:00:00`), 'MMM d') : '—'}</strong></div><div className="mt-1 flex justify-between"><span>Resumes</span><strong>{pauseTo ? format(new Date(new Date(`${pauseTo}T12:00:00`).getTime() + 86400000), 'MMM d') : '—'}</strong></div><div className="mt-1 flex justify-between"><span>Cleaner pay</span><strong>Pauses automatically</strong></div></div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#edf0f3] px-6 py-3.5"><button type="button" onClick={() => setPauseOpen(false)} className="rounded-lg border border-[#d9e1ea] px-4 py-2.5 text-[12px] font-bold text-[#66758b]">Keep as is</button><button type="button" onClick={pauseSchedule} disabled={busyAction === 'pause'} className="flex min-w-[134px] items-center justify-center gap-2 rounded-lg bg-[#078556] px-4 py-2.5 text-[12px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'pause' && <Loader2 className="h-4 w-4 animate-spin" />}Pause schedule</button></div>
+        <div className="flex justify-end gap-2 border-t border-[#edf0f3] px-6 py-3.5"><button type="button" onClick={() => setPauseOpen(false)} className="rounded-lg border border-[#d9e1ea] px-4 py-2.5 text-[12px] font-bold text-[#66758b]">Keep as is</button><button type="button" onClick={pauseSchedule} disabled={busyAction === 'pause'} className="flex min-w-[134px] items-center justify-center gap-2 rounded-lg bg-[#0B7A4E] px-4 py-2.5 text-[12px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'pause' && <Loader2 className="h-4 w-4 animate-spin" />}Pause schedule</button></div>
       </DialogContent>
     </Dialog>
     </>

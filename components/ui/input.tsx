@@ -6,7 +6,7 @@ export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, onFocus, ...props }, ref) => {
     return (
       <input
         type={type}
@@ -20,6 +20,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
+        onFocus={(event) => {
+          if (type === "number" && /^0(?:\.0+)?$/.test(event.currentTarget.value)) {
+            event.currentTarget.select()
+          }
+          onFocus?.(event)
+        }}
         {...props}
       />
     )

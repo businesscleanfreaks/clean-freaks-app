@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
-import { ArrowLeft, Check, DollarSign, MapPin, Search, X } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, ChevronUp, DollarSign, FileText, MapPin, Repeat, Search, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -23,6 +23,7 @@ interface CompactCreateJobDialogProps {
   clients: ClientListItem[]
   subcontractors: SubcontractorSummary[]
   preSelectedClientId?: string
+  anchor?: { left: number; top: number } | null
 }
 
 type ClientMode = "existing" | "one-time"
@@ -47,6 +48,15 @@ const jobTypeDescriptions: Record<JobType, string> = {
   move_in_out: "Empty home, inside cabinets and appliances",
   event: "Event setup or cleanup",
 }
+
+const addOnServiceOptions = [
+  "Window Cleaning",
+  "Carpet Cleaning",
+  "Pressure Washing",
+  "Fridge Deep Clean",
+] as const
+
+const customAddOnServiceValue = "custom"
 
 // Trials are short recurring runs, so only weekly-based cadences make sense here.
 type TrialDuration = "1wk" | "2wk" | "3wk" | "1mo"
@@ -96,6 +106,7 @@ export function CompactCreateJobDialog({
   clients,
   subcontractors,
   preSelectedClientId,
+  anchor,
 }: CompactCreateJobDialogProps) {
   const initialClient = clients.find(client => client.id === preSelectedClientId)
   const [clientMode, setClientMode] = useState<ClientMode>(preSelectedClientId ? "existing" : "existing")
@@ -108,6 +119,7 @@ export function CompactCreateJobDialog({
   const [oneTimeEmail, setOneTimeEmail] = useState("")
   const [jobType, setJobType] = useState<JobType>("regular")
   const [serviceType, setServiceType] = useState<ServiceType>("cleaning")
+  const [addOnServiceChoice, setAddOnServiceChoice] = useState("")
   const [isRecurring, setIsRecurring] = useState(false)
   const [isTrial, setIsTrial] = useState(false)
   const [jobDate, setJobDate] = useState<Date | null>(selectedDate)
@@ -194,6 +206,7 @@ export function CompactCreateJobDialog({
     setOneTimeEmail("")
     setJobType("regular")
     setServiceType("cleaning")
+    setAddOnServiceChoice("")
     setIsRecurring(false)
     setIsTrial(false)
     setJobDate(selectedDate)
@@ -511,7 +524,13 @@ export function CompactCreateJobDialog({
 
   return (
     <Dialog open={open} onOpenChange={value => !value && close()}>
-      <DialogContent hideClose className="flex max-h-[92vh] w-[min(94vw,440px)] max-w-[440px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
+      <DialogContent
+        data-calendar-create-editor
+        hideClose
+        overlayClassName={anchor ? "bg-transparent" : undefined}
+        className={`flex max-h-[92vh] w-[min(94vw,440px)] max-w-[440px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
+        style={anchor ? { left: anchor.left, top: anchor.top, transform: "none", animation: "none" } : undefined}
+      >
         <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <div className="flex items-center gap-2"><button type="button" aria-label="Back to calendar" onClick={close} className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /></button><DialogTitle className="text-[15px] font-extrabold tracking-tight text-slate-950">New booking</DialogTitle></div>
           <DialogDescription className="sr-only">Add a new job: pick client, schedule, rates, and notes in one quick pass.</DialogDescription>
@@ -674,9 +693,36 @@ export function CompactCreateJobDialog({
                 </div>
               </div>
             ) : (
-              <div>
-                <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">Choose a service</Label>
-                <Input value={addOnDraft.description} onChange={event => setAddOnDraft(current => ({ ...current, description: event.target.value }))} placeholder="Window cleaning, carpet cleaning..." className="h-11 rounded-lg border-[#d9e1ea] bg-[#f8fafc]" />
+              <div className="space-y-2">
+                <Select
+                  value={addOnServiceChoice}
+                  onValueChange={value => {
+                    setAddOnServiceChoice(value)
+                    setAddOnDraft(current => ({
+                      ...current,
+                      description: value === customAddOnServiceValue ? "" : value,
+                    }))
+                  }}
+                >
+                  <SelectTrigger className="h-11 rounded-lg border-[#d9e1ea] bg-[#f8fafc] px-4 text-[14px] text-[#52637a] focus:ring-[#38bfae]">
+                    <SelectValue placeholder="Choose a service..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {addOnServiceOptions.map(option => (
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                    ))}
+                    <SelectItem value={customAddOnServiceValue}>Custom service...</SelectItem>
+                  </SelectContent>
+                </Select>
+                {addOnServiceChoice === customAddOnServiceValue && (
+                  <Input
+                    autoFocus
+                    value={addOnDraft.description}
+                    onChange={event => setAddOnDraft(current => ({ ...current, description: event.target.value }))}
+                    placeholder="Name the custom service"
+                    className="h-11 rounded-lg border-[#d9e1ea] bg-white"
+                  />
+                )}
               </div>
             )}
 
@@ -751,14 +797,14 @@ export function CompactCreateJobDialog({
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">Client rate *</Label>
+                <Label className="mb-1 block text-[11px] text-slate-500">Client charged *</Label>
                 <div className="relative">
                   <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                   <Input type="number" min="0" step="0.01" value={clientRate} onChange={event => setClientRate(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
                 </div>
               </div>
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">{subcontractorId.startsWith("vendor:") ? "Vendor pay *" : "Cleaner pay *"}</Label>
+                <Label className="mb-1 block text-[11px] text-slate-500">{subcontractorId.startsWith("vendor:") ? "Vendor pay *" : "We pay *"}</Label>
                 <div className="relative">
                   <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                   <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
@@ -904,8 +950,13 @@ export function CompactCreateJobDialog({
                     )
                   })}
                 </div>
-                {trialDaysOfWeek.length === 0 && (
+                {trialDaysOfWeek.length === 0 ? (
                   <p className="mt-1 text-[10.5px] font-medium text-[#49675c]">Pick at least one service day.</p>
+                ) : (
+                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#dff0e9] px-2.5 py-1 text-[11px] font-bold text-[#075f40]">
+                    <Repeat className="h-3 w-3" />
+                    Repeats {trialFrequency === 'WEEKLY' ? 'weekly' : trialFrequency === 'BI_WEEKLY' ? 'every 2 weeks' : trialFrequency === 'EVERY_3_WEEKS' ? 'every 3 weeks' : 'every 4 weeks'} on {trialDaysOfWeek.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}
+                  </div>
                 )}
               </div>
 
@@ -922,38 +973,28 @@ export function CompactCreateJobDialog({
             </section>
           )}
 
-          {!showNotes ? (
+          <section className="border-t border-[#edf0f3] pt-1">
             <button
               type="button"
-              onClick={() => setShowNotes(true)}
-              className="text-xs font-semibold text-slate-400 hover:text-teal-700"
+              aria-expanded={showNotes}
+              onClick={() => setShowNotes(current => !current)}
+              className="flex min-h-11 w-full items-center gap-3 py-2 text-left text-[#738299] transition-colors hover:text-[#0b8557]"
             >
-              + Add notes
+              <FileText className="h-4 w-4 shrink-0" />
+              <span className="flex-1 text-[14px] font-bold">Add note</span>
+              {showNotes ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
-          ) : (
-            <section className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="mb-1 flex items-center justify-between">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Notes</Label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNotes(false)
-                    setNotes("")
-                  }}
-                  className="text-[11px] font-semibold text-slate-400 hover:text-slate-700"
-                >
-                  Remove
-                </button>
-              </div>
+            {showNotes && (
               <textarea
+                autoFocus
                 value={notes}
                 onChange={event => setNotes(event.target.value)}
-                placeholder="Gate codes, parking, special instructions..."
-                rows={2}
-                className="w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                placeholder="Gate codes, alarm, parking, contact, pets..."
+                rows={3}
+                className="mb-1 w-full resize-y rounded-lg border border-[#d9e1ea] bg-white px-3 py-2.5 text-sm text-[#263246] outline-none transition-colors placeholder:text-[#8a8f98] focus:border-[#38bfae] focus:ring-2 focus:ring-[#38bfae]/15"
               />
-            </section>
-          )}
+            )}
+          </section>
 
           {selectedClient && selectedLocationIds.length > 0 && (
             <div className="flex items-center gap-1 text-xs text-teal-700">

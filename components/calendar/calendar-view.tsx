@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, type CSSProperties, type ReactNode, useState, useMemo, useEffect, useRef } from "react"
+import { Fragment, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useState, useMemo, useEffect, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { 
   ChevronLeft, ChevronRight,
@@ -25,7 +25,7 @@ import { JobWithFullRelations, ClientWithLocations, Subcontractor } from "@/type
 import { refreshCalendarData } from "./calendar-client"
 import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor, TouchSensor, closestCenter, useDraggable, useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { getCleanerColorInfo, JOB_GRADIENTS, JOB_SPINE_COLORS, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
+import { getCleanerColorInfo, JOB_GRADIENTS, JOB_SPINE_COLORS, JOB_CARD_SHADOW, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
 import { useCalendarFilters } from '@/lib/calendar-filter-context'
 import { CalendarFilterDrawer } from './calendar-filter-drawer'
 import { hasFinalInvoice } from '@/lib/invoice-status'
@@ -39,6 +39,7 @@ interface CalendarViewProps {
 type ViewMode = 'day' | 'week' | 'month' | 'list'
 type MobileViewMode = 'day' | '3day' | 'week' | 'month'
 type WeekDensity = 'Comfortable' | 'Compact' | 'Dense'
+type CalendarAnchorRect = Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom'>
 
 const COLOR_KEY_TO_TAILWIND: Record<string, { bg: string; dot: string }> = {
   teal: { bg: 'bg-teal-100', dot: 'bg-teal-500' },
@@ -428,6 +429,7 @@ function TimelineDayColumn({ date, children, onCreate }: { date: Date; children:
   return (
     <div
       ref={setNodeRef}
+      data-calendar-day-column={format(date, 'yyyy-MM-dd')}
       onClick={onCreate}
       className="relative overflow-visible border-r border-[#eef1f4] last:border-r-0"
       style={{ backgroundColor: isOver ? 'rgba(13,148,136,0.08)' : isToday(date) ? 'rgba(13,148,136,0.025)' : '#FFFFFF' }}
@@ -514,6 +516,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [quickScheduleOpen, setQuickScheduleOpen] = useState(false)
   const [jobDialogOpen, setJobDialogOpen] = useState(false)
   const [createJobDialogOpen, setCreateJobDialogOpen] = useState(false)
+  const [quickPopoverAnchor, setQuickPopoverAnchor] = useState<{ left: number; top: number } | null>(null)
+  const [createPopoverAnchor, setCreatePopoverAnchor] = useState<{ left: number; top: number } | null>(null)
   const [selectedDateForNewJob, setSelectedDateForNewJob] = useState<Date | null>(null)
   const [quickAssignOpen, setQuickAssignOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -570,6 +574,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     ranges.add(`${now.getFullYear()}-${now.getMonth()}`)
     return ranges
   })
+  const loadedRangesRef = useRef(loadedRanges)
   const prefetchingRangesRef = useRef<Set<string>>(new Set())
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   
@@ -601,10 +606,11 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const toggleFilterBarClient = calFilters?.toggleFilterBarClient ?? noop
   const showUnassigned = calFilters?.showUnassigned ?? true
   const setShowUnassigned = calFilters?.setShowUnassigned ?? noop
+  const initCleaners = calFilters?.initCleaners
 
   useEffect(() => {
-    calFilters?.initCleaners(subcontractors.map(s => s.id))
-  }, [subcontractors, calFilters])
+    initCleaners?.(subcontractors.map(s => s.id))
+  }, [subcontractors, initCleaners])
   
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -710,11 +716,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
   useEffect(() => {
     const el = calendarWrapperRef.current
-    if (!el) return
+    const desktopQuery = window.matchMedia('(min-width: 1024px)')
+    if (!el || !desktopQuery.matches) return
 
     const updateWeekColumnWidth = () => {
       const width = el.getBoundingClientRect().width
-      setWeekColumnWidth(Math.max(0, (width - 56) / 7))
+      const nextWidth = Math.max(0, (width - 56) / 7)
+      setWeekColumnWidth(current => Math.abs(current - nextWidth) < 0.5 ? current : nextWidth)
     }
 
     updateWeekColumnWidth()
@@ -774,8 +782,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           
           // Mark this month as loaded
           setLoadedRanges(prev => {
+            if (prev.has(monthKey)) return prev
             const next = new Set(prev)
             next.add(monthKey)
+            loadedRangesRef.current = next
             return next
           })
 
@@ -797,7 +807,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const prefetchMonth = (offset: number) => {
       const target = new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1)
       const targetKey = `${target.getFullYear()}-${target.getMonth()}`
-      if (loadedRanges.has(targetKey)) return
+      if (loadedRangesRef.current.has(targetKey)) return
       if (prefetchingRangesRef.current.has(targetKey)) return
       prefetchingRangesRef.current.add(targetKey)
 
@@ -817,8 +827,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             return uniqueNewJobs.length > 0 ? [...prev, ...uniqueNewJobs] : prev
           })
           setLoadedRanges(prev => {
+            if (prev.has(targetKey)) return prev
             const next = new Set(prev)
             next.add(targetKey)
+            loadedRangesRef.current = next
             return next
           })
         })
@@ -841,11 +853,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       timers.forEach(timer => window.clearTimeout(timer))
     }
   }, [currentDate, loadedRanges])
-
-  // Initialize filter selections when data loads
-  useEffect(() => {
-    setSelectedCleanerIds(new Set(subcontractors.map(s => s.id)))
-  }, [subcontractors, setSelectedCleanerIds])
 
   // Sync allJobs with initialJobs when they change (e.g., after SWR revalidation)
   useEffect(() => {
@@ -883,6 +890,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     // Reset loadedRanges to only the initial months — this forces
     // lazily-loaded months to re-fetch on next navigation, clearing any
     // stale deleted jobs from those months too
+    loadedRangesRef.current = initialMonths
     setLoadedRanges(initialMonths)
   }, [initialJobs])
 
@@ -900,9 +908,22 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     }
   }, [searchParams, jobs])
 
-  const handleJobClick = (job: JobWithFullRelations) => {
+  const positionBeside = (rect: CalendarAnchorRect, width: number, estimatedHeight: number) => {
+    const gap = 8
+    const edge = 12
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    let left = rect.right + gap
+    if (left + width + edge > viewportWidth) left = rect.left - width - gap
+    if (left < edge) left = Math.max(edge, (viewportWidth - width) / 2)
+    const top = Math.max(edge, Math.min(rect.top - 6, viewportHeight - Math.min(estimatedHeight, viewportHeight - edge * 2) - edge))
+    return { left: Math.round(left), top: Math.round(top) }
+  }
+
+  const handleJobClick = (job: JobWithFullRelations, event?: ReactMouseEvent<HTMLElement>) => {
     setSelectedJob(job)
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+      setQuickPopoverAnchor(event ? positionBeside(event.currentTarget.getBoundingClientRect(), 398, 680) : null)
       setQuickJobOpen(true)
     } else {
       setJobDialogOpen(true)
@@ -919,14 +940,21 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     setQuickJobOpen(true)
   }
 
-  const handleDateClick = (date: Date) => {
+  const handleDateClick = (date: Date, event?: ReactMouseEvent<HTMLElement>) => {
     setSelectedDateForNewJob(date)
+    setSelectedTimeForNewJob(undefined)
+    setCreatePopoverAnchor(event && window.matchMedia('(min-width: 1024px)').matches
+      ? positionBeside(event.currentTarget.getBoundingClientRect(), 440, 720)
+      : null)
     setCreateJobDialogOpen(true)
   }
 
-  const handleTimeSlotClick = (date: Date, time: string) => {
+  const handleTimeSlotClick = (date: Date, time: string, rect?: CalendarAnchorRect) => {
     setSelectedDateForNewJob(date)
     setSelectedTimeForNewJob(time)
+    setCreatePopoverAnchor(rect && window.matchMedia('(min-width: 1024px)').matches
+      ? positionBeside(rect, 440, 720)
+      : null)
     setCreateJobDialogOpen(true)
   }
 
@@ -1718,7 +1746,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   <span className={`text-sm font-extrabold ${isToday(day) ? 'text-[var(--cf-green)]' : 'text-[var(--cf-ink)]'}`}>{format(day, 'EEEE')}</span>
                   <span className="text-xs font-semibold text-[var(--cf-ink-muted)]">{format(day, 'MMM d')}</span>
                 </div>
-                <button type="button" onClick={() => handleDateClick(day)} aria-label={`Add job on ${format(day, 'MMMM d')}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--cf-green)] hover:bg-[var(--cf-green-soft)]">
+                <button type="button" onClick={(event) => handleDateClick(day, event)} aria-label={`Add job on ${format(day, 'MMMM d')}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--cf-green)] hover:bg-[var(--cf-green-soft)]">
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
@@ -1733,7 +1761,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       <button
                         type="button"
                         key={job.id}
-                        onClick={() => handleJobClick(job)}
+                        onClick={(event) => handleJobClick(job, event)}
                         className="flex w-full items-center gap-3 px-3 py-2.5 text-left active:bg-[var(--cf-field)]"
                       >
                         <span className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: status === 'cancelled' ? '#9CA3AF' : hex }} />
@@ -1749,7 +1777,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                   })}
                 </div>
               ) : (
-                <button type="button" onClick={() => handleDateClick(day)} className="w-full px-3 py-5 text-center text-xs font-semibold text-[var(--cf-ink-muted)]">No jobs scheduled</button>
+                <button type="button" onClick={(event) => handleDateClick(day, event)} className="w-full px-3 py-5 text-center text-xs font-semibold text-[var(--cf-ink-muted)]">No jobs scheduled</button>
               )}
             </section>
           )
@@ -1850,23 +1878,31 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         && jobTime >= new Date(specialRangeStart).setHours(0, 0, 0, 0)
         && jobTime <= new Date(specialRangeEnd).setHours(23, 59, 59, 999)
     }).length
-    const searchResults = headerSearch.trim()
-      ? jobs
-          .filter(job => {
-            const query = headerSearch.trim().toLowerCase()
-            return job.location.client.name.toLowerCase().includes(query)
-              || job.location.name.toLowerCase().includes(query)
-              || ((job as JobWithFullRelations & { notes?: string | null }).notes || '').toLowerCase().includes(query)
-              || (getPerformerName(job) || '').toLowerCase().includes(query)
-          })
-          .slice(0, 6)
-          .map(job => ({
+    const query = headerSearch.trim().toLowerCase()
+    const searchResults = query
+      ? jobs.flatMap(job => {
+          const clientName = job.location.client.name
+          const performerName = getPerformerName(job) || 'Unassigned'
+          const jobNotes = ((job as JobWithFullRelations & { notes?: string | null }).notes || '').trim()
+          const clientNotes = (job.location.client.notes || '').trim()
+          const matchingNote = [jobNotes, clientNotes].find(note => note.toLowerCase().includes(query))
+          const regularMatch = clientName.toLowerCase().includes(query)
+            || job.location.name.toLowerCase().includes(query)
+            || performerName.toLowerCase().includes(query)
+          if (!regularMatch && !matchingNote) return []
+          const compactNote = matchingNote?.replace(/\s+/g, ' ')
+          const noteIndex = compactNote?.toLowerCase().indexOf(query) ?? -1
+          const noteSnippet = compactNote && noteIndex >= 0
+            ? `${noteIndex > 20 ? '...' : ''}${compactNote.slice(Math.max(0, noteIndex - 20), noteIndex + query.length + 45)}${noteIndex + query.length + 45 < compactNote.length ? '...' : ''}`
+            : null
+          return [{
             id: job.id,
-            primary: job.location.client.name,
-            secondary: `${format(new Date(job.date), 'EEE, MMM d')} | ${getPerformerName(job) || 'Unassigned'}`,
-            kind: job.isTrial ? 'Trial' : job.scheduleId ? 'Job' : 'One-off',
+            primary: clientName,
+            secondary: noteSnippet || `${format(new Date(job.date), 'EEE, MMM d')} | ${performerName}`,
+            kind: noteSnippet ? 'Note' : job.isTrial ? 'Trial' : job.scheduleId ? 'Job' : 'One-off',
             hex: getCleanerColorInfo(getPerformerName(job)).hex,
-          }))
+          }]
+        }).slice(0, 8)
       : []
 
     const setTeamSelection = (values: Set<string>) => {
@@ -1944,7 +1980,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
           <button
             onClick={goToToday}
-            className="rounded-lg border border-[var(--cf-green-rule)] bg-[var(--cf-green-soft)] px-3 py-1.5 text-xs font-bold text-[var(--cf-green)] transition-colors hover:bg-[var(--cf-green-soft-hover)]"
+            className="rounded-[7px] border border-[#C0DCD1] bg-[#C0DCD1] px-[11px] py-[5px] text-xs font-bold text-[#085838] transition-colors hover:bg-[#B2D2C6]"
           >
             Today
           </button>
@@ -1961,7 +1997,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               const job = jobs.find(item => item.id === jobId)
               if (!job) return
               setCurrentDate(new Date(job.date))
-              setHeaderSearch(job.location.client.name)
+              setHeaderSearch('')
               handleJobClick(job)
             }}
           />
@@ -2013,10 +2049,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           <button
             type="button"
             onClick={() => setSpecialRailOpen(current => !current)}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-colors ${
               specialRailOpen
                 ? 'border-[#99e6db] bg-[#ecfdf9] text-[#0f766e]'
-                : 'border-[var(--cf-rule)] bg-white text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]'
+                : 'border-[#E2E8F0] bg-white text-[#334155] hover:bg-[var(--cf-field)]'
             }`}
           >
             <Star className="h-3.5 w-3.5 fill-[#d97706] text-[#d97706]" />
@@ -2028,10 +2064,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded transition-all ${
+                className={`px-[15px] py-1.5 text-[12.5px] font-semibold rounded-[7px] transition-all ${
                   viewMode === mode
-                    ? 'bg-white text-[var(--cf-ink)] shadow-sm'
-                    : 'text-[#7f8ea3] hover:text-[#334155]'
+                    ? 'bg-white text-[#0f172a] shadow-[0_1px_2px_rgba(16,24,40,0.1)]'
+                    : 'text-[#64748B] hover:text-[#334155]'
                 }`}
               >
                 {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -2088,8 +2124,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           </div>
 
           <button
-            onClick={() => handleDateClick(currentDate)}
-            className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-[var(--cf-green)] px-3.5 py-2 text-[12px] font-bold text-white shadow-sm transition-colors hover:bg-[var(--cf-green-hover)]"
+            onClick={(event) => handleDateClick(currentDate, event)}
+            className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-[var(--cf-green)] px-[15px] py-2 text-[13px] font-bold text-white shadow-[0_1px_2px_rgba(13,148,136,0.3)] transition-colors hover:bg-[var(--cf-green-hover)]"
           >
             <Plus className="w-3.5 h-3.5" />
             Add Job
@@ -2268,12 +2304,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       return (
         <button
           key={job.id}
+          data-calendar-job-id={job.id}
           type="button"
           title={title}
           onClick={(e) => {
             e.stopPropagation()
             if (isSelectionMode) toggleJobSelection(job.id)
-            else handleJobClick(job)
+            else handleJobClick(job, e)
           }}
           className={[
             "group block w-full cursor-pointer overflow-hidden rounded-md text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--cf-green)]",
@@ -2356,12 +2393,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       return (
                         <button
                           key={job.id}
+                          data-calendar-job-id={job.id}
                           type="button"
                           title={`TBD ${job.location.client.name}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             if (isSelectionMode) toggleJobSelection(job.id)
-                            else handleJobClick(job)
+                            else handleJobClick(job, e)
                           }}
                           className={`h-7 cursor-pointer truncate rounded-md bg-white px-2 py-1.5 text-left text-[11px] font-bold leading-none text-[var(--cf-ink)] shadow-sm ring-1 ring-[var(--cf-rule)] ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
                           style={{ borderLeft: `3px solid ${hex}`, opacity: isDimmed ? 0.3 : 1 }}
@@ -2436,7 +2474,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           const today = isToday(day)
           return (
             <section key={day.toISOString()} className="flex min-w-0 flex-col border-r border-[#eef1f4] last:border-r-0" style={{ backgroundColor: today ? 'rgba(13,148,136,0.025)' : '#FFFFFF' }}>
-              <button type="button" onClick={() => handleDateClick(day)} className="border-b border-[#eef1f4] px-2.5 py-3 text-center hover:bg-[#f8faf9]">
+              <button type="button" onClick={(event) => handleDateClick(day, event)} className="border-b border-[#eef1f4] px-2.5 py-3 text-center hover:bg-[#f8faf9]">
                 <span className={`block text-[10px] font-extrabold uppercase tracking-[0.06em] ${today ? 'text-[var(--cf-green)]' : 'text-[#7f8ea3]'}`}>{format(day, 'EEE')}</span>
                 <span className={`mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-base font-extrabold ${today ? 'bg-[var(--cf-green)] text-white' : 'text-[#1e293b]'}`}>{format(day, 'd')}</span>
                 <span className="mt-1 block text-[10px] font-semibold text-[#7f8ea3]">{dayJobs.length} clean{dayJobs.length === 1 ? '' : 's'}</span>
@@ -2453,14 +2491,15 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     <button
                       type="button"
                       key={job.id}
-                      onClick={() => handleJobClick(job)}
-                      className="relative rounded-md border p-2 text-left transition-transform hover:-translate-y-px hover:shadow-md"
+                      data-calendar-job-id={job.id}
+                      onClick={(event) => handleJobClick(job, event)}
+                      className="relative rounded-[5px] border p-2 text-left transition-transform hover:-translate-y-px hover:shadow-md"
                       style={{
                         background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
-                        borderColor: status === 'cancelled' ? '#D1D5DB' : unassigned ? '#E3A44A' : 'rgba(255,255,255,0.88)',
+                        borderColor: status === 'cancelled' ? '#D1D5DB' : unassigned ? '#E3A44A' : 'transparent',
                         borderStyle: unassigned ? 'dashed' : 'solid',
-                        borderLeft: `5px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
-                        boxShadow: '0 2px 0 rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.08)',
+                        borderLeft: `4.7px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
+                        boxShadow: JOB_CARD_SHADOW,
                         opacity: status === 'cancelled' ? 0.65 : 1,
                       }}
                     >
@@ -2534,7 +2573,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     <button
                       type="button"
                       key={job.id}
-                      onClick={() => handleJobClick(job)}
+                      data-calendar-job-id={job.id}
+                      onClick={(event) => handleJobClick(job, event)}
                       className="w-full rounded-md border border-[#e7ebef] bg-white px-2 py-1.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.07)] transition-shadow hover:shadow-md"
                       style={{ borderLeft: `3px solid ${spineColor}` }}
                     >
@@ -2560,10 +2600,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   }
 
   const renderDayCrewView = () => {
-    const startHour = 5
+    const startHour = 6
     const endHour = 23
     const hoursCount = endHour - startHour
-    const hourHeight = weekDensity === 'Comfortable' ? 72 : weekDensity === 'Compact' ? 56 : 44
+    const hourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
     const now = new Date()
     const nowMinutes = now.getHours() * 60 + now.getMinutes()
     const showCurrentTimeLine = isToday(currentDate) && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
@@ -2620,7 +2660,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               <div className="relative z-10 w-14 shrink-0 border-r border-[#EEF1F4] bg-white">
                 {Array.from({ length: hoursCount + 1 }, (_, index) => {
                   const hour = startHour + index
-                  return <div key={hour} className="absolute w-full pr-2 text-right text-[10px] font-semibold text-[#64748B]" style={{ top: index * hourHeight - (index === 0 ? -2 : 6) }}>{minutesToShortTime(hour * 60)}</div>
+                  return <div key={hour} className="absolute w-full pr-2 text-right text-[11px] font-semibold text-[#64748B]" style={{ top: index * hourHeight - (index === 0 ? -2 : 6) }}>{minutesToShortTime(hour * 60)}</div>
                 })}
               </div>
               <div className="relative grid flex-1" style={{ gridTemplateColumns: `repeat(${Math.max(crewColumns.length, 1)}, minmax(112px, 1fr))` }}>
@@ -2646,7 +2686,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                         const rect = event.currentTarget.getBoundingClientRect()
                         const rawMinutes = startHour * 60 + ((event.clientY - rect.top) / hourHeight) * 60
                         const rounded = Math.max(startHour * 60, Math.min(endHour * 60 - 30, Math.round(rawMinutes / 30) * 30))
-                        handleTimeSlotClick(currentDate, `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`)
+                        const slotTop = rect.top + ((rounded - startHour * 60) / 60) * hourHeight
+                        handleTimeSlotClick(currentDate, `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`, { left: rect.left, right: rect.right, top: slotTop, bottom: slotTop + hourHeight * 2 })
                       }}
                     >
                       {layout.positions.map(positioned => {
@@ -2682,11 +2723,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             onMouseLeave={() => setHoveredOverlapJobId(current => current === job.id ? null : current)}
                             onClick={(event) => {
                               event.stopPropagation()
-                              if (overlaps && expandedOverlapJobId !== job.id) {
-                                setExpandedOverlapJobId(job.id)
-                                return
-                              }
-                              handleJobClick(job)
+                              handleJobClick(job, event)
                             }}
                             className={`absolute cursor-pointer overflow-hidden rounded-md border transition-[width,box-shadow] duration-150 ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:shadow-lg'}`}
                             style={{
@@ -2696,12 +2733,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               width: expanded ? `calc(${expandedWidthPct}% - 4px)` : `calc(${widthPct}% - 4px)`,
                               maxWidth: expanded ? '240px' : undefined,
                               background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
-                              borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'rgba(255,255,255,0.88)',
+                              borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'transparent',
                               borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
-                              borderLeft: `5px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
+                              borderLeft: `4.7px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
                               boxShadow: expanded
                                 ? '0 10px 26px rgba(16,24,40,0.28)'
-                                : '0 2px 0 rgba(15,23,42,0.12), 0 1px 3px rgba(15,23,42,0.10)',
+                                : JOB_CARD_SHADOW,
                               zIndex: expanded ? 80 : staysAboveExpanded ? 90 : 10 + column,
                               opacity: status === 'cancelled' ? 0.65 : 1,
                             }}
@@ -2748,10 +2785,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
-    const startHour = 5
+    const startHour = 6
     const endHour = 23
     const hoursCount = endHour - startHour
-    const hourHeight = weekDensity === 'Comfortable' ? 72 : weekDensity === 'Compact' ? 56 : 44
+    const hourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
 
     const unscheduledJobsByDay = days.map(day =>
       getJobsForDate(day).filter(job => !(job.startTime || job.startWindowBegin))
@@ -2800,7 +2837,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                         <div
                           key={job.id}
                           title={tooltipText}
-                          onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
+                          onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job, e); }}
                           className={`h-6 cursor-pointer truncate rounded-md bg-white px-2 py-1 text-[11px] font-semibold leading-none text-gray-900 shadow-sm ring-1 ring-gray-200 ${isSelected ? 'ring-2 ring-teal-500' : ''}`}
                           style={{
                             borderLeft: `3px solid ${hex}`,
@@ -2862,7 +2899,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       const roundedMinutes = Math.max(startHour * 60, Math.min(endHour * 60 - 15, Math.round(rawMinutes / 15) * 15))
                       const hour = Math.floor(roundedMinutes / 60)
                       const minute = roundedMinutes % 60
-                      handleTimeSlotClick(day, `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
+                      const slotTop = rect.top + ((roundedMinutes - startHour * 60) / 60) * hourHeight
+                      handleTimeSlotClick(day, `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, { left: rect.left, right: rect.right, top: slotTop, bottom: slotTop + hourHeight * 2 })
                     }}
                   >
                     {createJobDialogOpen && selectedDateForNewJob && isSameDay(day, selectedDateForNewJob) && (() => {
@@ -2925,11 +2963,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               toggleJobSelection(job.id)
                               return
                             }
-                            if (overlaps && expandedOverlapJobId !== job.id) {
-                              setExpandedOverlapJobId(job.id)
-                              return
-                            }
-                            handleJobClick(job)
+                            handleJobClick(job, event)
                           }}
                           className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left transition-[width,box-shadow,transform] duration-150 focus:outline-none ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(16,24,40,0.18)]'} ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
                           style={{
@@ -2939,12 +2973,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             width: expanded ? `calc(${expandedWidthPct}% - 4px)` : `calc(${widthPct}% - 4px)`,
                             maxWidth: expanded ? '240px' : undefined,
                             background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
-                            borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'rgba(255,255,255,0.88)',
+                            borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'transparent',
                             borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
-                            borderLeft: `5px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
+                            borderLeft: `4.7px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
                             boxShadow: expanded
                               ? '0 10px 26px rgba(16,24,40,0.28)'
-                              : '0 2px 0 rgba(15,23,42,0.12), 0 1px 3px rgba(15,23,42,0.10)',
+                              : JOB_CARD_SHADOW,
                             opacity: isDimmed ? 0.22 : status === 'cancelled' ? 0.65 : 1,
                             zIndex: expanded ? 80 : staysAboveExpanded ? 90 : 10 + column,
                           }}
@@ -3046,7 +3080,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           job={job}
                           disabled={hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || Boolean((job as JobWithFullRelations & { vendorPaid?: boolean }).vendorPaid) || job.status === 'CANCELLED'}
                           title={`${getCompactTime(tStr)} ${job.location.client.name}${performerName ? ` · ${performerName}` : ''}${job.location.name ? ` · ${job.location.name}` : ''}`}
-                          onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job); }}
+                          onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(job.id); else handleJobClick(job, e); }}
                           className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-[box-shadow,transform] hover:z-[90] hover:-translate-y-px hover:shadow-md focus:z-[90] focus:outline-none ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
                           style={{
                             top: `${top}px`,
@@ -3263,7 +3297,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           return (
                             <div
                               key={di}
-                              onClick={() => handleDateClick(d)}
+                              onClick={(event) => handleDateClick(d, event)}
                               style={{
                                 minHeight: '124px',
                                 padding: '5px',
@@ -3297,7 +3331,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                   return (
                                     <div
                                       key={j.id}
-                                      onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(j.id); else handleJobClick(j); }}
+                                      data-calendar-job-id={j.id}
+                                      onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(j.id); else handleJobClick(j, e); }}
                                       className={`relative h-5 cursor-pointer truncate rounded-[5px] border border-white/80 border-l-[3px] px-1.5 pr-4 text-[10px] font-bold leading-5 shadow-[0_1px_2px_rgba(15,23,42,0.10)] hover:brightness-[0.98] ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : 'text-[#1e293b]'}`}
                                       style={{
                                         background: status === 'cancelled' ? '#F3F4F6' : `${hex}20`,
@@ -3393,7 +3428,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                     return (
                       <button
                         key={job.id}
-                        onClick={() => { setDayPopoverDate(null); setDayPopoverJobs([]); handleJobClick(job) }}
+                        onClick={(event) => { setDayPopoverDate(null); setDayPopoverJobs([]); handleJobClick(job, event) }}
                         className="w-full text-left px-5 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3"
                       >
                         <div
@@ -3479,7 +3514,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
 
       {/* Mobile FAB - Google Calendar style */}
       <button
-        onClick={() => handleDateClick(currentDate)}
+        onClick={(event) => handleDateClick(currentDate, event)}
         className="lg:hidden fixed z-50 rounded-full flex items-center justify-center active:scale-95 transition-transform"
         style={{
           width: '52px',
@@ -3499,9 +3534,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       <QuickJobPopover
         job={selectedJob}
         open={quickJobOpen}
-        onOpenChange={setQuickJobOpen}
+        onOpenChange={(open) => {
+          setQuickJobOpen(open)
+          if (!open) setQuickPopoverAnchor(null)
+        }}
         onChangeSchedule={openQuickScheduleDialog}
         subcontractors={subcontractors}
+        anchor={quickPopoverAnchor}
       />
 
       <QuickScheduleChangeDialog
@@ -3527,12 +3566,14 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           if (!open) {
             setSelectedDateForNewJob(null)
             setSelectedTimeForNewJob(undefined)
+            setCreatePopoverAnchor(null)
           }
         }}
         selectedDate={selectedDateForNewJob}
         selectedTime={selectedTimeForNewJob}
         clients={clients as unknown as React.ComponentProps<typeof CompactCreateJobDialog>['clients']}
         subcontractors={subcontractors}
+        anchor={createPopoverAnchor}
       />
 
       {/* Quick Assign Modal */}

@@ -55,68 +55,91 @@ export const SHADOWS = {
   inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)',
 } as const
 
-// Vivid, saturated solid-ish gradients for job cards (per Josh's calendar dev notes:
-// "fully opaque, saturated background color (no transparency, no pastels)").
-// Each gradient is a very narrow band between the target hex and a slightly darker shade,
-// so visually it reads as a solid bold color.
+// Flat matte fills for job cards, matching the Calendar Main mockup exactly.
+// The mockup computes these as oklch(lb, chroma*0.85*1.22, hue) per performer
+// (hues 30/75/155/200/235/255/295/345, lb ≈ 0.64 + a boost near hue 95);
+// the hex values below are the exact sRGB conversions of those formulas.
+// NOTE: kept under the JOB_GRADIENTS name for API compatibility — the values
+// are now solid colors (the mockup has NO gradients on cards).
 export const JOB_GRADIENTS = {
-  teal: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-  purple: 'linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)',     // Ana Lina
-  amber: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',      // Amy's Angels / yellow team
-  orange: 'linear-gradient(135deg, #F97316 0%, #EA580C 100%)',     // Maggie
-  rose: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)',
-  red: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',         // Rosa
-  blue: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',       // Ricardo (MCS)
-  emerald: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',    // Celeste Cleaning Co.
-  indigo: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',     // Recurring / Willowcrest
-  slate: 'linear-gradient(135deg, #64748B 0%, #475569 100%)',      // Unassigned / fallback
-  default: 'linear-gradient(135deg, #64748B 0%, #475569 100%)',    // Same as slate
+  teal: '#00a2a9',      // hue 200
+  purple: '#937ad5',    // hue 295 — Ana Lina
+  amber: '#e47261',     // hue 30 — Amy's Angels
+  orange: '#ecad4b',    // hue 75 — Juan (gold)
+  rose: '#c569a0',      // hue 345 — Maggie
+  red: '#c569a0',       // hue 345
+  blue: '#0598d2',      // hue 235 — vendors
+  emerald: '#53b279',   // hue 155 — Celeste Cleaning Co.
+  indigo: '#4f8edc',    // hue 255 — Marcia
+  slate: '#82878c',     // unassigned (near-gray)
+  default: '#82878c',
 } as const
 
-// Map cleaner names → color keys (case-insensitive, partial-match aware)
+// Map cleaner names → color keys (case-insensitive, partial-match aware).
+// Hue assignments follow the mockup's roster.
 export const CLEANER_COLORS: Record<string, keyof typeof JOB_GRADIENTS> = {
-  'maggie': 'orange',
+  'maggie': 'rose',
   'celeste': 'emerald',
   'ana lina': 'purple',
   'ana': 'purple',
+  'juan': 'orange',
   'ricardo': 'blue',
   'mcs': 'blue',
   'amy': 'amber',
   'rosa': 'red',
-  'marcia': 'rose',
+  'marcia': 'indigo',
 }
 
-// Hex colors for filter pills, color dots, and any place we need a solid color
+// Solid dot/avatar colors (mockup: oklch(0.60, ch, hue)) for filter pills,
+// color dots, and `${hex}33`-style alpha tints.
 export const CLEANER_HEX_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
-  teal: '#14b8a6',
-  purple: '#8B5CF6',
-  amber: '#F59E0B',
-  orange: '#F97316',
-  rose: '#f43f5e',
-  red: '#EF4444',
-  blue: '#2563EB',
-  emerald: '#10B981',
-  indigo: '#6366F1',
-  slate: '#64748B',
-  default: '#64748B',
+  teal: '#239196',
+  purple: '#8572bb',
+  amber: '#bd6254',
+  orange: '#a67527',
+  rose: '#ae648f',
+  red: '#ae648f',
+  blue: '#2c8ab8',
+  emerald: '#489265',
+  indigo: '#5182c1',
+  slate: '#6e7278',
+  default: '#6e7278',
 }
 
-// Deeper companions for the 5px performer spine used by solid calendar cards.
-// Keeping this separate from the filter-dot color preserves the mockup's
-// dark leading edge without making picker swatches look muddy.
+// Same-hue darker leading edge for the card spine (mockup: oklch(0.47, ch, hue)).
 export const JOB_SPINE_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
-  teal: '#0F766E',
-  purple: '#5B3FB0',
-  amber: '#9A6700',
-  orange: '#C2410C',
-  rose: '#BE185D',
-  red: '#B91C1C',
-  blue: '#1E40AF',
-  emerald: '#047857',
-  indigo: '#4338CA',
-  slate: '#334155',
-  default: '#334155',
+  teal: '#006a6f',
+  purple: '#604c92',
+  amber: '#923c30',
+  orange: '#7e5000',
+  rose: '#853e69',
+  red: '#853e69',
+  blue: '#00638f',
+  emerald: '#1d6b41',
+  indigo: '#2b5c97',
+  slate: '#5f6469',
+  default: '#5f6469',
 }
+
+// Hue-tinted dark ink (mockup: oklch(0.42, ch*0.78, hue)) — for text that sits
+// on the pale tints of the same hue (rails, chips).
+export const JOB_INK_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
+  teal: '#00595d',
+  purple: '#514277',
+  amber: '#78372d',
+  orange: '#684505',
+  rose: '#6e3858',
+  red: '#6e3858',
+  blue: '#075475',
+  emerald: '#235a39',
+  indigo: '#2a4e7b',
+  slate: '#4a4d51',
+  default: '#4a4d51',
+}
+
+// The mockup's card surface treatment: no outer border — an inset white top
+// highlight plus a soft drop shadow.
+export const JOB_CARD_SHADOW = 'inset 0 1px 0 rgba(255,255,255,0.65), 0 1px 2px rgba(16,24,40,0.12)'
 
 // Get color for a cleaner name (returns color key and hex)
 export function getCleanerColorInfo(cleanerName: string | null): { colorKey: keyof typeof JOB_GRADIENTS; hex: string } {
