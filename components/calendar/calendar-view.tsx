@@ -25,7 +25,7 @@ import { JobWithFullRelations, ClientWithLocations, Subcontractor } from "@/type
 import { refreshCalendarData } from "./calendar-client"
 import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor, TouchSensor, closestCenter, useDraggable, useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { getCleanerColorInfo, JOB_GRADIENTS, JOB_SPINE_COLORS, JOB_CARD_SHADOW, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
+import { getCleanerColorInfo, JOB_GRADIENTS, JOB_SPINE_COLORS, JOB_CARD_SHADOW, JOB_TINT_COLORS, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
 import { useCalendarFilters } from '@/lib/calendar-filter-context'
 import { CalendarFilterDrawer } from './calendar-filter-drawer'
 import { hasFinalInvoice } from '@/lib/invoice-status'
@@ -239,10 +239,10 @@ function SearchSelect({
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => { setOpen(o => !o); setQuery('') }}
-        className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+        className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-colors ${
           isActive
             ? 'border-[var(--cf-green-rule)] bg-[var(--cf-green-soft)] text-[var(--cf-green)] hover:bg-[var(--cf-green-soft-hover)]'
-            : 'border-[var(--cf-rule)] bg-white text-[var(--cf-ink-secondary)] hover:bg-[var(--cf-field)]'
+            : 'border-[#E8ECF1] bg-white text-[#334155] hover:bg-[var(--cf-field)]'
         }`}
       >
         {selectedOptions.length === 1 && selectedOptions[0].hex && (
@@ -341,7 +341,7 @@ function HeaderSearch({ value, onChange, results, onPick }: {
   }, [open])
 
   return (
-      <div className="relative flex min-w-[160px] max-w-[222px] flex-1 items-center" style={{ animation: 'fadeIn 100ms ease' }}>
+      <div className="relative flex min-w-[160px] max-w-[222px] flex-1 items-center">
         <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-[#7f8ea3]" />
         <input
           ref={inputRef}
@@ -349,8 +349,8 @@ function HeaderSearch({ value, onChange, results, onPick }: {
           onChange={e => onChange(e.target.value)}
           onFocus={() => setOpen(true)}
           onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-          placeholder="Search clients, jobs, notes..."
-          className="w-full rounded-lg border border-[#d2d8e0] bg-[#f6f7f9] py-1.5 pl-8 pr-7 text-xs font-medium text-[#334155] outline-none focus:border-[var(--cf-green)]"
+          placeholder="Search clients, jobs, notes…"
+          className="w-full rounded-lg border border-[#d2d8e0] bg-[#f6f7f9] py-1.5 pl-8 pr-7 text-[13px] font-medium text-[#334155] outline-none focus:border-[var(--cf-green)]"
         />
         {value && (
           <button
@@ -3246,10 +3246,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         )}
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
+          {/* No entry animation on the view containers: the Tailwind `enter`
+              animation was restarting on unrelated re-renders (density slider,
+              dialog close), flashing the whole grid. */}
           {(viewMode === 'week' || viewMode === 'day') && (
             <div
               key={viewMode}
-              className="animate-in fade-in slide-in-from-bottom-1 duration-150"
               style={{ flex: '1 1 0%', minHeight: 0, overflow: 'hidden' }}
             >
               {renderWeekView()}
@@ -3259,7 +3261,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           {viewMode === 'month' && (
             <div
               key="month-view"
-              className="animate-in fade-in slide-in-from-bottom-1 duration-150"
               style={{ flex: '1 1 0%', minHeight: 0, overflow: 'auto' }}
             >
               {(() => {
@@ -3311,8 +3312,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             >
                               <div style={{
                                 fontSize: '12px',
-                                fontWeight: today ? 700 : 500,
-                                color: today ? '#0B7A4E' : inMonth ? '#1A1A1A' : '#B0AAA0',
+                                fontWeight: 700,
+                                color: today ? '#0B7A4E' : inMonth ? '#1E293B' : '#B0AAA0',
                                 padding: '2px 4px',
                                 marginBottom: '2px',
                                 ...(today ? { backgroundColor: '#0B7A4E', color: 'white', borderRadius: '6px', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center' } : {}),
@@ -3333,10 +3334,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                                       key={j.id}
                                       data-calendar-job-id={j.id}
                                       onClick={(e) => { e.stopPropagation(); if (isSelectionMode) toggleJobSelection(j.id); else handleJobClick(j, e); }}
-                                      className={`relative h-5 cursor-pointer truncate rounded-[5px] border border-white/80 border-l-[3px] px-1.5 pr-4 text-[10px] font-bold leading-5 shadow-[0_1px_2px_rgba(15,23,42,0.10)] hover:brightness-[0.98] ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : 'text-[#1e293b]'}`}
+                                      className={`relative h-[17px] cursor-pointer truncate rounded-[5px] border-l-[3px] px-1.5 pr-4 text-[10px] font-bold leading-[17px] hover:brightness-[0.98] ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : 'text-[#1e293b]'}`}
                                       style={{
-                                        background: status === 'cancelled' ? '#F3F4F6' : `${hex}20`,
-                                        borderLeftColor: status === 'cancelled' ? '#9CA3AF' : spineColor,
+                                        background: status === 'cancelled' ? '#F3F4F6' : JOB_TINT_COLORS[colorKey],
+                                        borderLeftColor: status === 'cancelled' ? '#9CA3AF' : hex,
                                         opacity: (dimmedClientIds && !dimmedClientIds.has(j.location.client.id)) ? 0.15 : (status === 'cancelled' ? 0.5 : 1),
                                         transition: 'opacity 0.2s ease',
                                       }}
@@ -3370,7 +3371,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           {viewMode === 'list' && (
             <div
               key="list-view"
-              className="flex min-h-0 flex-1 animate-in fade-in slide-in-from-bottom-1 overflow-x-auto duration-150"
+              className="flex min-h-0 flex-1 overflow-x-auto"
             >
               {renderListView()}
             </div>

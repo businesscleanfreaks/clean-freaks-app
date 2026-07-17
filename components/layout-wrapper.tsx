@@ -109,11 +109,10 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
       {/* Main Content */}
       <main className="main-content">
         <MobileHeaderContext.Provider value={{ setActions }}>
-          <div
-            key={pathname}
-            className="animate-in"
-            style={{ flex: 1 }}
-          >
+          {/* No entry animation on the page wrapper: its CSS animation was
+              re-triggering on in-page re-renders (density slider, dialog
+              close), sliding/flashing the entire screen. */}
+          <div key={pathname} style={{ flex: 1 }}>
             {children}
           </div>
         </MobileHeaderContext.Provider>

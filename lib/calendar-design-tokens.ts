@@ -141,6 +141,22 @@ export const JOB_INK_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
 // highlight plus a soft drop shadow.
 export const JOB_CARD_SHADOW = 'inset 0 1px 0 rgba(255,255,255,0.65), 0 1px 2px rgba(16,24,40,0.12)'
 
+// Very pale same-hue tints (mockup: oklch(0.965, ch*0.22, hue)) — month-view
+// chip backgrounds and hover rows.
+export const JOB_TINT_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
+  teal: '#e4f8f9',
+  purple: '#f4f1ff',
+  amber: '#ffede9',
+  orange: '#fdf2e2',
+  rose: '#ffedf7',
+  red: '#ffedf7',
+  blue: '#e5f7ff',
+  emerald: '#e8f8ed',
+  indigo: '#e9f5ff',
+  slate: '#f2f3f5',
+  default: '#f2f3f5',
+}
+
 // Get color for a cleaner name (returns color key and hex)
 export function getCleanerColorInfo(cleanerName: string | null): { colorKey: keyof typeof JOB_GRADIENTS; hex: string } {
   if (!cleanerName) {

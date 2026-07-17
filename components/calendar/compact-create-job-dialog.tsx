@@ -770,6 +770,60 @@ export function CompactCreateJobDialog({
               </div>
             )}
 
+            {/* Mockup order: frequency pills + day circles + repeats chip sit right
+                under the time row for any recurring booking (clean or add-on). */}
+            {isRecurring && (
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap gap-2">
+                  {trialFrequencies.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setTrialFrequency(option.value)}
+                      className={`rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                        trialFrequency === option.value
+                          ? "border-[#9fd6c2] bg-[#e7f4ee] text-[#0b6b45]"
+                          : "border-[#e2e8f0] bg-white text-[#334155] hover:bg-[#f6f8fa]"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1.5">
+                  {dayLetters.map((letter, index) => {
+                    const selected = trialDaysOfWeek.includes(index)
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() =>
+                          setTrialDaysOfWeek(current =>
+                            current.includes(index)
+                              ? current.filter(day => day !== index)
+                              : [...current, index].sort((a, b) => a - b)
+                          )
+                        }
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-[12px] font-bold transition-colors ${
+                          selected ? "bg-[#0B7A4E] text-white" : "border border-[#e2e8f0] bg-white text-[#334155] hover:bg-[#f6f8fa]"
+                        }`}
+                      >
+                        {letter}
+                      </button>
+                    )
+                  })}
+                </div>
+                {trialDaysOfWeek.length === 0 ? (
+                  <p className="text-[10.5px] font-medium text-[#7f8ea3]">Pick at least one service day.</p>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#dff0e9] px-2.5 py-1 text-[11px] font-bold text-[#075f40]">
+                    <Repeat className="h-3 w-3" />
+                    Repeats {trialFrequency === 'WEEKLY' ? 'weekly' : trialFrequency === 'BI_WEEKLY' ? 'every 2 weeks' : trialFrequency === 'EVERY_3_WEEKS' ? 'every 3 weeks' : 'every 4 weeks'} on {trialDaysOfWeek.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
+
             {serviceType === 'cleaning' && (
               <button type="button" onClick={() => { const next = !isTrial; setIsTrial(next); if (next) setIsRecurring(true) }} className="flex w-full items-center gap-2 border-t border-[#edf0f3] pt-3 text-left">
                 <span className={`relative h-6 w-10 rounded-full transition-colors ${isTrial ? 'bg-[#0d9488]' : 'bg-[#cbd5e1]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isTrial ? 'translate-x-5' : 'translate-x-1'}`} /></span>
@@ -878,7 +932,7 @@ export function CompactCreateJobDialog({
             </section>
           )}
 
-          {(isTrial || isRecurring) && (
+          {isTrial && (
             <section className="space-y-3 rounded-lg border border-[#cce4db] bg-[#f1f8f5] p-3">
               {isTrial && <div>
                 <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial length</Label>
@@ -904,61 +958,6 @@ export function CompactCreateJobDialog({
                   </p>
                 )}
               </div>}
-
-              <div>
-                <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Frequency</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {trialFrequencies.map(option => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setTrialFrequency(option.value)}
-                      className={`rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${
-                        trialFrequency === option.value
-                          ? "border-[#0b8557] bg-[#dff0e9] text-[#075f40]"
-                          : "border-[#cce4db] bg-white text-[#49675c] hover:bg-[#e8f4ef]"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Days</Label>
-                <div className="flex gap-1">
-                  {dayLetters.map((letter, index) => {
-                    const selected = trialDaysOfWeek.includes(index)
-                    return (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() =>
-                          setTrialDaysOfWeek(current =>
-                            current.includes(index)
-                              ? current.filter(day => day !== index)
-                              : [...current, index].sort((a, b) => a - b)
-                          )
-                        }
-                        className={`flex h-8 flex-1 items-center justify-center rounded-md text-[12px] font-bold transition-colors ${
-                          selected ? "bg-[#0b8557] text-white" : "border border-[#cce4db] bg-white text-[#49675c] hover:bg-[#e8f4ef]"
-                        }`}
-                      >
-                        {letter}
-                      </button>
-                    )
-                  })}
-                </div>
-                {trialDaysOfWeek.length === 0 ? (
-                  <p className="mt-1 text-[10.5px] font-medium text-[#49675c]">Pick at least one service day.</p>
-                ) : (
-                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#dff0e9] px-2.5 py-1 text-[11px] font-bold text-[#075f40]">
-                    <Repeat className="h-3 w-3" />
-                    Repeats {trialFrequency === 'WEEKLY' ? 'weekly' : trialFrequency === 'BI_WEEKLY' ? 'every 2 weeks' : trialFrequency === 'EVERY_3_WEEKS' ? 'every 3 weeks' : 'every 4 weeks'} on {trialDaysOfWeek.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}
-                  </div>
-                )}
-              </div>
 
               {isTrial && <div>
                 <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial notes</Label>

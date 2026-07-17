@@ -494,7 +494,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
         <DialogDescription className="sr-only">Update this booking or open the complete job details.</DialogDescription>
 
         <div className="shrink-0 border-b border-[#edf0f3] px-4 pb-3 pt-3">
-          <div className="flex items-center gap-2 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">
+          <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">
             <button type="button" onClick={() => onOpenChange(false)} aria-label="Back to calendar" className="mr-0.5 flex h-7 w-7 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6] hover:text-[#263246]">
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -526,7 +526,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           {locked && <div className="rounded-md border border-[#f1d6a8] bg-[#fff8e8] px-3 py-2 text-[11px] font-semibold text-[#8a5a12]">This job is locked because it is cancelled, paid, or on a finalized invoice. More options explains the available next step.</div>}
 
           <section>
-            <p className="mb-2 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">DAY &amp; TIME</p>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">DAY &amp; TIME</p>
             <div className="grid grid-cols-[1.35fr_1fr_1fr] gap-2">
               <input type="date" value={date} onChange={event => setDate(event.target.value)} disabled={locked} className="min-w-0 rounded-lg border border-[#d7dee7] bg-[#f8fafc] px-2.5 py-2.5 text-[13px] font-semibold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:opacity-60" />
               <select value={startTime} onChange={event => { setStartTime(event.target.value); if (!job.startWindowEnd) setEndTime(addMinutes(event.target.value, 60)) }} disabled={locked} className="min-w-0 rounded-lg border border-[#d7dee7] bg-[#f8fafc] px-2 py-2.5 text-[12px] font-semibold outline-none focus:border-[#0d9488] disabled:opacity-60">
@@ -539,7 +539,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           </section>
 
           <section>
-            <p className="mb-2 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">RATE</p>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">RATE</p>
             <div className="grid grid-cols-3 gap-2">
               <label className="text-[9px] font-bold text-[#7f8ea3]">Client charged<input type="number" min="0" step="0.01" value={clientRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setClientRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
               <label className="text-[9px] font-bold text-[#7f8ea3]">{job.vendor ? "Vendor is paid" : "Cleaner is paid"}<input type="number" min="0" step="0.01" value={providerRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setProviderRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
@@ -548,7 +548,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           </section>
 
           <section>
-            <p className="mb-2 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">ADD-ON SERVICE</p>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">ADD-ON SERVICE</p>
             {localAddOns.map(addOn => <div key={addOn.id} className="mb-2 rounded-lg border border-[#dfe5ec] px-3 py-2"><p className="text-[13px] font-bold text-[#1f2937]">{addOn.description}</p><p className="mt-0.5 text-[10px] text-[#7f8ea3]">Client ${Number(addOn.clientRate).toFixed(2)} · Pay ${Number(addOn.subcontractorRate).toFixed(2)}</p></div>)}
             {!addServiceOpen ? (
               <button type="button" onClick={() => setAddServiceOpen(true)} disabled={locked} className="flex w-full items-center gap-2 rounded-lg border border-[#d7dee7] bg-[#f8fafc] px-3 py-2.5 text-left text-[13px] font-semibold text-[#718096] hover:border-[#a9cfc6] hover:bg-[#f3fbf8] disabled:opacity-50"><Plus className="h-3.5 w-3.5" /> Add a service...</button>
@@ -569,13 +569,13 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           </section>
 
           <section>
-            <p className="mb-2 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">REPEATS</p>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">REPEATS</p>
             <div className="flex items-center gap-2 rounded-lg border border-[#dfe5ec] px-3 py-3 text-[13px] font-bold text-[#263246]"><Repeat2 className="h-4 w-4 text-[#08744f]" /><span className="min-w-0 flex-1 truncate capitalize">{scheduleSummary(job)}</span>{job.scheduleId && <button type="button" onClick={onChangeSchedule} className="shrink-0 text-[11px] font-extrabold text-[#08744f]">Change →</button>}</div>
           </section>
 
           {accessNotes && (
             <section className="border-t border-[#edf0f3] pt-3">
-              <p className="mb-1.5 text-[10px] font-extrabold tracking-[0.045em] text-[#7f8ea3]">ACCESS &amp; CODES</p>
+              <p className="mb-1.5 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">ACCESS &amp; CODES</p>
               <div className="flex items-start gap-3">
                 <p className="min-w-0 flex-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[#52627a]">{accessNotes}</p>
                 <button type="button" onClick={async () => { await navigator.clipboard.writeText(accessNotes); showSuccess("Access notes copied") }} className="shrink-0 rounded-md border border-[#b9d8cd] bg-[#edf7f3] px-2.5 py-1.5 text-[10px] font-extrabold text-[#08744f]">Copy</button>
