@@ -503,6 +503,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [currentDate, setCurrentDate] = useState(new Date())
   const calendarWrapperRef = useRef<HTMLDivElement>(null)
   const [weekColumnWidth, setWeekColumnWidth] = useState(0)
+  // Measured height of the active view container, so the hour grid can stretch
+  // to fill the window (the mockup's grid always reaches the bottom edge).
+  const [gridAreaEl, setGridAreaEl] = useState<HTMLDivElement | null>(null)
+  const [gridAreaHeight, setGridAreaHeight] = useState(0)
+  useEffect(() => {
+    if (!gridAreaEl) return
+    const measure = () => setGridAreaHeight(gridAreaEl.clientHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(gridAreaEl)
+    return () => observer.disconnect()
+  }, [gridAreaEl])
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [mobileView, setMobileView] = useState<MobileViewMode>('3day')
   const [weekDensity, setWeekDensity] = useState<WeekDensity>('Compact')
@@ -1846,10 +1858,6 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     }
     const activeSummaryText = activeSummaryParts.join(" · ")
 
-    // Density slider: snaps to one of three discrete WeekDensity values.
-    const densityToSlider = (d: WeekDensity) => d === 'Comfortable' ? 0 : d === 'Compact' ? 50 : 100
-    const sliderToDensity = (v: number): WeekDensity => v < 25 ? 'Comfortable' : v < 75 ? 'Compact' : 'Dense'
-    const sliderValue = densityToSlider(weekDensity)
     const navLabel = viewMode === 'month' ? 'month' : viewMode === 'day' ? 'day' : 'week'
     const desktopHeaderLabel = viewMode === 'day'
       ? format(currentDate, 'EEE, MMM d, yyyy')
@@ -2075,53 +2083,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
             ))}
           </div>
 
-          {/* Density slider — always rendered to reserve space so the Week/Month toggle and
-              Add Job button don't shift when switching views. Visibility is hidden in month view. */}
-          <div
-            className="hidden 2xl:flex items-center gap-2"
-            title={`Density: ${weekDensity}`}
-            style={{ visibility: viewMode === 'week' || viewMode === 'day' ? 'visible' : 'hidden' }}
-            aria-hidden={viewMode !== 'week' && viewMode !== 'day'}
-          >
-            <span className="text-[9px] text-gray-300 leading-none">☰</span>
-            <div
-              className="relative flex h-5 w-[88px] cursor-pointer items-center"
-              onMouseDown={() => {
-                if (viewMode !== 'week' && viewMode !== 'day') return
-                // Prevent text selection / grabbing cursor while dragging the slider.
-                document.body.style.userSelect = 'none'
-                document.body.style.cursor = 'grabbing'
-                const onUp = () => {
-                  document.body.style.userSelect = ''
-                  document.body.style.cursor = ''
-                  window.removeEventListener('mouseup', onUp)
-                }
-                window.addEventListener('mouseup', onUp)
-              }}
-            >
-              <div className="absolute inset-x-0 h-1 rounded-full bg-[var(--cf-rule)]" />
-              <div
-                className="absolute h-1 rounded-full bg-[var(--cf-green)]"
-                style={{ width: `${sliderValue}%` }}
-              />
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={50}
-                value={sliderValue}
-                onChange={(e) => changeWeekDensity(sliderToDensity(Number(e.target.value)))}
-                aria-label="Week density"
-                disabled={viewMode !== 'week' && viewMode !== 'day'}
-                className="absolute inset-0 w-full opacity-0 cursor-pointer"
-              />
-              <div
-                className="pointer-events-none absolute h-3.5 w-3.5 rounded-full border-2 border-[var(--cf-green)] bg-white shadow-sm transition-all"
-                style={{ left: `calc(${sliderValue}% - 7px)` }}
-              />
-            </div>
-            <span className="text-[9px] text-gray-300 leading-none">≡</span>
-          </div>
+          {/* Density slider removed — the mockup has no resizer; the grid sizes itself
+              to fill the window. Density is still adjustable from the mobile menu. */}
 
           <button
             onClick={(event) => handleDateClick(currentDate, event)}
@@ -2493,7 +2456,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       key={job.id}
                       data-calendar-job-id={job.id}
                       onClick={(event) => handleJobClick(job, event)}
-                      className="relative rounded-[5px] border p-2 text-left transition-transform hover:-translate-y-px hover:shadow-md"
+                      className="relative rounded-[5px] border p-2 text-left transition-transform hover:-translate-y-px hover:shadow-md hover:z-40 hover:min-w-[240px]"
                       style={{
                         background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
                         borderColor: status === 'cancelled' ? '#D1D5DB' : unassigned ? '#E3A44A' : 'transparent',
@@ -2603,7 +2566,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const startHour = 6
     const endHour = 23
     const hoursCount = endHour - startHour
-    const hourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
+    const baseHourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
+    // Stretch to fill the measured view area (minus the ~64px day header) so the
+    // grid reaches the bottom of the window like the mockup; density sets the floor.
+    const hourHeight = Math.max(baseHourHeight, gridAreaHeight > 0 ? Math.floor((gridAreaHeight - 64) / hoursCount) : 0)
     const now = new Date()
     const nowMinutes = now.getHours() * 60 + now.getMinutes()
     const showCurrentTimeLine = isToday(currentDate) && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
@@ -2700,8 +2666,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                         const widthPct = 100 / columnCount
                         const leftPct = column * widthPct
                         const overlaps = columnCount > 1
-                        const expanded = overlaps && activeOverlapJobId === job.id
-                        const expandedWidthPct = Math.min(100 - leftPct, widthPct * (columnCount >= 3 ? 1.65 : 1.5))
+                        const expanded = activeOverlapJobId === job.id
+                        const expandedWidthPct = 100 - leftPct // style caps this at 240px; wide enough to read the full name
                         const staysAboveExpanded = Boolean(
                           activeOverlapPosition &&
                           activeOverlapPosition.groupId === positioned.groupId &&
@@ -2719,20 +2685,17 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             job={job}
                             disabled={hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || Boolean((job as JobWithFullRelations & { vendorPaid?: boolean }).vendorPaid) || job.status === 'CANCELLED'}
                             title={`${formatTimelineRange(start, end)} ${job.location.client.name}`}
-                            onMouseEnter={() => overlaps && setHoveredOverlapJobId(job.id)}
-                            onMouseLeave={() => setHoveredOverlapJobId(current => current === job.id ? null : current)}
-                            onClick={(event) => {
+                                                                                    onClick={(event) => {
                               event.stopPropagation()
                               handleJobClick(job, event)
                             }}
-                            className={`absolute cursor-pointer overflow-hidden rounded-md border transition-[width,box-shadow] duration-150 ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:shadow-lg'}`}
+                            className={`absolute cursor-pointer overflow-hidden rounded-md border transition-shadow duration-150 ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:shadow-lg'}`}
                             style={{
                               top: `${top}px`,
                               height: `${height}px`,
                               left: `calc(${leftPct}% + 2px)`,
-                              width: expanded ? `calc(${expandedWidthPct}% - 4px)` : `calc(${widthPct}% - 4px)`,
-                              maxWidth: expanded ? '240px' : undefined,
-                              background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
+                              width: `calc(${widthPct}% - 4px)`,
+                                                            background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
                               borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'transparent',
                               borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
                               borderLeft: `4.7px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
@@ -2744,7 +2707,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             }}
                           >
                             <div className="absolute inset-0 overflow-hidden px-2 py-1.5">
-                              <div className={`truncate pr-3 text-[11px] font-extrabold ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1E293B]' : 'text-white'}`}>{job.location.client.name}</div>
+                              <div title={job.location.client.name} className={`truncate pr-3 text-[11px] font-extrabold ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1E293B]' : 'text-white'}`}>{job.location.client.name}</div>
                               {height >= 32 && <div className={`mt-0.5 truncate text-[9.5px] font-bold ${status === 'cancelled' || unassigned ? 'text-[#526072]' : 'text-white/95'}`}>{formatTimelineRange(start, end)}</div>}
                               {job.addOnServices?.[0] && height >= 54 && <span className="mt-1 inline-block max-w-full truncate rounded bg-[#FFF3B0] px-1.5 py-0.5 text-[8px] font-extrabold text-[#92400E]">+ {job.addOnServices[0].description}</span>}
                               {isSpecialClean(job) && status !== 'cancelled' && <Star className="absolute right-1.5 top-1.5 h-2.5 w-2.5 fill-[#FCD34D] text-[#D97706]" />}
@@ -2788,7 +2751,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const startHour = 6
     const endHour = 23
     const hoursCount = endHour - startHour
-    const hourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
+    const baseHourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
+    // Stretch to fill the measured view area (minus the ~64px day header) so the
+    // grid reaches the bottom of the window like the mockup; density sets the floor.
+    const hourHeight = Math.max(baseHourHeight, gridAreaHeight > 0 ? Math.floor((gridAreaHeight - 64) / hoursCount) : 0)
 
     const unscheduledJobsByDay = days.map(day =>
       getJobsForDate(day).filter(job => !(job.startTime || job.startWindowBegin))
@@ -2932,8 +2898,8 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       const widthPct = 100 / columnCount
                       const leftPct = column * widthPct
                       const overlaps = columnCount > 1
-                      const expanded = overlaps && activeOverlapJobId === job.id
-                      const expandedWidthPct = Math.min(100 - leftPct, widthPct * (columnCount >= 3 ? 1.65 : 1.5))
+                      const expanded = activeOverlapJobId === job.id
+                      const expandedWidthPct = 100 - leftPct // style caps this at 240px; wide enough to read the full name
                       const staysAboveExpanded = Boolean(
                         activeOverlapPosition &&
                         activeOverlapPosition.groupId === positioned.groupId &&
@@ -2955,9 +2921,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           job={job}
                           disabled={hasFinalInvoice(job.invoiceLineItems) || job.subcontractorPaid || Boolean((job as JobWithFullRelations & { vendorPaid?: boolean }).vendorPaid) || job.status === 'CANCELLED'}
                           title={`${formatTimelineRange(start, end)} ${job.location.client.name}${performerName ? ` - ${performerName}` : ''}`}
-                          onMouseEnter={() => overlaps && setHoveredOverlapJobId(job.id)}
-                          onMouseLeave={() => setHoveredOverlapJobId(current => current === job.id ? null : current)}
-                          onClick={(event) => {
+                                                                              onClick={(event) => {
                             event.stopPropagation()
                             if (isSelectionMode) {
                               toggleJobSelection(job.id)
@@ -2965,14 +2929,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             }
                             handleJobClick(job, event)
                           }}
-                          className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left transition-[width,box-shadow,transform] duration-150 focus:outline-none ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(16,24,40,0.18)]'} ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
+                          className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left transition-shadow duration-150 focus:outline-none ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(16,24,40,0.18)]'} ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
                           style={{
                             top: `${top}px`,
                             height: `${height}px`,
                             left: `calc(${leftPct}% + 2px)`,
-                            width: expanded ? `calc(${expandedWidthPct}% - 4px)` : `calc(${widthPct}% - 4px)`,
-                            maxWidth: expanded ? '240px' : undefined,
-                            background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
+                            width: `calc(${widthPct}% - 4px)`,
+                                                        background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
                             borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'transparent',
                             borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
                             borderLeft: `4.7px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
@@ -2984,7 +2947,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                           }}
                         >
                           <div className="absolute inset-0 overflow-hidden px-2 py-1.5">
-                            <div className={`truncate pr-3 text-[11px] font-extrabold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1e293b]' : 'text-white'}`}>
+                            <div title={job.location.client.name} className={`truncate pr-3 text-[11px] font-extrabold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1e293b]' : 'text-white'}`}>
                               {job.location.client.name}
                             </div>
                             {height >= 32 && (
@@ -3252,6 +3215,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           {(viewMode === 'week' || viewMode === 'day') && (
             <div
               key={viewMode}
+              ref={setGridAreaEl}
               style={{ flex: '1 1 0%', minHeight: 0, overflow: 'hidden' }}
             >
               {renderWeekView()}

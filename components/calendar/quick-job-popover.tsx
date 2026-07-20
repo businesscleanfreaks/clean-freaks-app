@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import { format } from "date-fns"
 import { ArrowLeft, Loader2, Plus, Repeat2, X } from "lucide-react"
 
@@ -504,7 +505,15 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
               <X className="h-4 w-4" />
             </button>
           </div>
-          <h2 className="mt-2 truncate text-[20px] font-extrabold text-[#111827]">{job.location.client.name}</h2>
+          <h2 className="mt-2 truncate text-[20px] font-extrabold text-[#111827]">
+            <Link
+              href={`/clients/${job.location.client.id}`}
+              title="Open client profile"
+              className="hover:underline"
+            >
+              {job.location.client.name}
+            </Link>
+          </h2>
           <div className="mt-2.5 flex max-w-[270px] items-center gap-2">
             {job.vendor ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-[#e7ebef] bg-[#f7f8fa] py-1 pl-1 pr-3 text-[13px] font-semibold text-[#425066]"><span className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-extrabold text-white" style={{ backgroundColor: type.color }}>{initials}</span>{job.vendor.name} · vendor</div>
@@ -551,7 +560,8 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
             <p className="mb-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">ADD-ON SERVICE</p>
             {localAddOns.map(addOn => <div key={addOn.id} className="mb-2 rounded-lg border border-[#dfe5ec] px-3 py-2"><p className="text-[13px] font-bold text-[#1f2937]">{addOn.description}</p><p className="mt-0.5 text-[10px] text-[#7f8ea3]">Client ${Number(addOn.clientRate).toFixed(2)} · Pay ${Number(addOn.subcontractorRate).toFixed(2)}</p></div>)}
             {!addServiceOpen ? (
-              <button type="button" onClick={() => setAddServiceOpen(true)} disabled={locked} className="flex w-full items-center gap-2 rounded-lg border border-[#d7dee7] bg-[#f8fafc] px-3 py-2.5 text-left text-[13px] font-semibold text-[#718096] hover:border-[#a9cfc6] hover:bg-[#f3fbf8] disabled:opacity-50"><Plus className="h-3.5 w-3.5" /> Add a service...</button>
+              // Mockup styling: reads as a select (chevron on the right), opens the service picker
+              <button type="button" onClick={() => setAddServiceOpen(true)} disabled={locked} className="flex w-full items-center justify-between rounded-lg border border-[#d7dee7] bg-white px-3 py-2.5 text-left text-[14px] font-medium text-[#718096] hover:border-[#a9cfc6] disabled:opacity-50">Add a service…<svg className="h-4 w-4 text-[#94a3b8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg></button>
             ) : (
               <div ref={addServicePanelRef} className="scroll-mb-5 space-y-3 rounded-xl border border-[#b9d8cd] bg-[#eaf5f0] p-3">
                 <Select value={serviceDescription} onValueChange={setServiceDescription}>

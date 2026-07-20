@@ -528,7 +528,7 @@ export function CompactCreateJobDialog({
         data-calendar-create-editor
         hideClose
         overlayClassName={anchor ? "bg-transparent" : undefined}
-        className={`flex max-h-[92vh] w-[min(94vw,440px)] max-w-[440px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
+        className={`flex max-h-[94vh] w-[min(94vw,500px)] max-w-[500px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
         style={anchor ? { left: anchor.left, top: anchor.top, transform: "none", animation: "none" } : undefined}
       >
         <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -539,7 +539,7 @@ export function CompactCreateJobDialog({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 space-y-3 overflow-y-auto px-5 py-4">
+        <div className="flex-1 min-h-0 space-y-2 overflow-y-auto px-5 py-3">
           <section className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Client</Label>
@@ -573,13 +573,13 @@ export function CompactCreateJobDialog({
                       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                       <Input
                         value={search}
-                        onClick={() => setDropOpen(true)}
+                        onClick={() => setDropOpen(current => !current)}
                         onChange={event => {
                           setSearch(event.target.value)
                           setDropOpen(true)
                         }}
                         placeholder="Client name"
-                        className="h-12 border-x-0 border-t-0 border-b border-[#dfe5eb] pl-8 text-[20px] font-bold shadow-none focus-visible:ring-0"
+                        className="h-11 border-x-0 border-t-0 border-b border-[#dfe5eb] pl-8 text-[19px] font-bold shadow-none focus-visible:ring-0"
                       />
                     </div>
                     {dropOpen && (
@@ -660,7 +660,7 @@ export function CompactCreateJobDialog({
                 </div>
                 <Input value={oneTimeName} onChange={event => setOneTimeName(event.target.value)} placeholder="Client name *" className="h-9 bg-white" />
                 <Input value={oneTimeAddress} onChange={event => setOneTimeAddress(event.target.value)} placeholder="Full address *" className="h-9" />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   <Input value={oneTimePhone} onChange={event => setOneTimePhone(event.target.value)} placeholder="Phone" className="h-9" />
                   <Input value={oneTimeEmail} onChange={event => setOneTimeEmail(event.target.value)} placeholder="Email" className="h-9" />
                 </div>
@@ -670,24 +670,35 @@ export function CompactCreateJobDialog({
 
           <div className="h-px bg-slate-100" />
 
-          <section className="space-y-3">
-            <div>
-              <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">Service type</Label>
-              <div className="flex h-10 w-[200px] rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
-                {([['cleaning', 'Cleaning'], ['addon', 'Add-on']] as const).map(([value, label]) => (
-                  <button key={value} type="button" onClick={() => { setServiceType(value); if (value === 'addon') setIsTrial(false) }} className={`flex-1 rounded-md transition-colors ${serviceType === value ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>{label}</button>
-                ))}
+          <section className="space-y-2">
+            {/* Service type + When share one row — two narrow segmented controls that
+                each wasted a full row before. */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">Service type</Label>
+                <div className="flex h-9 rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
+                  {([['cleaning', 'Cleaning'], ['addon', 'Add-on']] as const).map(([value, label]) => (
+                    <button key={value} type="button" onClick={() => { setServiceType(value); if (value === 'addon') setIsTrial(false) }} className={`flex-1 rounded-md transition-colors ${serviceType === value ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">When</Label>
+                <div className="flex h-9 rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
+                  <button type="button" onClick={() => { setIsRecurring(false); setIsTrial(false) }} className={`flex-1 rounded-md ${!isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>One-time</button>
+                  <button type="button" onClick={() => setIsRecurring(true)} className={`flex-1 rounded-md ${isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>Recurring</button>
+                </div>
               </div>
             </div>
 
             {serviceType === 'cleaning' ? (
               <div>
-                <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">Type of clean</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">Type of clean</Label>
+                <div className="grid grid-cols-2 gap-1.5">
                   {jobTypes.filter(type => type.value !== 'event').map(type => (
-                    <button key={type.value} type="button" onClick={() => setJobType(type.value)} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${jobType === type.value ? 'border-[#0b8557] bg-[#eaf5f0]' : 'border-[#d9e1ea] bg-white hover:border-[#a9cfc6]'}`}>
+                    <button key={type.value} type="button" onClick={() => setJobType(type.value)} className={`rounded-lg border px-2.5 py-1.5 text-left transition-colors ${jobType === type.value ? 'border-[#0b8557] bg-[#eaf5f0]' : 'border-[#d9e1ea] bg-white hover:border-[#a9cfc6]'}`}>
                       <span className="block text-[12px] font-extrabold text-[#263246]">{type.label}</span>
-                      <span className="mt-0.5 block text-[10px] leading-snug text-[#718096]">{jobTypeDescriptions[type.value]}</span>
+                      <span className="mt-0.5 block truncate text-[10px] leading-tight text-[#718096]">{jobTypeDescriptions[type.value]}</span>
                     </button>
                   ))}
                 </div>
@@ -704,7 +715,7 @@ export function CompactCreateJobDialog({
                     }))
                   }}
                 >
-                  <SelectTrigger className="h-11 rounded-lg border-[#d9e1ea] bg-[#f8fafc] px-4 text-[14px] text-[#52637a] focus:ring-[#38bfae]">
+                  <SelectTrigger className="h-10 rounded-lg border-[#d9e1ea] bg-[#f8fafc] px-4 text-[13.5px] text-[#52637a] focus:ring-[#38bfae]">
                     <SelectValue placeholder="Choose a service..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -726,14 +737,9 @@ export function CompactCreateJobDialog({
               </div>
             )}
 
-            <div>
-              <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">When</Label>
-              <div className="flex h-10 w-[210px] rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
-                <button type="button" onClick={() => { setIsRecurring(false); setIsTrial(false) }} className={`flex-1 rounded-md ${!isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>One-time</button>
-                <button type="button" onClick={() => setIsRecurring(true)} className={`flex-1 rounded-md ${isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>Recurring</button>
-              </div>
-            </div>
 
+            {/* Date + time on one line like the mockup ("Tue, Jun 16 · 11am – 1pm"),
+                with the arrival mode beside them, instead of three stacked rows. */}
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
               <div>
                 <Label className="mb-1 block text-[11px] text-slate-500">Date</Label>
@@ -741,27 +747,44 @@ export function CompactCreateJobDialog({
                   type="date"
                   value={toInputDate(jobDate)}
                   onChange={event => setJobDate(event.target.value ? new Date(`${event.target.value}T12:00:00`) : null)}
-                  className="h-9 text-sm"
+                  className="h-[34px] text-sm"
                 />
               </div>
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">Arrival</Label>
-                <div className="flex h-9 rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
-                  {(["specific", "window", "tbd"] as TimeMode[]).map(mode => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setTimeMode(mode)}
-                      className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-                    >
-                      {mode === "specific" ? "Exact" : mode}
-                    </button>
-                  ))}
-                </div>
+                <Label className="mb-1 block text-[11px] text-slate-500">{timeMode === "specific" ? "Time" : "Arrival"}</Label>
+                {timeMode === "specific"
+                  ? <TimePicker value={startTime} onChange={setStartTime} />
+                  : (
+                    <div className="flex h-[34px] rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
+                      {(["specific", "window", "tbd"] as TimeMode[]).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTimeMode(mode)}
+                          className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+                        >
+                          {mode === "specific" ? "Exact" : mode}
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
             </div>
 
-            {timeMode === "specific" && <TimePicker value={startTime} onChange={setStartTime} />}
+            {timeMode === "specific" && (
+              <div className="flex h-7 rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
+                {(["specific", "window", "tbd"] as TimeMode[]).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setTimeMode(mode)}
+                    className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+                  >
+                    {mode === "specific" ? "Exact" : mode}
+                  </button>
+                ))}
+              </div>
+            )}
             {timeMode === "window" && (
               <div className="flex items-center gap-2">
                 <div className="flex-1"><TimePicker value={startWindowBegin} onChange={setStartWindowBegin} /></div>
@@ -836,7 +859,7 @@ export function CompactCreateJobDialog({
             <div>
               <Label className="mb-1 block text-[11px] text-slate-500">Performed by</Label>
               <Select value={subcontractorId} onValueChange={setSubcontractorId}>
-                <SelectTrigger className={`h-9 text-sm ${subcontractorId === "unassigned" ? "text-amber-700" : ""}`}><SelectValue /></SelectTrigger>
+                <SelectTrigger className={`h-[34px] text-sm ${subcontractorId === "unassigned" ? "text-amber-700" : ""}`}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassigned"><span className="text-amber-700">Unassigned</span></SelectItem>
                   {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
@@ -912,7 +935,7 @@ export function CompactCreateJobDialog({
                     <option value="">Performed by: Cleaner (same as job)</option>
                     {addOnVendors.map(v => <option key={v.id} value={v.id}>Performed by: {v.name}</option>)}
                   </select>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-1.5">
                     <Input type="number" min="0" step="0.01" value={addOnDraft.clientRate} onChange={e => setAddOnDraft({ ...addOnDraft, clientRate: e.target.value })} placeholder="We charge" className="h-8 text-sm" />
                     <Input type="number" min="0" step="0.01" value={addOnDraft.subcontractorRate} onChange={e => setAddOnDraft({ ...addOnDraft, subcontractorRate: e.target.value })} placeholder="We pay" className="h-8 text-sm" />
                   </div>
