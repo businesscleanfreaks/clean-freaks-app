@@ -2689,7 +2689,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               event.stopPropagation()
                               handleJobClick(job, event)
                             }}
-                            className={`absolute cursor-pointer overflow-hidden rounded-md border transition-shadow duration-150 ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:shadow-lg'}`}
+                            className={`absolute cursor-pointer overflow-hidden rounded-md border transition-shadow duration-150 ${overlaps ? 'cf-job-card' : ''} ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:shadow-lg'}`}
                             style={{
                               top: `${top}px`,
                               height: `${height}px`,
@@ -2929,7 +2929,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             }
                             handleJobClick(job, event)
                           }}
-                          className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left transition-shadow duration-150 focus:outline-none ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(16,24,40,0.18)]'} ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
+                          className={`absolute cursor-pointer overflow-hidden rounded-[5px] border text-left transition-shadow duration-150 focus:outline-none ${overlaps ? 'cf-job-card' : ''} ${expanded ? 'shadow-[0_10px_26px_rgba(16,24,40,0.28)]' : 'shadow-[0_1px_2px_rgba(16,24,40,0.1)] hover:-translate-y-px hover:shadow-[0_6px_16px_rgba(16,24,40,0.18)]'} ${isSelected ? 'ring-2 ring-[var(--cf-green)]' : ''}`}
                           style={{
                             top: `${top}px`,
                             height: `${height}px`,

@@ -1240,3 +1240,17 @@ button, a, [role="button"], input, select, textarea, label, nav {
     padding-top: 0;
   }
 }
+
+/* Week/day timeline card hover-expand — mirrors the mockup (Calendar Main.dc.html):
+   left/width stay fixed and only min-width grows, so the card expands to the RIGHT
+   and never slides out from under the cursor (which caused hover flicker). Pure CSS,
+   so hovering never re-renders the calendar. */
+.cf-job-card {
+  max-width: 240px;
+  transition: box-shadow .12s ease, transform .12s ease, min-width .13s ease;
+}
+.cf-job-card:hover {
+  min-width: var(--cf-hover-min, 200px) !important;
+  z-index: 95 !important;
+  box-shadow: 0 10px 26px rgba(16, 24, 40, .28) !important;
+}

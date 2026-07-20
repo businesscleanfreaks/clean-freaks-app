@@ -528,7 +528,7 @@ export function CompactCreateJobDialog({
         data-calendar-create-editor
         hideClose
         overlayClassName={anchor ? "bg-transparent" : undefined}
-        className={`flex max-h-[94vh] w-[min(94vw,500px)] max-w-[500px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
+        className={`flex max-h-[94vh] w-[min(94vw,440px)] max-w-[440px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
         style={anchor ? { left: anchor.left, top: anchor.top, transform: "none", animation: "none" } : undefined}
       >
         <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -671,23 +671,12 @@ export function CompactCreateJobDialog({
           <div className="h-px bg-slate-100" />
 
           <section className="space-y-2">
-            {/* Service type + When share one row — two narrow segmented controls that
-                each wasted a full row before. */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">Service type</Label>
-                <div className="flex h-9 rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
-                  {([['cleaning', 'Cleaning'], ['addon', 'Add-on']] as const).map(([value, label]) => (
-                    <button key={value} type="button" onClick={() => { setServiceType(value); if (value === 'addon') setIsTrial(false) }} className={`flex-1 rounded-md transition-colors ${serviceType === value ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>{label}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">When</Label>
-                <div className="flex h-9 rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
-                  <button type="button" onClick={() => { setIsRecurring(false); setIsTrial(false) }} className={`flex-1 rounded-md ${!isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>One-time</button>
-                  <button type="button" onClick={() => setIsRecurring(true)} className={`flex-1 rounded-md ${isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>Recurring</button>
-                </div>
+            <div>
+              <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">Service type</Label>
+              <div className="flex h-9 w-[190px] rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
+                {([['cleaning', 'Cleaning'], ['addon', 'Add-on']] as const).map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => { setServiceType(value); if (value === 'addon') setIsTrial(false) }} className={`flex-1 rounded-md transition-colors ${serviceType === value ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>{label}</button>
+                ))}
               </div>
             </div>
 
@@ -738,8 +727,16 @@ export function CompactCreateJobDialog({
             )}
 
 
-            {/* Date + time on one line like the mockup ("Tue, Jun 16 · 11am – 1pm"),
-                with the arrival mode beside them, instead of three stacked rows. */}
+            <div>
+              <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">When</Label>
+              <div className="flex h-9 w-[200px] rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
+                <button type="button" onClick={() => { setIsRecurring(false); setIsTrial(false) }} className={`flex-1 rounded-md ${!isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>One-time</button>
+                <button type="button" onClick={() => setIsRecurring(true)} className={`flex-1 rounded-md ${isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>Recurring</button>
+              </div>
+            </div>
+
+            {/* Date + time on one line like the mockup ("Sat, Jun 20 · 7am – 9am"),
+                with the arrival mode beneath, instead of three stacked rows. */}
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
               <div>
                 <Label className="mb-1 block text-[11px] text-slate-500">Date</Label>
