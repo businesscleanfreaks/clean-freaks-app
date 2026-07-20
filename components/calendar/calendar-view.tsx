@@ -3501,7 +3501,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
         open={quickJobOpen}
         onOpenChange={(open) => {
           setQuickJobOpen(open)
-          if (!open) setQuickPopoverAnchor(null)
+          // Keep the anchor set through the close animation. Clearing it here made
+          // the overlay's `anchor ? "bg-transparent"` flip to the default bg-black/80
+          // scrim while Radix was still fading the overlay out — a black flash on
+          // close. handleJobClick always sets a fresh anchor before reopening.
         }}
         onChangeSchedule={openQuickScheduleDialog}
         subcontractors={subcontractors}
