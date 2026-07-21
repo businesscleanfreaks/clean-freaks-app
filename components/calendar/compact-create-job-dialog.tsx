@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
-import { Check, ChevronDown, ChevronUp, DollarSign, FileText, MapPin, Repeat, Search, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, Clock, DollarSign, FileText, MapPin, Repeat, Search, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -131,6 +131,8 @@ export function CompactCreateJobDialog({
   const [clientRate, setClientRate] = useState("")
   const [cleanerPay, setCleanerPay] = useState("")
   const [showNotes, setShowNotes] = useState(false)
+  // Date+time collapse to a one-line summary (mockup) to cut whitespace; expands to edit.
+  const [dateTimeOpen, setDateTimeOpen] = useState(false)
   const [notes, setNotes] = useState("")
   const [trialNotes, setTrialNotes] = useState("")
   const [trialFrequency, setTrialFrequency] = useState("WEEKLY")
@@ -157,6 +159,21 @@ export function CompactCreateJobDialog({
   const activeVendors = useMemo(() => addOnVendors.filter(v => v.isActive !== false), [addOnVendors])
   const selectedClient = clients.find(client => client.id === selectedClientId)
   const locations = selectedClient?.locations || []
+  // Compact "Sat, Jun 20 · 11am" summary for the collapsed date/time row.
+  const fmt12 = (t: string) => {
+    if (!t) return ""
+    const [h, m] = t.split(":").map(Number)
+    const ap = h >= 12 ? "pm" : "am"
+    const hh = h % 12 || 12
+    return `${hh}${m ? ":" + String(m).padStart(2, "0") : ""}${ap}`
+  }
+  const dateTimeSummary = `${jobDate ? format(jobDate, "EEE, MMM d") : "Pick a date"} · ${
+    timeMode === "tbd"
+      ? "Time TBD"
+      : timeMode === "window"
+        ? (startWindowBegin && startWindowEnd ? `${fmt12(startWindowBegin)} – ${fmt12(startWindowEnd)}` : "Arrival window")
+        : (startTime ? fmt12(startTime) : "Pick a time")
+  }`
   const typedClientName = search.trim()
   const exactClientMatch = useMemo(
     () => clients.some(client => client.name.toLowerCase() === typedClientName.toLowerCase()),
@@ -735,60 +752,57 @@ export function CompactCreateJobDialog({
               </div>
             </div>
 
-            {/* Date + time on one line like the mockup ("Sat, Jun 20 · 7am – 9am"),
-                with the arrival mode beneath, instead of three stacked rows. */}
-            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-              <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">Date</Label>
-                <Input
-                  type="date"
-                  value={toInputDate(jobDate)}
-                  onChange={event => setJobDate(event.target.value ? new Date(`${event.target.value}T12:00:00`) : null)}
-                  className="h-[34px] text-sm"
-                />
-              </div>
-              <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">{timeMode === "specific" ? "Time" : "Arrival"}</Label>
-                {timeMode === "specific"
-                  ? <TimePicker value={startTime} onChange={setStartTime} />
-                  : (
-                    <div className="flex h-[34px] rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
+            {/* Collapsed one-line date+time summary (mockup: "🕐 Sat, Jun 20 · 11am");
+                click to expand the full date + arrival editor. Cuts the whitespace of
+                three stacked rows down to one line. */}
+            <div>
+              <button type="button" onClick={() => setDateTimeOpen(open => !open)} className="flex w-full items-center gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-left hover:border-[#cbd5e1]">
+                <Clock className="h-4 w-4 shrink-0 text-[#64748b]" />
+                <span className="flex-1 truncate text-[13px] font-semibold text-[#172033]">{dateTimeSummary}</span>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-[#94a3b8] transition-transform ${dateTimeOpen ? "rotate-180" : ""}`} />
+              </button>
+              {dateTimeOpen && (
+                <div className="mt-2 space-y-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                    <div>
+                      <Label className="mb-1 block text-[11px] text-slate-500">Date</Label>
+                      <Input
+                        type="date"
+                        value={toInputDate(jobDate)}
+                        onChange={event => setJobDate(event.target.value ? new Date(`${event.target.value}T12:00:00`) : null)}
+                        className="h-[34px] text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="mb-1 block text-[11px] text-slate-500">{timeMode === "specific" ? "Time" : "Arrival"}</Label>
+                      {timeMode === "specific"
+                        ? <TimePicker value={startTime} onChange={setStartTime} />
+                        : (
+                          <div className="flex h-[34px] rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
+                            {(["specific", "window", "tbd"] as TimeMode[]).map(mode => (
+                              <button key={mode} type="button" onClick={() => setTimeMode(mode)} className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>{mode === "specific" ? "Exact" : mode}</button>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                  {timeMode === "specific" && (
+                    <div className="flex h-7 rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
                       {(["specific", "window", "tbd"] as TimeMode[]).map(mode => (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => setTimeMode(mode)}
-                          className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-                        >
-                          {mode === "specific" ? "Exact" : mode}
-                        </button>
+                        <button key={mode} type="button" onClick={() => setTimeMode(mode)} className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>{mode === "specific" ? "Exact" : mode}</button>
                       ))}
                     </div>
                   )}
-              </div>
+                  {timeMode === "window" && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1"><TimePicker value={startWindowBegin} onChange={setStartWindowBegin} /></div>
+                      <span className="text-xs text-slate-400">to</span>
+                      <div className="flex-1"><TimePicker value={startWindowEnd} onChange={setStartWindowEnd} /></div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-
-            {timeMode === "specific" && (
-              <div className="flex h-7 rounded-md bg-slate-100 p-0.5 text-[11px] font-semibold">
-                {(["specific", "window", "tbd"] as TimeMode[]).map(mode => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setTimeMode(mode)}
-                    className={`flex-1 rounded capitalize ${timeMode === mode ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-                  >
-                    {mode === "specific" ? "Exact" : mode}
-                  </button>
-                ))}
-              </div>
-            )}
-            {timeMode === "window" && (
-              <div className="flex items-center gap-2">
-                <div className="flex-1"><TimePicker value={startWindowBegin} onChange={setStartWindowBegin} /></div>
-                <span className="text-xs text-slate-400">to</span>
-                <div className="flex-1"><TimePicker value={startWindowEnd} onChange={setStartWindowEnd} /></div>
-              </div>
-            )}
 
             {/* Mockup order: frequency pills + day circles + repeats chip sit right
                 under the time row for any recurring booking (clean or add-on). */}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { addDays, addMonths, endOfMonth, format, isSameDay, startOfMonth, startOfWeek } from "date-fns"
-import { ArrowLeft, Loader2, Plus, X } from "lucide-react"
+import { Loader2, Plus, X } from "lucide-react"
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { showApiError, showError, showSuccess, showUndoToast } from "@/lib/toast"
@@ -91,16 +91,16 @@ function MiniMonth({ month, highlighted, effectiveDate }: { month: Date; highlig
   const offset = monthStart.getDay()
   const days = endOfMonth(month).getDate()
   return (
-    <div className="rounded-xl border border-[#bddbd0] bg-white p-3">
-      <h3 className="text-center text-[12px] font-extrabold text-[#263246]">{format(month, "MMMM yyyy")}</h3>
-      <div className="mt-2 grid grid-cols-7 gap-x-1 gap-y-1 text-center text-[8px] font-bold text-[#a2adba]">{dayLetters.map((letter, index) => <span key={`${letter}-${index}`}>{letter}</span>)}</div>
-      <div className="mt-1 grid grid-cols-7 gap-x-1 gap-y-1 text-center text-[9px]">
+    <div className="rounded-lg border border-[#bddbd0] bg-white p-2">
+      <h3 className="text-center text-[11px] font-extrabold text-[#263246]">{format(month, "MMMM yyyy")}</h3>
+      <div className="mt-1.5 grid grid-cols-7 text-center text-[8px] font-bold text-[#a2adba]">{dayLetters.map((letter, index) => <span key={`${letter}-${index}`}>{letter}</span>)}</div>
+      <div className="mt-0.5 grid grid-cols-7 gap-y-0.5 text-center text-[9px]">
         {Array.from({ length: offset }, (_, index) => <span key={`blank-${index}`} />)}
         {Array.from({ length: days }, (_, index) => {
           const date = new Date(month.getFullYear(), month.getMonth(), index + 1, 12)
           const active = highlighted.some(item => isSameDay(item, date))
           const effective = isSameDay(effectiveDate, date)
-          return <span key={index + 1} className={`mx-auto flex h-5 w-5 items-center justify-center rounded-full font-bold ${effective ? "bg-[#111827] text-white" : active ? "bg-[#0b8557] text-white" : "text-[#536177]"}`}>{index + 1}</span>
+          return <span key={index + 1} className={`mx-auto flex h-[17px] w-[17px] items-center justify-center rounded-full font-bold ${effective ? "bg-[#111827] text-white" : active ? "bg-[#0b8557] text-white" : "text-[#536177]"}`}>{index + 1}</span>
         })}
       </div>
     </div>
@@ -241,46 +241,38 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange, onBack }: Q
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent hideClose className="flex max-h-[92vh] w-[min(94vw,578px)] max-w-[578px] flex-col gap-0 overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.30)]">
-        <div className="shrink-0 border-b border-[#edf0f3] px-5 pb-3 pt-4">
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={onBack} aria-label="Back to booking" className="flex h-8 w-8 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6]"><ArrowLeft className="h-4 w-4" /></button>
-            <DialogTitle className="min-w-0 truncate text-[19px] font-extrabold text-[#172033]">Change schedule: {job.location.client.name}</DialogTitle>
-          </div>
-          <DialogDescription className="pl-10 pt-0.5 text-[12.5px] text-[#66758b]">Pick the new pattern and when it starts.</DialogDescription>
+      <DialogContent hideClose className="flex max-h-[94vh] w-[min(94vw,480px)] max-w-[480px] flex-col gap-0 overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.30)]">
+        <div className="shrink-0 px-5 pb-2.5 pt-4">
+          <DialogTitle className="min-w-0 truncate text-[17px] font-extrabold text-[#172033]">Change schedule: {job.location.client.name}</DialogTitle>
+          <DialogDescription className="pt-0.5 text-[12.5px] text-[#66758b]">Pick the new pattern and when it starts.</DialogDescription>
         </div>
-        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-5 py-3 pb-4 sm:px-6">
-          <label className="block text-[11px] font-extrabold text-[#66758b]">FREQUENCY
-            <select value={frequency} onChange={event => setFrequency(event.target.value)} className="mt-1 h-[38px] w-full rounded-lg border border-[#cfd8e3] bg-white px-3 text-[13.5px] font-semibold text-[#263246] outline-none focus:border-[#0b8557]">
-              <option value="WEEKLY">Every week</option>
-              <option value="BI_WEEKLY">Bi-weekly</option>
-              <option value="EVERY_3_WEEKS">Every 3 weeks</option>
-              <option value="EVERY_4_WEEKS">Every 4 weeks</option>
-              <option value="EVERY_6_WEEKS">Every 6 weeks</option>
-              <option value="2X_MONTHLY">2x monthly</option>
-              <option value="MONTHLY">Monthly</option>
-              <option value="CUSTOM">One-time / custom dates</option>
-            </select>
-          </label>
-          {weeklyLike && <div><p className="mb-1 text-[11px] font-extrabold text-[#66758b]">ON THESE DAYS</p><div className="flex gap-2">{dayLetters.map((letter, index) => <button key={index} type="button" onClick={() => setDays(current => current.includes(index) ? current.filter(day => day !== index) : [...current, index].sort())} className={`flex h-9 flex-1 items-center justify-center rounded-lg border text-[12px] font-extrabold ${days.includes(index) ? 'border-[#0b8557] bg-[#0b8557] text-white' : 'border-[#d9e1ea] bg-white text-[#66758b]'}`}>{letter}</button>)}</div></div>}
-          <label className="block text-[11px] font-extrabold text-[#66758b]">EFFECTIVE FROM<input type="date" min={format(new Date(), "yyyy-MM-dd")} value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} className="mt-1 h-[38px] w-full rounded-lg border border-[#cfd8e3] bg-[#f8fafc] px-3 text-[13.5px] font-semibold text-[#172033]" /></label>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-1.5 pb-3">
+          {/* Frequency as pills (mockup) — the 3 primary cadences match the design; the
+              rarer ones wrap onto a second row so every option stays available. */}
+          <div className="flex flex-wrap gap-1.5">
+            {[['WEEKLY', 'Weekly'], ['BI_WEEKLY', 'Every 2 wks'], ['MONTHLY', 'Monthly'], ['EVERY_3_WEEKS', 'Every 3 wks'], ['EVERY_4_WEEKS', 'Every 4 wks'], ['EVERY_6_WEEKS', 'Every 6 wks'], ['2X_MONTHLY', '2× monthly'], ['CUSTOM', 'Custom dates']].map(([value, label]) => (
+              <button key={value} type="button" onClick={() => setFrequency(value)} className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition-colors ${frequency === value ? 'border-[#0b8557] bg-[#e7f4ee] text-[#0b6b45]' : 'border-[#d9e1ea] bg-white text-[#66758b] hover:bg-[#f6f8fa]'}`}>{label}</button>
+            ))}
+          </div>
+          {weeklyLike && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-[0.04em] text-[#66758b]">On these days</p><div className="flex gap-1.5">{dayLetters.map((letter, index) => <button key={index} type="button" onClick={() => setDays(current => current.includes(index) ? current.filter(day => day !== index) : [...current, index].sort())} className={`flex h-9 flex-1 items-center justify-center rounded-lg border text-[12px] font-extrabold ${days.includes(index) ? 'border-[#0b8557] bg-[#0b8557] text-white' : 'border-[#d9e1ea] bg-white text-[#66758b]'}`}>{letter}</button>)}</div></div>}
+          <label className="block text-[11px] font-extrabold uppercase tracking-[0.04em] text-[#66758b]">Effective from<input type="date" min={format(new Date(), "yyyy-MM-dd")} value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} className="mt-1 h-[36px] w-full rounded-lg border border-[#cfd8e3] bg-[#f6f7f9] px-3 text-[13px] font-semibold text-[#172033]" /></label>
           {frequency === "CUSTOM" && (
             <div>
               <div className="mb-2 flex items-center justify-between"><p className="text-[11px] font-extrabold text-[#66758b]">CUSTOM DATES</p><button type="button" onClick={() => setCustomDates(current => [...current, effectiveFrom])} className="flex items-center gap-1 text-[11px] font-extrabold text-[#08744f]"><Plus className="h-3.5 w-3.5" /> Add date</button></div>
               <div className="space-y-2">{customDates.map((value, index) => <div key={`${index}-${value}`} className="flex gap-2"><input type="date" min={effectiveFrom} value={value} onChange={event => setCustomDates(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} className="h-10 min-w-0 flex-1 rounded-lg border border-[#cfd8e3] bg-[#f8fafc] px-3 text-[13px] font-semibold" /><button type="button" aria-label="Remove custom date" onClick={() => setCustomDates(current => current.filter((_, itemIndex) => itemIndex !== index))} className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#d9e1ea] text-[#7f8ea3] hover:bg-[#f8fafc]"><X className="h-4 w-4" /></button></div>)}</div>
             </div>
           )}
-          <div className="rounded-xl border border-[#bddbd0] bg-[#e8f4ef] p-3">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <div className="rounded-xl border border-[#bddbd0] bg-[#e8f4ef] p-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
               <p className="text-[10px] font-extrabold tracking-[0.05em] text-[#177454]">NEW SCHEDULE</p>
               {/* Legend sits on the header row so it stays visible without scrolling past the months. */}
               <div className="flex gap-3 text-[10px] text-[#66758b]"><span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-[#111827]" /> Effective date</span><span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-[#0b8557]" /> New clean</span></div>
             </div>
-            <p className="mt-0.5 text-[14px] font-extrabold text-[#172033]">{cadenceLabel(frequency)} · {summaryDays}, starting {format(effectiveDate, "EEE, MMM d")}</p>
-            <div className="mt-2 grid grid-cols-2 gap-2"><MiniMonth month={effectiveDate} highlighted={highlighted} effectiveDate={effectiveDate} /><MiniMonth month={addMonths(effectiveDate, 1)} highlighted={highlighted} effectiveDate={effectiveDate} /></div>
+            <p className="mt-0.5 text-[13px] font-extrabold text-[#172033]">{cadenceLabel(frequency)} · {summaryDays}, starting {format(effectiveDate, "EEE, MMM d")}</p>
+            <div className="mt-1.5 grid grid-cols-2 gap-2"><MiniMonth month={effectiveDate} highlighted={highlighted} effectiveDate={effectiveDate} /><MiniMonth month={addMonths(effectiveDate, 1)} highlighted={highlighted} effectiveDate={effectiveDate} /></div>
           </div>
         </div>
-        <div className="flex shrink-0 justify-end gap-2 border-t border-[#edf0f3] bg-white px-5 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-7"><button type="button" onClick={onBack} className="rounded-lg border border-[#d9e1ea] px-4 py-2.5 text-[13px] font-bold text-[#66758b]">Back</button><button type="button" onClick={confirm} disabled={saving} className="flex min-w-[144px] items-center justify-center gap-2 rounded-lg bg-[#078556] px-4 py-2.5 text-[13px] font-extrabold text-white disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Updating...' : 'Confirm change'}</button></div>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-[#edf0f3] bg-white px-5 py-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><button type="button" onClick={onBack} className="rounded-lg border border-[#d9e1ea] px-4 py-2 text-[13px] font-bold text-[#66758b]">Back</button><button type="button" onClick={confirm} disabled={saving} className="flex min-w-[144px] items-center justify-center gap-2 rounded-lg bg-[#078556] px-4 py-2 text-[13px] font-extrabold text-white disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Updating...' : 'Confirm change'}</button></div>
       </DialogContent>
     </Dialog>
   )
