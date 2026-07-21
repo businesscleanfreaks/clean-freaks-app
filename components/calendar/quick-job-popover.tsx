@@ -86,6 +86,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
   const [localAddOns, setLocalAddOns] = useState<AddOnService[]>([])
+  const [changeScope, setChangeScope] = useState<"this" | "future">("this")
   const [addServiceOpen, setAddServiceOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
@@ -120,6 +121,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
     setProviderRate(String(Number(job.subcontractorRate || 0)))
     setNotes(job.notes || "")
     setLocalAddOns(job.addOnServices || [])
+    setChangeScope("this")
     setAddServiceOpen(false)
     setCancelOpen(false)
     setPauseOpen(false)
@@ -165,6 +167,20 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
 
   if (!job) return null
 
+  const originalClientRate = Number(job.clientRate || 0)
+  const originalProviderRate = Number(job.subcontractorRate || 0)
+  const originalSubcontractorId = job.subcontractor?.id || "unassigned"
+  const clientRateChanged = Number(clientRate) !== originalClientRate
+  const providerRateChanged = Number(providerRate) !== originalProviderRate
+  const cleanerChanged = !job.vendor && subcontractorId !== originalSubcontractorId
+  const ratesChanged = clientRateChanged || providerRateChanged
+  const showChangeScope = Boolean(job.scheduleId && (ratesChanged || cleanerChanged))
+  const scopeWhat = cleanerChanged && ratesChanged
+    ? "new cleaner & rate"
+    : cleanerChanged
+      ? "new cleaner"
+      : "new rate"
+
   const save = async () => {
     const nextClientRate = Number(clientRate)
     const nextProviderRate = Number(providerRate)
@@ -179,15 +195,14 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       const originalDate = format(new Date(job.date), "yyyy-MM-dd")
       const originalStart = job.startTime || job.startWindowBegin || ""
       const originalEnd = job.startWindowEnd || addMinutes(originalStart || "09:00", 60)
-      const originalSubcontractorId = job.subcontractor?.id || "unassigned"
       const payload: Record<string, string | number | null> = {}
 
       if (date !== originalDate) payload.date = date
       if (!job.vendor && subcontractorId !== originalSubcontractorId) {
         payload.subcontractorId = subcontractorId === "unassigned" ? null : subcontractorId
       }
-      if (nextClientRate !== Number(job.clientRate || 0)) payload.clientRate = nextClientRate
-      if (nextProviderRate !== Number(job.subcontractorRate || 0)) payload.subcontractorRate = nextProviderRate
+      if (nextClientRate !== originalClientRate) payload.clientRate = nextClientRate
+      if (nextProviderRate !== originalProviderRate) payload.subcontractorRate = nextProviderRate
       if ((notes.trim() || "") !== (job.notes || "").trim()) payload.notes = notes.trim() || null
       if (usesWindow) {
         if (startTime !== originalStart) payload.startWindowBegin = startTime
@@ -199,8 +214,8 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       const undoPayload: Record<string, string | number | null> = {}
       if ("date" in payload) undoPayload.date = originalDate
       if ("subcontractorId" in payload) undoPayload.subcontractorId = originalSubcontractorId === "unassigned" ? null : originalSubcontractorId
-      if ("clientRate" in payload) undoPayload.clientRate = Number(job.clientRate || 0)
-      if ("subcontractorRate" in payload) undoPayload.subcontractorRate = Number(job.subcontractorRate || 0)
+      if ("clientRate" in payload) undoPayload.clientRate = originalClientRate
+      if ("subcontractorRate" in payload) undoPayload.subcontractorRate = originalProviderRate
       if ("notes" in payload) undoPayload.notes = job.notes || null
       if ("startTime" in payload) undoPayload.startTime = originalStart || null
       if ("startWindowBegin" in payload) undoPayload.startWindowBegin = originalStart || null
@@ -211,25 +226,91 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
         return
       }
 
-      const response = await fetch(`/api/jobs/${job.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
-      if (!response.ok) {
-        await showApiError(response, "Failed to save booking")
-        return
+      const applyForward = changeScope === "future" && showChangeScope
+      const forwardKeys = new Set(["clientRate", "subcontractorRate", "subcontractorId"])
+      const occurrencePayload = applyForward
+        ? Object.fromEntries(Object.entries(payload).filter(([key]) => !forwardKeys.has(key)))
+        : payload
+      const occurrenceUndoPayload = applyForward
+        ? Object.fromEntries(Object.entries(undoPayload).filter(([key]) => !forwardKeys.has(key)))
+        : undoPayload
+      const forwardPayload: Record<string, string | number | null> = {}
+      let forwardResult: {
+        updated: number
+        skipped: number
+        previous: { clientRate: number; subcontractorRate: number; subcontractorId: string | null }
+      } | null = null
+
+      if (applyForward) {
+        if (clientRateChanged) forwardPayload.clientRate = nextClientRate
+        if (providerRateChanged) forwardPayload.subcontractorRate = nextProviderRate
+        if (cleanerChanged) forwardPayload.subcontractorId = subcontractorId === "unassigned" ? null : subcontractorId
+
+        const forwardResponse = await fetch(`/api/jobs/${job.id}/apply-rate-forward`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(forwardPayload),
+        })
+        if (!forwardResponse.ok) {
+          await showApiError(forwardResponse, "Failed to save future cleans")
+          return
+        }
+        forwardResult = await forwardResponse.json()
       }
-      refreshCalendarData()
-      showUndoToast("Booking updated", async () => {
-        const undoResponse = await fetch(`/api/jobs/${job.id}`, {
+
+      if (Object.keys(occurrencePayload).length > 0) {
+        const response = await fetch(`/api/jobs/${job.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(undoPayload),
+          body: JSON.stringify(occurrencePayload),
         })
-        if (!undoResponse.ok) {
-          await showApiError(undoResponse, "Failed to undo booking update")
+        if (!response.ok) {
+          if (forwardResult) {
+            const rollbackPayload: Record<string, string | number | null> = {}
+            if ("clientRate" in forwardPayload) rollbackPayload.clientRate = forwardResult.previous.clientRate
+            if ("subcontractorRate" in forwardPayload) rollbackPayload.subcontractorRate = forwardResult.previous.subcontractorRate
+            if ("subcontractorId" in forwardPayload) rollbackPayload.subcontractorId = forwardResult.previous.subcontractorId
+            await fetch(`/api/jobs/${job.id}/apply-rate-forward`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(rollbackPayload),
+            }).catch(() => {})
+          }
+          await showApiError(response, "Failed to save booking")
           return
+        }
+      }
+
+      refreshCalendarData()
+      const successMessage = forwardResult
+        ? `Saved going forward${forwardResult.skipped > 0 ? ` · ${forwardResult.skipped} locked clean${forwardResult.skipped === 1 ? "" : "s"} unchanged` : ""}`
+        : "Booking updated"
+      showUndoToast(successMessage, async () => {
+        if (forwardResult) {
+          const rollbackPayload: Record<string, string | number | null> = {}
+          if ("clientRate" in forwardPayload) rollbackPayload.clientRate = forwardResult.previous.clientRate
+          if ("subcontractorRate" in forwardPayload) rollbackPayload.subcontractorRate = forwardResult.previous.subcontractorRate
+          if ("subcontractorId" in forwardPayload) rollbackPayload.subcontractorId = forwardResult.previous.subcontractorId
+          const rollbackResponse = await fetch(`/api/jobs/${job.id}/apply-rate-forward`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(rollbackPayload),
+          })
+          if (!rollbackResponse.ok) {
+            await showApiError(rollbackResponse, "Failed to undo future changes")
+            return
+          }
+        }
+        if (Object.keys(occurrenceUndoPayload).length > 0) {
+          const undoResponse = await fetch(`/api/jobs/${job.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(occurrenceUndoPayload),
+          })
+          if (!undoResponse.ok) {
+            await showApiError(undoResponse, "Failed to undo booking update")
+            return
+          }
         }
         refreshCalendarData()
         showSuccess("Change undone")
@@ -619,6 +700,29 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
               <label className="text-[9px] font-bold text-[#7f8ea3]">{job.vendor ? "Vendor is paid" : "Cleaner is paid"}<input type="number" min="0" step="0.01" value={providerRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setProviderRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
               <div className="rounded-lg bg-[#e7f2ee] px-2.5 py-2"><span className="block text-[8px] font-extrabold text-[#4b9b82]">MARGIN</span><span className={`text-[15px] font-extrabold ${margin < 0 ? "text-[#b42318]" : "text-[#066846]"}`}>${margin.toFixed(2)}</span></div>
             </div>
+            {showChangeScope && (
+              <div className="mt-2.5">
+                <p className="mb-1.5 text-[9.5px] font-bold uppercase tracking-[0.03em] text-[#7f8ea3]">Apply {scopeWhat} to</p>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    aria-pressed={changeScope === "this"}
+                    onClick={() => setChangeScope("this")}
+                    className={`min-w-0 flex-1 rounded-[7px] border px-1 py-2 text-[11.5px] font-bold ${changeScope === "this" ? "border-[#0d9488] bg-[#0d9488] text-white" : "border-[#e2e8f0] bg-white text-[#475569]"}`}
+                  >
+                    Just this clean
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={changeScope === "future"}
+                    onClick={() => setChangeScope("future")}
+                    className={`min-w-0 flex-1 rounded-[7px] border px-1 py-2 text-[11.5px] font-bold ${changeScope === "future" ? "border-[#0d9488] bg-[#0d9488] text-white" : "border-[#e2e8f0] bg-white text-[#475569]"}`}
+                  >
+                    All future
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
 
           <section>
