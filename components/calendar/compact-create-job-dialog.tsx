@@ -159,7 +159,7 @@ export function CompactCreateJobDialog({
   const activeVendors = useMemo(() => addOnVendors.filter(v => v.isActive !== false), [addOnVendors])
   const selectedClient = clients.find(client => client.id === selectedClientId)
   const locations = selectedClient?.locations || []
-  // Compact "Sat, Jun 20 · 11am" summary for the collapsed date/time row.
+  // Compact "Sat, Jun 20 · 3:30pm – 5:30pm" summary for the collapsed date/time row.
   const fmt12 = (t: string) => {
     if (!t) return ""
     const [h, m] = t.split(":").map(Number)
@@ -167,13 +167,23 @@ export function CompactCreateJobDialog({
     const hh = h % 12 || 12
     return `${hh}${m ? ":" + String(m).padStart(2, "0") : ""}${ap}`
   }
-  const dateTimeSummary = `${jobDate ? format(jobDate, "EEE, MMM d") : "Pick a date"} · ${
+  const addMin = (t: string, mins: number) => {
+    if (!t) return ""
+    const [h, m] = t.split(":").map(Number)
+    const total = h * 60 + m + mins
+    return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`
+  }
+  // Default cleaning block is 2h (matches the ghost preview card, draftStart + 120).
+  const timeRangeSummary =
     timeMode === "tbd"
       ? "Time TBD"
       : timeMode === "window"
         ? (startWindowBegin && startWindowEnd ? `${fmt12(startWindowBegin)} – ${fmt12(startWindowEnd)}` : "Arrival window")
-        : (startTime ? fmt12(startTime) : "Pick a time")
-  }`
+        : (startTime ? `${fmt12(startTime)} – ${fmt12(addMin(startTime, 120))}` : "Pick a time")
+  // One-time shows the date; recurring is simpler — the day pills carry the "when", so just the time.
+  const dateTimeSummary = isRecurring
+    ? timeRangeSummary
+    : `${jobDate ? format(jobDate, "EEE, MMM d") : "Pick a date"} · ${timeRangeSummary}`
   const typedClientName = search.trim()
   const exactClientMatch = useMemo(
     () => clients.some(client => client.name.toLowerCase() === typedClientName.toLowerCase()),
@@ -868,39 +878,46 @@ export function CompactCreateJobDialog({
 
           <section className="space-y-2">
             <div>
-              <Label className="mb-1 block text-[11px] text-slate-500">Performed by</Label>
-              <Select value={subcontractorId} onValueChange={setSubcontractorId}>
-                <SelectTrigger className={`h-[34px] text-sm ${subcontractorId === "unassigned" ? "text-amber-700" : ""}`}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned"><span className="text-amber-700">Unassigned</span></SelectItem>
-                  {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
-                  {!isTrial && (!isRecurring || serviceType === 'addon') && activeVendors.length > 0 && (
-                    <>
-                      <div className="mt-1 border-t border-slate-100 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Vendors</div>
-                      {activeVendors.map(vendor => <SelectItem key={`vendor:${vendor.id}`} value={`vendor:${vendor.id}`}>{vendor.name}</SelectItem>)}
-                    </>
-                  )}
-                </SelectContent>
-              </Select>
+              <Label className="mb-1 block text-[11px] text-slate-500">Assigned cleaner</Label>
+              {/* Avatar sits beside the select (leading) — matches the mockup without
+                  making the control taller. */}
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const assignedName = subcontractorId === "unassigned" ? "" : (activeCleaners.find(c => c.id === subcontractorId)?.name || activeVendors.find(v => `vendor:${v.id}` === subcontractorId)?.name || "")
+                  const initials = assignedName ? assignedName.split(/\s+/).slice(0, 2).map(p => p[0]).join("").toUpperCase() : ""
+                  return assignedName
+                    ? <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0d9488] text-[10px] font-bold text-white">{initials}</span>
+                    : <span className="h-7 w-7 shrink-0 rounded-full border-2 border-dashed border-[#cbd5e1]" aria-hidden="true" />
+                })()}
+                <Select value={subcontractorId} onValueChange={setSubcontractorId}>
+                  <SelectTrigger className={`h-[34px] flex-1 text-sm ${subcontractorId === "unassigned" ? "text-amber-700" : ""}`}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned"><span className="text-amber-700">Assign cleaner</span></SelectItem>
+                    {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
+                    {!isTrial && (!isRecurring || serviceType === 'addon') && activeVendors.length > 0 && (
+                      <>
+                        <div className="mt-1 border-t border-slate-100 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Vendors</div>
+                        {activeVendors.map(vendor => <SelectItem key={`vendor:${vendor.id}`} value={`vendor:${vendor.id}`}>{vendor.name}</SelectItem>)}
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">Client charged *</Label>
+                <Label className="mb-1 block text-[11px] text-slate-500">Client charged</Label>
                 <div className="relative">
                   <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <Input type="number" min="0" step="0.01" value={clientRate} onChange={event => setClientRate(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+                  <Input type="number" min="0" step="0.01" value={clientRate} onChange={event => setClientRate(event.target.value)} className="h-9 pl-7" placeholder="0" />
                 </div>
               </div>
               <div>
-                <Label className="mb-1 block text-[11px] text-slate-500">{subcontractorId.startsWith("vendor:") ? "Vendor pay *" : "We pay *"}</Label>
+                <Label className="mb-1 block text-[11px] text-slate-500">{subcontractorId.startsWith("vendor:") ? "Vendor paid" : "Cleaner paid"}</Label>
                 <div className="relative">
                   <DollarSign className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0.00" />
+                  <Input type="number" min="0" step="0.01" value={cleanerPay} onChange={event => setCleanerPay(event.target.value)} className="h-9 pl-7" placeholder="0" />
                 </div>
-              </div>
-              <div className="rounded-lg bg-[#e7f2ee] px-2.5 py-2">
-                <span className="block text-[9px] font-extrabold text-[#4b9b82]">MARGIN</span>
-                <span className={`font-mono text-[15px] font-extrabold ${profit < 0 ? 'text-red-600' : 'text-[#066846]'}`}>${profit.toFixed(2)}</span>
               </div>
             </div>
           </section>
