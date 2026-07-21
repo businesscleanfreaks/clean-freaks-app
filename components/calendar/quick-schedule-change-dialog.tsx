@@ -271,10 +271,13 @@ export function QuickScheduleChangeDialog({ job, open, onOpenChange, onBack }: Q
             </div>
           )}
           <div className="rounded-xl border border-[#bddbd0] bg-[#e8f4ef] p-3">
-            <p className="text-[10px] font-extrabold tracking-[0.05em] text-[#177454]">NEW SCHEDULE</p>
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <p className="text-[10px] font-extrabold tracking-[0.05em] text-[#177454]">NEW SCHEDULE</p>
+              {/* Legend sits on the header row so it stays visible without scrolling past the months. */}
+              <div className="flex gap-3 text-[10px] text-[#66758b]"><span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-[#111827]" /> Effective date</span><span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-[#0b8557]" /> New clean</span></div>
+            </div>
             <p className="mt-0.5 text-[14px] font-extrabold text-[#172033]">{cadenceLabel(frequency)} · {summaryDays}, starting {format(effectiveDate, "EEE, MMM d")}</p>
             <div className="mt-2 grid grid-cols-2 gap-2"><MiniMonth month={effectiveDate} highlighted={highlighted} effectiveDate={effectiveDate} /><MiniMonth month={addMonths(effectiveDate, 1)} highlighted={highlighted} effectiveDate={effectiveDate} /></div>
-            <div className="mt-2 flex gap-4 text-[10px] text-[#66758b]"><span className="flex items-center gap-1"><i className="h-3 w-3 rounded-full bg-[#111827]" /> Effective date</span><span className="flex items-center gap-1"><i className="h-3 w-3 rounded-full bg-[#0b8557]" /> New clean</span></div>
           </div>
         </div>
         <div className="flex shrink-0 justify-end gap-2 border-t border-[#edf0f3] bg-white px-5 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-7"><button type="button" onClick={onBack} className="rounded-lg border border-[#d9e1ea] px-4 py-2.5 text-[13px] font-bold text-[#66758b]">Back</button><button type="button" onClick={confirm} disabled={saving} className="flex min-w-[144px] items-center justify-center gap-2 rounded-lg bg-[#078556] px-4 py-2.5 text-[13px] font-extrabold text-white disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Updating...' : 'Confirm change'}</button></div>

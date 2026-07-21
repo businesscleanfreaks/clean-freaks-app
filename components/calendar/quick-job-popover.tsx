@@ -99,6 +99,11 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   const [serviceDays, setServiceDays] = useState<number[]>([])
   const [serviceClientRate, setServiceClientRate] = useState("")
   const [serviceProviderRate, setServiceProviderRate] = useState("")
+  // Inline edit of an existing add-on (the mockup's expandable/editable add-on row)
+  const [editAddOnId, setEditAddOnId] = useState<string | null>(null)
+  const [editAddOnDesc, setEditAddOnDesc] = useState("")
+  const [editAddOnClientRate, setEditAddOnClientRate] = useState("")
+  const [editAddOnProviderRate, setEditAddOnProviderRate] = useState("")
   const [cancelFee, setCancelFee] = useState("0")
   const [pauseFrom, setPauseFrom] = useState("")
   const [pauseTo, setPauseTo] = useState("")
@@ -286,6 +291,69 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       })
     } catch {
       showError("Failed to add service. Please try again.")
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  // Resolve a friendly "who performs it" subtitle for an existing add-on row.
+  const addOnPerformerLabel = (addOn: AddOnService) => {
+    const vendorId = (addOn as AddOnService & { vendorId?: string | null }).vendorId
+    const subId = (addOn as AddOnService & { subcontractorId?: string | null }).subcontractorId
+    if (vendorId) {
+      const v = vendors.find(vendor => vendor.id === vendorId)
+      return v ? `${v.name} · vendor` : "Vendor"
+    }
+    if (subId) {
+      const c = subcontractors.find(person => person.id === subId)
+      return c ? c.name : "In-house"
+    }
+    return job.vendor?.name ? `${job.vendor.name} · vendor` : (selectedCleanerName || "This clean's cleaner")
+  }
+
+  const startEditAddOn = (addOn: AddOnService) => {
+    setEditAddOnId(addOn.id)
+    setEditAddOnDesc(addOn.description)
+    setEditAddOnClientRate(String(Number(addOn.clientRate || 0)))
+    setEditAddOnProviderRate(String(Number(addOn.subcontractorRate || 0)))
+  }
+
+  const saveAddOnEdit = async (addOnId: string) => {
+    setBusyAction(`edit-addon:${addOnId}`)
+    try {
+      const response = await fetch(`/api/add-on-services/${addOnId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: editAddOnDesc.trim(),
+          clientRate: Number(editAddOnClientRate) || 0,
+          subcontractorRate: Number(editAddOnProviderRate) || 0,
+        }),
+      })
+      if (!response.ok) { await showApiError(response, "Failed to update add-on"); return }
+      const updated = await response.json() as AddOnService
+      setLocalAddOns(current => current.map(item => item.id === addOnId ? { ...item, ...updated } : item))
+      setEditAddOnId(null)
+      refreshCalendarData()
+      showSuccess("Add-on updated")
+    } catch {
+      showError("Failed to update add-on. Please try again.")
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const removeAddOn = async (addOnId: string) => {
+    setBusyAction(`remove-addon:${addOnId}`)
+    try {
+      const response = await fetch(`/api/add-on-services/${addOnId}`, { method: "DELETE" })
+      if (!response.ok) { await showApiError(response, "Failed to remove add-on"); return }
+      setLocalAddOns(current => current.filter(item => item.id !== addOnId))
+      if (editAddOnId === addOnId) setEditAddOnId(null)
+      refreshCalendarData()
+      showSuccess("Add-on removed")
+    } catch {
+      showError("Failed to remove add-on. Please try again.")
     } finally {
       setBusyAction(null)
     }
@@ -496,9 +564,6 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
 
         <div className="shrink-0 border-b border-[#edf0f3] px-4 pb-3 pt-3">
           <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">
-            <button type="button" onClick={() => onOpenChange(false)} aria-label="Back to calendar" className="mr-0.5 flex h-7 w-7 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6] hover:text-[#263246]">
-              <ArrowLeft className="h-4 w-4" />
-            </button>
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: type.color }} />
             {type.label}
             <button type="button" onClick={() => onOpenChange(false)} aria-label="Close" className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-[#aeb7c3] hover:bg-[#f1f4f6] hover:text-[#64748b]">
@@ -558,7 +623,44 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
 
           <section>
             <p className="mb-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">ADD-ON SERVICE</p>
-            {localAddOns.map(addOn => <div key={addOn.id} className="mb-2 rounded-lg border border-[#dfe5ec] px-3 py-2"><p className="text-[13px] font-bold text-[#1f2937]">{addOn.description}</p><p className="mt-0.5 text-[10px] text-[#7f8ea3]">Client ${Number(addOn.clientRate).toFixed(2)} · Pay ${Number(addOn.subcontractorRate).toFixed(2)}</p></div>)}
+            {localAddOns.map(addOn => {
+              const editing = editAddOnId === addOn.id
+              const editBusy = busyAction === `edit-addon:${addOn.id}`
+              const removeBusy = busyAction === `remove-addon:${addOn.id}`
+              return (
+                <div key={addOn.id} className="mb-2 rounded-lg border border-[#dfe5ec]">
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: addOn.isRecurring ? '#0b8557' : '#3b82f6' }} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-[13px] font-bold text-[#1f2937]">{addOn.description}</span>
+                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${addOn.isRecurring ? 'bg-[#dff0e9] text-[#075f40]' : 'bg-[#eef2f7] text-[#5a6b82]'}`}>{addOn.isRecurring ? 'Recurring' : 'One-time'}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-[10px] text-[#7f8ea3]">{addOnPerformerLabel(addOn)} · ${Number(addOn.clientRate).toFixed(0)} / ${Number(addOn.subcontractorRate).toFixed(0)}</p>
+                    </div>
+                    {!locked && (
+                      <>
+                        <button type="button" aria-label={editing ? 'Close editor' : 'Edit add-on'} onClick={() => editing ? setEditAddOnId(null) : startEditAddOn(addOn)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#94a3b8] hover:bg-[#f1f4f6] hover:text-[#475569]"><svg className={`h-4 w-4 transition-transform ${editing ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg></button>
+                        <button type="button" aria-label="Remove add-on" onClick={() => removeAddOn(addOn.id)} disabled={removeBusy} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#aeb7c3] hover:bg-[#fdecec] hover:text-[#c11f1f] disabled:opacity-40">{removeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-4 w-4" />}</button>
+                      </>
+                    )}
+                  </div>
+                  {editing && (
+                    <div className="space-y-2 border-t border-[#eef2f5] px-3 py-2.5">
+                      <input value={editAddOnDesc} onChange={e => setEditAddOnDesc(e.target.value)} placeholder="Service" className="h-9 w-full rounded-lg border border-[#dfe5ec] px-2.5 text-[13px] font-semibold outline-none focus:border-[#0d9488]" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="text-[9px] font-bold text-[#718096]">Client charged<input type="number" min="0" step="0.01" value={editAddOnClientRate} onChange={e => setEditAddOnClientRate(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[#dfe5ec] px-2 text-[13px] font-bold outline-none focus:border-[#0d9488]" /></label>
+                        <label className="text-[9px] font-bold text-[#718096]">We pay<input type="number" min="0" step="0.01" value={editAddOnProviderRate} onChange={e => setEditAddOnProviderRate(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[#dfe5ec] px-2 text-[13px] font-bold outline-none focus:border-[#0d9488]" /></label>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => setEditAddOnId(null)} className="rounded-lg bg-[#f1f4f6] px-3 py-1.5 text-[11px] font-bold text-[#66758b]">Cancel</button>
+                        <button type="button" onClick={() => saveAddOnEdit(addOn.id)} disabled={editBusy || !editAddOnDesc.trim()} className="flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-[#0B7A4E] px-3 py-1.5 text-[11px] font-extrabold text-white disabled:bg-[#a8cbbf]">{editBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Save</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             {!addServiceOpen ? (
               // Mockup styling: reads as a select (chevron on the right), opens the service picker
               <button type="button" onClick={() => setAddServiceOpen(true)} disabled={locked} className="flex w-full items-center justify-between rounded-lg border border-[#d7dee7] bg-white px-3 py-2.5 text-left text-[14px] font-medium text-[#718096] hover:border-[#a9cfc6] disabled:opacity-50">Add a service…<svg className="h-4 w-4 text-[#94a3b8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg></button>

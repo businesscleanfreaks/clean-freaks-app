@@ -43,7 +43,11 @@ export function refreshCalendarData(patch?: { jobId: string; updates?: Record<st
   return globalMutate(CALENDAR_SWR_KEY)
 }
 
-const fetcher = (url: string) => fetch(url).then(res => {
+// `no-store` so SWR revalidations after a mutation (move, add-on, rate edit)
+// always hit the network. The route sends Cache-Control: max-age=10, which
+// otherwise served a stale browser-cached response — the add-on bubble only
+// appeared after a hard refresh.
+const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then(res => {
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
 })

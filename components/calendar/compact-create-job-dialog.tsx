@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
-import { ArrowLeft, Check, ChevronDown, ChevronUp, DollarSign, FileText, MapPin, Repeat, Search, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, DollarSign, FileText, MapPin, Repeat, Search, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -532,7 +532,7 @@ export function CompactCreateJobDialog({
         style={anchor ? { left: anchor.left, top: anchor.top, transform: "none", animation: "none" } : undefined}
       >
         <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
-          <div className="flex items-center gap-2"><button type="button" aria-label="Back to calendar" onClick={close} className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /></button><DialogTitle className="text-[15px] font-extrabold tracking-tight text-slate-950">New booking</DialogTitle></div>
+          <div className="flex items-center gap-2"><DialogTitle className="text-[15px] font-extrabold tracking-tight text-slate-950">New booking</DialogTitle></div>
           <DialogDescription className="sr-only">Add a new job: pick client, schedule, rates, and notes in one quick pass.</DialogDescription>
           <button aria-label="Close add job" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X className="h-4 w-4" />

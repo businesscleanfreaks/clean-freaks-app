@@ -60,7 +60,7 @@ export function showUndoToast(message: string, onUndo: () => void) {
   toast({
     variant: "success",
     title: "✓ " + message,
-    duration: 6000,
+    duration: 9000,
     action: React.createElement(ToastAction, {
       altText: "Undo",
       onClick: onUndo,
