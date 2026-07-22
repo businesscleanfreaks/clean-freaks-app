@@ -629,6 +629,29 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   const accessNotes = job.location.client.notes
     ?.replace(/^TRIAL CLIENT[^\n]*\n*/i, "")
     .trim()
+  const changeScopeSelector = showChangeScope ? (
+    <div className="mt-2.5">
+      <p className="mb-1.5 text-[9.5px] font-bold uppercase tracking-[0.03em] text-[#7f8ea3]">Apply {scopeWhat} to</p>
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          aria-pressed={changeScope === "this"}
+          onClick={() => setChangeScope("this")}
+          className={`min-w-0 flex-1 rounded-[7px] border px-1 py-2 text-[11.5px] font-bold ${changeScope === "this" ? "border-[#0d9488] bg-[#0d9488] text-white" : "border-[#e2e8f0] bg-white text-[#475569]"}`}
+        >
+          Just this clean
+        </button>
+        <button
+          type="button"
+          aria-pressed={changeScope === "future"}
+          onClick={() => setChangeScope("future")}
+          className={`min-w-0 flex-1 rounded-[7px] border px-1 py-2 text-[11.5px] font-bold ${changeScope === "future" ? "border-[#0d9488] bg-[#0d9488] text-white" : "border-[#e2e8f0] bg-white text-[#475569]"}`}
+        >
+          All future
+        </button>
+      </div>
+    </div>
+  ) : null
 
   return (
     <>
@@ -675,6 +698,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
               </Select></>
             )}
           </div>
+          {cleanerChanged && changeScopeSelector}
         </div>
 
         <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 py-3.5 pb-6">
@@ -700,29 +724,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
               <label className="text-[9px] font-bold text-[#7f8ea3]">{job.vendor ? "Vendor is paid" : "Cleaner is paid"}<input type="number" min="0" step="0.01" value={providerRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setProviderRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
               <div className="rounded-lg bg-[#e7f2ee] px-2.5 py-2"><span className="block text-[8px] font-extrabold text-[#4b9b82]">MARGIN</span><span className={`text-[15px] font-extrabold ${margin < 0 ? "text-[#b42318]" : "text-[#066846]"}`}>${margin.toFixed(2)}</span></div>
             </div>
-            {showChangeScope && (
-              <div className="mt-2.5">
-                <p className="mb-1.5 text-[9.5px] font-bold uppercase tracking-[0.03em] text-[#7f8ea3]">Apply {scopeWhat} to</p>
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    aria-pressed={changeScope === "this"}
-                    onClick={() => setChangeScope("this")}
-                    className={`min-w-0 flex-1 rounded-[7px] border px-1 py-2 text-[11.5px] font-bold ${changeScope === "this" ? "border-[#0d9488] bg-[#0d9488] text-white" : "border-[#e2e8f0] bg-white text-[#475569]"}`}
-                  >
-                    Just this clean
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={changeScope === "future"}
-                    onClick={() => setChangeScope("future")}
-                    className={`min-w-0 flex-1 rounded-[7px] border px-1 py-2 text-[11.5px] font-bold ${changeScope === "future" ? "border-[#0d9488] bg-[#0d9488] text-white" : "border-[#e2e8f0] bg-white text-[#475569]"}`}
-                  >
-                    All future
-                  </button>
-                </div>
-              </div>
-            )}
+            {!cleanerChanged && ratesChanged && changeScopeSelector}
           </section>
 
           <section>

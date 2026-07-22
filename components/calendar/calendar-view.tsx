@@ -330,7 +330,16 @@ function SearchSelect({
 function HeaderSearch({ value, onChange, results, onPick }: {
   value: string
   onChange: (v: string) => void
-  results: Array<{ id: string; primary: string; secondary: string; kind: string; hex: string }>
+  results: Array<{
+    id: string
+    primary: string
+    secondary: string
+    secondaryPre?: string
+    secondaryMatch?: string
+    secondaryPost?: string
+    kind: string
+    hex: string
+  }>
   onPick: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -374,7 +383,15 @@ function HeaderSearch({ value, onChange, results, onPick }: {
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: result.hex }} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-bold text-[#1e293b]">{result.primary}</span>
-                  <span className="block truncate text-[10px] text-[#7f8ea3]">{result.secondary}</span>
+                  {result.secondaryMatch ? (
+                    <span className="block truncate text-[10px] text-[#7f8ea3]">
+                      {result.secondaryPre}
+                      <mark className="rounded-sm bg-[#fef3c7] px-[1.5px] font-bold text-[#92400e]">{result.secondaryMatch}</mark>
+                      {result.secondaryPost}
+                    </span>
+                  ) : (
+                    <span className="block truncate text-[10px] text-[#7f8ea3]">{result.secondary}</span>
+                  )}
                 </span>
                 <span className="text-[9px] font-bold uppercase tracking-[0.04em] text-[#b6bdc7]">{result.kind}</span>
               </button>
@@ -956,7 +973,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     setSelectedDateForNewJob(date)
     setSelectedTimeForNewJob(undefined)
     setCreatePopoverAnchor(event && window.matchMedia('(min-width: 1024px)').matches
-      ? positionBeside(event.currentTarget.getBoundingClientRect(), 440, 720)
+      ? positionBeside(event.currentTarget.getBoundingClientRect(), 372, 560)
       : null)
     setCreateJobDialogOpen(true)
   }
@@ -965,7 +982,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     setSelectedDateForNewJob(date)
     setSelectedTimeForNewJob(time)
     setCreatePopoverAnchor(rect && window.matchMedia('(min-width: 1024px)').matches
-      ? positionBeside(rect, 440, 720)
+      ? positionBeside(rect, 372, 560)
       : null)
     setCreateJobDialogOpen(true)
   }
@@ -1900,13 +1917,26 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           if (!regularMatch && !matchingNote) return []
           const compactNote = matchingNote?.replace(/\s+/g, ' ')
           const noteIndex = compactNote?.toLowerCase().indexOf(query) ?? -1
+          const snippetStart = noteIndex >= 0 ? Math.max(0, noteIndex - 20) : 0
+          const snippetEnd = compactNote && noteIndex >= 0
+            ? Math.min(compactNote.length, noteIndex + query.length + 45)
+            : 0
           const noteSnippet = compactNote && noteIndex >= 0
-            ? `${noteIndex > 20 ? '...' : ''}${compactNote.slice(Math.max(0, noteIndex - 20), noteIndex + query.length + 45)}${noteIndex + query.length + 45 < compactNote.length ? '...' : ''}`
+            ? `${noteIndex > 20 ? '...' : ''}${compactNote.slice(snippetStart, snippetEnd)}${snippetEnd < compactNote.length ? '...' : ''}`
             : null
           return [{
             id: job.id,
             primary: clientName,
             secondary: noteSnippet || `${format(new Date(job.date), 'EEE, MMM d')} | ${performerName}`,
+            secondaryPre: compactNote && noteIndex >= 0
+              ? `${noteIndex > 20 ? '...' : ''}${compactNote.slice(snippetStart, noteIndex)}`
+              : undefined,
+            secondaryMatch: compactNote && noteIndex >= 0
+              ? compactNote.slice(noteIndex, noteIndex + query.length)
+              : undefined,
+            secondaryPost: compactNote && noteIndex >= 0
+              ? `${compactNote.slice(noteIndex + query.length, snippetEnd)}${snippetEnd < compactNote.length ? '...' : ''}`
+              : undefined,
             kind: noteSnippet ? 'Note' : job.isTrial ? 'Trial' : job.scheduleId ? 'Job' : 'One-off',
             hex: getCleanerColorInfo(getPerformerName(job)).hex,
           }]
@@ -2569,7 +2599,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const baseHourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
     // Stretch to fill the measured view area (minus the ~64px day header) so the
     // grid reaches the bottom of the window like the mockup; density sets the floor.
-    const hourHeight = Math.max(baseHourHeight, gridAreaHeight > 0 ? Math.floor((gridAreaHeight - 64) / hoursCount) : 0)
+    const hourHeight = Math.min(80, Math.max(baseHourHeight, gridAreaHeight > 0 ? Math.floor((gridAreaHeight - 64) / hoursCount) : 0))
     const now = new Date()
     const nowMinutes = now.getHours() * 60 + now.getMinutes()
     const showCurrentTimeLine = isToday(currentDate) && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
@@ -2626,7 +2656,18 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               <div className="relative z-10 w-14 shrink-0 border-r border-[#EEF1F4] bg-white">
                 {Array.from({ length: hoursCount + 1 }, (_, index) => {
                   const hour = startHour + index
-                  return <div key={hour} className="absolute w-full pr-2 text-right text-[11px] font-semibold text-[#64748B]" style={{ top: index * hourHeight - (index === 0 ? -2 : 6) }}>{minutesToShortTime(hour * 60)}</div>
+                  return (
+                    <div
+                      key={hour}
+                      className="absolute w-full pr-2 text-right text-[11px] font-semibold text-[#64748B]"
+                      style={{
+                        top: index * hourHeight,
+                        transform: index === 0 ? 'translateY(1px)' : index === hoursCount ? 'translateY(-100%)' : 'translateY(-50%)',
+                      }}
+                    >
+                      {minutesToShortTime(hour * 60)}
+                    </div>
+                  )
                 })}
               </div>
               <div className="relative grid flex-1" style={{ gridTemplateColumns: `repeat(${Math.max(crewColumns.length, 1)}, minmax(112px, 1fr))` }}>
@@ -2706,7 +2747,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               opacity: status === 'cancelled' ? 0.65 : 1,
                             }}
                           >
-                            <div className="absolute inset-0 overflow-hidden px-2 py-1.5">
+                            <div className="absolute inset-0 overflow-hidden px-[5px] py-[3px]">
                               <div title={job.location.client.name} className={`truncate pr-3 text-[11px] font-extrabold ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1E293B]' : 'text-white'}`}>{job.location.client.name}</div>
                               {height >= 32 && <div className={`mt-0.5 truncate text-[9.5px] font-bold ${status === 'cancelled' || unassigned ? 'text-[#526072]' : 'text-white/95'}`}>{formatTimelineRange(start, end)}</div>}
                               {job.addOnServices?.[0] && height >= 54 && <span className="mt-1 inline-block max-w-full truncate rounded bg-[#FFF3B0] px-1.5 py-0.5 text-[8px] font-extrabold text-[#92400E]">+ {job.addOnServices[0].description}</span>}
@@ -2754,7 +2795,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     const baseHourHeight = weekDensity === 'Comfortable' ? 44 : weekDensity === 'Compact' ? 32 : 26
     // Stretch to fill the measured view area (minus the ~64px day header) so the
     // grid reaches the bottom of the window like the mockup; density sets the floor.
-    const hourHeight = Math.max(baseHourHeight, gridAreaHeight > 0 ? Math.floor((gridAreaHeight - 64) / hoursCount) : 0)
+    const hourHeight = Math.min(80, Math.max(baseHourHeight, gridAreaHeight > 0 ? Math.floor((gridAreaHeight - 64) / hoursCount) : 0))
 
     const unscheduledJobsByDay = days.map(day =>
       getJobsForDate(day).filter(job => !(job.startTime || job.startWindowBegin))
@@ -2829,7 +2870,14 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
               {Array.from({ length: hoursCount + 1 }).map((_, i) => {
                 const h = startHour + i;
                 return (
-                  <div key={i} className="absolute w-full text-right pr-2 text-[10px] font-medium text-gray-500" style={{ top: i * hourHeight - 6 }}>
+                  <div
+                    key={i}
+                    className="absolute w-full pr-2 text-right text-[10px] font-medium text-gray-500"
+                    style={{
+                      top: i * hourHeight,
+                      transform: i === 0 ? 'translateY(1px)' : i === hoursCount ? 'translateY(-100%)' : 'translateY(-50%)',
+                    }}
+                  >
                     {minutesToShortTime(h * 60)}
                   </div>
                 );
@@ -2877,7 +2925,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       return (
                         <div
                           aria-hidden="true"
-                          className="pointer-events-none absolute z-40 overflow-hidden rounded-[5px] border-2 border-[#078556] bg-[#fff6ea] px-2 py-1.5 text-left shadow-[0_6px_18px_rgba(15,23,42,0.16)] ring-4 ring-[#078556]/10"
+                          className="pointer-events-none absolute z-40 overflow-hidden rounded-[5px] border-2 border-[#078556] bg-[#fff6ea] px-[5px] py-[3px] text-left shadow-[0_6px_18px_rgba(15,23,42,0.16)] ring-4 ring-[#078556]/10"
                           style={{ top: `${top}px`, height: `${height}px`, left: '3px', right: '3px' }}
                         >
                           <div className="truncate text-[11px] font-extrabold text-[#1e293b]">(No title)</div>
@@ -2946,7 +2994,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             zIndex: expanded ? 80 : staysAboveExpanded ? 90 : 10 + column,
                           }}
                         >
-                          <div className="absolute inset-0 overflow-hidden px-2 py-1.5">
+                          <div className="absolute inset-0 overflow-hidden px-[5px] py-[3px]">
                             <div title={job.location.client.name} className={`truncate pr-3 text-[11px] font-extrabold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1e293b]' : 'text-white'}`}>
                               {job.location.client.name}
                             </div>

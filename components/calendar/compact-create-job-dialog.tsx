@@ -555,8 +555,14 @@ export function CompactCreateJobDialog({
         data-calendar-create-editor
         hideClose
         overlayClassName={anchor ? "bg-transparent" : undefined}
-        className={`flex max-h-[94vh] w-[min(94vw,440px)] max-w-[440px] flex-col overflow-hidden rounded-xl border border-[#dfe5eb] p-0 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
-        style={anchor ? { left: anchor.left, top: anchor.top, transform: "none", animation: "none" } : undefined}
+        className={`flex max-h-[94vh] w-[min(94vw,372px)] max-w-[372px] flex-col overflow-hidden rounded-2xl border border-[#e8ebef] p-0 shadow-[0_1px_1px_rgba(16,24,40,0.04),0_28px_64px_-12px_rgba(16,24,40,0.28)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
+        style={anchor ? {
+          left: anchor.left,
+          top: anchor.top,
+          maxHeight: `calc(100vh - ${anchor.top + 12}px)`,
+          transform: "none",
+          animation: "none",
+        } : undefined}
       >
         <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <div className="flex items-center gap-2"><DialogTitle className="text-[15px] font-extrabold tracking-tight text-slate-950">New booking</DialogTitle></div>
@@ -566,15 +572,8 @@ export function CompactCreateJobDialog({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 space-y-2 overflow-y-auto px-5 py-3">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
           <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Client</Label>
-              <span className="text-[11px] font-medium text-slate-400">
-                Search existing, or type a one-time job
-              </span>
-            </div>
-
             {clientMode === "existing" ? (
               <>
                 {selectedClient ? (
@@ -1054,7 +1053,7 @@ export function CompactCreateJobDialog({
           )}
         </div>
 
-        <div className="flex flex-shrink-0 justify-end border-t border-slate-100 bg-white px-5 py-3">
+        <div className="flex flex-shrink-0 justify-end border-t border-slate-100 bg-white px-4 pb-4 pt-3 shadow-[0_-5px_14px_rgba(16,24,40,0.05)]">
           <button
             type="button"
             disabled={!canCreate || loading}
