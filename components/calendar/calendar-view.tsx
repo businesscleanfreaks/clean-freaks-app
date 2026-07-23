@@ -25,7 +25,7 @@ import { JobWithFullRelations, ClientWithLocations, Subcontractor } from "@/type
 import { refreshCalendarData } from "./calendar-client"
 import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor, TouchSensor, closestCenter, useDraggable, useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { getCleanerColorInfo, JOB_GRADIENTS, JOB_SPINE_COLORS, JOB_CARD_SHADOW, JOB_TINT_COLORS, CLEANER_HEX_COLORS } from '@/lib/calendar-design-tokens'
+import { getCleanerColorInfo, JOB_GRADIENTS, JOB_SPINE_COLORS, JOB_CARD_SHADOW, JOB_TINT_COLORS, CLEANER_HEX_COLORS, readableTextOnFill } from '@/lib/calendar-design-tokens'
 import { useCalendarFilters } from '@/lib/calendar-filter-context'
 import { CalendarFilterDrawer } from './calendar-filter-drawer'
 import { hasFinalInvoice } from '@/lib/invoice-status'
@@ -481,8 +481,11 @@ function NavArrow({ direction, label, onClick }: { direction: 'prev' | 'next'; l
           style={{
             position: 'absolute',
             top: '100%',
-            left: '50%',
-            transform: 'translateX(-50%)',
+            // The prev arrow sits at the container's left edge, so a centered
+            // tooltip overflows and clips ("revious week"). Left-anchor it so it
+            // grows rightward into view; keep next centered.
+            left: direction === 'prev' ? 0 : '50%',
+            transform: direction === 'prev' ? 'none' : 'translateX(-50%)',
             marginTop: 8,
             padding: '4px 10px',
             borderRadius: 6,
@@ -502,7 +505,8 @@ function NavArrow({ direction, label, onClick }: { direction: 'prev' | 'next'; l
             style={{
               position: 'absolute',
               top: -3,
-              left: '50%',
+              // Keep the pointer over the button center (button is 30px wide).
+              left: direction === 'prev' ? 15 : '50%',
               transform: 'translateX(-50%) rotate(45deg)',
               width: 7,
               height: 7,
@@ -2718,6 +2722,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                         const performerName = getPerformerName(job)
                         const { colorKey } = getCleanerColorInfo(performerName)
                         const spineColor = JOB_SPINE_COLORS[colorKey]
+                        const ink = readableTextOnFill(JOB_GRADIENTS[colorKey])
                         const status = getJobStatus(job)
                         const unassigned = !performerName && status !== 'cancelled'
                         return (
@@ -2737,7 +2742,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               left: `calc(${leftPct}% + 2px)`,
                               width: `calc(${widthPct}% - 4px)`,
                                                             background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
-                              borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'transparent',
+                              borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'rgba(16,24,40,0.20)',
                               borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
                               borderLeft: `4.7px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
                               boxShadow: expanded
@@ -2747,9 +2752,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                               opacity: status === 'cancelled' ? 0.65 : 1,
                             }}
                           >
-                            <div className="absolute inset-0 overflow-hidden px-[5px] py-[3px]">
-                              <div title={job.location.client.name} className={`truncate pr-3 text-[11px] font-extrabold ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1E293B]' : 'text-white'}`}>{job.location.client.name}</div>
-                              {height >= 32 && <div className={`mt-0.5 truncate text-[9.5px] font-bold ${status === 'cancelled' || unassigned ? 'text-[#526072]' : 'text-white/95'}`}>{formatTimelineRange(start, end)}</div>}
+                            <div className="absolute inset-0 overflow-hidden px-[6px] py-[4px]">
+                              <div title={job.location.client.name} style={status === 'cancelled' || unassigned ? undefined : { color: ink.color, textShadow: ink.shadow }} className={`truncate pr-3 text-[12px] font-extrabold ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1E293B]' : ''}`}>{job.location.client.name}</div>
+                              {height >= 32 && <div style={status === 'cancelled' || unassigned ? undefined : { color: ink.color, textShadow: ink.shadow, opacity: 0.92 }} className={`mt-0.5 truncate text-[10.5px] font-bold ${status === 'cancelled' ? 'text-[#7f8ea3]' : unassigned ? 'text-[#526072]' : ''}`}>{formatTimelineRange(start, end)}</div>}
                               {job.addOnServices?.[0] && height >= 54 && <span className="mt-1 inline-block max-w-full truncate rounded bg-[#FFF3B0] px-1.5 py-0.5 text-[8px] font-extrabold text-[#92400E]">+ {job.addOnServices[0].description}</span>}
                               {isSpecialClean(job) && status !== 'cancelled' && <Star className="absolute right-1.5 top-1.5 h-2.5 w-2.5 fill-[#FCD34D] text-[#D97706]" />}
                             </div>
@@ -2957,6 +2962,7 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                       const performerName = getPerformerName(job)
                       const { colorKey } = getCleanerColorInfo(performerName)
                       const spineColor = JOB_SPINE_COLORS[colorKey]
+                      const ink = readableTextOnFill(JOB_GRADIENTS[colorKey])
                       const status = getJobStatus(job)
                       const unassigned = !performerName && status !== 'cancelled'
                       const isDimmed = dimmedClientIds && !dimmedClientIds.has(job.location.client.id)
@@ -2984,7 +2990,9 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             left: `calc(${leftPct}% + 2px)`,
                             width: `calc(${widthPct}% - 4px)`,
                                                         background: status === 'cancelled' ? '#F3F4F6' : unassigned ? '#FFF6EA' : JOB_GRADIENTS[colorKey],
-                            borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'transparent',
+                            // Subtle same-hue outline for card-to-card separation in dense
+                            // weeks (instead of leaning only on the drop shadow).
+                            borderColor: status === 'cancelled' ? '#C7CCD4' : unassigned ? '#E3A44A' : 'rgba(16,24,40,0.20)',
                             borderStyle: status === 'cancelled' || unassigned ? 'dashed' : 'solid',
                             borderLeft: `4.7px solid ${status === 'cancelled' ? '#9CA3AF' : unassigned ? '#D97706' : spineColor}`,
                             boxShadow: expanded
@@ -2994,12 +3002,12 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
                             zIndex: expanded ? 80 : staysAboveExpanded ? 90 : 10 + column,
                           }}
                         >
-                          <div className="absolute inset-0 overflow-hidden px-[5px] py-[3px]">
-                            <div title={job.location.client.name} className={`truncate pr-3 text-[11px] font-extrabold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1e293b]' : 'text-white'}`}>
+                          <div className="absolute inset-0 overflow-hidden px-[6px] py-[4px]">
+                            <div title={job.location.client.name} style={status === 'cancelled' || unassigned ? undefined : { color: ink.color, textShadow: ink.shadow }} className={`truncate pr-3 text-[12px] font-extrabold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3] line-through' : unassigned ? 'text-[#1e293b]' : ''}`}>
                               {job.location.client.name}
                             </div>
                             {height >= 32 && (
-                              <div className={`mt-0.5 truncate text-[9.5px] font-bold leading-tight ${status === 'cancelled' || unassigned ? 'text-[#526072]' : 'text-white/95'}`}>
+                              <div style={status === 'cancelled' || unassigned ? undefined : { color: ink.color, textShadow: ink.shadow, opacity: 0.92 }} className={`mt-0.5 truncate text-[10.5px] font-bold leading-tight ${status === 'cancelled' ? 'text-[#7f8ea3]' : unassigned ? 'text-[#526072]' : ''}`}>
                                 {formatTimelineRange(start, end)}
                               </div>
                             )}
@@ -3582,7 +3590,10 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           if (!open) {
             setSelectedDateForNewJob(null)
             setSelectedTimeForNewJob(undefined)
-            setCreatePopoverAnchor(null)
+            // Do NOT clear the anchor here: clearing it flips the overlay's
+            // `anchor ? bg-transparent` to the default bg-black/80 while Radix is
+            // still fading the overlay out — a black flash on close. Both open
+            // paths set a fresh anchor before reopening.
           }
         }}
         selectedDate={selectedDateForNewJob}

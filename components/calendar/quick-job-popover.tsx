@@ -460,20 +460,28 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
         updates: { status: "CANCELLED", cancellationFee: fee > 0 ? fee : null },
       }).catch(() => {})
       try {
+        const previousStatus = job.status || "SCHEDULED"
+        const previousFee = job.cancellationFee ?? null
         showUndoToast("Clean cancelled", async () => {
+          // Revert the card immediately so undo feels instant; the PUT confirms
+          // in the background and we re-apply the cancel only if it fails.
+          void refreshCalendarData({
+            jobId: job.id,
+            updates: { status: previousStatus, cancellationFee: previousFee },
+          }).catch(() => {})
           const undoResponse = await fetch(`/api/jobs/${job.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "SCHEDULED", cancellationFee: null }),
+            body: JSON.stringify({ status: previousStatus, cancellationFee: previousFee }),
           })
           if (!undoResponse.ok) {
+            void refreshCalendarData({
+              jobId: job.id,
+              updates: { status: "CANCELLED", cancellationFee: fee > 0 ? fee : null },
+            }).catch(() => {})
             await showApiError(undoResponse, "Failed to undo cancellation")
             return
           }
-          void refreshCalendarData({
-            jobId: job.id,
-            updates: { status: "SCHEDULED", cancellationFee: null },
-          }).catch(() => {})
           showSuccess("Change undone")
         })
       } catch {

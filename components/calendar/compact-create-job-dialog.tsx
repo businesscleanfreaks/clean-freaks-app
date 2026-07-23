@@ -637,7 +637,7 @@ export function CompactCreateJobDialog({
                             onClick={useTypedClientAsOneTime}
                             className="flex w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100"
                           >
-                            <span className="min-w-0 truncate">Use &quot;{typedClientName}&quot; as a one-time client</span>
+                            <span className="min-w-0 truncate">Use &quot;{typedClientName}&quot; as a new client</span>
                             <Check className="h-3.5 w-3.5 shrink-0" />
                           </button>
                         )}
