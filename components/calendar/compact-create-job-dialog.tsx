@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
-import { Check, ChevronDown, ChevronUp, Clock, DollarSign, FileText, MapPin, Plus, Repeat, Search, Sparkles, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, Clock, CornerDownLeft, DollarSign, FileText, MapPin, Plus, Repeat, Search, Sparkles, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -607,6 +607,17 @@ export function CompactCreateJobDialog({
                         setSearch(event.target.value)
                         setDropOpen(true)
                       }}
+                      onKeyDown={event => {
+                        if (event.key !== "Enter") return
+                        const firstMatch = filteredClients[0]
+                        if (firstMatch) {
+                          event.preventDefault()
+                          chooseClient(firstMatch)
+                        } else if (typedClientName && !exactClientMatch) {
+                          event.preventDefault()
+                          useTypedClientAsOneTime()
+                        }
+                      }}
                       placeholder="Client name"
                       className="h-11 border-x-0 border-t-0 border-b-[1.5px] border-[#dfe5eb] px-1 text-[21px] font-bold tracking-[-0.02em] shadow-none placeholder:text-[#9aa6b2] focus-visible:border-[var(--cf-green)] focus-visible:ring-0"
                     />
@@ -628,6 +639,9 @@ export function CompactCreateJobDialog({
                                 <span className="block truncate text-[13px] font-semibold text-[#1e293b]">{client.name}</span>
                                 {subline && <span className="block truncate text-[11px] text-[#9aa6b2]">{subline}</span>}
                               </span>
+                              {client.id === filteredClients[0]?.id && (
+                                <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-[#b6bdc7]" aria-hidden="true" />
+                              )}
                             </button>
                           )
                         })}
@@ -639,6 +653,9 @@ export function CompactCreateJobDialog({
                           >
                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#ecfdf9] text-[13px] font-bold text-[#0f766e]">+</span>
                             <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#0f766e]">Create &quot;{typedClientName}&quot;</span>
+                            {filteredClients.length === 0 && (
+                              <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-[#b6bdc7]" aria-hidden="true" />
+                            )}
                           </button>
                         )}
                       </div>
