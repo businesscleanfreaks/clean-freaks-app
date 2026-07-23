@@ -6,6 +6,7 @@ import { computeClientProration } from "@/lib/proration"
 import { logger } from "@/lib/logger"
 import { calculateScheduleDates } from "@/lib/regenerate-schedule-jobs"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
+import { computePauseInvoiceAdjustment } from "@/lib/pause-billing"
 
 export const dynamic = 'force-dynamic'
 
@@ -96,6 +97,7 @@ export async function GET(request: Request) {
       allJobs,
       existingInvoices,
       clientsWithSchedules,
+      pauseSchedules,
     ] = await prisma.$transaction([
       // 1. Fetch ALL jobs in the period (including invoiced ones for detection)
       prisma.job.findMany({
@@ -166,13 +168,35 @@ export async function GET(request: Request) {
                   id: true,
                   frequency: true,
                   daysOfWeek: true,
+                  monthlyPattern: true,
+                  customDates: true,
                   startDate: true,
+                  endDate: true,
                   clientPayType: true,
                   defaultClientRate: true,
+                  pauseFrom: true,
+                  pauseTo: true,
                   recurringAddOnServices: true,
                 },
               },
             },
+          },
+        },
+      }),
+
+      // 4. Pauses can create an invoice adjustment even when every clean in
+      //    the selected period was removed, so fetch them independently.
+      prisma.schedule.findMany({
+        where: {
+          pauseFrom: { not: null, lte: periodEnd },
+          OR: [
+            { pauseTo: null },
+            { pauseTo: { gte: effectivePeriodStart } },
+          ],
+        },
+        include: {
+          location: {
+            include: { client: true },
           },
         },
       }),
@@ -195,16 +219,22 @@ export async function GET(request: Request) {
       if (!jobsByClient.has(clientId)) jobsByClient.set(clientId, [])
       jobsByClient.get(clientId)!.push(job)
     })
+    pauseSchedules.forEach((schedule) => {
+      const clientId = schedule.location.client.id
+      if (!jobsByClient.has(clientId)) jobsByClient.set(clientId, [])
+    })
 
     // 5. Build candidates
     interface CandidateLineItem {
       description: string
       quantity: number
       price: number
-      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION' | 'CANCELLATION_FEE'
+      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION' | 'PAUSE_ADJUSTMENT' | 'CANCELLATION_FEE'
       sourceId?: string
       jobId?: string
       scheduleId?: string
+      billingGroupId?: string
+      locationId?: string
       locationName?: string
     }
 
@@ -239,12 +269,23 @@ export async function GET(request: Request) {
 
     // Process each client with jobs
     for (const [clientId, jobs] of jobsByClient) {
-      const client = jobs[0].location.client
+      const clientWithSchedules = clientsWithSchedules.find((candidate) => candidate.id === clientId)
+      const client = jobs[0]?.location.client ?? clientWithSchedules
+      if (!client) continue
+      const clientPauseSchedules = pauseSchedules.filter(
+        (schedule) => schedule.location.client.id === clientId,
+      )
       const clientInvoices = invoicesByClient.get(clientId) || []
 
       // Determine billing type from schedule or client
       const firstScheduleJob = jobs.find(j => j.scheduleId)
-      const billingType = firstScheduleJob?.schedule?.clientPayType || client.billingType || 'PER_CLEAN'
+      const firstConfiguredSchedule = clientWithSchedules?.locations
+        .flatMap((location) => location.schedules)[0]
+      const billingType = firstScheduleJob?.schedule?.clientPayType
+        || clientPauseSchedules[0]?.clientPayType
+        || firstConfiguredSchedule?.clientPayType
+        || client.billingType
+        || 'PER_CLEAN'
 
       const hasEmail = !!(client.invoicingEmail || client.communicationEmail)
 
@@ -399,16 +440,107 @@ export async function GET(request: Request) {
 
       // Build line items
       const lineItems: CandidateLineItem[] = []
+      const flatBillingGroupByScheduleId = new Map<string, string>()
       let total = 0
 
       if (billingType === 'FLAT_RATE') {
-        // Group by schedule to get monthly rate per location
-        const scheduleRates = new Map<string, { rate: number; locationName: string; jobCount: number; startDate: Date | null }>()
+        // A pause splits one logical service into ended/resumed schedule
+        // intervals. Link only those matching adjacent intervals; grouping all
+        // schedules at a location would under-bill legitimate parallel services.
+        const scheduleRates = new Map<string, {
+          scheduleId: string
+          billingGroupId: string
+          locationId: string
+          rate: number
+          locationName: string
+          jobCount: number
+          startDate: Date | null
+        }>()
         const scheduleAddOns = new Map<string, Array<{ description: string; rate: number; id: string }>>()
 
+        for (const location of clientWithSchedules?.locations ?? []) {
+          const flatSchedules = location.schedules
+            .filter((schedule) => schedule.clientPayType === 'FLAT_RATE')
+            .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+
+          flatSchedules.forEach((schedule, index) => {
+            const predecessor = flatSchedules
+              .slice(0, index)
+              .reverse()
+              .find((candidate) => {
+                if (!candidate.pauseTo) return false
+                const resumeDate = new Date(candidate.pauseTo)
+                resumeDate.setUTCDate(resumeDate.getUTCDate() + 1)
+                return utcDateKey(resumeDate) === utcDateKey(schedule.startDate)
+                  && candidate.frequency === schedule.frequency
+                  && candidate.daysOfWeek === schedule.daysOfWeek
+                  && candidate.monthlyPattern === schedule.monthlyPattern
+                  && candidate.customDates === schedule.customDates
+                  && candidate.defaultClientRate === schedule.defaultClientRate
+              })
+            const billingGroupId = predecessor
+              ? flatBillingGroupByScheduleId.get(predecessor.id) ?? predecessor.id
+              : schedule.id
+            flatBillingGroupByScheduleId.set(schedule.id, billingGroupId)
+          })
+
+          const schedulesByBillingGroup = new Map<string, typeof flatSchedules>()
+          flatSchedules.forEach((schedule) => {
+            const billingGroupId = flatBillingGroupByScheduleId.get(schedule.id) ?? schedule.id
+            const grouped = schedulesByBillingGroup.get(billingGroupId) ?? []
+            grouped.push(schedule)
+            schedulesByBillingGroup.set(billingGroupId, grouped)
+          })
+
+          schedulesByBillingGroup.forEach((groupSchedules, billingGroupId) => {
+            const overlapsBillingPeriod = groupSchedules.some((schedule) => {
+              const serviceOverlaps = schedule.startDate <= periodEnd
+                && (!schedule.endDate || schedule.endDate >= effectivePeriodStart)
+              const pauseOverlaps = !!schedule.pauseFrom
+                && schedule.pauseFrom <= periodEnd
+                && (!schedule.pauseTo || schedule.pauseTo >= effectivePeriodStart)
+              return serviceOverlaps || pauseOverlaps
+            })
+            if (!overlapsBillingPeriod) return
+
+            const representative = [...groupSchedules]
+              .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0]
+            const firstIntervalStart = groupSchedules
+              .map((schedule) => schedule.startDate)
+              .reduce((earliest, current) => current < earliest ? current : earliest)
+
+            scheduleRates.set(billingGroupId, {
+              scheduleId: representative.id,
+              billingGroupId,
+              locationId: location.id,
+              rate: representative.defaultClientRate,
+              locationName: location.name,
+              jobCount: 0,
+              startDate: firstIntervalStart,
+            })
+
+            if (representative.recurringAddOnServices.length > 0) {
+              scheduleAddOns.set(
+                billingGroupId,
+                representative.recurringAddOnServices.map((addOn) => ({
+                  description: addOn.description,
+                  rate: addOn.clientRate,
+                  id: addOn.id,
+                })),
+              )
+            }
+          })
+        }
+
         recurringJobs.forEach(job => {
-          if (job.scheduleId && !scheduleRates.has(job.scheduleId)) {
-            scheduleRates.set(job.scheduleId, {
+          if (!job.scheduleId) return
+          const billingGroupId = flatBillingGroupByScheduleId.get(job.scheduleId) ?? job.scheduleId
+          flatBillingGroupByScheduleId.set(job.scheduleId, billingGroupId)
+          if (!scheduleRates.has(billingGroupId)) {
+            scheduleRates.set(billingGroupId, {
+              scheduleId: job.scheduleId,
+              billingGroupId,
+              locationId: job.locationId,
               rate: job.schedule?.defaultClientRate ?? job.clientRate ?? 0,
               locationName: job.location.name,
               jobCount: 0,
@@ -418,18 +550,17 @@ export async function GET(request: Request) {
             const recurring = job.schedule?.recurringAddOnServices || []
             if (recurring.length > 0) {
               scheduleAddOns.set(
-                job.scheduleId,
+                billingGroupId,
                 recurring.map(a => ({ description: a.description, rate: a.clientRate, id: a.id }))
               )
             }
           }
-          if (job.scheduleId) {
-            const entry = scheduleRates.get(job.scheduleId)!
-            entry.jobCount++
-          }
+          const entry = scheduleRates.get(billingGroupId)
+          if (!entry) return
+          entry.jobCount++
         })
 
-        scheduleRates.forEach((info, scheduleId) => {
+        scheduleRates.forEach((info, billingGroupId) => {
           const effectiveStart = info.startDate && info.startDate > periodStart ? info.startDate : periodStart
           const startLabel = info.startDate && info.startDate > periodStart
             ? formatUtcCalendarDate(effectiveStart)
@@ -440,14 +571,16 @@ export async function GET(request: Request) {
             quantity: 1,
             price: info.rate,
             sourceType: 'FLAT_RATE',
-            sourceId: scheduleId,
-            scheduleId,
+            sourceId: info.scheduleId,
+            scheduleId: info.scheduleId,
+            billingGroupId,
+            locationId: info.locationId,
             locationName: info.locationName,
           })
           total += info.rate
 
           // Recurring add-ons
-          const addOns = scheduleAddOns.get(scheduleId) || []
+          const addOns = scheduleAddOns.get(billingGroupId) || []
           addOns.forEach(addOn => {
             lineItems.push({
               description: `${addOn.description} (recurring)`,
@@ -455,7 +588,9 @@ export async function GET(request: Request) {
               price: addOn.rate,
               sourceType: 'RECURRING_ADD_ON',
               sourceId: addOn.id,
-              scheduleId,
+              scheduleId: info.scheduleId,
+              billingGroupId,
+              locationId: info.locationId,
               locationName: info.locationName,
             })
             total += addOn.rate
@@ -472,6 +607,7 @@ export async function GET(request: Request) {
               sourceType: 'JOB',
               sourceId: job.id,
               jobId: job.id,
+              locationId: job.locationId,
               locationName: job.location.name,
             })
             total += job.clientRate
@@ -489,6 +625,7 @@ export async function GET(request: Request) {
                 sourceType: 'ADD_ON',
                 sourceId: addOn.id,
                 jobId: job.id,
+                locationId: job.locationId,
                 locationName: job.location.name,
               })
               total += addOn.clientRate
@@ -507,6 +644,8 @@ export async function GET(request: Request) {
               price: -p.credit,
               sourceType: 'PRORATION',
               scheduleId: p.scheduleId,
+              billingGroupId: flatBillingGroupByScheduleId.get(p.scheduleId) ?? p.scheduleId,
+              locationId: p.locationId,
               locationName: p.locationName,
             })
             total -= p.credit
@@ -523,6 +662,7 @@ export async function GET(request: Request) {
             sourceId: job.id,
             jobId: job.id,
             scheduleId: job.scheduleId || undefined,
+            locationId: job.locationId,
             locationName: job.location.name,
           })
           total += job.clientRate
@@ -537,11 +677,42 @@ export async function GET(request: Request) {
               sourceId: addOn.id,
               jobId: job.id,
               scheduleId: job.scheduleId || undefined,
+              locationId: job.locationId,
               locationName: job.location.name,
             })
             total += addOn.clientRate
           })
         })
+      }
+
+      // Explicit pause adjustments are only needed for:
+      // - per-clean schedules billed at full rate while paused
+      // - flat-rate schedules reduced by days or a custom amount
+      // Visit-based flat-rate credits are computed from real missing jobs above.
+      // Never append an adjustment after an invoice for this period exists.
+      if (!hasExistingActiveInvoice) {
+        for (const pauseSchedule of clientPauseSchedules) {
+          const adjustment = computePauseInvoiceAdjustment(
+            pauseSchedule,
+            effectivePeriodStart,
+            periodEnd,
+          )
+          if (!adjustment) continue
+
+          lineItems.push({
+            description: adjustment.description,
+            quantity: 1,
+            price: adjustment.amount,
+            sourceType: 'PAUSE_ADJUSTMENT',
+            sourceId: pauseSchedule.id,
+            scheduleId: adjustment.scheduleId,
+            billingGroupId: flatBillingGroupByScheduleId.get(adjustment.scheduleId)
+              ?? adjustment.scheduleId,
+            locationId: adjustment.locationId,
+            locationName: adjustment.locationName,
+          })
+          total += adjustment.amount
+        }
       }
 
       // Cancellation fees: a cancelled clean carrying a fee bills that fee as a
@@ -558,13 +729,14 @@ export async function GET(request: Request) {
           sourceId: job.id,
           jobId: job.id,
           scheduleId: job.scheduleId || undefined,
+          locationId: job.locationId,
           locationName: job.location.name,
         })
         total += fee
       })
 
       // Build schedule summary
-      const schedules = clientsWithSchedules.find(c => c.id === clientId)?.locations.flatMap(l => l.schedules) || []
+      const schedules = clientWithSchedules?.locations.flatMap(l => l.schedules) || []
       const freqLabels: Record<string, string> = {
         'WEEKLY': 'Weekly',
         'BI_WEEKLY': 'Bi-weekly',
@@ -573,8 +745,11 @@ export async function GET(request: Request) {
         '2X_WEEKLY': '2x/week',
         '3X_WEEKLY': '3x/week',
       }
-      const scheduleSummary = schedules.length > 0
-        ? schedules.map(s => freqLabels[s.frequency] || s.frequency).join(', ')
+      const scheduleLabels = Array.from(new Set(
+        schedules.map(s => freqLabels[s.frequency] || s.frequency),
+      ))
+      const scheduleSummary = scheduleLabels.length > 0
+        ? scheduleLabels.join(', ')
         : 'No active schedule'
 
       // Determine status
@@ -610,23 +785,28 @@ export async function GET(request: Request) {
       if (lineItems.length > 0 || existingInvoiceId) {
         if (existingInvoiceId) representedInvoiceIds.add(existingInvoiceId)
         const flatRateScheduleItems = billingType === 'FLAT_RATE'
-          ? lineItems.filter(item => item.sourceType === 'FLAT_RATE' && item.scheduleId)
+          ? lineItems.filter(item => item.sourceType === 'FLAT_RATE' && item.billingGroupId)
           : []
 
         const uniqueFlatRates = new Set(flatRateScheduleItems.map(item => item.price))
-        const shouldSplitFlatRateBySchedule = flatRateScheduleItems.length > 1 && uniqueFlatRates.size > 1
+        const shouldSplitFlatRateByLocation = flatRateScheduleItems.length > 1 && uniqueFlatRates.size > 1
 
-        if (!existingInvoiceId && shouldSplitFlatRateBySchedule) {
+        if (!existingInvoiceId && shouldSplitFlatRateByLocation) {
           flatRateScheduleItems.forEach((scheduleItem) => {
+            const locationId = scheduleItem.locationId!
             const scheduleId = scheduleItem.scheduleId!
-            const scheduleJobs = uninvoicedJobs.filter(job => job.scheduleId === scheduleId)
+            const billingGroupId = scheduleItem.billingGroupId!
+            const scheduleJobs = uninvoicedJobs.filter((job) => (
+              !!job.scheduleId
+              && (flatBillingGroupByScheduleId.get(job.scheduleId) ?? job.scheduleId) === billingGroupId
+            ))
             const scheduleJobIds = new Set(scheduleJobs.map(job => job.id))
             const scopedLineItems = lineItems.filter(item =>
-              item.scheduleId === scheduleId ||
+              item.billingGroupId === billingGroupId ||
               (item.jobId ? scheduleJobIds.has(item.jobId) : false)
             )
             const scopedExceptions = dedupedExceptions.filter(exception =>
-              !exception.scheduleId || exception.scheduleId === scheduleId
+              !exception.locationId || exception.locationId === locationId
             )
             const scopedTotal = scopedLineItems.reduce((sum, item) => sum + item.price, 0)
             const locationLabel = scheduleItem.locationName
@@ -634,7 +814,7 @@ export async function GET(request: Request) {
               : ''
 
             candidates.push({
-              candidateId: `${clientId}:${scheduleId}`,
+              candidateId: `${clientId}:${billingGroupId}`,
               clientId,
               clientName: `${client.name}${locationLabel}`,
               billingType,
@@ -688,6 +868,7 @@ export async function GET(request: Request) {
             sourceId: job.id,
             jobId: job.id,
             scheduleId: job.scheduleId || undefined,
+            locationId: job.locationId,
             locationName: job.location.name,
           })),
           exceptions: [],

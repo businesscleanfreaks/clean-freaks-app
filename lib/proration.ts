@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
+import { pausePolicyForDate } from '@/lib/pause-billing'
 
 export interface LocationProration {
   locationId: string
@@ -56,14 +57,27 @@ export async function computeClientProration(
     const flatScheds = loc.schedules
     if (flatScheds.length === 0) continue
 
-    // Shared cadence across a pause-split (intervals share frequency/days). Use
-    // the most recent as the representative pattern + rate.
-    const rep = [...flatScheds].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0]
-    const flatRate = rep.defaultClientRate || 0
+    // A pause split keeps one logical cadence. Anchor interval frequencies
+    // (biweekly/every-N-weeks) to the earliest interval so the resumed record
+    // does not reset the cadence, while using the latest configured rate.
+    const sortedSchedules = [...flatScheds].sort(
+      (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+    )
+    const cadenceSchedule = sortedSchedules[0]
+    const representativeSchedule = sortedSchedules[sortedSchedules.length - 1]
+    const flatRate = representativeSchedule.defaultClientRate || 0
 
     // Service span this month = earliest interval start … latest interval end.
     const starts = flatScheds.map((s) => utcDateOnly(new Date(s.startDate)))
-    const ends = flatScheds.map((s) => (s.endDate ? utcDateOnly(new Date(s.endDate)) : mEnd))
+    const ends = flatScheds.map((schedule) => {
+      const intervalEnd = schedule.endDate ? utcDateOnly(new Date(schedule.endDate)) : mEnd
+      if (!schedule.pauseFrom) return intervalEnd
+
+      const pauseStart = utcDateOnly(new Date(schedule.pauseFrom))
+      const pauseEnd = schedule.pauseTo ? utcDateOnly(new Date(schedule.pauseTo)) : mEnd
+      const pauseOverlapsMonth = pauseStart <= mEnd && pauseEnd >= mStart
+      return pauseOverlapsMonth && pauseEnd > intervalEnd ? pauseEnd : intervalEnd
+    })
     const serviceStart = starts.reduce((a, b) => (a < b ? a : b))
     const serviceEnd = ends.reduce((a, b) => (a > b ? a : b))
     const spanStart = serviceStart > mStart ? serviceStart : mStart
@@ -72,12 +86,12 @@ export async function computeClientProration(
 
     const expectedDates = calculateScheduleDates(
       {
-        frequency: rep.frequency,
-        startDate: spanStart,
+        frequency: cadenceSchedule.frequency,
+        startDate: cadenceSchedule.startDate,
         endDate: spanEnd,
-        daysOfWeek: rep.daysOfWeek,
-        monthlyPattern: rep.monthlyPattern,
-        customDates: rep.customDates,
+        daysOfWeek: cadenceSchedule.daysOfWeek,
+        monthlyPattern: cadenceSchedule.monthlyPattern,
+        customDates: cadenceSchedule.customDates,
         excludedDates: null, // ignore excludedDates so a pause shows as missed, not as "expected was lower"
       },
       spanEnd,
@@ -85,8 +99,21 @@ export async function computeClientProration(
 
     const expected = expectedDates.length
     const flatSchedIds = new Set(flatScheds.map((s) => s.id))
-    const actual = loc.jobs.filter((j) => j.scheduleId && flatSchedIds.has(j.scheduleId)).length
-    const missed = Math.max(0, expected - actual)
+    const actualJobs = loc.jobs.filter((j) => j.scheduleId && flatSchedIds.has(j.scheduleId))
+    const actualDateKeys = new Set(actualJobs.map((job) => utcDateOnly(job.date).toISOString().slice(0, 10)))
+    const missingDates = expectedDates.filter(
+      (date) => !actualDateKeys.has(utcDateOnly(date).toISOString().slice(0, 10)),
+    )
+    const creditableMissingDates = missingDates.filter((date) => {
+      const pausePolicy = pausePolicyForDate(flatScheds, date)
+      if (!pausePolicy) return true
+
+      const billing = pausePolicy.pauseBilling ?? 'REDUCE'
+      const creditMode = pausePolicy.pauseCreditMode ?? 'VISITS'
+      return billing === 'REDUCE' && creditMode === 'VISITS'
+    })
+    const actual = actualJobs.length
+    const missed = creditableMissingDates.length
     if (missed === 0 || expected === 0) continue
 
     const perClean = flatRate / expected
@@ -96,7 +123,7 @@ export async function computeClientProration(
     out.push({
       locationId: loc.id,
       locationName: loc.name || loc.address?.split(',')[0] || 'Location',
-      scheduleId: rep.id,
+      scheduleId: representativeSchedule.id,
       flatRate,
       expected,
       actual,

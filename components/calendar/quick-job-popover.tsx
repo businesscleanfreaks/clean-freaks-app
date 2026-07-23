@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { format } from "date-fns"
+import { format, addMonths, startOfMonth, endOfMonth, isSameDay, addDays } from "date-fns"
 import { ArrowLeft, Loader2, Plus, Repeat2, X } from "lucide-react"
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -69,6 +69,76 @@ function scheduleSummary(job: QuickJob) {
   }
 }
 
+// Estimate the recurring cleans that fall inside a pause range, from the
+// schedule's weekday pattern. Weekly is exact; longer cadences are divided by
+// their week factor (a preview estimate, like the mockup's).
+function pauseCleanEstimate(
+  schedule: { frequency?: string; daysOfWeek?: string | null } | null | undefined,
+  fromStr: string,
+  toStr: string,
+): { count: number; cleanDays: Set<string> } {
+  const cleanDays = new Set<string>()
+  if (!schedule || !fromStr || !toStr) return { count: 0, cleanDays }
+  let days: number[] = []
+  try { days = schedule.daysOfWeek ? (JSON.parse(schedule.daysOfWeek) as number[]) : [] } catch { days = [] }
+  if (!days.length) return { count: 0, cleanDays }
+  const from = new Date(`${fromStr}T12:00:00`)
+  const to = new Date(`${toStr}T12:00:00`)
+  if (to < from) return { count: 0, cleanDays }
+  for (let d = new Date(from); d <= to; d = addDays(d, 1)) {
+    if (days.includes(d.getDay())) cleanDays.add(format(d, "yyyy-MM-dd"))
+  }
+  const factor: Record<string, number> = { BIWEEKLY: 2, EVERY_3_WEEKS: 3, EVERY_4_WEEKS: 4, EVERY_6_WEEKS: 6 }
+  const f = factor[schedule.frequency || ""] || 1
+  const count = f === 1 ? cleanDays.size : Math.max(cleanDays.size ? 1 : 0, Math.round(cleanDays.size / f))
+  return { count, cleanDays }
+}
+
+// A clickable month grid for selecting the pause range.
+function PauseMonth({ month, fromStr, toStr, cleanDays, onPick }: {
+  month: Date
+  fromStr: string
+  toStr: string
+  cleanDays: Set<string>
+  onPick: (dateStr: string) => void
+}) {
+  const monthStart = startOfMonth(month)
+  const offset = monthStart.getDay()
+  const dayCount = endOfMonth(month).getDate()
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const from = fromStr ? new Date(`${fromStr}T12:00:00`) : null
+  const to = toStr ? new Date(`${toStr}T12:00:00`) : null
+  return (
+    <div>
+      <div className="mb-1 text-center text-[11px] font-extrabold text-[#475569]">{format(month, "MMMM yyyy")}</div>
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {["S", "M", "T", "W", "T", "F", "S"].map((l, i) => <span key={`${l}-${i}`} className="text-center text-[9px] font-bold text-[#c3cad3]">{l}</span>)}
+        {Array.from({ length: offset }, (_, i) => <span key={`b-${i}`} />)}
+        {Array.from({ length: dayCount }, (_, i) => {
+          const date = new Date(month.getFullYear(), month.getMonth(), i + 1, 12)
+          const ds = format(date, "yyyy-MM-dd")
+          const past = date < today
+          const inRange = Boolean(from && to && date >= from && date <= to)
+          const isEnd = Boolean((from && isSameDay(date, from)) || (to && isSameDay(date, to)))
+          const isClean = cleanDays.has(ds)
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={past}
+              onClick={() => onPick(ds)}
+              className={`relative mx-auto flex h-7 w-7 items-center justify-center rounded-md text-[11px] font-semibold ${past ? "text-[#cbd5e1]" : isEnd ? "bg-[#0b7a4e] text-white" : inRange ? "bg-[#d7efe6] text-[#0b6b45]" : "text-[#475569] hover:bg-[#f1f5f9]"}`}
+            >
+              {i + 1}
+              {isClean && !isEnd && <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-[#0b7a4e]" />}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function jobType(job: QuickJob) {
   if (job.addOnServices?.length) return { label: "ADD-ON", color: "#1597B8" }
   if (job.isTrial) return { label: "TRIAL CLEAN", color: "#D97706" }
@@ -108,6 +178,11 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   const [cancelFee, setCancelFee] = useState("0")
   const [pauseFrom, setPauseFrom] = useState("")
   const [pauseTo, setPauseTo] = useState("")
+  const [pauseName, setPauseName] = useState("")
+  const [pauseBilling, setPauseBilling] = useState<"reduce" | "full">("reduce")
+  const [pauseCreditMode, setPauseCreditMode] = useState<"visits" | "days" | "custom">("visits")
+  const [pauseCustomCredit, setPauseCustomCredit] = useState("")
+  const [pauseCalMonth, setPauseCalMonth] = useState<Date>(() => new Date())
   const addServicePanelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -594,7 +669,9 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       const response = await fetch(`/api/schedules/${job.scheduleId}/pause`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pauseFrom, pauseTo, indefinite: false, carryForwardRecurringAddOns: true }),
+        // billing/breakName are captured for the "bill full rate" path; the
+        // endpoint currently applies the skip (reduce) behaviour and ignores extras.
+        body: JSON.stringify({ pauseFrom, pauseTo, indefinite: false, carryForwardRecurringAddOns: true, breakName: pauseName.trim() || undefined, billing: pauseBilling, creditMode: pauseBilling === "reduce" ? pauseCreditMode : undefined, creditAmount: pauseBilling === "reduce" && pauseCreditMode === "custom" ? Number(pauseCustomCredit) || 0 : undefined }),
       })
       if (!response.ok) {
         await showApiError(response, "Failed to pause schedule")
@@ -630,6 +707,24 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       setBusyAction(null)
     }
   }
+
+  // Range selection for the pause calendar: first click sets the start, second
+  // sets the end; clicking before the start (or when a range exists) restarts.
+  const pickPauseDate = (ds: string) => {
+    if (!pauseFrom || (pauseFrom && pauseTo)) { setPauseFrom(ds); setPauseTo(""); return }
+    if (ds < pauseFrom) { setPauseFrom(ds); return }
+    setPauseTo(ds)
+  }
+  const pausePreview = pauseCleanEstimate(job.schedule, pauseFrom, pauseTo)
+  const pausePerClean = Number(job.clientRate || 0)
+  const pauseDayCount = pauseFrom && pauseTo ? Math.round((new Date(`${pauseTo}T12:00:00`).getTime() - new Date(`${pauseFrom}T12:00:00`).getTime()) / 86400000) + 1 : 0
+  const pauseCredit = pauseBilling === "full"
+    ? 0
+    : pauseCreditMode === "custom"
+      ? Number(pauseCustomCredit) || 0
+      : pauseCreditMode === "days"
+        ? Math.round(pausePerClean * pausePreview.count) // per-visit basis for day-mode estimate
+        : pausePerClean * pausePreview.count
 
   const selectedCleanerName = activeSubcontractors.find(person => person.id === subcontractorId)?.name
   const performerName = job.vendor?.name || selectedCleanerName || "Unassigned"
@@ -814,7 +909,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
 
         <div className="flex shrink-0 items-center gap-3 border-t border-[#edf0f3] bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {job.status === 'CANCELLED' ? <button type="button" onClick={restoreClean} disabled={busyAction === 'restore'} className="text-[12px] font-bold text-[#08744f]">Restore clean</button> : <button type="button" onClick={() => setCancelOpen(true)} disabled={locked} className="text-[12px] font-bold text-[#c11f1f] disabled:opacity-40">Cancel this job</button>}
-          {job.scheduleId && job.status !== 'CANCELLED' && <button type="button" onClick={() => setPauseOpen(true)} disabled={locked} className="text-[12px] font-bold text-[#66758b] disabled:opacity-40">Pause schedule...</button>}
+          {job.scheduleId && job.status !== 'CANCELLED' && <button type="button" onClick={() => { const base = new Date(job.date); const today = new Date(); const start = base >= today ? base : today; setPauseFrom(""); setPauseTo(""); setPauseName(""); setPauseBilling("reduce"); setPauseCreditMode("visits"); setPauseCustomCredit(""); setPauseCalMonth(startOfMonth(start)); setPauseOpen(true) }} disabled={locked} className="text-[12px] font-bold text-[#66758b] disabled:opacity-40">Pause schedule...</button>}
           <button type="button" onClick={save} disabled={saving || locked} className="ml-auto flex min-w-[82px] items-center justify-center gap-1.5 rounded-lg bg-[#0B7A4E] px-4 py-2.5 text-[13px] font-extrabold text-white shadow-sm hover:bg-[#08633F] disabled:cursor-not-allowed disabled:bg-[#cbd5e1]">{saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{saving ? "Saving" : "Save"}</button>
         </div>
       </DialogContent>
@@ -841,18 +936,60 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
     </Dialog>
 
     <Dialog open={pauseOpen} onOpenChange={setPauseOpen}>
-      <DialogContent hideClose className="w-[min(94vw,650px)] max-w-[650px] gap-0 rounded-2xl border-0 p-0 shadow-2xl">
-        <div className="flex items-center gap-2 px-5 pt-5">
-          <button type="button" onClick={() => setPauseOpen(false)} aria-label="Back to booking" className="flex h-8 w-8 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f4f6]"><ArrowLeft className="h-4 w-4" /></button>
-          <DialogTitle className="text-[19px] font-extrabold text-[#172033]">Pause schedule</DialogTitle>
+      <DialogContent hideClose className="flex max-h-[92vh] w-[min(95vw,760px)] max-w-[760px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0 shadow-2xl">
+        <div className="flex items-start justify-between gap-2 px-5 pt-5">
+          <div>
+            <DialogTitle className="text-[17px] font-extrabold text-[#172033]">Pause schedule</DialogTitle>
+            <DialogDescription className="mt-1 text-[13px] leading-relaxed text-[#66758b]">{job.location.client.name} — cleans in this range are skipped. The schedule resumes on its own.</DialogDescription>
+          </div>
+          <button type="button" onClick={() => setPauseOpen(false)} aria-label="Close" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f1f5f9] text-[#8a93a0] hover:bg-[#e6ebf1]"><X className="h-3.5 w-3.5" /></button>
         </div>
-        <DialogDescription className="px-6 pt-1 text-[13px] text-[#66758b]">{job.location.client.name} · cleans in this range are skipped, then the schedule resumes automatically.</DialogDescription>
-        <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
-          <label className="text-[10px] font-extrabold text-[#66758b]">FIRST DAY OFF<input type="date" min={format(new Date(), 'yyyy-MM-dd')} value={pauseFrom} onChange={event => setPauseFrom(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d9e1ea] bg-[#f8fafc] px-3 text-[13px] font-semibold" /></label>
-          <label className="text-[10px] font-extrabold text-[#66758b]">LAST DAY OFF<input type="date" min={pauseFrom} value={pauseTo} onChange={event => setPauseTo(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d9e1ea] bg-[#f8fafc] px-3 text-[13px] font-semibold" /></label>
-          <div className="sm:col-span-2 rounded-xl border border-[#bddbd0] bg-[#eaf5f0] px-4 py-3 text-[12px] text-[#49675c]"><div className="flex justify-between"><span>Pause starts</span><strong>{pauseFrom ? format(new Date(`${pauseFrom}T12:00:00`), 'MMM d') : '—'}</strong></div><div className="mt-1 flex justify-between"><span>Resumes</span><strong>{pauseTo ? format(new Date(new Date(`${pauseTo}T12:00:00`).getTime() + 86400000), 'MMM d') : '—'}</strong></div><div className="mt-1 flex justify-between"><span>Cleaner pay</span><strong>Pauses automatically</strong></div></div>
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4 sm:grid-cols-[1.15fr_1fr]">
+          {/* Left: calendar range picker */}
+          <div className="self-start rounded-xl border border-[#e8ecf1] p-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <button type="button" onClick={() => setPauseCalMonth(addMonths(pauseCalMonth, -1))} className="flex h-6 w-6 items-center justify-center rounded-md bg-[#f1f5f9] text-[#8a93a0] hover:bg-[#e6ebf1]">‹</button>
+              <span className="text-[11px] font-semibold text-[#7f8ea3]">{pauseFrom && pauseTo ? `${format(new Date(`${pauseFrom}T12:00:00`), "MMM d")} – ${format(new Date(`${pauseTo}T12:00:00`), "MMM d")}` : pauseFrom ? "Pick the last day off" : "Pick the first day off"}</span>
+              <button type="button" onClick={() => setPauseCalMonth(addMonths(pauseCalMonth, 1))} className="flex h-6 w-6 items-center justify-center rounded-md bg-[#f1f5f9] text-[#8a93a0] hover:bg-[#e6ebf1]">›</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <PauseMonth month={pauseCalMonth} fromStr={pauseFrom} toStr={pauseTo} cleanDays={pausePreview.cleanDays} onPick={pickPauseDate} />
+              <PauseMonth month={addMonths(pauseCalMonth, 1)} fromStr={pauseFrom} toStr={pauseTo} cleanDays={pausePreview.cleanDays} onPick={pickPauseDate} />
+            </div>
+          </div>
+          {/* Right: name + billing + preview */}
+          <div className="flex flex-col gap-3">
+            <input value={pauseName} onChange={e => setPauseName(e.target.value)} placeholder="Name (optional — e.g. Winter break)" className="w-full rounded-lg border border-[#d2d8e0] bg-[#f6f7f9] px-3 py-2.5 text-[13px] outline-none focus:border-[#0b8557]" />
+            <div>
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#7f8ea3]">Billing during the pause</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setPauseBilling("full")} className={`flex-1 rounded-lg border px-2.5 py-2 text-left ${pauseBilling === "full" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Bill full rate</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Invoice stays the same</span></button>
+                <button type="button" onClick={() => setPauseBilling("reduce")} className={`flex-1 rounded-lg border px-2.5 py-2 text-left ${pauseBilling === "reduce" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Reduce invoice</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Credit per skipped clean</span></button>
+              </div>
+              {pauseBilling === "reduce" && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex gap-1.5">
+                    {([["visits", "By visits"], ["days", "By days"], ["custom", "Custom amount"]] as const).map(([v, label]) => (
+                      <button key={v} type="button" onClick={() => setPauseCreditMode(v)} className={`flex-1 rounded-md border px-1 py-1.5 text-[11px] font-bold ${pauseCreditMode === v ? "border-[#0b8557] bg-[#dff0e9] text-[#075f40]" : "border-[#e2e8f0] bg-white text-[#66758b]"}`}>{label}</button>
+                    ))}
+                  </div>
+                  {pauseCreditMode === "custom" && (
+                    <div className="flex items-center gap-1.5"><span className="text-[13px] text-[#7f8ea3]">$</span><input type="number" min="0" value={pauseCustomCredit} onChange={e => setPauseCustomCredit(e.target.value)} placeholder="Credit amount" className="h-9 flex-1 rounded-lg border border-[#d2d8e0] bg-[#f6f7f9] px-3 text-[13px] outline-none focus:border-[#0b8557]" /></div>
+                  )}
+                </div>
+              )}
+            </div>
+            {pauseFrom && pauseTo && (
+              <div className="flex flex-col gap-1.5 rounded-xl border border-[#cdeee5] bg-[#f2fbf9] px-3.5 py-3 text-[12.5px]">
+                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Cleans skipped</span><strong className="tabular-nums text-[#0f172a]">{pausePreview.count} · {pauseDayCount} day{pauseDayCount === 1 ? "" : "s"}</strong></div>
+                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Resumes</span><strong className="text-[#0f172a]">{format(addDays(new Date(`${pauseTo}T12:00:00`), 1), "EEE, MMM d")}</strong></div>
+                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Cleaner pay</span><strong className="text-[#0f172a]">Pauses automatically</strong></div>
+                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Client invoice</span><strong className="tabular-nums text-[#0f172a]">{pauseBilling === "full" ? "Bills as usual" : pauseCredit > 0 ? `−$${pauseCredit.toLocaleString("en-US")} credit` : "Reduced by skipped cleans"}</strong></div>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#edf0f3] px-6 py-3.5"><button type="button" onClick={() => setPauseOpen(false)} className="rounded-lg border border-[#d9e1ea] px-4 py-2.5 text-[12px] font-bold text-[#66758b]">Keep as is</button><button type="button" onClick={pauseSchedule} disabled={busyAction === 'pause'} className="flex min-w-[134px] items-center justify-center gap-2 rounded-lg bg-[#0B7A4E] px-4 py-2.5 text-[12px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'pause' && <Loader2 className="h-4 w-4 animate-spin" />}Pause schedule</button></div>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-[#edf0f3] px-5 py-3.5"><button type="button" onClick={() => setPauseOpen(false)} className="rounded-lg border border-[#e8ecf1] bg-white px-4 py-2.5 text-[12.5px] font-bold text-[#64748b]">Keep as is</button><button type="button" onClick={pauseSchedule} disabled={busyAction === 'pause' || !pauseFrom || !pauseTo} className="flex min-w-[134px] items-center justify-center gap-2 rounded-lg bg-[#0B7A4E] px-4 py-2.5 text-[12.5px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'pause' && <Loader2 className="h-4 w-4 animate-spin" />}Pause schedule</button></div>
       </DialogContent>
     </Dialog>
     </>

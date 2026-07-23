@@ -115,4 +115,68 @@ describe('flat-rate proration reliability', () => {
     expect(rows[0]).toMatchObject({ expected: 4, actual: 2, missed: 2, credit: 200 })
     expect(rows[0].credit).toBeLessThanOrEqual(rows[0].flatRate)
   })
+
+  it('does not credit a paused gap when the client is billed at full rate', async () => {
+    const first = await seedFlatRateLocation({
+      start: utc(2026, 5, 4),
+      end: utc(2026, 5, 10),
+      rate: 400,
+    })
+    await prisma.schedule.update({
+      where: { id: first.schedule.id },
+      data: {
+        pauseFrom: utc(2026, 5, 11),
+        pauseTo: utc(2026, 5, 24),
+        pauseBilling: 'FULL',
+      },
+    })
+    const resumed = await prisma.schedule.create({
+      data: {
+        locationId: first.location.id,
+        subcontractorId: first.sub.id,
+        frequency: 'WEEKLY',
+        daysOfWeek: JSON.stringify([1]),
+        timeType: 'SPECIFIC',
+        startTime: '09:00',
+        defaultClientRate: 400,
+        defaultSubcontractorRate: 80,
+        clientPayType: 'FLAT_RATE',
+        subcontractorPayType: 'PER_CLEAN',
+        startDate: utc(2026, 5, 25),
+      },
+    })
+    await createClean(first.location.id, first.schedule.id, first.sub.id, utc(2026, 5, 4))
+    await createClean(first.location.id, resumed.id, first.sub.id, utc(2026, 5, 25))
+
+    const rows = await computeClientProration(first.client.id, MAY.start, MAY.end)
+
+    expect(rows).toEqual([])
+  })
+
+  it('credits a whole-month visit-based pause even before a resumed interval exists', async () => {
+    const paused = await seedFlatRateLocation({
+      start: utc(2026, 5, 4),
+      end: utc(2026, 5, 3),
+      rate: 400,
+    })
+    await prisma.schedule.update({
+      where: { id: paused.schedule.id },
+      data: {
+        pauseFrom: utc(2026, 5, 4),
+        pauseTo: utc(2026, 5, 31),
+        pauseBilling: 'REDUCE',
+        pauseCreditMode: 'VISITS',
+      },
+    })
+
+    const rows = await computeClientProration(paused.client.id, MAY.start, MAY.end)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      expected: 4,
+      actual: 0,
+      missed: 4,
+      credit: 400,
+    })
+  })
 })

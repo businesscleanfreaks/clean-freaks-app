@@ -245,9 +245,20 @@ model Schedule {
 
   paymentCadenceOverride  String?      // Per-schedule override of subcontractor's default cadence (same enum values)
 
+  // A pause ends this interval and, when finite, creates a resumed interval.
+  // Billing metadata stays on the ended interval so invoice generation can
+  // distinguish a normal credit from "bill as usual" without fake jobs.
+  pauseFrom               DateTime?
+  pauseTo                 DateTime?
+  pauseName               String?
+  pauseBilling            String?      // REDUCE or FULL
+  pauseCreditMode         String?      // VISITS, DAYS, or CUSTOM
+  pauseCreditAmount       Float?
+
   @@index([locationId])
   @@index([isActive])
   @@index([locationId, isActive])
+  @@index([pauseFrom, pauseTo])
   @@map("schedules")
 }
 

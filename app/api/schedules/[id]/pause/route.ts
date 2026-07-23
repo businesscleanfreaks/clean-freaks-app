@@ -14,6 +14,18 @@ const pauseSchema = z.object({
   pauseTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   indefinite: z.boolean().optional().default(false),
   carryForwardRecurringAddOns: z.boolean().optional().default(true),
+  breakName: z.string().trim().max(120, 'Break name must be 120 characters or fewer.').optional(),
+  billing: z.enum(['reduce', 'full']).optional().default('reduce'),
+  creditMode: z.enum(['visits', 'days', 'custom']).optional(),
+  creditAmount: z.number().finite().min(0, 'Custom credit cannot be negative.').optional(),
+}).superRefine((value, context) => {
+  if (value.billing === 'reduce' && value.creditMode === 'custom' && !value.creditAmount) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['creditAmount'],
+      message: 'Enter a custom credit amount greater than zero.',
+    })
+  }
 })
 
 /**
@@ -29,7 +41,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 })
     }
-    const { pauseFrom, pauseTo, indefinite, carryForwardRecurringAddOns } = parsed.data
+    const {
+      pauseFrom,
+      pauseTo,
+      indefinite,
+      carryForwardRecurringAddOns,
+      breakName,
+      billing,
+      creditMode,
+      creditAmount,
+    } = parsed.data
 
     const schedule = await prisma.schedule.findUnique({
       where: { id: params.id },
@@ -39,6 +60,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
       },
     })
     if (!schedule) return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+    if (schedule.pauseFrom) {
+      return NextResponse.json({ error: 'This schedule interval has already been paused.' }, { status: 409 })
+    }
 
     const today = startOfDay(new Date())
     const pauseFromLocal = startOfDay(parseDateOnly(pauseFrom)!)
@@ -54,18 +78,42 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     // Stored as UTC-noon (what job regeneration reads back consistently).
     const pauseFromStorage = parseDateOnlyForStorage(pauseFrom)!
+    const scheduleStart = parseDateOnlyForStorage(schedule.startDate)!
+    if (pauseFromStorage < scheduleStart) {
+      return NextResponse.json({ error: 'Pause start cannot be before the schedule starts.' }, { status: 400 })
+    }
     const newOldEnd = subDays(pauseFromStorage, 1)
     const existingEnd = schedule.endDate ? parseDateOnlyForStorage(schedule.endDate) : null
+    if (existingEnd && pauseFromStorage > existingEnd) {
+      return NextResponse.json({ error: 'Pause start cannot be after the schedule ends.' }, { status: 400 })
+    }
     // Never extend a schedule that already ends before the pause.
     const oldEndDate = existingEnd && existingEnd < newOldEnd ? existingEnd : newOldEnd
+    const pauseToStorage = !indefinite && pauseTo ? parseDateOnlyForStorage(pauseTo) : null
+    const pauseBilling = billing.toUpperCase()
+    const pauseCreditMode = billing === 'reduce' ? (creditMode ?? 'visits').toUpperCase() : null
+    const pauseCreditAmount = billing === 'reduce' && creditMode === 'custom'
+      ? creditAmount
+      : null
 
     let resumeScheduleId: string | null = null
 
     await prisma.$transaction(async (tx) => {
-      await tx.schedule.update({ where: { id: schedule.id }, data: { endDate: oldEndDate } })
+      await tx.schedule.update({
+        where: { id: schedule.id },
+        data: {
+          endDate: oldEndDate,
+          pauseFrom: pauseFromStorage,
+          pauseTo: pauseToStorage,
+          pauseName: breakName || null,
+          pauseBilling,
+          pauseCreditMode,
+          pauseCreditAmount,
+        },
+      })
 
-      if (!indefinite && pauseTo) {
-        const resumeStart = addDays(parseDateOnlyForStorage(pauseTo)!, 1)
+      if (pauseToStorage) {
+        const resumeStart = addDays(pauseToStorage, 1)
         const resume = await tx.schedule.create({
           data: {
             locationId: schedule.locationId,
@@ -116,6 +164,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
       pausedScheduleId: schedule.id,
       resumeScheduleId,
       indefinite: !!indefinite,
+      pausePolicy: {
+        name: breakName || null,
+        billing: pauseBilling,
+        creditMode: pauseCreditMode,
+        creditAmount: pauseCreditAmount,
+      },
     })
   } catch (error) {
     logger.error('Error pausing schedule:', error)

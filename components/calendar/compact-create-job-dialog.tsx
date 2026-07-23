@@ -579,10 +579,10 @@ export function CompactCreateJobDialog({
             {clientMode === "existing" ? (
               <>
                 {selectedClient ? (
-                  <div className="flex items-start justify-between gap-2 border-b border-[#dfe5eb] px-0 py-2">
+                  <div className="flex items-center justify-between gap-2 border-b border-[#dfe5eb] px-1 py-1.5">
                     <div className="min-w-0">
-                      <div className="truncate text-[23px] font-extrabold leading-tight text-[#263246]">{selectedClient.name}</div>
-                      <div className="truncate text-xs text-slate-500">
+                      <div className="truncate text-[21px] font-extrabold leading-tight tracking-[-0.02em] text-[#263246]">{selectedClient.name}</div>
+                      <div className="truncate text-[11px] text-slate-500">
                         {locations[0]?.address || `${locations.length} location${locations.length === 1 ? "" : "s"}`}
                       </div>
                     </div>
@@ -648,7 +648,7 @@ export function CompactCreateJobDialog({
 
                 {selectedClient && locations.length > 0 && (
                   <div className="space-y-1">
-                    <Label className="text-[11px] text-slate-500">Location</Label>
+                    <Label className="block text-[10px] font-bold uppercase tracking-[0.05em] text-[#9aa6b2]">Location</Label>
                     <div className="space-y-1">
                       {locations.map(location => {
                         const selected = selectedLocationIds.includes(location.id)
@@ -657,14 +657,14 @@ export function CompactCreateJobDialog({
                             key={location.id}
                             type="button"
                             onClick={() => toggleLocation(location.id)}
-                            className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left ${selected ? "border-teal-300 bg-teal-50" : "border-slate-200 bg-white"}`}
+                            className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left ${selected ? "border-teal-300 bg-teal-50" : "border-slate-200 bg-white"}`}
                           >
-                            <span className={`flex h-4 w-4 items-center justify-center rounded border ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300"}`}>
+                            <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300"}`}>
                               {selected && <Check className="h-3 w-3" />}
                             </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium text-slate-900">{location.name}</span>
-                              <span className="block truncate text-[11px] text-slate-400">{location.address}</span>
+                            <span className="min-w-0 leading-tight">
+                              <span className="block truncate text-[13px] font-semibold text-slate-900">{location.name}</span>
+                              <span className="block truncate text-[10.5px] text-slate-400">{location.address}</span>
                             </span>
                           </button>
                         )

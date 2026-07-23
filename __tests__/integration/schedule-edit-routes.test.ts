@@ -283,7 +283,15 @@ describe('schedule edit route agreement (real DB)', () => {
     ]))
 
     const response = await pauseSchedule(
-      req({ pauseFrom: iso(pauseFrom), pauseTo: iso(pauseTo), indefinite: false }, 'POST'),
+      req({
+        pauseFrom: iso(pauseFrom),
+        pauseTo: iso(pauseTo),
+        indefinite: false,
+        breakName: 'Summer break',
+        billing: 'reduce',
+        creditMode: 'custom',
+        creditAmount: 75,
+      }, 'POST'),
       { params: { id: schedule.id } },
     )
 
@@ -295,6 +303,21 @@ describe('schedule edit route agreement (real DB)', () => {
     const resumed = await prisma.schedule.findUniqueOrThrow({ where: { id: body.resumeScheduleId } })
     expect(iso(paused.endDate!)).toBe(iso(addUtcDays(start, 6)))
     expect(iso(resumed.startDate)).toBe(iso(addUtcDays(start, 15)))
+    expect(paused).toMatchObject({
+      pauseName: 'Summer break',
+      pauseBilling: 'REDUCE',
+      pauseCreditMode: 'CUSTOM',
+      pauseCreditAmount: 75,
+    })
+    expect(iso(paused.pauseFrom!)).toBe(iso(pauseFrom))
+    expect(iso(paused.pauseTo!)).toBe(iso(pauseTo))
+    expect(resumed).toMatchObject({
+      pauseFrom: null,
+      pauseTo: null,
+      pauseBilling: null,
+      pauseCreditMode: null,
+      pauseCreditAmount: null,
+    })
 
     const schedulesToCheck = [schedule.id, body.resumeScheduleId as string]
     const afterPause = await prisma.job.findMany({
@@ -319,5 +342,22 @@ describe('schedule edit route agreement (real DB)', () => {
 
     expect(new Set(rerunDates).size).toBe(rerunDates.length)
     expect(rerunDates.filter((date) => date === iso(firstResumedClean))).toHaveLength(1)
+  })
+
+  it('rejects a custom pause credit without an amount', async () => {
+    const response = await pauseSchedule(
+      req({
+        pauseFrom: iso(utcDaysFromToday(2)),
+        pauseTo: iso(utcDaysFromToday(9)),
+        billing: 'reduce',
+        creditMode: 'custom',
+      }, 'POST'),
+      { params: { id: 'not-needed-for-validation' } },
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: 'Enter a custom credit amount greater than zero.',
+    })
   })
 })
