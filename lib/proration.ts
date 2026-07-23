@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
 import { pausePolicyForDate } from '@/lib/pause-billing'
+import { calculateVisitPauseCredit } from '@/lib/pause-credit'
 
 export interface LocationProration {
   locationId: string
@@ -117,7 +118,7 @@ export async function computeClientProration(
     if (missed === 0 || expected === 0) continue
 
     const perClean = flatRate / expected
-    const credit = Math.round(missed * perClean)
+    const credit = calculateVisitPauseCredit(flatRate, missed, expected)
     if (credit <= 0) continue
 
     out.push({

@@ -85,8 +85,9 @@ export interface Schedule {
   id: string
   locationId: string
   subcontractorId: string | null
-  frequency: 'WEEKLY' | 'BI_WEEKLY' | 'MONTHLY' | 'CUSTOM'
+  frequency: 'WEEKLY' | 'BI_WEEKLY' | 'EVERY_3_WEEKS' | 'EVERY_4_WEEKS' | 'EVERY_6_WEEKS' | '2X_MONTHLY' | 'MONTHLY' | 'CUSTOM'
   daysOfWeek: string | null
+  monthlyPattern?: string | null
   customDates: string | null
   timeType: 'SPECIFIC' | 'WINDOW'
   startTime: string | null
@@ -94,6 +95,8 @@ export interface Schedule {
   startWindowEnd: string | null
   defaultClientRate: number
   defaultSubcontractorRate: number
+  clientPayType?: 'FLAT_RATE' | 'PER_CLEAN'
+  subcontractorPayType?: 'FLAT_RATE' | 'PER_CLEAN'
   startDate: Date
   endDate: Date | null
   isActive: boolean

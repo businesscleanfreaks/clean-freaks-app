@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, Plus, Repeat2, X } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { hasFinalInvoice } from "@/lib/invoice-status"
+import { calculateDayPauseCredit, calculateVisitPauseCredit } from "@/lib/pause-credit"
 import { showApiError, showError, showSuccess, showUndoToast } from "@/lib/toast"
 import { refreshCalendarData } from "./calendar-client"
 import type { AddOnService, JobWithFullRelations, Subcontractor } from "@/types"
@@ -69,29 +70,107 @@ function scheduleSummary(job: QuickJob) {
   }
 }
 
-// Estimate the recurring cleans that fall inside a pause range, from the
-// schedule's weekday pattern. Weekly is exact; longer cadences are divided by
-// their week factor (a preview estimate, like the mockup's).
+type PausePreviewSchedule = {
+  frequency?: string
+  startDate?: string | Date | null
+  daysOfWeek?: string | null
+  monthlyPattern?: string | null
+  customDates?: string | null
+}
+
+// Mirrors the schedule generator for the calendar preview without importing
+// the server-only regeneration module into the client bundle.
 function pauseCleanEstimate(
-  schedule: { frequency?: string; daysOfWeek?: string | null } | null | undefined,
+  schedule: PausePreviewSchedule | null | undefined,
   fromStr: string,
   toStr: string,
 ): { count: number; cleanDays: Set<string> } {
   const cleanDays = new Set<string>()
   if (!schedule || !fromStr || !toStr) return { count: 0, cleanDays }
-  let days: number[] = []
-  try { days = schedule.daysOfWeek ? (JSON.parse(schedule.daysOfWeek) as number[]) : [] } catch { days = [] }
-  if (!days.length) return { count: 0, cleanDays }
   const from = new Date(`${fromStr}T12:00:00`)
   const to = new Date(`${toStr}T12:00:00`)
   if (to < from) return { count: 0, cleanDays }
-  for (let d = new Date(from); d <= to; d = addDays(d, 1)) {
-    if (days.includes(d.getDay())) cleanDays.add(format(d, "yyyy-MM-dd"))
+
+  const scheduleStartString = dateOnly(schedule.startDate) || fromStr
+  const scheduleStart = new Date(`${scheduleStartString}T12:00:00`)
+  const frequency = schedule.frequency || "WEEKLY"
+  const weekIntervals: Record<string, number> = {
+    WEEKLY: 1,
+    BI_WEEKLY: 2,
+    BIWEEKLY: 2,
+    EVERY_3_WEEKS: 3,
+    EVERY_4_WEEKS: 4,
+    EVERY_6_WEEKS: 6,
   }
-  const factor: Record<string, number> = { BIWEEKLY: 2, EVERY_3_WEEKS: 3, EVERY_4_WEEKS: 4, EVERY_6_WEEKS: 6 }
-  const f = factor[schedule.frequency || ""] || 1
-  const count = f === 1 ? cleanDays.size : Math.max(cleanDays.size ? 1 : 0, Math.round(cleanDays.size / f))
-  return { count, cleanDays }
+  const weekInterval = weekIntervals[frequency]
+
+  if (weekInterval) {
+    let days: number[] = []
+    try { days = schedule.daysOfWeek ? (JSON.parse(schedule.daysOfWeek) as number[]) : [] } catch { days = [] }
+    if (!days.length) days = [scheduleStart.getDay()]
+
+    let weekCount = 0
+    for (let date = new Date(scheduleStart); date <= to; date = addDays(date, 1)) {
+      if (date >= from && weekCount % weekInterval === 0 && days.includes(date.getDay())) {
+        cleanDays.add(format(date, "yyyy-MM-dd"))
+      }
+      const nextDate = addDays(date, 1)
+      if (date.getDay() === 6 && nextDate.getDay() === 0) weekCount++
+    }
+    return { count: cleanDays.size, cleanDays }
+  }
+
+  let pattern: {
+    type?: string
+    dates?: number[]
+    weekday?: number
+    weeks?: Array<number | "last">
+  } | null = null
+  try { pattern = schedule.monthlyPattern ? JSON.parse(schedule.monthlyPattern) : null } catch { pattern = null }
+
+  if (frequency === "CUSTOM" && schedule.customDates) {
+    try {
+      const customDates = JSON.parse(schedule.customDates) as string[]
+      customDates.forEach(value => {
+        const dateString = value.slice(0, 10)
+        if (dateString >= fromStr && dateString <= toStr && dateString >= scheduleStartString) cleanDays.add(dateString)
+      })
+    } catch {
+      return { count: 0, cleanDays }
+    }
+    return { count: cleanDays.size, cleanDays }
+  }
+
+  const rangeStart = scheduleStart > from ? scheduleStart : from
+  for (let date = new Date(rangeStart); date <= to; date = addDays(date, 1)) {
+    const day = date.getDate()
+    const daysInMonth = endOfMonth(date).getDate()
+    const ordinal = Math.floor((day - 1) / 7) + 1
+    const isLastWeekday = day + 7 > daysInMonth
+    let isScheduled = false
+
+    if (frequency === "MONTHLY") {
+      if (pattern?.type === "FIXED_DATES" && pattern.dates?.length) {
+        isScheduled = day === pattern.dates[0]
+      } else if (pattern?.type === "NTH_WEEKDAY" && pattern.weekday != null) {
+        isScheduled = date.getDay() === pattern.weekday
+          && Boolean(pattern.weeks?.some(week => week === ordinal || (week === "last" && isLastWeekday)))
+      } else {
+        isScheduled = day === scheduleStart.getDate()
+      }
+    } else if ((frequency === "2X_MONTHLY" || frequency === "TWICE_MONTHLY") && pattern) {
+      if (pattern.type === "FIXED_DATES") {
+        isScheduled = Boolean(pattern.dates?.includes(day))
+      } else if (pattern.type === "NTH_WEEKDAY" && pattern.weekday != null) {
+        isScheduled = date.getDay() === pattern.weekday
+          && Boolean(pattern.weeks?.some(week => week === ordinal || (week === "last" && isLastWeekday)))
+      }
+    }
+
+    if (isScheduled) cleanDays.add(format(date, "yyyy-MM-dd"))
+  }
+
+  return { count: cleanDays.size, cleanDays }
 }
 
 // A clickable month grid for selecting the pause range.
@@ -669,8 +748,6 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       const response = await fetch(`/api/schedules/${job.scheduleId}/pause`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // billing/breakName are captured for the "bill full rate" path; the
-        // endpoint currently applies the skip (reduce) behaviour and ignores extras.
         body: JSON.stringify({ pauseFrom, pauseTo, indefinite: false, carryForwardRecurringAddOns: true, breakName: pauseName.trim() || undefined, billing: pauseBilling, creditMode: pauseBilling === "reduce" ? pauseCreditMode : undefined, creditAmount: pauseBilling === "reduce" && pauseCreditMode === "custom" ? Number(pauseCustomCredit) || 0 : undefined }),
       })
       if (!response.ok) {
@@ -716,14 +793,13 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
     setPauseTo(ds)
   }
   const pausePreview = pauseCleanEstimate(job.schedule, pauseFrom, pauseTo)
-  const pausePerClean = Number(job.clientRate || 0)
-  const pauseCredit = pauseBilling === "full"
-    ? 0
-    : pauseCreditMode === "custom"
-      ? Number(pauseCustomCredit) || 0
-      : pauseCreditMode === "days"
-        ? Math.round(pausePerClean * pausePreview.count) // per-visit basis for day-mode estimate
-        : pausePerClean * pausePreview.count
+  const isFlatRatePause = job.schedule?.clientPayType === "FLAT_RATE"
+  const pausePerClean = Number(job.clientRate || job.schedule?.defaultClientRate || 0)
+  const pauseMonthlyRate = Number(job.schedule?.defaultClientRate || job.clientRate || 0)
+  const formatCredit = (value: number) => value.toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })
   const pausePreviewRows = (() => {
     if (!pauseFrom || !pauseTo) return []
 
@@ -733,24 +809,61 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
         label: `${pausePreview.count} clean${pausePreview.count === 1 ? "" : "s"} skipped`,
         value: "bills as usual",
       })
-    } else if (pauseCreditMode === "custom") {
-      rows.push({
-        label: "One-time credit",
-        value: `-$${pauseCredit.toLocaleString("en-US")} on ${format(new Date(`${pauseFrom}T12:00:00`), "MMMM")}'s invoice`,
-      })
-    } else {
-      const cleanDates = Array.from(pausePreview.cleanDays).sort().slice(0, pausePreview.count)
+    } else if (!isFlatRatePause) {
       const monthCounts = new Map<string, number>()
-      cleanDates.forEach(dateString => {
+      Array.from(pausePreview.cleanDays).sort().forEach(dateString => {
         const month = format(new Date(`${dateString}T12:00:00`), "MMMM")
         monthCounts.set(month, (monthCounts.get(month) || 0) + 1)
       })
       monthCounts.forEach((count, month) => {
         rows.push({
           label: month,
-          value: `-$${Math.round(pausePerClean * count).toLocaleString("en-US")} · ${count} clean${count === 1 ? "" : "s"}`,
+          value: `-$${formatCredit(pausePerClean * count)} · ${count} clean${count === 1 ? "" : "s"}`,
         })
       })
+    } else if (pauseCreditMode === "custom") {
+      const customCredit = Number(pauseCustomCredit) || 0
+      rows.push({
+        label: "One-time credit",
+        value: `-$${formatCredit(customCredit)} on ${format(new Date(`${pauseFrom}T12:00:00`), "MMMM")}'s invoice`,
+      })
+    } else {
+      const pauseStart = new Date(`${pauseFrom}T12:00:00`)
+      const pauseEnd = new Date(`${pauseTo}T12:00:00`)
+      for (
+        let month = startOfMonth(pauseStart);
+        month <= startOfMonth(pauseEnd);
+        month = addMonths(month, 1)
+      ) {
+        const monthStart = startOfMonth(month)
+        const monthEnd = endOfMonth(month)
+        const overlapStart = pauseStart > monthStart ? pauseStart : monthStart
+        const overlapEnd = pauseEnd < monthEnd ? pauseEnd : monthEnd
+        const monthLabel = format(month, "MMMM")
+        let credit = 0
+        let detail = ""
+
+        if (pauseCreditMode === "days") {
+          const pausedDays = Math.floor((overlapEnd.getTime() - overlapStart.getTime()) / 86_400_000) + 1
+          credit = calculateDayPauseCredit(pauseMonthlyRate, pausedDays, monthEnd.getDate())
+          detail = `${pausedDays} day${pausedDays === 1 ? "" : "s"}`
+        } else {
+          const monthStartString = format(monthStart, "yyyy-MM-dd")
+          const monthEndString = format(monthEnd, "yyyy-MM-dd")
+          const expectedVisits = pauseCleanEstimate(job.schedule, monthStartString, monthEndString).count
+          const skippedVisits = Array.from(pausePreview.cleanDays).filter(
+            dateString => dateString >= monthStartString && dateString <= monthEndString,
+          ).length
+          credit = calculateVisitPauseCredit(pauseMonthlyRate, skippedVisits, expectedVisits)
+          detail = `${skippedVisits} clean${skippedVisits === 1 ? "" : "s"}`
+        }
+
+        if (credit <= 0) continue
+        rows.push({
+          label: monthLabel,
+          value: `-$${formatCredit(credit)} · ${detail}`,
+        })
+      }
     }
 
     rows.push({
@@ -1003,7 +1116,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
                 <button type="button" onClick={() => setPauseBilling("full")} className={`flex-1 rounded-[10px] border px-3 py-2.5 text-left ${pauseBilling === "full" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Bill full rate</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Invoice stays the same</span></button>
                 <button type="button" onClick={() => setPauseBilling("reduce")} className={`flex-1 rounded-[10px] border px-3 py-2.5 text-left ${pauseBilling === "reduce" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Reduce invoice</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Credit per skipped clean</span></button>
               </div>
-              {pauseBilling === "reduce" && (
+              {pauseBilling === "reduce" && isFlatRatePause && (
                 <div className="mt-2 space-y-2">
                   <div className="flex gap-1.5">
                     {([["visits", "By visits"], ["days", "By days"], ["custom", "Custom amount"]] as const).map(([v, label]) => (
@@ -1013,6 +1126,11 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
                   {pauseCreditMode === "custom" && (
                     <div className="flex items-center gap-1.5"><span className="text-[13px] text-[#7f8ea3]">$</span><input type="number" min="0" value={pauseCustomCredit} onChange={e => setPauseCustomCredit(e.target.value)} placeholder="Credit amount" className="h-9 flex-1 rounded-lg border border-[#d2d8e0] bg-[#f6f7f9] px-3 text-[13px] outline-none focus:border-[#0b8557]" /></div>
                   )}
+                </div>
+              )}
+              {pauseBilling === "reduce" && !isFlatRatePause && (
+                <div className="mt-2 rounded-[9px] border border-[#cdeee5] bg-[#f2fbf9] px-3 py-2.5 text-[11px] leading-relaxed text-[#0f766e]">
+                  Per-clean billing automatically removes skipped cleans from the invoice. No proration method is needed.
                 </div>
               )}
             </div>

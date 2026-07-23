@@ -1,4 +1,5 @@
 import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
+import { calculateDayPauseCredit, roundCurrency } from '@/lib/pause-credit'
 
 export interface PauseBillingSchedule {
   id: string
@@ -45,10 +46,6 @@ function minDate(a: Date, b: Date) {
 
 function isWithin(date: Date, start: Date, end: Date) {
   return date >= start && date <= end
-}
-
-function roundCurrency(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
 function daysInUtcMonth(date: Date) {
@@ -155,10 +152,11 @@ export function computePauseInvoiceAdjustment(
     if (overlapStart > overlapEnd) return null
 
     const overlapDays = inclusiveUtcDays(overlapStart, overlapEnd)
-    const amount = roundCurrency(Math.min(
+    const amount = calculateDayPauseCredit(
       schedule.defaultClientRate,
-      schedule.defaultClientRate * (overlapDays / daysInUtcMonth(periodStart)),
-    ))
+      overlapDays,
+      daysInUtcMonth(periodStart),
+    )
     if (amount <= 0) return null
     return {
       scheduleId: schedule.id,
