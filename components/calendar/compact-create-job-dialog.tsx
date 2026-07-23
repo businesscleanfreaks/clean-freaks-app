@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
-import { Check, ChevronDown, ChevronUp, Clock, DollarSign, FileText, MapPin, Repeat, Search, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, Clock, DollarSign, FileText, MapPin, Plus, Repeat, Search, Sparkles, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -148,6 +148,8 @@ export function CompactCreateJobDialog({
   const [addOns, setAddOns] = useState<Array<{ description: string; vendorId: string; clientRate: string; subcontractorRate: string }>>([])
   const [addingAddOn, setAddingAddOn] = useState(false)
   const [addOnDraft, setAddOnDraft] = useState({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' })
+  // Whether the add-on service dropdown is on "Custom service" (reveals a name field).
+  const [addOnDraftCustom, setAddOnDraftCustom] = useState(false)
 
   const activeCleaners = useMemo(
     () => subcontractors.filter(subcontractor => subcontractor.isActive !== false),
@@ -594,51 +596,49 @@ export function CompactCreateJobDialog({
                     </button>
                   </div>
                 ) : (
-                  <div ref={clientPickerRef} className="relative space-y-1.5">
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                      <Input
-                        value={search}
-                        onClick={() => setDropOpen(current => !current)}
-                        onChange={event => {
-                          setSearch(event.target.value)
-                          setDropOpen(true)
-                        }}
-                        placeholder="Client name"
-                        className="h-11 border-x-0 border-t-0 border-b border-[#dfe5eb] pl-8 text-[19px] font-bold shadow-none focus-visible:ring-0"
-                      />
-                    </div>
-                    {dropOpen && (
-                      <div className="absolute left-0 right-0 top-full z-30 mt-1 space-y-1.5">
-                        <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-md">
-                          {filteredClients.map(client => {
-                            const firstLoc = client.locations?.[0]
-                            const subline = firstLoc?.address || client.phone || ""
-                            return (
-                              <button
-                                key={client.id}
-                                type="button"
-                                onClick={() => chooseClient(client)}
-                                className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
-                              >
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-medium text-slate-950">{client.name}</span>
-                                  {subline && <span className="block truncate text-xs text-slate-400">{subline}</span>}
-                                </span>
-                                <Check className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-                              </button>
-                            )
-                          })}
-                          {filteredClients.length === 0 && <div className="px-3 py-3 text-xs text-slate-400">No matching clients.</div>}
-                        </div>
+                  <div ref={clientPickerRef} className="relative">
+                    {/* Mockup client typeahead: a clean underlined field (no search
+                        icon) with an avatar-row dropdown; "Create <name>" is a row
+                        inside the same menu rather than a separate yellow box. */}
+                    <Input
+                      value={search}
+                      onClick={() => setDropOpen(current => !current)}
+                      onChange={event => {
+                        setSearch(event.target.value)
+                        setDropOpen(true)
+                      }}
+                      placeholder="Client name"
+                      className="h-11 border-x-0 border-t-0 border-b-[1.5px] border-[#dfe5eb] px-1 text-[21px] font-bold tracking-[-0.02em] shadow-none placeholder:text-[#9aa6b2] focus-visible:border-[var(--cf-green)] focus-visible:ring-0"
+                    />
+                    {dropOpen && (filteredClients.length > 0 || (typedClientName && !exactClientMatch)) && (
+                      <div className="absolute left-0 right-0 top-full z-30 mt-1.5 max-h-[230px] overflow-y-auto rounded-[11px] border border-[#e6e9ee] bg-white p-1.5 shadow-[0_14px_36px_rgba(16,24,40,0.18)]">
+                        {filteredClients.map(client => {
+                          const firstLoc = client.locations?.[0]
+                          const subline = firstLoc?.address || client.phone || ""
+                          const initials = (client.name.split(/\s+/).slice(0, 2).map(w => w[0]).join("") || "?").toUpperCase()
+                          return (
+                            <button
+                              key={client.id}
+                              type="button"
+                              onClick={() => chooseClient(client)}
+                              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[#f1f5f9]"
+                            >
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#eef1f4] text-[10px] font-extrabold text-[#64748b]">{initials}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold text-[#1e293b]">{client.name}</span>
+                                {subline && <span className="block truncate text-[11px] text-[#9aa6b2]">{subline}</span>}
+                              </span>
+                            </button>
+                          )
+                        })}
                         {typedClientName && !exactClientMatch && (
                           <button
                             type="button"
                             onClick={useTypedClientAsOneTime}
-                            className="flex w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100"
+                            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[#eafaf5]"
                           >
-                            <span className="min-w-0 truncate">Use &quot;{typedClientName}&quot; as a new client</span>
-                            <Check className="h-3.5 w-3.5 shrink-0" />
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#ecfdf9] text-[13px] font-bold text-[#0f766e]">+</span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#0f766e]">Create &quot;{typedClientName}&quot;</span>
                           </button>
                         )}
                       </div>
@@ -923,61 +923,76 @@ export function CompactCreateJobDialog({
 
           {!isTrial && serviceType === 'cleaning' && (
             <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-[11px] text-slate-500">Add-ons</Label>
-                {!addingAddOn && (
-                  <button
-                    type="button"
-                    onClick={() => { setAddOnDraft({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' }); setAddingAddOn(true) }}
-                    className="text-[11px] font-semibold text-teal-700 hover:text-teal-800"
-                  >
-                    + Add
-                  </button>
-                )}
-              </div>
+              <Label className="block text-[11px] font-bold uppercase tracking-[0.06em] text-[#9aa6b2]">Add-on services</Label>
               {addOns.map((ao, i) => {
                 const m = (parseFloat(ao.clientRate) || 0) - (parseFloat(ao.subcontractorRate) || 0)
                 const perf = ao.vendorId ? (addOnVendors.find(v => v.id === ao.vendorId)?.name || 'Vendor') : 'Cleaner (same as job)'
                 return (
-                  <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-                    <div className="min-w-0">
-                      <div className="truncate text-[12px] font-medium text-slate-800">{ao.description}</div>
-                      <div className="truncate text-[10.5px] text-slate-400">{perf}</div>
+                  <div key={i} className="flex items-center gap-2.5 rounded-xl border border-[#e6e9ee] bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#eef2f7] text-[#64748b]"><Sparkles className="h-3.5 w-3.5" /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-bold text-[#1f2937]">{ao.description}</div>
+                      <div className="truncate text-[10.5px] text-[#9aa6b2]">{perf}</div>
                     </div>
-                    <div className="flex flex-shrink-0 items-center gap-2 font-mono text-[11px]">
-                      <span className={m >= 0 ? 'text-emerald-700' : 'text-red-600'}>${m.toFixed(0)}</span>
-                      <button type="button" aria-label="Remove add-on" onClick={() => setAddOns(addOns.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-500">×</button>
-                    </div>
+                    <span className={`shrink-0 text-[12px] font-bold ${m >= 0 ? 'text-[#0f766e]' : 'text-red-600'}`}>${m.toFixed(0)}</span>
+                    <button type="button" aria-label="Remove add-on" onClick={() => setAddOns(addOns.filter((_, idx) => idx !== i))} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#aeb7c3] hover:bg-[#fdecec] hover:text-[#c11f1f]"><X className="h-3.5 w-3.5" /></button>
                   </div>
                 )
               })}
-              {addingAddOn && (
-                <div className="space-y-2 rounded-md border border-teal-200 bg-teal-50/60 p-2.5">
-                  <Input value={addOnDraft.description} onChange={e => setAddOnDraft({ ...addOnDraft, description: e.target.value })} placeholder="Add-on name (e.g. Window cleaning)" className="h-8 text-sm" />
+              {addingAddOn ? (
+                <div className="space-y-2 rounded-xl border border-[#b9d8cd] bg-[#f1f8f5] p-3">
+                  {/* Pick from a preset list (mockup) instead of typing the name by hand. */}
                   <select
-                    value={addOnDraft.vendorId}
-                    onChange={e => setAddOnDraft({ ...addOnDraft, vendorId: e.target.value })}
-                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none focus:border-teal-500"
+                    value={addOnDraftCustom ? customAddOnServiceValue : addOnDraft.description}
+                    onChange={e => {
+                      const v = e.target.value
+                      if (v === customAddOnServiceValue) { setAddOnDraftCustom(true); setAddOnDraft({ ...addOnDraft, description: '' }) }
+                      else { setAddOnDraftCustom(false); setAddOnDraft({ ...addOnDraft, description: v }) }
+                    }}
+                    className="h-10 w-full rounded-lg border border-[#c9d8d2] bg-white px-3 text-[13.5px] text-[#263246] outline-none focus:border-[#0b8557]"
                   >
-                    <option value="">Performed by: Cleaner (same as job)</option>
-                    {addOnVendors.map(v => <option key={v.id} value={v.id}>Performed by: {v.name}</option>)}
+                    <option value="" disabled>Choose a service…</option>
+                    {addOnServiceOptions.map(option => <option key={option} value={option}>{option}</option>)}
+                    <option value={customAddOnServiceValue}>Custom service…</option>
                   </select>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Input type="number" min="0" step="0.01" value={addOnDraft.clientRate} onChange={e => setAddOnDraft({ ...addOnDraft, clientRate: e.target.value })} placeholder="We charge" className="h-8 text-sm" />
-                    <Input type="number" min="0" step="0.01" value={addOnDraft.subcontractorRate} onChange={e => setAddOnDraft({ ...addOnDraft, subcontractorRate: e.target.value })} placeholder="We pay" className="h-8 text-sm" />
+                  {addOnDraftCustom && (
+                    <Input value={addOnDraft.description} onChange={e => setAddOnDraft({ ...addOnDraft, description: e.target.value })} placeholder="Service name" className="h-9 text-sm" autoFocus />
+                  )}
+                  <div>
+                    <Label className="mb-1 block text-[9px] font-extrabold uppercase tracking-wide text-[#08744f]">Performed by</Label>
+                    <select
+                      value={addOnDraft.vendorId}
+                      onChange={e => setAddOnDraft({ ...addOnDraft, vendorId: e.target.value })}
+                      className="h-9 w-full rounded-lg border border-[#c9d8d2] bg-white px-2.5 text-[13px] text-[#263246] outline-none focus:border-[#0b8557]"
+                    >
+                      <option value="">Cleaner (same as job)</option>
+                      {addOnVendors.map(v => <option key={v.id} value={v.id}>{v.name} · vendor</option>)}
+                    </select>
                   </div>
-                  <div className="flex justify-end gap-3 pt-0.5">
-                    <button type="button" onClick={() => setAddingAddOn(false)} className="text-[11px] text-slate-400 hover:text-slate-600">Cancel</button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-[9px] font-bold text-[#718096]">Client charged<Input type="number" min="0" step="0.01" value={addOnDraft.clientRate} onChange={e => setAddOnDraft({ ...addOnDraft, clientRate: e.target.value })} placeholder="0" className="mt-1 h-9 text-sm" /></label>
+                    <label className="text-[9px] font-bold text-[#718096]">We pay<Input type="number" min="0" step="0.01" value={addOnDraft.subcontractorRate} onChange={e => setAddOnDraft({ ...addOnDraft, subcontractorRate: e.target.value })} placeholder="0" className="mt-1 h-9 text-sm" /></label>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-0.5">
+                    <button type="button" onClick={() => { setAddingAddOn(false); setAddOnDraftCustom(false) }} className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold text-[#66758b]">Cancel</button>
                     <button
                       type="button"
                       disabled={!addOnDraft.description.trim() || !addOnDraft.clientRate}
-                      onClick={() => { setAddOns([...addOns, addOnDraft]); setAddingAddOn(false) }}
-                      className="rounded-md bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                      onClick={() => { setAddOns([...addOns, addOnDraft]); setAddingAddOn(false); setAddOnDraftCustom(false) }}
+                      className="rounded-lg bg-[#0B7A4E] px-4 py-1.5 text-[11px] font-extrabold text-white disabled:bg-[#a8cbbf]"
                     >
-                      Add
+                      Add service
                     </button>
                   </div>
                 </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setAddOnDraft({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' }); setAddOnDraftCustom(false); setAddingAddOn(true) }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#b9d8cd] bg-[#f1f8f5] px-3 py-2.5 text-[13px] font-bold text-[#0b7a4e] hover:bg-[#e7f4ee]"
+                >
+                  <Plus className="h-4 w-4" /> Add-on service
+                </button>
               )}
             </section>
           )}
