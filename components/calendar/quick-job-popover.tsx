@@ -111,8 +111,8 @@ function PauseMonth({ month, fromStr, toStr, cleanDays, onPick }: {
   return (
     <div>
       <div className="mb-1 text-center text-[11px] font-extrabold text-[#475569]">{format(month, "MMMM yyyy")}</div>
-      <div className="grid grid-cols-7 gap-y-0.5">
-        {["S", "M", "T", "W", "T", "F", "S"].map((l, i) => <span key={`${l}-${i}`} className="text-center text-[9px] font-bold text-[#c3cad3]">{l}</span>)}
+      <div className="grid grid-cols-7 gap-px">
+        {["S", "M", "T", "W", "T", "F", "S"].map((l, i) => <span key={`${l}-${i}`} className="py-0.5 text-center text-[9px] font-extrabold text-[#c3cad3]">{l}</span>)}
         {Array.from({ length: offset }, (_, i) => <span key={`b-${i}`} />)}
         {Array.from({ length: dayCount }, (_, i) => {
           const date = new Date(month.getFullYear(), month.getMonth(), i + 1, 12)
@@ -127,10 +127,10 @@ function PauseMonth({ month, fromStr, toStr, cleanDays, onPick }: {
               type="button"
               disabled={past}
               onClick={() => onPick(ds)}
-              className={`relative mx-auto flex h-7 w-7 items-center justify-center rounded-md text-[11px] font-semibold ${past ? "text-[#cbd5e1]" : isEnd ? "bg-[#0b7a4e] text-white" : inRange ? "bg-[#d7efe6] text-[#0b6b45]" : "text-[#475569] hover:bg-[#f1f5f9]"}`}
+              className={`relative flex min-h-[26px] w-full items-center justify-center rounded-md pb-1.5 pt-1 text-[11px] font-semibold ${past ? "text-[#cbd5e1]" : isEnd ? "bg-[#0b7a4e] text-white" : inRange ? "bg-[#d7efe6] text-[#0b6b45]" : "text-[#0f172a] hover:bg-[#f1f5f9]"}`}
             >
               {i + 1}
-              {isClean && !isEnd && <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-[#0b7a4e]" />}
+              {isClean && !isEnd && <span className={`absolute bottom-0.5 h-[3px] w-[3px] rounded-full ${inRange ? "bg-[#0b6b45]" : "bg-[#c3cad3]"}`} />}
             </button>
           )
         })}
@@ -717,7 +717,6 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   }
   const pausePreview = pauseCleanEstimate(job.schedule, pauseFrom, pauseTo)
   const pausePerClean = Number(job.clientRate || 0)
-  const pauseDayCount = pauseFrom && pauseTo ? Math.round((new Date(`${pauseTo}T12:00:00`).getTime() - new Date(`${pauseFrom}T12:00:00`).getTime()) / 86400000) + 1 : 0
   const pauseCredit = pauseBilling === "full"
     ? 0
     : pauseCreditMode === "custom"
@@ -725,6 +724,42 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
       : pauseCreditMode === "days"
         ? Math.round(pausePerClean * pausePreview.count) // per-visit basis for day-mode estimate
         : pausePerClean * pausePreview.count
+  const pausePreviewRows = (() => {
+    if (!pauseFrom || !pauseTo) return []
+
+    const rows: Array<{ label: string; value: string }> = []
+    if (pauseBilling === "full") {
+      rows.push({
+        label: `${pausePreview.count} clean${pausePreview.count === 1 ? "" : "s"} skipped`,
+        value: "bills as usual",
+      })
+    } else if (pauseCreditMode === "custom") {
+      rows.push({
+        label: "One-time credit",
+        value: `-$${pauseCredit.toLocaleString("en-US")} on ${format(new Date(`${pauseFrom}T12:00:00`), "MMMM")}'s invoice`,
+      })
+    } else {
+      const cleanDates = Array.from(pausePreview.cleanDays).sort().slice(0, pausePreview.count)
+      const monthCounts = new Map<string, number>()
+      cleanDates.forEach(dateString => {
+        const month = format(new Date(`${dateString}T12:00:00`), "MMMM")
+        monthCounts.set(month, (monthCounts.get(month) || 0) + 1)
+      })
+      monthCounts.forEach((count, month) => {
+        rows.push({
+          label: month,
+          value: `-$${Math.round(pausePerClean * count).toLocaleString("en-US")} · ${count} clean${count === 1 ? "" : "s"}`,
+        })
+      })
+    }
+
+    rows.push({
+      label: "Resumes",
+      value: format(addDays(new Date(`${pauseTo}T12:00:00`), 1), "MMM d"),
+    })
+    rows.push({ label: "Cleaner pay", value: "pauses automatically" })
+    return rows
+  })()
 
   const selectedCleanerName = activeSubcontractors.find(person => person.id === subcontractorId)?.name
   const performerName = job.vendor?.name || selectedCleanerName || "Unassigned"
@@ -936,35 +971,37 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
     </Dialog>
 
     <Dialog open={pauseOpen} onOpenChange={setPauseOpen}>
-      <DialogContent hideClose className="flex max-h-[92vh] w-[min(95vw,760px)] max-w-[760px] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0 shadow-2xl">
-        <div className="flex items-start justify-between gap-2 px-5 pt-5">
-          <div>
-            <DialogTitle className="text-[17px] font-extrabold text-[#172033]">Pause schedule</DialogTitle>
-            <DialogDescription className="mt-1 text-[13px] leading-relaxed text-[#66758b]">{job.location.client.name} — cleans in this range are skipped. The schedule resumes on its own.</DialogDescription>
-          </div>
+      <DialogContent
+        hideClose
+        overlayClassName="bg-[#0f172a]/[0.34]"
+        className="flex max-h-[92vh] w-full flex-col gap-0 overflow-hidden border-0 bg-white p-[18px] shadow-[0_24px_64px_rgba(16,24,40,0.28)] sm:!h-auto sm:!max-h-[90vh] sm:!w-[min(95vw,790px)] sm:!max-w-[790px] sm:!gap-0 sm:!rounded-[14px] sm:!border-0 sm:!p-[20px_22px]"
+      >
+        <div className="flex items-center justify-between">
+          <DialogTitle className="text-[17px] font-extrabold text-[#172033]">Pause schedule</DialogTitle>
           <button type="button" onClick={() => setPauseOpen(false)} aria-label="Close" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f1f5f9] text-[#8a93a0] hover:bg-[#e6ebf1]"><X className="h-3.5 w-3.5" /></button>
         </div>
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4 sm:grid-cols-[1.15fr_1fr]">
+        <DialogDescription className="mt-[5px] text-[13px] leading-[1.5] text-[#64748b]">{job.location.client.name} — cleans in this range are skipped. The schedule resumes on its own.</DialogDescription>
+        <div className="-mx-2 mt-[13px] grid min-h-0 flex-1 content-start gap-[18px] overflow-y-auto px-2 sm:grid-cols-[1.2fr_1fr]">
           {/* Left: calendar range picker */}
-          <div className="self-start rounded-xl border border-[#e8ecf1] p-3">
-            <div className="mb-1.5 flex items-center justify-between">
+          <div className="self-start rounded-[11px] border border-[#e8ecf1] px-3 py-2.5">
+            <div className="mb-[7px] flex items-center justify-between">
               <button type="button" onClick={() => setPauseCalMonth(addMonths(pauseCalMonth, -1))} className="flex h-6 w-6 items-center justify-center rounded-md bg-[#f1f5f9] text-[#8a93a0] hover:bg-[#e6ebf1]">‹</button>
-              <span className="text-[11px] font-semibold text-[#7f8ea3]">{pauseFrom && pauseTo ? `${format(new Date(`${pauseFrom}T12:00:00`), "MMM d")} – ${format(new Date(`${pauseTo}T12:00:00`), "MMM d")}` : pauseFrom ? "Pick the last day off" : "Pick the first day off"}</span>
+              <span className="text-[11px] font-semibold text-[#7f8ea3]">{pauseFrom && pauseTo ? "Dots are scheduled cleans." : pauseFrom ? "Now tap the last day off." : "Tap the first day off."}</span>
               <button type="button" onClick={() => setPauseCalMonth(addMonths(pauseCalMonth, 1))} className="flex h-6 w-6 items-center justify-center rounded-md bg-[#f1f5f9] text-[#8a93a0] hover:bg-[#e6ebf1]">›</button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <PauseMonth month={pauseCalMonth} fromStr={pauseFrom} toStr={pauseTo} cleanDays={pausePreview.cleanDays} onPick={pickPauseDate} />
               <PauseMonth month={addMonths(pauseCalMonth, 1)} fromStr={pauseFrom} toStr={pauseTo} cleanDays={pausePreview.cleanDays} onPick={pickPauseDate} />
             </div>
           </div>
           {/* Right: name + billing + preview */}
           <div className="flex flex-col gap-3">
-            <input value={pauseName} onChange={e => setPauseName(e.target.value)} placeholder="Name (optional — e.g. Winter break)" className="w-full rounded-lg border border-[#d2d8e0] bg-[#f6f7f9] px-3 py-2.5 text-[13px] outline-none focus:border-[#0b8557]" />
+            <input value={pauseName} onChange={e => setPauseName(e.target.value)} placeholder="Name (optional — e.g. Winter break)" className="w-full rounded-[9px] border border-[#d2d8e0] bg-[#f6f7f9] px-[11px] py-[9px] text-[13px] outline-none focus:border-[#0b8557]" />
             <div>
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#7f8ea3]">Billing during the pause</p>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setPauseBilling("full")} className={`flex-1 rounded-lg border px-2.5 py-2 text-left ${pauseBilling === "full" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Bill full rate</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Invoice stays the same</span></button>
-                <button type="button" onClick={() => setPauseBilling("reduce")} className={`flex-1 rounded-lg border px-2.5 py-2 text-left ${pauseBilling === "reduce" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Reduce invoice</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Credit per skipped clean</span></button>
+              <div className="flex gap-2.5">
+                <button type="button" onClick={() => setPauseBilling("full")} className={`flex-1 rounded-[10px] border px-3 py-2.5 text-left ${pauseBilling === "full" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Bill full rate</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Invoice stays the same</span></button>
+                <button type="button" onClick={() => setPauseBilling("reduce")} className={`flex-1 rounded-[10px] border px-3 py-2.5 text-left ${pauseBilling === "reduce" ? "border-[#0b8557] bg-[#eaf5f0]" : "border-[#e2e8f0] bg-white"}`}><span className="block text-[12.5px] font-bold text-[#0f172a]">Reduce invoice</span><span className="mt-0.5 block text-[10.5px] text-[#7f8ea3]">Credit per skipped clean</span></button>
               </div>
               {pauseBilling === "reduce" && (
                 <div className="mt-2 space-y-2">
@@ -980,16 +1017,18 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
               )}
             </div>
             {pauseFrom && pauseTo && (
-              <div className="flex flex-col gap-1.5 rounded-xl border border-[#cdeee5] bg-[#f2fbf9] px-3.5 py-3 text-[12.5px]">
-                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Cleans skipped</span><strong className="tabular-nums text-[#0f172a]">{pausePreview.count} · {pauseDayCount} day{pauseDayCount === 1 ? "" : "s"}</strong></div>
-                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Resumes</span><strong className="text-[#0f172a]">{format(addDays(new Date(`${pauseTo}T12:00:00`), 1), "EEE, MMM d")}</strong></div>
-                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Cleaner pay</span><strong className="text-[#0f172a]">Pauses automatically</strong></div>
-                <div className="flex justify-between"><span className="font-bold text-[#0f766e]">Client invoice</span><strong className="tabular-nums text-[#0f172a]">{pauseBilling === "full" ? "Bills as usual" : pauseCredit > 0 ? `−$${pauseCredit.toLocaleString("en-US")} credit` : "Reduced by skipped cleans"}</strong></div>
+              <div className="flex flex-col gap-[5px] rounded-[10px] border border-[#cdeee5] bg-[#f2fbf9] px-[13px] py-[11px] text-[12.5px]">
+                {pausePreviewRows.map(row => (
+                  <div key={row.label} className="flex items-center justify-between gap-3">
+                    <span className="font-bold text-[#0f766e]">{row.label}</span>
+                    <strong className="text-right tabular-nums text-[#0f172a]">{row.value}</strong>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
-        <div className="flex shrink-0 justify-end gap-2 border-t border-[#edf0f3] px-5 py-3.5"><button type="button" onClick={() => setPauseOpen(false)} className="rounded-lg border border-[#e8ecf1] bg-white px-4 py-2.5 text-[12.5px] font-bold text-[#64748b]">Keep as is</button><button type="button" onClick={pauseSchedule} disabled={busyAction === 'pause' || !pauseFrom || !pauseTo} className="flex min-w-[134px] items-center justify-center gap-2 rounded-lg bg-[#0B7A4E] px-4 py-2.5 text-[12.5px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'pause' && <Loader2 className="h-4 w-4 animate-spin" />}Pause schedule</button></div>
+        <div className="mt-4 flex shrink-0 justify-end gap-2"><button type="button" onClick={() => setPauseOpen(false)} className="rounded-[9px] border border-[#e8ecf1] bg-white px-3.5 py-[9px] text-[12.5px] font-bold text-[#64748b]">Keep as is</button><button type="button" onClick={pauseSchedule} disabled={busyAction === 'pause' || !pauseFrom || !pauseTo} className="flex min-w-[134px] items-center justify-center gap-2 rounded-[9px] bg-[#0B7A4E] px-4 py-[9px] text-[12.5px] font-extrabold text-white disabled:bg-[#a8cbbf]">{busyAction === 'pause' && <Loader2 className="h-4 w-4 animate-spin" />}Pause schedule</button></div>
       </DialogContent>
     </Dialog>
     </>
