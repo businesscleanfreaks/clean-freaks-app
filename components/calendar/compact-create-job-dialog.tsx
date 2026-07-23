@@ -316,7 +316,7 @@ export function CompactCreateJobDialog({
     setDropOpen(false)
   }
 
-  const useTypedClientAsOneTime = () => {
+  const selectTypedClientAsOneTime = () => {
     if (!typedClientName) return
     setClientMode("one-time")
     setOneTimeName(typedClientName)
@@ -615,7 +615,7 @@ export function CompactCreateJobDialog({
                           chooseClient(firstMatch)
                         } else if (typedClientName && !exactClientMatch) {
                           event.preventDefault()
-                          useTypedClientAsOneTime()
+                          selectTypedClientAsOneTime()
                         }
                       }}
                       placeholder="Client name"
@@ -648,7 +648,7 @@ export function CompactCreateJobDialog({
                         {typedClientName && !exactClientMatch && (
                           <button
                             type="button"
-                            onClick={useTypedClientAsOneTime}
+                            onClick={selectTypedClientAsOneTime}
                             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[#eafaf5]"
                           >
                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#ecfdf9] text-[13px] font-bold text-[#0f766e]">+</span>
