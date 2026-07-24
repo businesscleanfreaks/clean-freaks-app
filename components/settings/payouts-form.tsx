@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { FileText, Info, Download, Loader2, Clock, AlertTriangle } from "lucide-react"
+import { FileText, Info, Download, Loader2, Home, Building2, AlertTriangle } from "lucide-react"
 
 interface Summary {
   year: number
@@ -11,10 +11,36 @@ interface Summary {
   totalPaid: number
 }
 
+export interface PayoutTimingData {
+  residentialPayoutCadence: string
+  commercialPayoutCadence: string
+}
+
+// Human labels for the curated cadence options (must match PAYOUT_CADENCE_OPTIONS
+// in lib/payout-settings.ts, kept here so this client component avoids importing
+// the prisma-backed lib).
+const CADENCE_OPTIONS: { value: string; label: string }[] = [
+  { value: "IMMEDIATE", label: "Right away (once the clean is done)" },
+  { value: "AFTER_CLIENT_PAYS", label: "After the client pays" },
+  { value: "RESIDENTIAL_7_DAY", label: "7 days after the clean (fast-pay after 72h)" },
+  { value: "COMMERCIAL_CLIENT_PAID_OR_7TH", label: "When the client pays, or by the 7th" },
+  { value: "END_OF_MONTH", label: "End of the month" },
+  { value: "SEMI_MONTHLY", label: "Twice a month" },
+  { value: "ON_CLEANER_INVOICE", label: "Only when I release it manually" },
+]
+
 const money = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
 
-export function PayoutsForm() {
+interface Props {
+  payoutValue: PayoutTimingData
+  onPayoutChange: (patch: Partial<PayoutTimingData>) => void
+}
+
+const cadenceSelectCls =
+  "min-w-[230px] flex-none rounded-[9px] border border-[#dededa] bg-white px-[11px] py-[9px] text-[13px] font-semibold text-[#0d0d0e] outline-none focus:border-[#0b7a4e]"
+
+export function PayoutsForm({ payoutValue, onPayoutChange }: Props) {
   const currentYear = new Date().getFullYear()
   const years = [currentYear, currentYear - 1, currentYear - 2]
   const [year, setYear] = useState(currentYear)
@@ -54,17 +80,62 @@ export function PayoutsForm() {
         </div>
       </div>
 
-      {/* When cleaners get paid — set per cleaner (see profile) */}
+      {/* When cleaners get paid — default cadence by client type */}
       <div className="mb-[10px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#b3b6b9]">
         When cleaners get paid
       </div>
-      <div className="flex items-center gap-[14px] rounded-[14px] border border-[#e9e9e6] bg-white px-[22px] py-[18px]">
-        <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px] bg-[#eef6f1] text-[#0b7a4e]">
-          <Clock className="h-5 w-5" />
-        </span>
-        <div className="text-[13px] leading-relaxed text-[#6b6f73]">
-          Each cleaner&apos;s payout timing (immediate, after the client pays, end of month, …) is set on{" "}
-          <strong className="text-[#55585c]">their profile</strong>, since it varies per person.
+      <div className="rounded-[14px] border border-[#e9e9e6] bg-white px-[22px] py-[6px]">
+        <div className="pb-1 pt-[15px] text-[12.5px] leading-relaxed text-[#7e8489]">
+          Default payout timing by client type. Clients on the Residential/Commercial preset use these; an individual
+          cleaner can still be set differently on <strong className="text-[#55585c]">their profile</strong>.
+        </div>
+        <div className="flex flex-col gap-3 pb-[17px] pt-2">
+          <div className="flex flex-wrap items-center gap-[14px]">
+            <div className="flex min-w-[180px] flex-1 items-center gap-[10px]">
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] bg-[#eef4ff] text-[#2a6fdb]">
+                <Home className="h-4 w-4" />
+              </span>
+              <div>
+                <div className="text-[13.5px] font-bold">Residential</div>
+                <div className="mt-px text-[11.5px] text-[#7e8489]">Homes &amp; one-off cleans</div>
+              </div>
+            </div>
+            <select
+              aria-label="Residential cleaner payout timing"
+              value={payoutValue.residentialPayoutCadence}
+              onChange={(e) => onPayoutChange({ residentialPayoutCadence: e.target.value })}
+              className={cadenceSelectCls}
+            >
+              {CADENCE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-[14px]">
+            <div className="flex min-w-[180px] flex-1 items-center gap-[10px]">
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] bg-[#eef6f1] text-[#0f8a6e]">
+                <Building2 className="h-4 w-4" />
+              </span>
+              <div>
+                <div className="text-[13.5px] font-bold">Commercial</div>
+                <div className="mt-px text-[11.5px] text-[#7e8489]">Recurring accounts</div>
+              </div>
+            </div>
+            <select
+              aria-label="Commercial cleaner payout timing"
+              value={payoutValue.commercialPayoutCadence}
+              onChange={(e) => onPayoutChange({ commercialPayoutCadence: e.target.value })}
+              className={cadenceSelectCls}
+            >
+              {CADENCE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

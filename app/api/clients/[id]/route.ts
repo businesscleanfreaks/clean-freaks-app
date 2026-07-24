@@ -11,6 +11,7 @@ import {
   cadenceOverrideForClientPaymentRule,
   propertyTypeForClientPaymentRule,
 } from '@/lib/client-payment-rules'
+import { getPayoutSettings } from '@/lib/payout-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -180,12 +181,17 @@ export async function PUT(
       previousIsActive = existing?.isActive ?? true
     }
 
+    const payoutDefaults = paymentRulePresetProvided ? await getPayoutSettings() : null
+
     const client = await prisma.$transaction(async (tx) => {
       if (paymentRulePresetProvided) {
         await tx.schedule.updateMany({
           where: { location: { clientId: params.id } },
           data: {
-            paymentCadenceOverride: cadenceOverrideForClientPaymentRule(clientData.paymentRulePreset),
+            paymentCadenceOverride: cadenceOverrideForClientPaymentRule(clientData.paymentRulePreset, {
+              residential: payoutDefaults!.residentialPayoutCadence,
+              commercial: payoutDefaults!.commercialPayoutCadence,
+            }),
           },
         })
       }

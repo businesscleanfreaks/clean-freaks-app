@@ -6,6 +6,7 @@ import {
   cadenceOverrideForClientPaymentRule,
   propertyTypeForClientPaymentRule,
 } from "@/lib/client-payment-rules"
+import { getPayoutSettings } from "@/lib/payout-settings"
 
 const ALLOWED_FIELDS = new Set([
   "clientPrice",
@@ -121,6 +122,8 @@ export async function PUT(
       if (presetPropertyType) updateData.propertyType = presetPropertyType
     }
 
+    const payoutDefaults = field === "paymentRulePreset" ? await getPayoutSettings() : null
+
     const updated = await prisma.$transaction(async (tx) => {
       const client = await tx.client.update({
         where: { id: resolvedParams.id },
@@ -134,7 +137,10 @@ export async function PUT(
         await tx.schedule.updateMany({
           where: { location: { clientId: resolvedParams.id } },
           data: {
-            paymentCadenceOverride: cadenceOverrideForClientPaymentRule(processedValue as string | null),
+            paymentCadenceOverride: cadenceOverrideForClientPaymentRule(processedValue as string | null, {
+              residential: payoutDefaults!.residentialPayoutCadence,
+              commercial: payoutDefaults!.commercialPayoutCadence,
+            }),
           },
         })
       }

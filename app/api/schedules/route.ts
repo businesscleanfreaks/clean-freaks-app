@@ -8,6 +8,7 @@ import { calculateScheduleDates } from '@/lib/regenerate-schedule-jobs'
 import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { requireAuth } from '@/lib/auth'
 import { cadenceOverrideForClientPaymentRule } from '@/lib/client-payment-rules'
+import { getPayoutSettings } from '@/lib/payout-settings'
 
 // Type for transaction client
 type TransactionClient = Prisma.TransactionClient
@@ -119,13 +120,18 @@ export async function POST(request: Request) {
       return createErrorResponse('Location not found', 404, 'NOT_FOUND')
     }
 
+    const payoutDefaults = !cadenceOverrideProvided ? await getPayoutSettings() : null
+
     const schedule = await prisma.$transaction(async (tx) => {
       const newSchedule = await tx.schedule.create({
         data: {
           ...scheduleData,
           paymentCadenceOverride: cadenceOverrideProvided
             ? scheduleData.paymentCadenceOverride
-            : cadenceOverrideForClientPaymentRule(location.client.paymentRulePreset),
+            : cadenceOverrideForClientPaymentRule(location.client.paymentRulePreset, {
+                residential: payoutDefaults!.residentialPayoutCadence,
+                commercial: payoutDefaults!.commercialPayoutCadence,
+              }),
         },
         include: {
           location: {

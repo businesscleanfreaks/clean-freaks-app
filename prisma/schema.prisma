@@ -794,6 +794,11 @@ model BusinessSettings {
   residentialPaymentTerms String? // DUE_ON_RECEIPT | NET_7 | NET_14
   commercialPaymentTerms  String? // NET_15 | NET_30 | MONTH_END
   invoiceFooterNote       String?
+  // Default cleaner payout cadence by client type (see Subcontractor.paymentCadence enum).
+  // These drive cadenceOverrideForClientPaymentRule when a client is on the
+  // Residential/Commercial preset. Null falls back to the historical defaults.
+  residentialPayoutCadence String? // default RESIDENTIAL_7_DAY
+  commercialPayoutCadence  String? // default COMMERCIAL_CLIENT_PAID_OR_7TH
   autoGenerateInvoices Boolean   @default(true)
   billingStartDate     DateTime?
   projectedExpenses    Json?    // Dashboard monthly expense assumptions by category

@@ -9,7 +9,7 @@ import { EmailSettingsForm } from "./email-settings-form"
 import { BusinessProfileForm } from "./business-profile-form"
 import { InvoiceDefaultsForm } from "./invoice-defaults-form"
 import { PaymentsReceivedForm, type PaymentDetectionData } from "./payments-received-form"
-import { PayoutsForm } from "./payouts-form"
+import { PayoutsForm, type PayoutTimingData } from "./payouts-form"
 
 type Section = "business" | "team" | "delivery" | "invoicedefaults" | "payments" | "payouts"
 
@@ -66,6 +66,7 @@ interface SettingsShellProps {
   initialBusiness: BusinessProfileData
   initialInvoiceDefaults: InvoiceDefaultsData
   initialPaymentDetection: PaymentDetectionData
+  initialPayoutSettings: PayoutTimingData
   emailContext: { provider: string; credsSet: boolean }
 }
 
@@ -73,6 +74,7 @@ export function SettingsShell({
   initialBusiness,
   initialInvoiceDefaults,
   initialPaymentDetection,
+  initialPayoutSettings,
   emailContext,
 }: SettingsShellProps) {
   const [cat, setCat] = useState<Section>("business")
@@ -87,9 +89,13 @@ export function SettingsShell({
   const [paymentDetection, setPaymentDetection] = useState<PaymentDetectionData>(initialPaymentDetection)
   const [savedPaymentDetection, setSavedPaymentDetection] = useState<PaymentDetectionData>(initialPaymentDetection)
 
+  const [payoutSettings, setPayoutSettings] = useState<PayoutTimingData>(initialPayoutSettings)
+  const [savedPayoutSettings, setSavedPayoutSettings] = useState<PayoutTimingData>(initialPayoutSettings)
+
   const businessDirty = JSON.stringify(business) !== JSON.stringify(savedBusiness)
   const invoiceDefaultsDirty = JSON.stringify(invoiceDefaults) !== JSON.stringify(savedInvoiceDefaults)
   const paymentDetectionDirty = JSON.stringify(paymentDetection) !== JSON.stringify(savedPaymentDetection)
+  const payoutSettingsDirty = JSON.stringify(payoutSettings) !== JSON.stringify(savedPayoutSettings)
 
   const saveBusiness = async () => {
     if (!business.businessName.trim()) {
@@ -170,6 +176,29 @@ export function SettingsShell({
   const ensureDetectionSaved = async (): Promise<boolean> =>
     paymentDetectionDirty ? savePaymentDetection(true) : true
 
+  const savePayoutSettings = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch("/api/settings/payouts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payoutSettings),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to save settings")
+      }
+      const saved = (await res.json()) as PayoutTimingData
+      setPayoutSettings(saved)
+      setSavedPayoutSettings(saved)
+      showSuccess("Settings saved")
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // The save bar is shared by every section that self-manages a dirty draft.
   const activeSaver =
     cat === "business"
@@ -186,7 +215,13 @@ export function SettingsShell({
               save: () => savePaymentDetection(),
               discard: () => setPaymentDetection(savedPaymentDetection),
             }
-          : null
+          : cat === "payouts"
+            ? {
+                dirty: payoutSettingsDirty,
+                save: savePayoutSettings,
+                discard: () => setPayoutSettings(savedPayoutSettings),
+              }
+            : null
   const showSaveBar = activeSaver !== null
 
   return (
@@ -267,7 +302,12 @@ export function SettingsShell({
                 onEnsureSaved={ensureDetectionSaved}
               />
             )}
-            {cat === "payouts" && <PayoutsForm />}
+            {cat === "payouts" && (
+              <PayoutsForm
+                payoutValue={payoutSettings}
+                onPayoutChange={(patch) => setPayoutSettings((prev) => ({ ...prev, ...patch }))}
+              />
+            )}
             {COMING_SOON[cat] && <ComingSoon {...COMING_SOON[cat]!} />}
           </div>
         </div>
