@@ -120,7 +120,7 @@ export function InvoiceDefaultsForm({ value, onChange }: Props) {
       {/* Deferred controls */}
       <div className="mt-[14px] flex items-start gap-[9px] rounded-[11px] border border-[#ededea] bg-[#f7f7f5] px-[15px] py-[13px] text-[12.5px] leading-relaxed text-[#7e8489]">
         <Info className="mt-px h-4 w-4 flex-none" />
-        <span>Default tax rate and automatic late reminders are coming soon.</span>
+        <span>Automatic late reminders are coming soon.</span>
       </div>
     </div>
   )

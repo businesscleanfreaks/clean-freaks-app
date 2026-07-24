@@ -921,7 +921,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
           <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: type.color }} />
             {type.label}
-            <button type="button" onClick={() => onOpenChange(false)} aria-label="Close" className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-[#aeb7c3] hover:bg-[#f1f4f6] hover:text-[#64748b]">
+            <button type="button" onClick={() => onOpenChange(false)} aria-label="Close" className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-[#aeb7c3] hover:bg-[#f1f4f6] hover:text-[#64748b] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
               <X className="h-4 w-4" />
             </button>
           </div>
