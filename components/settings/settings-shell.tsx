@@ -9,6 +9,7 @@ import { EmailSettingsForm } from "./email-settings-form"
 import { BusinessProfileForm } from "./business-profile-form"
 import { InvoiceDefaultsForm } from "./invoice-defaults-form"
 import { PaymentsReceivedForm, type PaymentDetectionData } from "./payments-received-form"
+import { PayoutsForm } from "./payouts-form"
 
 type Section = "business" | "team" | "delivery" | "invoicedefaults" | "payments" | "payouts"
 
@@ -42,10 +43,6 @@ const COMING_SOON: Partial<Record<Section, { title: string; desc: string }>> = {
   team: {
     title: "Team",
     desc: "Invite people to log in and run the business with you. This section is coming soon.",
-  },
-  payouts: {
-    title: "Payouts & 1099s",
-    desc: "Default cleaner payout timing and 1099 exports. This section is coming soon.",
   },
 }
 
@@ -270,6 +267,7 @@ export function SettingsShell({
                 onEnsureSaved={ensureDetectionSaved}
               />
             )}
+            {cat === "payouts" && <PayoutsForm />}
             {COMING_SOON[cat] && <ComingSoon {...COMING_SOON[cat]!} />}
           </div>
         </div>
