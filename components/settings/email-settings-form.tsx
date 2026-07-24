@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Mail, Send, Eye, EyeOff, ShieldCheck, AlertTriangle, Loader2 } from "lucide-react"
+import { Send, Eye, EyeOff, ShieldCheck, AlertTriangle, Loader2 } from "lucide-react"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
 
 type Provider = "gmail" | "resend"
@@ -152,10 +152,25 @@ export function EmailSettingsForm() {
     }
   }
 
+  // Header — matches the other Settings sections (the shell supplies the page
+  // width and padding). Rendered while loading too, so the section title is
+  // there immediately instead of popping in after the fetch.
+  const header = (
+    <div className="mb-[26px]">
+      <h1 className="m-0 text-[24px] font-extrabold tracking-[-0.02em]">Invoice delivery</h1>
+      <div className="mt-[5px] text-[13.5px] text-[#6b6f73]">
+        The email account your client invoices are sent from.
+      </div>
+    </div>
+  )
+
   if (loading) {
     return (
-      <div className="flex h-[60vh] items-center justify-center text-zinc-400">
-        <Loader2 className="h-5 w-5 animate-spin" />
+      <div>
+        {header}
+        <div className="flex items-center justify-center py-16 text-zinc-400">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
       </div>
     )
   }
@@ -175,17 +190,8 @@ export function EmailSettingsForm() {
   }
 
   return (
-    <div className="mx-auto max-w-[760px] px-4 sm:px-6 py-8">
-      {/* Header */}
-      <div className="mb-5 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "rgba(13,148,136,0.10)" }}>
-          <Mail className="h-5 w-5" style={{ color: TEAL }} />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: "#18181B" }}>Email</h1>
-          <p className="text-[13px] text-zinc-500">Connect the account invoices are sent from.</p>
-        </div>
-      </div>
+    <div>
+      {header}
 
       {/* Status banner */}
       <div className="mb-5 flex items-center gap-2 rounded-lg px-4 py-3 text-[13px] font-medium"
