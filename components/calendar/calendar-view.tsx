@@ -562,6 +562,15 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   const [dragTarget, setDragTarget] = useState<{ date: Date | null; time: string | null }>({ date: null, time: null })
   const [originalJobPosition, setOriginalJobPosition] = useState<{ date: Date; time: string | null } | null>(null)
   const [originalJobPositions, setOriginalJobPositions] = useState<Map<string, { date: Date; time: string | null }>>(new Map())
+  // Scope prompt shown after dragging a RECURRING clean: move just this one, or
+  // shift the time of this + every future clean in the series.
+  const [recurringMove, setRecurringMove] = useState<{
+    jobId: string
+    newDate: Date
+    newTime: string | null
+    clientName: string
+    description: string
+  } | null>(null)
   const [clientSearchQuery, setClientSearchQuery] = useState('')
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false)
@@ -1133,6 +1142,112 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     handleJobDragEnd(jobId, newDate, newTime).catch(console.error)
   }
 
+  const jobIsLocked = (j: JobWithFullRelations) =>
+    hasFinalInvoice(j.invoiceLineItems) ||
+    j.subcontractorPaid ||
+    Boolean((j as JobWithFullRelations & { vendorPaid?: boolean }).vendorPaid) ||
+    j.status === 'CANCELLED'
+
+  // Undo an "All future" time shift by re-applying the schedule's previous
+  // default time to this and every future occurrence.
+  const undoMoveTimeForward = async (
+    jobId: string,
+    previousTime: string | null,
+    previousJobs: JobWithFullRelations[],
+  ) => {
+    setAllJobs(previousJobs)
+    try {
+      await fetch(`/api/jobs/${jobId}/move-forward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startTime: previousTime }),
+      })
+    } catch (error) {
+      console.error('Failed to undo move:', error)
+    } finally {
+      refreshCalendarData()
+    }
+  }
+
+  // "All future cleans": shift only the TIME of this + every later occurrence in
+  // the series. The recurring day is left unchanged, so nothing regenerates.
+  const handleMoveTimeForward = async (jobId: string, newTime: string | null) => {
+    const job = jobs.find(j => j.id === jobId)
+    if (!job || !job.scheduleId) return
+
+    if (jobIsLocked(job)) {
+      const { showError } = await import('@/lib/toast')
+      showError('This clean is locked and cannot be moved')
+      return
+    }
+
+    // Time-only mode: a drag that carried no time change has nothing to apply to
+    // the series, so snap the card back to the real (server) state.
+    if (!newTime || newTime === (job.startTime || null)) {
+      refreshCalendarData()
+      return
+    }
+
+    const scheduleId = job.scheduleId
+    const fromDateKey = getDateString(job.date)
+
+    // Optimistic: shift the time on this + every future editable clean in the series.
+    const previousJobs = [...allJobs]
+    setAllJobs(prev =>
+      prev.map(j =>
+        j.scheduleId === scheduleId && getDateString(j.date) >= fromDateKey && !jobIsLocked(j)
+          ? { ...j, startTime: newTime }
+          : j,
+      ),
+    )
+
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/move-forward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startTime: newTime }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to move future cleans')
+      }
+      const data = (await response.json()) as {
+        updated: number
+        skipped: number
+        previous: { startTime: string | null }
+      }
+
+      const { showUndoToast } = await import('@/lib/toast')
+      const count = data.updated
+      const label = `Moved ${count} clean${count === 1 ? '' : 's'} to ${formatTime(newTime)}`
+      showUndoToast(label, () => {
+        undoMoveTimeForward(jobId, data.previous?.startTime ?? null, previousJobs)
+      })
+
+      refreshCalendarData()
+    } catch (error) {
+      setAllJobs(previousJobs)
+      const { showError } = await import('@/lib/toast')
+      showError(error instanceof Error ? error.message : 'Failed to move future cleans')
+    }
+  }
+
+  const confirmMoveThisClean = () => {
+    const mv = recurringMove
+    setRecurringMove(null)
+    if (!mv) return
+    handleJobDragEnd(mv.jobId, mv.newDate, mv.newTime ?? undefined).catch(console.error)
+  }
+
+  const confirmMoveAllFuture = () => {
+    const mv = recurringMove
+    setRecurringMove(null)
+    if (!mv) return
+    handleMoveTimeForward(mv.jobId, mv.newTime).catch(console.error)
+  }
+
+  const cancelRecurringMove = () => setRecurringMove(null)
+
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
     const job = jobs.find(j => j.id === active.id)
@@ -1238,7 +1353,25 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
       
       // Only reschedule if position actually changed
       if (dateChanged || timeChanged) {
-        await handleJobDragEnd(job.id, newDate, newTime)
+        // A recurring clean asks first: move only this occurrence, or shift the
+        // whole series' time going forward (Google-Calendar style). One-off
+        // jobs just move. The card stays in place until the choice is made.
+        if (job.scheduleId) {
+          const clientName = job.location?.client?.name || 'this client'
+          const timeLabel = newTime ? formatTime(newTime) : null
+          const description = timeChanged && timeLabel
+            ? `${clientName}'s cleans repeat on a schedule. Move only this clean, or shift this and every future clean to ${timeLabel}.`
+            : `${clientName}'s cleans repeat on a schedule. Choose whether this move applies to just this clean or the whole series.`
+          setRecurringMove({
+            jobId: job.id,
+            newDate,
+            newTime: newTime ?? null,
+            clientName,
+            description,
+          })
+        } else {
+          await handleJobDragEnd(job.id, newDate, newTime)
+        }
       }
       // If position didn't change, do nothing (job stays in place and should look normal)
     }
@@ -3619,6 +3752,71 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
           onJobsUpdated={handleJobsUpdated}
           subcontractors={subcontractors.filter(s => (s as any).isActive !== false).map(s => ({ id: s.id, name: s.name }))}
         />
+      )}
+
+      {/* Recurring-move scope prompt (shown after dragging a recurring clean) */}
+      {recurringMove && (
+        <div
+          onClick={cancelRecurringMove}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,0.34)',
+            backdropFilter: 'blur(3px)',
+            WebkitBackdropFilter: 'blur(3px)',
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Move this recurring job?"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 420,
+              maxWidth: 'calc(100vw - 32px)',
+              background: '#fff',
+              borderRadius: 14,
+              boxShadow: '0 24px 64px rgba(16,24,40,.28)',
+              padding: '22px 24px',
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#0f172a' }}>Move this recurring job?</div>
+            <div style={{ fontSize: 13.5, color: '#64748b', marginTop: 7, lineHeight: 1.5 }}>
+              {recurringMove.description}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 18 }}>
+              <button
+                type="button"
+                onClick={confirmMoveThisClean}
+                style={{ textAlign: 'left', padding: '13px 15px', border: '1px solid #e8ecf1', borderRadius: 11, background: '#fff', cursor: 'pointer' }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Just this clean</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Move only this one. The rest of the series stays put.</div>
+              </button>
+              <button
+                type="button"
+                onClick={confirmMoveAllFuture}
+                style={{ textAlign: 'left', padding: '13px 15px', border: '1px solid #e8ecf1', borderRadius: 11, background: '#fff', cursor: 'pointer' }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>All future cleans</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Shift the time of this clean and every one after it.</div>
+              </button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={cancelRecurringMove}
+                style={{ fontSize: 13, fontWeight: 600, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
