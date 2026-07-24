@@ -8,6 +8,7 @@ import { showSuccess, showError } from "@/lib/toast"
 import { EmailSettingsForm } from "./email-settings-form"
 import { BusinessProfileForm } from "./business-profile-form"
 import { InvoiceDefaultsForm } from "./invoice-defaults-form"
+import { PaymentsReceivedForm, type PaymentDetectionData } from "./payments-received-form"
 
 type Section = "business" | "team" | "delivery" | "invoicedefaults" | "payments" | "payouts"
 
@@ -42,10 +43,6 @@ const COMING_SOON: Partial<Record<Section, { title: string; desc: string }>> = {
     title: "Team",
     desc: "Invite people to log in and run the business with you. This section is coming soon.",
   },
-  payments: {
-    title: "Payments received",
-    desc: "Payment methods you accept and Zelle auto-detection. Detection settings currently live under Invoice delivery. This section is coming soon.",
-  },
   payouts: {
     title: "Payouts & 1099s",
     desc: "Default cleaner payout timing and 1099 exports. This section is coming soon.",
@@ -71,9 +68,16 @@ function ComingSoon({ title, desc }: { title: string; desc: string }) {
 interface SettingsShellProps {
   initialBusiness: BusinessProfileData
   initialInvoiceDefaults: InvoiceDefaultsData
+  initialPaymentDetection: PaymentDetectionData
+  emailContext: { provider: string; credsSet: boolean }
 }
 
-export function SettingsShell({ initialBusiness, initialInvoiceDefaults }: SettingsShellProps) {
+export function SettingsShell({
+  initialBusiness,
+  initialInvoiceDefaults,
+  initialPaymentDetection,
+  emailContext,
+}: SettingsShellProps) {
   const [cat, setCat] = useState<Section>("business")
   const [saving, setSaving] = useState(false)
 
@@ -83,8 +87,12 @@ export function SettingsShell({ initialBusiness, initialInvoiceDefaults }: Setti
   const [invoiceDefaults, setInvoiceDefaults] = useState<InvoiceDefaultsData>(initialInvoiceDefaults)
   const [savedInvoiceDefaults, setSavedInvoiceDefaults] = useState<InvoiceDefaultsData>(initialInvoiceDefaults)
 
+  const [paymentDetection, setPaymentDetection] = useState<PaymentDetectionData>(initialPaymentDetection)
+  const [savedPaymentDetection, setSavedPaymentDetection] = useState<PaymentDetectionData>(initialPaymentDetection)
+
   const businessDirty = JSON.stringify(business) !== JSON.stringify(savedBusiness)
   const invoiceDefaultsDirty = JSON.stringify(invoiceDefaults) !== JSON.stringify(savedInvoiceDefaults)
+  const paymentDetectionDirty = JSON.stringify(paymentDetection) !== JSON.stringify(savedPaymentDetection)
 
   const saveBusiness = async () => {
     if (!business.businessName.trim()) {
@@ -136,6 +144,35 @@ export function SettingsShell({ initialBusiness, initialInvoiceDefaults }: Setti
     }
   }
 
+  const savePaymentDetection = async (silent = false): Promise<boolean> => {
+    setSaving(true)
+    try {
+      // The email PUT is a partial update, so sending only these two fields
+      // leaves the email delivery config untouched.
+      const res = await fetch("/api/settings/email", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(paymentDetection),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to save settings")
+      }
+      setSavedPaymentDetection(paymentDetection)
+      if (!silent) showSuccess("Settings saved")
+      return true
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to save settings")
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // A scan reads the SAVED settings, so persist any pending toggle change first.
+  const ensureDetectionSaved = async (): Promise<boolean> =>
+    paymentDetectionDirty ? savePaymentDetection(true) : true
+
   // The save bar is shared by every section that self-manages a dirty draft.
   const activeSaver =
     cat === "business"
@@ -146,7 +183,13 @@ export function SettingsShell({ initialBusiness, initialInvoiceDefaults }: Setti
             save: saveInvoiceDefaults,
             discard: () => setInvoiceDefaults(savedInvoiceDefaults),
           }
-        : null
+        : cat === "payments"
+          ? {
+              dirty: paymentDetectionDirty,
+              save: () => savePaymentDetection(),
+              discard: () => setPaymentDetection(savedPaymentDetection),
+            }
+          : null
   const showSaveBar = activeSaver !== null
 
   return (
@@ -216,6 +259,15 @@ export function SettingsShell({ initialBusiness, initialInvoiceDefaults }: Setti
               <InvoiceDefaultsForm
                 value={invoiceDefaults}
                 onChange={(patch) => setInvoiceDefaults((prev) => ({ ...prev, ...patch }))}
+              />
+            )}
+            {cat === "payments" && (
+              <PaymentsReceivedForm
+                value={paymentDetection}
+                onChange={(patch) => setPaymentDetection((prev) => ({ ...prev, ...patch }))}
+                provider={emailContext.provider}
+                credsSet={emailContext.credsSet}
+                onEnsureSaved={ensureDetectionSaved}
               />
             )}
             {COMING_SOON[cat] && <ComingSoon {...COMING_SOON[cat]!} />}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Mail, Send, Eye, EyeOff, ShieldCheck, AlertTriangle, Loader2, RefreshCw } from "lucide-react"
+import { Mail, Send, Eye, EyeOff, ShieldCheck, AlertTriangle, Loader2 } from "lucide-react"
 import { showSuccess, showError, showApiError } from "@/lib/toast"
 
 type Provider = "gmail" | "resend"
@@ -22,15 +22,6 @@ interface EmailSettings {
   hasRow: boolean
 }
 
-interface InboxScanResult {
-  scanned: number
-  created: number
-  skipped: number
-  scored: number
-  autoApplied: number
-  autoSkipped: number
-  lastInboxUid: string | null
-}
 
 const TEAL = "#0D9488"
 const BORDER = "#E4E4E7"
@@ -72,7 +63,6 @@ export function EmailSettingsForm() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [testingInbox, setTestingInbox] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
 
   const [provider, setProvider] = useState<Provider>("gmail")
@@ -82,10 +72,6 @@ export function EmailSettingsForm() {
   const [testEmail, setTestEmail] = useState("")
   const [enableSending, setEnableSending] = useState(false)
   const [allowReal, setAllowReal] = useState(false)
-  const [enableInboxSync, setEnableInboxSync] = useState(false)
-  const [autoConfirmHighConfidencePayments, setAutoConfirmHighConfidencePayments] = useState(false)
-  const [lastInboxUid, setLastInboxUid] = useState<string | null>(null)
-  const [inboxScanResult, setInboxScanResult] = useState<InboxScanResult | null>(null)
   // Secret inputs (empty = leave unchanged). The *Set flags reflect what's stored.
   const [gmailAppPassword, setGmailAppPassword] = useState("")
   const [resendApiKey, setResendApiKey] = useState("")
@@ -104,9 +90,6 @@ export function EmailSettingsForm() {
       setTestEmail(d.testEmail || "")
       setEnableSending(d.enableSending)
       setAllowReal(d.allowRealClientEmails)
-      setEnableInboxSync(d.enableInboxSync)
-      setAutoConfirmHighConfidencePayments(d.autoConfirmHighConfidencePayments)
-      setLastInboxUid(d.lastInboxUid)
       setGmailPwSet(d.gmailAppPasswordSet)
       setResendKeySet(d.resendApiKeySet)
       setGmailAppPassword("")
@@ -123,9 +106,11 @@ export function EmailSettingsForm() {
   const save = async (): Promise<boolean> => {
     setSaving(true)
     try {
+      // Payment inbox-sync settings moved to Settings → Payments received. This
+      // PUT is a partial update, so omitting them leaves those fields untouched.
       const payload: Record<string, unknown> = {
         provider, fromName, fromEmail, gmailUser, testEmail,
-        enableSending, allowRealClientEmails: allowReal, enableInboxSync, autoConfirmHighConfidencePayments,
+        enableSending, allowRealClientEmails: allowReal,
       }
       if (gmailAppPassword.trim()) payload.gmailAppPassword = gmailAppPassword
       if (resendApiKey.trim()) payload.resendApiKey = resendApiKey
@@ -164,25 +149,6 @@ export function EmailSettingsForm() {
       showError("Test email failed")
     } finally {
       setTesting(false)
-    }
-  }
-
-  const handleInboxTest = async () => {
-    setTestingInbox(true)
-    setInboxScanResult(null)
-    try {
-      const ok = await save()
-      if (!ok) return
-      const res = await fetch("/api/settings/email/test-inbox", { method: "POST" })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { showError(data?.error || "Inbox scan failed"); return }
-      setInboxScanResult(data as InboxScanResult)
-      setLastInboxUid(data.lastInboxUid || null)
-      showSuccess(`Inbox scan complete: ${data.scanned || 0} emails checked, ${data.created || 0} payments added, ${data.autoApplied || 0} auto-confirmed`)
-    } catch {
-      showError("Inbox scan failed")
-    } finally {
-      setTestingInbox(false)
     }
   }
 
@@ -317,60 +283,6 @@ export function EmailSettingsForm() {
           </Card>
         )}
 
-        <Card label="Payment inbox sync">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[14px] font-semibold text-slate-800">Read payment notifications</p>
-                <p className="text-[12px] text-zinc-500">
-                  Uses the Gmail login and App Password above to scan recent inbox mail for Zelle and processor payment notices.
-                </p>
-              </div>
-              <Switch checked={enableInboxSync} onChange={setEnableInboxSync} disabled={provider !== "gmail"} />
-            </div>
-
-            <div className="flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: BORDER }}>
-              <div>
-                <p className="text-[14px] font-semibold text-slate-800">Auto-confirm sure matches</p>
-                <p className="text-[12px] text-zinc-500">
-                  Only applies known-payer, exact-amount matches with one open invoice.
-                </p>
-              </div>
-              <Switch
-                checked={autoConfirmHighConfidencePayments}
-                onChange={setAutoConfirmHighConfidencePayments}
-                disabled={provider !== "gmail" || !enableInboxSync}
-              />
-            </div>
-
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-zinc-600">
-              {lastInboxUid
-                ? "Previous scans have completed for this mailbox."
-                : "No successful inbox scan has been recorded yet."}
-              {" "}Detected payments appear in Payables &gt; Payments to review.
-            </div>
-
-            {inboxScanResult && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
-                Last scan checked {inboxScanResult.scanned} email(s), added {inboxScanResult.created} payment(s),
-                skipped {inboxScanResult.skipped}, scored {inboxScanResult.scored} review item(s),
-                and auto-confirmed {inboxScanResult.autoApplied}.
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleInboxTest}
-              disabled={saving || testingInbox || provider !== "gmail" || !enableInboxSync || !credsSet}
-              className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50"
-              style={{ border: `1px solid ${BORDER}`, color: "#52525B", background: "#FFFFFF" }}
-            >
-              {testingInbox ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {testingInbox ? "Scanning..." : "Save & scan inbox"}
-            </button>
-          </div>
-        </Card>
-
         {/* Sending controls */}
         <Card label="Sending">
           <div className="space-y-4">
@@ -403,7 +315,7 @@ export function EmailSettingsForm() {
       <div className="mt-6 flex items-center justify-end gap-3">
         <button
           onClick={handleTest}
-          disabled={saving || testing || testingInbox}
+          disabled={saving || testing}
           className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50"
           style={{ border: `1px solid ${BORDER}`, color: "#52525B", background: "#FFFFFF" }}
         >
@@ -412,7 +324,7 @@ export function EmailSettingsForm() {
         </button>
         <button
           onClick={handleSave}
-          disabled={saving || testing || testingInbox}
+          disabled={saving || testing}
           className="inline-flex items-center gap-2 rounded-md px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{ background: TEAL }}
         >
