@@ -284,13 +284,43 @@ const DEFAULT_LOGO_SETTINGS: LogoSettings = {
   maxHeight: 70,
 }
 
+export interface InvoiceBusinessInfo {
+  businessName?: string | null
+  legalName?: string | null
+  email?: string | null
+  phone?: string | null
+  paymentEmail?: string | null
+}
+
+// Current invoice identity — kept as fallbacks so the PDF is unchanged until
+// the business profile fields are filled in under Settings → Business profile.
+const BUSINESS_FALLBACK = {
+  businessName: 'The Clean Freaks',
+  legalName: 'Shiloh Pro Cleaning Services',
+  email: 'admin@thecleanfreaks.co',
+  phone: '(323) 746-0324',
+  paymentEmail: 'admin@thecleanfreaks.co',
+}
+
 interface InvoicePDFProps {
   invoice: InvoiceWithRelations
   logoSettings?: LogoSettings
+  business?: InvoiceBusinessInfo
 }
 
-export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
+export function InvoicePDF({ invoice, logoSettings, business }: InvoicePDFProps) {
   const settings = logoSettings || DEFAULT_LOGO_SETTINGS
+
+  // Resolve the business identity, falling back to the previously hardcoded values.
+  const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null)
+  const bizName = clean(business?.businessName) || BUSINESS_FALLBACK.businessName
+  const bizLegal = clean(business?.legalName) || BUSINESS_FALLBACK.legalName
+  const bizEmail = clean(business?.email) || BUSINESS_FALLBACK.email
+  const bizPhone = clean(business?.phone) || BUSINESS_FALLBACK.phone
+  const bizPaymentEmail = clean(business?.paymentEmail) || BUSINESS_FALLBACK.paymentEmail
+  // The legal entity is the payment "Full Name"; show the DBA line only when the
+  // display name genuinely differs from the legal name.
+  const bizDba = bizLegal !== bizName ? `(DBA ${bizName})` : null
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -464,16 +494,16 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
               <Text style={styles.paymentTitle}>Preferred Payment Option:</Text>
               <View style={{ marginBottom: 6 }}>
                 <Text style={styles.paymentLabel}>Zelle</Text>
-                <Text style={styles.paymentValue}>admin@thecleanfreaks.co</Text>
+                <Text style={styles.paymentValue}>{bizPaymentEmail}</Text>
               </View>
               <View>
                 <Text style={styles.paymentLabel}>Full Name</Text>
-                <Text style={styles.paymentValue}>Shiloh Pro Cleaning Services</Text>
-                <Text style={styles.paymentDba}>(DBA The Clean Freaks)</Text>
+                <Text style={styles.paymentValue}>{bizLegal}</Text>
+                {bizDba && <Text style={styles.paymentDba}>{bizDba}</Text>}
               </View>
             </View>
             <View style={styles.paymentRight}>
-              <Text style={styles.paidToLabel}>Paid to The Clean Freaks</Text>
+              <Text style={styles.paidToLabel}>Paid to {bizName}</Text>
               <Text style={styles.thankYouText}>Thank you for your business!</Text>
             </View>
           </View>
@@ -495,8 +525,8 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
                 <Text style={styles.footerIconText}>📞</Text>
               </View>
               <View style={styles.footerTextGroup}>
-                <Text style={styles.footerBold}>(323) 746-0324</Text>
-                <Text style={styles.footerSub}>The Clean Freaks</Text>
+                <Text style={styles.footerBold}>{bizPhone}</Text>
+                <Text style={styles.footerSub}>{bizName}</Text>
               </View>
             </View>
             <View style={styles.footerItem}>
@@ -504,8 +534,8 @@ export function InvoicePDF({ invoice, logoSettings }: InvoicePDFProps) {
                 <Text style={styles.footerIconText}>🌐</Text>
               </View>
               <View style={styles.footerTextGroup}>
-                <Text style={styles.footerBold}>admin@thecleanfreaks.co</Text>
-                <Text style={styles.footerSub}>The Clean Freaks</Text>
+                <Text style={styles.footerBold}>{bizEmail}</Text>
+                <Text style={styles.footerSub}>{bizName}</Text>
               </View>
             </View>
           </View>

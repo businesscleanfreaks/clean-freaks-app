@@ -783,9 +783,11 @@ model HiddenConversation {
 model BusinessSettings {
   id                   String   @id @default("singleton")
   businessName         String   @default("The Clean Freaks")
+  legalName            String?  // Legal entity on invoices, e.g. "Shiloh Pro Cleaning Services" (businessName is the DBA)
   email                String?
   phone                String?
   address              String?
+  paymentEmail         String?  // Zelle / payment address shown on the invoice payment block
   defaultPaymentTerms  String   @default("NET_30")
   autoGenerateInvoices Boolean   @default(true)
   billingStartDate     DateTime?

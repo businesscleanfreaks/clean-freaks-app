@@ -1,9 +1,11 @@
 import { requireAuth } from "@/lib/auth"
-import { EmailSettingsForm } from "@/components/settings/email-settings-form"
+import { getBusinessProfile } from "@/lib/business-settings"
+import { SettingsShell } from "@/components/settings/settings-shell"
 
 export const dynamic = "force-dynamic"
 
 export default async function SettingsPage() {
   await requireAuth()
-  return <EmailSettingsForm />
+  const business = await getBusinessProfile()
+  return <SettingsShell initialBusiness={business} />
 }

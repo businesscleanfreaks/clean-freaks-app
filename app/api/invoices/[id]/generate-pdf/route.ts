@@ -3,18 +3,19 @@ import { prisma } from '@/lib/db'
 import { renderToBuffer } from '@react-pdf/renderer'
 import React from 'react'
 import { InvoicePDF } from '@/components/invoices/invoice-pdf'
-import type { LogoSettings } from '@/components/invoices/invoice-pdf'
+import type { LogoSettings, InvoiceBusinessInfo } from '@/components/invoices/invoice-pdf'
 import { logger } from '@/lib/logger'
 import type { InvoiceWithRelations } from '@/types'
 import { requireAuth } from '@/lib/auth'
 import { decodeInvoiceToken } from '@/lib/invoice-tokens'
+import { getBusinessProfile } from '@/lib/business-settings'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // Bump when invoice-pdf.tsx (the template) changes, to invalidate every cached PDF.
-const PDF_TEMPLATE_VERSION = 'v4-ref-layout'
+const PDF_TEMPLATE_VERSION = 'v5-business-identity'
 const LOGO_SETTINGS_CACHE_MS = 60_000
 
 class InvoicePdfNotFoundError extends Error {}
@@ -80,10 +81,21 @@ interface PdfFingerprintSource {
  * cache columns so storing the cache never invalidates it, and includes a
  * template version so a renderer change forces regeneration.
  */
-function computePdfFingerprint(invoice: PdfFingerprintSource, logoSettings: LogoSettings | undefined): string {
+function computePdfFingerprint(
+  invoice: PdfFingerprintSource,
+  logoSettings: LogoSettings | undefined,
+  business: InvoiceBusinessInfo,
+): string {
   const c = invoice.client
   const payload = {
     v: PDF_TEMPLATE_VERSION,
+    biz: {
+      n: business.businessName,
+      ln: business.legalName,
+      e: business.email,
+      p: business.phone,
+      pe: business.paymentEmail,
+    },
     inv: {
       n: invoice.invoiceNumber,
       t: invoice.totalAmount,
@@ -159,7 +171,8 @@ async function getLogoSettings(): Promise<LogoSettings | undefined> {
  * stale PDF — any line-item, clean, amount, or contact change bumps the fp.
  */
 async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: LogoSettings | undefined): Promise<Buffer> {
-  const fingerprint = computePdfFingerprint(invoice as unknown as PdfFingerprintSource, logoSettings)
+  const business = await getBusinessProfile()
+  const fingerprint = computePdfFingerprint(invoice as unknown as PdfFingerprintSource, logoSettings, business)
 
   const cached = await prisma.invoicePdfCache.findUnique({ where: { invoiceId: invoice.id } })
   if (cached && cached.fingerprint === fingerprint) {
@@ -176,6 +189,7 @@ async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: Logo
     const element = React.createElement(InvoicePDF, {
       invoice: invoice as unknown as InvoiceWithRelations,
       logoSettings,
+      business,
     })
     const buffer = await renderToBuffer(element as React.ReactElement)
 
