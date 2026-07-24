@@ -789,6 +789,11 @@ model BusinessSettings {
   address              String?
   paymentEmail         String?  // Zelle / payment address shown on the invoice payment block
   defaultPaymentTerms  String   @default("NET_30")
+  // Invoice defaults — used to auto-fill a new invoice's due date by client type,
+  // and the footer note shown on every invoice.
+  residentialPaymentTerms String? // DUE_ON_RECEIPT | NET_7 | NET_14
+  commercialPaymentTerms  String? // NET_15 | NET_30 | MONTH_END
+  invoiceFooterNote       String?
   autoGenerateInvoices Boolean   @default(true)
   billingStartDate     DateTime?
   projectedExpenses    Json?    // Dashboard monthly expense assumptions by category

@@ -9,6 +9,7 @@ import type { InvoiceWithRelations } from '@/types'
 import { requireAuth } from '@/lib/auth'
 import { decodeInvoiceToken } from '@/lib/invoice-tokens'
 import { getBusinessProfile } from '@/lib/business-settings'
+import { getInvoiceDefaults } from '@/lib/invoice-defaults'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -85,6 +86,7 @@ function computePdfFingerprint(
   invoice: PdfFingerprintSource,
   logoSettings: LogoSettings | undefined,
   business: InvoiceBusinessInfo,
+  footerNote: string | null,
 ): string {
   const c = invoice.client
   const payload = {
@@ -96,6 +98,7 @@ function computePdfFingerprint(
       p: business.phone,
       pe: business.paymentEmail,
     },
+    footer: footerNote,
     inv: {
       n: invoice.invoiceNumber,
       t: invoice.totalAmount,
@@ -171,8 +174,14 @@ async function getLogoSettings(): Promise<LogoSettings | undefined> {
  * stale PDF — any line-item, clean, amount, or contact change bumps the fp.
  */
 async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: LogoSettings | undefined): Promise<Buffer> {
-  const business = await getBusinessProfile()
-  const fingerprint = computePdfFingerprint(invoice as unknown as PdfFingerprintSource, logoSettings, business)
+  const [business, invoiceDefaults] = await Promise.all([getBusinessProfile(), getInvoiceDefaults()])
+  const footerNote = invoiceDefaults.invoiceFooterNote
+  const fingerprint = computePdfFingerprint(
+    invoice as unknown as PdfFingerprintSource,
+    logoSettings,
+    business,
+    footerNote,
+  )
 
   const cached = await prisma.invoicePdfCache.findUnique({ where: { invoiceId: invoice.id } })
   if (cached && cached.fingerprint === fingerprint) {
@@ -190,6 +199,7 @@ async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: Logo
       invoice: invoice as unknown as InvoiceWithRelations,
       logoSettings,
       business,
+      footerNote,
     })
     const buffer = await renderToBuffer(element as React.ReactElement)
 

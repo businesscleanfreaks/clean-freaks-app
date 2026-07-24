@@ -5,6 +5,7 @@ import { createInvoiceSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
+import { getInvoiceDefaults, computeDefaultDueDate } from '@/lib/invoice-defaults'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -279,6 +280,14 @@ export async function POST(request: Request) {
     // Generate invoice number
     const invoiceNumber = await generateInvoiceNumber()
 
+    // Resolve the due date: use the explicit one, otherwise fall back to the
+    // configured payment-terms default for this client's property type.
+    let resolvedDateDue: Date | null = dateDue ? new Date(dateDue + 'T12:00:00') : null
+    if (!resolvedDateDue) {
+      const invoiceDefaults = await getInvoiceDefaults()
+      resolvedDateDue = computeDefaultDueDate(client.propertyType, new Date(), invoiceDefaults)
+    }
+
     // Use transaction to ensure invoice creation and job updates happen atomically
     const invoice = await prisma.$transaction(async (tx) => {
       // Double-billing prevention: do not create another real invoice for jobs
@@ -322,7 +331,7 @@ export async function POST(request: Request) {
           clientId,
           totalAmount,
           status: previewOnly ? 'VOID' : 'DRAFT',
-          dateDue: dateDue ? new Date(dateDue + 'T12:00:00') : null,
+          dateDue: resolvedDateDue,
           notes,
           showPaymentOptions: showPaymentOptions !== undefined ? showPaymentOptions : true,
           lineItems: {

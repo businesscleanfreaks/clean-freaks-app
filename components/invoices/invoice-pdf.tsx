@@ -306,13 +306,15 @@ interface InvoicePDFProps {
   invoice: InvoiceWithRelations
   logoSettings?: LogoSettings
   business?: InvoiceBusinessInfo
+  footerNote?: string | null
 }
 
-export function InvoicePDF({ invoice, logoSettings, business }: InvoicePDFProps) {
+export function InvoicePDF({ invoice, logoSettings, business, footerNote }: InvoicePDFProps) {
   const settings = logoSettings || DEFAULT_LOGO_SETTINGS
 
   // Resolve the business identity, falling back to the previously hardcoded values.
   const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null)
+  const bizFooterNote = clean(footerNote) || 'Thank you for your business!'
   const bizName = clean(business?.businessName) || BUSINESS_FALLBACK.businessName
   const bizLegal = clean(business?.legalName) || BUSINESS_FALLBACK.legalName
   const bizEmail = clean(business?.email) || BUSINESS_FALLBACK.email
@@ -504,7 +506,7 @@ export function InvoicePDF({ invoice, logoSettings, business }: InvoicePDFProps)
             </View>
             <View style={styles.paymentRight}>
               <Text style={styles.paidToLabel}>Paid to {bizName}</Text>
-              <Text style={styles.thankYouText}>Thank you for your business!</Text>
+              <Text style={styles.thankYouText}>{bizFooterNote}</Text>
             </View>
           </View>
 

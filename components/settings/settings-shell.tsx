@@ -3,9 +3,11 @@
 import { useState } from "react"
 import { Building2, Users, Mail, FileText, CreditCard, Coins, Loader2, Clock } from "lucide-react"
 import type { BusinessProfileData } from "@/lib/business-settings"
+import type { InvoiceDefaultsData } from "@/lib/invoice-defaults"
 import { showSuccess, showError } from "@/lib/toast"
 import { EmailSettingsForm } from "./email-settings-form"
 import { BusinessProfileForm } from "./business-profile-form"
+import { InvoiceDefaultsForm } from "./invoice-defaults-form"
 
 type Section = "business" | "team" | "delivery" | "invoicedefaults" | "payments" | "payouts"
 
@@ -40,10 +42,6 @@ const COMING_SOON: Partial<Record<Section, { title: string; desc: string }>> = {
     title: "Team",
     desc: "Invite people to log in and run the business with you. This section is coming soon.",
   },
-  invoicedefaults: {
-    title: "Invoice defaults",
-    desc: "Default payment terms, tax rate, and invoice footer note. This section is coming soon.",
-  },
   payments: {
     title: "Payments received",
     desc: "Payment methods you accept and Zelle auto-detection. Detection settings currently live under Invoice delivery. This section is coming soon.",
@@ -70,14 +68,23 @@ function ComingSoon({ title, desc }: { title: string; desc: string }) {
   )
 }
 
-export function SettingsShell({ initialBusiness }: { initialBusiness: BusinessProfileData }) {
+interface SettingsShellProps {
+  initialBusiness: BusinessProfileData
+  initialInvoiceDefaults: InvoiceDefaultsData
+}
+
+export function SettingsShell({ initialBusiness, initialInvoiceDefaults }: SettingsShellProps) {
   const [cat, setCat] = useState<Section>("business")
-  const [business, setBusiness] = useState<BusinessProfileData>(initialBusiness)
-  const [savedBusiness, setSavedBusiness] = useState<BusinessProfileData>(initialBusiness)
   const [saving, setSaving] = useState(false)
 
+  const [business, setBusiness] = useState<BusinessProfileData>(initialBusiness)
+  const [savedBusiness, setSavedBusiness] = useState<BusinessProfileData>(initialBusiness)
+
+  const [invoiceDefaults, setInvoiceDefaults] = useState<InvoiceDefaultsData>(initialInvoiceDefaults)
+  const [savedInvoiceDefaults, setSavedInvoiceDefaults] = useState<InvoiceDefaultsData>(initialInvoiceDefaults)
+
   const businessDirty = JSON.stringify(business) !== JSON.stringify(savedBusiness)
-  const showSaveBar = cat === "business"
+  const invoiceDefaultsDirty = JSON.stringify(invoiceDefaults) !== JSON.stringify(savedInvoiceDefaults)
 
   const saveBusiness = async () => {
     if (!business.businessName.trim()) {
@@ -106,7 +113,41 @@ export function SettingsShell({ initialBusiness }: { initialBusiness: BusinessPr
     }
   }
 
-  const discardBusiness = () => setBusiness(savedBusiness)
+  const saveInvoiceDefaults = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch("/api/settings/invoice-defaults", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invoiceDefaults),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to save settings")
+      }
+      const saved = (await res.json()) as InvoiceDefaultsData
+      setInvoiceDefaults(saved)
+      setSavedInvoiceDefaults(saved)
+      showSuccess("Settings saved")
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // The save bar is shared by every section that self-manages a dirty draft.
+  const activeSaver =
+    cat === "business"
+      ? { dirty: businessDirty, save: saveBusiness, discard: () => setBusiness(savedBusiness) }
+      : cat === "invoicedefaults"
+        ? {
+            dirty: invoiceDefaultsDirty,
+            save: saveInvoiceDefaults,
+            discard: () => setInvoiceDefaults(savedInvoiceDefaults),
+          }
+        : null
+  const showSaveBar = activeSaver !== null
 
   return (
     <div className="flex h-full min-h-0 flex-1">
@@ -171,29 +212,35 @@ export function SettingsShell({ initialBusiness }: { initialBusiness: BusinessPr
               />
             )}
             {cat === "delivery" && <EmailSettingsForm />}
+            {cat === "invoicedefaults" && (
+              <InvoiceDefaultsForm
+                value={invoiceDefaults}
+                onChange={(patch) => setInvoiceDefaults((prev) => ({ ...prev, ...patch }))}
+              />
+            )}
             {COMING_SOON[cat] && <ComingSoon {...COMING_SOON[cat]!} />}
           </div>
         </div>
 
         {/* Save bar */}
-        {showSaveBar && (
+        {showSaveBar && activeSaver && (
           <div className="flex-none border-t border-[#ececea] bg-white px-6 py-[14px] md:px-11">
             <div className="mx-auto flex max-w-[720px] items-center gap-3">
               <div className="flex-1 text-[12.5px] text-[#7e8489]">
-                {businessDirty ? "You have unsaved changes" : "All changes saved"}
+                {activeSaver.dirty ? "You have unsaved changes" : "All changes saved"}
               </div>
               <button
                 type="button"
-                onClick={discardBusiness}
-                disabled={!businessDirty || saving}
+                onClick={activeSaver.discard}
+                disabled={!activeSaver.dirty || saving}
                 className="rounded-[10px] border border-[#e2e2df] bg-white px-[18px] py-[11px] text-[13px] font-bold text-[#55585c] transition-colors hover:bg-[#f7f7f5] disabled:opacity-50"
               >
                 Discard
               </button>
               <button
                 type="button"
-                onClick={saveBusiness}
-                disabled={!businessDirty || saving}
+                onClick={activeSaver.save}
+                disabled={!activeSaver.dirty || saving}
                 className="inline-flex items-center gap-2 rounded-[10px] bg-[#0b7a4e] px-[22px] py-[11px] text-[13px] font-bold text-white transition-colors hover:bg-[#0a6a44] disabled:opacity-50"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
