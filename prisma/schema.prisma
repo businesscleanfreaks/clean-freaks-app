@@ -599,7 +599,14 @@ model QuickBooksConfig {
 
 model InvoiceLogoSettings {
   id            String   @id @default(uuid())
-  logoPath      String?  // Path to logo file (e.g., "/images/invoice-logo.png")
+  logoPath      String?  // Legacy: path to a bundled logo file (e.g., "/images/invoice-logo.png")
+  // Uploaded logo stored in the DB — the filesystem is ephemeral on Vercel, so
+  // an uploaded file could not survive a deploy. Falls back to the bundled
+  // public/images/invoice-logo.png when no upload exists.
+  logoData      Bytes?
+  logoMimeType  String?
+  logoFileName  String?
+  logoSize      Int?
   width         Float    @default(100) // Width in points (PDF units)
   height        Float?   // Height in points (null = maintain aspect ratio)
   positionX     String   @default("left") // "left" | "center" | "right" | "custom"

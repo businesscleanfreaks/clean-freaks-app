@@ -1,6 +1,9 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
+import { Loader2 } from "lucide-react"
 import type { BusinessProfileData } from "@/lib/business-settings"
+import { showSuccess, showError } from "@/lib/toast"
 
 const inputCls =
   "w-full rounded-[9px] border border-[#dededa] bg-white px-[13px] py-[11px] text-[14px] text-[#0d0d0e] outline-none transition-colors focus:border-[#0b7a4e] focus:ring-2 focus:ring-[#0b7a4e]/15"
@@ -18,6 +21,57 @@ interface Props {
 }
 
 export function BusinessProfileForm({ value, onChange }: Props) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  // Cache-busted so a replacement shows immediately.
+  const refreshLogo = async () => {
+    try {
+      const res = await fetch("/api/settings/logo", { cache: "no-store" })
+      const isImage = res.ok && (res.headers.get("content-type") || "").startsWith("image/")
+      setLogoUrl(isImage ? `/api/settings/logo?t=${Date.now()}` : null)
+    } catch {
+      setLogoUrl(null)
+    }
+  }
+
+  useEffect(() => {
+    refreshLogo()
+  }, [])
+
+  const uploadLogo = async (file: File) => {
+    setBusy(true)
+    try {
+      const body = new FormData()
+      body.append("logo", file)
+      const res = await fetch("/api/settings/logo", { method: "POST", body })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Failed to upload logo")
+      showSuccess("Logo updated")
+      await refreshLogo()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to upload logo")
+    } finally {
+      setBusy(false)
+      if (fileRef.current) fileRef.current.value = ""
+    }
+  }
+
+  const removeLogo = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch("/api/settings/logo", { method: "DELETE" })
+      if (!res.ok) throw new Error("Failed to remove logo")
+      showSuccess("Logo removed")
+      await refreshLogo()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to remove logo")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div>
       <div className="mb-[26px]">
@@ -30,20 +84,48 @@ export function BusinessProfileForm({ value, onChange }: Props) {
       <div className="rounded-[14px] border border-[#e9e9e6] bg-white px-6 py-[22px]">
         {/* Logo */}
         <div className="flex items-center gap-[18px]">
-          <div className="flex h-[74px] w-[74px] flex-none items-center justify-center rounded-[14px] border border-[#dcebe3] bg-[#eef6f1] text-[22px] font-extrabold text-[#0b7a4e]">
-            {initialsOf(value.businessName)}
+          <div className="flex h-[74px] w-[74px] flex-none items-center justify-center overflow-hidden rounded-[14px] border border-[#dcebe3] bg-[#eef6f1] text-[22px] font-extrabold text-[#0b7a4e]">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- served as raw bytes from our API, not a static asset
+              <img src={logoUrl} alt="Invoice logo" className="h-full w-full object-contain" />
+            ) : (
+              initialsOf(value.businessName)
+            )}
           </div>
           <div>
-            <button
-              type="button"
-              disabled
-              title="Logo upload is coming soon"
-              className="cursor-not-allowed rounded-[9px] border border-[#d6e8de] bg-[#eef6f1] px-[15px] py-[9px] text-[13px] font-bold text-[#0b7a4e] opacity-60"
-            >
-              Upload logo
-            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) uploadLogo(file)
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-[9px] border border-[#d6e8de] bg-[#eef6f1] px-[15px] py-[9px] text-[13px] font-bold text-[#0b7a4e] transition-colors hover:bg-[#e4f0e9] disabled:opacity-50"
+              >
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {logoUrl ? "Replace logo" : "Upload logo"}
+              </button>
+              {logoUrl && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={removeLogo}
+                  className="rounded-[9px] px-2.5 py-[9px] text-[13px] font-bold text-[#7e8489] transition-colors hover:bg-[#fdecec] hover:text-[#b91c1c] disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
             <div className="mt-2 text-[12px] text-[#7e8489]">
-              PNG or SVG, at least 200×200px. Shown on invoices. <span className="italic">(Upload coming soon)</span>
+              PNG or JPG, up to 2 MB. Shown on your invoices.
             </div>
           </div>
         </div>

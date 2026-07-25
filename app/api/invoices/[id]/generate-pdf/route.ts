@@ -87,6 +87,7 @@ function computePdfFingerprint(
   logoSettings: LogoSettings | undefined,
   business: InvoiceBusinessInfo,
   footerNote: string | null,
+  uploadedLogo: { id: string; size: number; updatedAt: string } | null,
 ): string {
   const c = invoice.client
   const payload = {
@@ -99,6 +100,7 @@ function computePdfFingerprint(
       pe: business.paymentEmail,
     },
     footer: footerNote,
+    uploadedLogo,
     inv: {
       n: invoice.invoiceNumber,
       t: invoice.totalAmount,
@@ -169,18 +171,55 @@ async function getLogoSettings(): Promise<LogoSettings | undefined> {
 }
 
 /**
+ * Identity of the uploaded logo, without pulling the bytes. Used so replacing
+ * the logo changes the fingerprint (and busts cached PDFs) cheaply.
+ */
+async function getUploadedLogoIdentity(): Promise<{ id: string; size: number; updatedAt: string } | null> {
+  try {
+    const row = await prisma.invoiceLogoSettings.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, logoSize: true, logoFileName: true, updatedAt: true },
+    })
+    if (!row?.logoFileName) return null
+    return { id: row.id, size: row.logoSize ?? 0, updatedAt: row.updatedAt.toISOString() }
+  } catch {
+    return null
+  }
+}
+
+/** Loads the uploaded logo bytes as a data URI. Only called on a cache miss. */
+async function getUploadedLogoDataUri(): Promise<string | null> {
+  try {
+    const row = await prisma.invoiceLogoSettings.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { logoData: true, logoMimeType: true },
+    })
+    if (!row?.logoData) return null
+    const base64 = Buffer.from(row.logoData).toString('base64')
+    return `data:${row.logoMimeType || 'image/png'};base64,${base64}`
+  } catch {
+    return null
+  }
+}
+
+/**
  * Serve the cached PDF when the content fingerprint matches; otherwise render a
  * fresh PDF and store it. Keeps repeat previews instant without ever serving a
  * stale PDF — any line-item, clean, amount, or contact change bumps the fp.
  */
 async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: LogoSettings | undefined): Promise<Buffer> {
-  const [business, invoiceDefaults] = await Promise.all([getBusinessProfile(), getInvoiceDefaults()])
+  const [business, invoiceDefaults, uploadedLogoIdentity] = await Promise.all([
+    getBusinessProfile(),
+    getInvoiceDefaults(),
+    getUploadedLogoIdentity(),
+  ])
   const footerNote = invoiceDefaults.invoiceFooterNote
   const fingerprint = computePdfFingerprint(
     invoice as unknown as PdfFingerprintSource,
     logoSettings,
     business,
     footerNote,
+    uploadedLogoIdentity,
   )
 
   const cached = await prisma.invoicePdfCache.findUnique({ where: { invoiceId: invoice.id } })
@@ -195,11 +234,13 @@ async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: Logo
   }
 
   const renderPromise = (async () => {
+    const uploadedLogo = uploadedLogoIdentity ? await getUploadedLogoDataUri() : null
     const element = React.createElement(InvoicePDF, {
       invoice: invoice as unknown as InvoiceWithRelations,
       logoSettings,
       business,
       footerNote,
+      uploadedLogo,
     })
     const buffer = await renderToBuffer(element as React.ReactElement)
 

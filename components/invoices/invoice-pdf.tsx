@@ -307,9 +307,11 @@ interface InvoicePDFProps {
   logoSettings?: LogoSettings
   business?: InvoiceBusinessInfo
   footerNote?: string | null
+  /** Uploaded logo as a data URI; takes precedence over the bundled logo file. */
+  uploadedLogo?: string | null
 }
 
-export function InvoicePDF({ invoice, logoSettings, business, footerNote }: InvoicePDFProps) {
+export function InvoicePDF({ invoice, logoSettings, business, footerNote, uploadedLogo }: InvoicePDFProps) {
   const settings = logoSettings || DEFAULT_LOGO_SETTINGS
 
   // Resolve the business identity, falling back to the previously hardcoded values.
@@ -356,14 +358,18 @@ export function InvoicePDF({ invoice, logoSettings, business, footerNote }: Invo
   const contactEmail = invoice.client.communicationEmail || invoice.client.invoicingEmail || null
   const contactPhone = invoice.client.communicationPhone || invoice.client.phone || null
 
-  // Logo loading
+  // Logo: an uploaded logo (Settings → Business profile, stored in the DB and
+  // passed in as a data URI) wins; otherwise fall back to the bundled file.
   const logoFilePath = path.join(process.cwd(), 'public', 'images', 'invoice-logo.png')
   const logoExists = existsSync(logoFilePath)
 
   let logoSrc: string | null = null
   let showLogoInHeader = false
 
-  if (logoExists) {
+  if (uploadedLogo) {
+    logoSrc = uploadedLogo
+    showLogoInHeader = true
+  } else if (logoExists) {
     try {
       const fs = require('fs')
       const stats = fs.statSync(logoFilePath)
