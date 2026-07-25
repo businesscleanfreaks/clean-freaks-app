@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Building2, Users, Mail, FileText, CreditCard, Coins, Loader2, Clock } from "lucide-react"
+import { Building2, Users, Mail, FileText, CreditCard, Coins, Loader2 } from "lucide-react"
 import type { BusinessProfileData } from "@/lib/business-settings"
 import type { InvoiceDefaultsData } from "@/lib/invoice-defaults"
 import { showSuccess, showError } from "@/lib/toast"
@@ -10,6 +10,7 @@ import { BusinessProfileForm } from "./business-profile-form"
 import { InvoiceDefaultsForm } from "./invoice-defaults-form"
 import { PaymentsReceivedForm, type PaymentDetectionData } from "./payments-received-form"
 import { PayoutsForm, type PayoutTimingData } from "./payouts-form"
+import { TeamForm } from "./team-form"
 
 type Section = "business" | "team" | "delivery" | "invoicedefaults" | "payments" | "payouts"
 
@@ -38,29 +39,6 @@ const NAV_GROUPS: { label: string; items: { id: Section; name: string; icon: typ
 // Sections whose content is a self-contained form with its own save controls,
 // so the global save bar is hidden for them.
 const SELF_SAVING: Section[] = ["delivery"]
-
-const COMING_SOON: Partial<Record<Section, { title: string; desc: string }>> = {
-  team: {
-    title: "Team",
-    desc: "Invite people to log in and run the business with you. This section is coming soon.",
-  },
-}
-
-function ComingSoon({ title, desc }: { title: string; desc: string }) {
-  return (
-    <div>
-      <div className="mb-[26px]">
-        <h1 className="m-0 text-[24px] font-extrabold tracking-[-0.02em]">{title}</h1>
-      </div>
-      <div className="flex items-center gap-[14px] rounded-[14px] border border-[#e9e9e6] bg-white px-6 py-[22px]">
-        <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px] bg-[#f2f2ef] text-[#7e8489]">
-          <Clock className="h-5 w-5" />
-        </span>
-        <div className="text-[13.5px] leading-relaxed text-[#6b6f73]">{desc}</div>
-      </div>
-    </div>
-  )
-}
 
 interface SettingsShellProps {
   initialBusiness: BusinessProfileData
@@ -286,6 +264,7 @@ export function SettingsShell({
                 onChange={(patch) => setBusiness((prev) => ({ ...prev, ...patch }))}
               />
             )}
+            {cat === "team" && <TeamForm />}
             {cat === "delivery" && <EmailSettingsForm />}
             {cat === "invoicedefaults" && (
               <InvoiceDefaultsForm
@@ -308,7 +287,6 @@ export function SettingsShell({
                 onPayoutChange={(patch) => setPayoutSettings((prev) => ({ ...prev, ...patch }))}
               />
             )}
-            {COMING_SOON[cat] && <ComingSoon {...COMING_SOON[cat]!} />}
           </div>
         </div>
 
