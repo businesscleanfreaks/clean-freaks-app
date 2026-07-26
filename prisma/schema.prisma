@@ -806,6 +806,9 @@ model BusinessSettings {
   // Residential/Commercial preset. Null falls back to the historical defaults.
   residentialPayoutCadence String? // default RESIDENTIAL_7_DAY
   commercialPayoutCadence  String? // default COMMERCIAL_CLIENT_PAID_OR_7TH
+  // Payment methods you accept (Settings → Payments received). Informational
+  // only — a record of what clients can use. JSON array of strings.
+  acceptedPaymentMethods   Json?
   autoGenerateInvoices Boolean   @default(true)
   billingStartDate     DateTime?
   projectedExpenses    Json?    // Dashboard monthly expense assumptions by category

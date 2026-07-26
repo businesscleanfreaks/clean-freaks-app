@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Check, Plus, Info, Search, Loader2 } from "lucide-react"
+import { Check, Plus, Info, Search, Loader2, X } from "lucide-react"
 import { showSuccess, showError } from "@/lib/toast"
 
 export interface PaymentDetectionData {
@@ -9,7 +9,7 @@ export interface PaymentDetectionData {
   autoConfirmHighConfidencePayments: boolean
 }
 
-const ACCEPTED_METHODS = ["Zelle", "ACH / bank transfer", "Card", "Check"]
+const MAX_METHOD_LENGTH = 40
 
 function Toggle({
   checked,
@@ -45,10 +45,35 @@ interface Props {
   credsSet: boolean
   // Persists any pending toggle change before a scan (the scan reads saved state).
   onEnsureSaved: () => Promise<boolean>
+  methods: string[]
+  onMethodsChange: (methods: string[]) => void
 }
 
-export function PaymentsReceivedForm({ value, onChange, provider, credsSet, onEnsureSaved }: Props) {
+export function PaymentsReceivedForm({
+  value,
+  onChange,
+  provider,
+  credsSet,
+  onEnsureSaved,
+  methods,
+  onMethodsChange,
+}: Props) {
   const [scanning, setScanning] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [draftMethod, setDraftMethod] = useState("")
+
+  const commitMethod = () => {
+    const value = draftMethod.trim().slice(0, MAX_METHOD_LENGTH)
+    if (!value) {
+      setAdding(false)
+      setDraftMethod("")
+      return
+    }
+    const duplicate = methods.some((m) => m.toLowerCase() === value.toLowerCase())
+    if (!duplicate) onMethodsChange([...methods, value])
+    setDraftMethod("")
+    setAdding(false)
+  }
   const gmail = provider === "gmail"
   const canScan = gmail && credsSet && value.enableInboxSync
 
@@ -89,27 +114,59 @@ export function PaymentsReceivedForm({ value, onChange, provider, credsSet, onEn
       </div>
       <div className="rounded-[14px] border border-[#e9e9e6] bg-white px-[22px] py-5">
         <div className="flex flex-wrap gap-[9px]">
-          {ACCEPTED_METHODS.map((m) => (
+          {methods.map((m) => (
             <span
               key={m}
-              className="inline-flex items-center gap-[7px] rounded-full border border-[#d6e8de] bg-[#eef6f1] px-[14px] py-[9px] text-[13px] font-bold text-[#0b7a4e]"
+              className="group inline-flex items-center gap-[7px] rounded-full border border-[#d6e8de] bg-[#eef6f1] py-[9px] pl-[14px] pr-[10px] text-[13px] font-bold text-[#0b7a4e]"
             >
               <Check className="h-3.5 w-3.5" strokeWidth={2.6} />
               {m}
+              <button
+                type="button"
+                aria-label={`Remove ${m}`}
+                onClick={() => onMethodsChange(methods.filter((x) => x !== m))}
+                className="ml-0.5 rounded-full p-0.5 text-[#0b7a4e]/50 transition-colors hover:bg-[#d6e8de] hover:text-[#b91c1c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b7a4e]/30"
+              >
+                <X className="h-3 w-3" strokeWidth={2.6} />
+              </button>
             </span>
           ))}
-          <button
-            type="button"
-            disabled
-            title="Custom payment methods are coming soon"
-            className="inline-flex cursor-not-allowed items-center gap-[6px] rounded-full border border-dashed border-[#cfcfca] bg-white px-[14px] py-[9px] text-[13px] font-bold text-[#55585c] opacity-60"
-          >
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-            Add method
-          </button>
+
+          {adding ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#0b7a4e] bg-white py-[7px] pl-[12px] pr-[8px]">
+              {/* eslint-disable-next-line jsx-a11y/no-autofocus -- focus follows the click that revealed this input */}
+              <input
+                autoFocus
+                value={draftMethod}
+                maxLength={MAX_METHOD_LENGTH}
+                placeholder="e.g. Venmo"
+                onChange={(e) => setDraftMethod(e.target.value)}
+                onBlur={commitMethod}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    commitMethod()
+                  } else if (e.key === "Escape") {
+                    setDraftMethod("")
+                    setAdding(false)
+                  }
+                }}
+                className="w-[110px] bg-transparent text-[13px] font-bold text-[#0d0d0e] outline-none placeholder:font-semibold placeholder:text-[#aab2bd]"
+              />
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="inline-flex items-center gap-[6px] rounded-full border border-dashed border-[#cfcfca] bg-white px-[14px] py-[9px] text-[13px] font-bold text-[#55585c] transition-colors hover:border-[#0b7a4e] hover:text-[#0b7a4e]"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+              Add method
+            </button>
+          )}
         </div>
         <div className="mt-[13px] text-[12px] text-[#7e8489]">
-          Zelle is your primary method. Custom methods (Gusto, Venmo, …) are coming soon.
+          Zelle is your primary method. Add others like Gusto or Venmo if certain clients prefer them.
         </div>
       </div>
 

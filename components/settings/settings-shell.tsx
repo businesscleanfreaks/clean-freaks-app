@@ -44,6 +44,7 @@ interface SettingsShellProps {
   initialBusiness: BusinessProfileData
   initialInvoiceDefaults: InvoiceDefaultsData
   initialPaymentDetection: PaymentDetectionData
+  initialPaymentMethods: string[]
   initialPayoutSettings: PayoutTimingData
   emailContext: { provider: string; credsSet: boolean }
 }
@@ -52,6 +53,7 @@ export function SettingsShell({
   initialBusiness,
   initialInvoiceDefaults,
   initialPaymentDetection,
+  initialPaymentMethods,
   initialPayoutSettings,
   emailContext,
 }: SettingsShellProps) {
@@ -67,12 +69,17 @@ export function SettingsShell({
   const [paymentDetection, setPaymentDetection] = useState<PaymentDetectionData>(initialPaymentDetection)
   const [savedPaymentDetection, setSavedPaymentDetection] = useState<PaymentDetectionData>(initialPaymentDetection)
 
+  const [paymentMethods, setPaymentMethods] = useState<string[]>(initialPaymentMethods)
+  const [savedPaymentMethods, setSavedPaymentMethods] = useState<string[]>(initialPaymentMethods)
+
   const [payoutSettings, setPayoutSettings] = useState<PayoutTimingData>(initialPayoutSettings)
   const [savedPayoutSettings, setSavedPayoutSettings] = useState<PayoutTimingData>(initialPayoutSettings)
 
   const businessDirty = JSON.stringify(business) !== JSON.stringify(savedBusiness)
   const invoiceDefaultsDirty = JSON.stringify(invoiceDefaults) !== JSON.stringify(savedInvoiceDefaults)
   const paymentDetectionDirty = JSON.stringify(paymentDetection) !== JSON.stringify(savedPaymentDetection)
+  const paymentMethodsDirty = JSON.stringify(paymentMethods) !== JSON.stringify(savedPaymentMethods)
+  const paymentsDirty = paymentDetectionDirty || paymentMethodsDirty
   const payoutSettingsDirty = JSON.stringify(payoutSettings) !== JSON.stringify(savedPayoutSettings)
 
   const saveBusiness = async () => {
@@ -125,21 +132,43 @@ export function SettingsShell({
     }
   }
 
-  const savePaymentDetection = async (silent = false): Promise<boolean> => {
+  // Detection toggles live on EmailSettings; accepted methods live on
+  // BusinessSettings — so this section saves to two endpoints.
+  const savePaymentsSection = async (silent = false): Promise<boolean> => {
     setSaving(true)
     try {
-      // The email PUT is a partial update, so sending only these two fields
-      // leaves the email delivery config untouched.
-      const res = await fetch("/api/settings/email", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(paymentDetection),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || "Failed to save settings")
+      const requests: Promise<Response>[] = []
+      if (paymentDetectionDirty) {
+        // The email PUT is a partial update, so sending only these two fields
+        // leaves the email delivery config untouched.
+        requests.push(
+          fetch("/api/settings/email", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(paymentDetection),
+          }),
+        )
       }
+      if (paymentMethodsDirty) {
+        requests.push(
+          fetch("/api/settings/payment-methods", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ methods: paymentMethods }),
+          }),
+        )
+      }
+
+      const responses = await Promise.all(requests)
+      for (const res of responses) {
+        if (!res.ok) {
+          const err = await res.json().catch(() => null)
+          throw new Error(err?.error || "Failed to save settings")
+        }
+      }
+
       setSavedPaymentDetection(paymentDetection)
+      setSavedPaymentMethods(paymentMethods)
       if (!silent) showSuccess("Settings saved")
       return true
     } catch (error) {
@@ -152,7 +181,7 @@ export function SettingsShell({
 
   // A scan reads the SAVED settings, so persist any pending toggle change first.
   const ensureDetectionSaved = async (): Promise<boolean> =>
-    paymentDetectionDirty ? savePaymentDetection(true) : true
+    paymentsDirty ? savePaymentsSection(true) : true
 
   const savePayoutSettings = async () => {
     setSaving(true)
@@ -189,9 +218,12 @@ export function SettingsShell({
           }
         : cat === "payments"
           ? {
-              dirty: paymentDetectionDirty,
-              save: () => savePaymentDetection(),
-              discard: () => setPaymentDetection(savedPaymentDetection),
+              dirty: paymentsDirty,
+              save: () => savePaymentsSection(),
+              discard: () => {
+                setPaymentDetection(savedPaymentDetection)
+                setPaymentMethods(savedPaymentMethods)
+              },
             }
           : cat === "payouts"
             ? {
@@ -279,6 +311,8 @@ export function SettingsShell({
                 provider={emailContext.provider}
                 credsSet={emailContext.credsSet}
                 onEnsureSaved={ensureDetectionSaved}
+                methods={paymentMethods}
+                onMethodsChange={setPaymentMethods}
               />
             )}
             {cat === "payouts" && (
