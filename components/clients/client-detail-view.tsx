@@ -47,6 +47,8 @@ const TABS: { key: CockpitTab; label: string }[] = [
   { key: 'contacts', label: 'Contacts' },
   { key: 'access', label: 'Access' },
   { key: 'scope', label: 'Scope' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'invoices', label: 'Invoices' },
   { key: 'history', label: 'History' },
 ]
 
@@ -189,6 +191,8 @@ export function ClientDetailView({ client: initialClient, onDataChange }: Client
           {activeTab === 'contacts' && <ContactsTab state={state} />}
           {activeTab === 'access' && <AccessTab state={state} />}
           {activeTab === 'scope' && <ScopeTab state={state} />}
+          {activeTab === 'notes' && <NotesTab state={state} />}
+          {activeTab === 'invoices' && <InvoicesTab state={state} />}
           {activeTab === 'history' && <HistoryTab state={state} />}
         </div>
       </div>
@@ -368,6 +372,106 @@ function PlaceholderTab({ label, hint, onJump, jumpLabel }: { label: string; hin
 // ────────────────────────────────────────────────────────────────────────────
 // Billing tab: per-location rate breakdown + recurring add-ons + recent invoices
 // ────────────────────────────────────────────────────────────────────────────
+
+// Notes tab — the same panel the Overview uses, given the full width here.
+function NotesTab({ state }: { state: ClientDetailState }) {
+  const { client } = state
+  const { data: notesData, mutate: mutateNotes } = useSWR<ClientNote[]>(
+    `/api/clients/${client.id}/notes`,
+    notesFetcher,
+    { revalidateOnFocus: false },
+  )
+  const notes = notesData || []
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
+        <div className="flex items-center justify-between px-5 pb-2 pt-4">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Notes</span>
+          <span className="text-[11px] text-slate-400">{notes.length} total</span>
+        </div>
+        <div className="px-5 pb-4">
+          <ClientNotesPanel clientId={client.id} notes={notes} onChange={() => mutateNotes()} />
+        </div>
+      </section>
+    </div>
+  )
+}
+
+// Invoices tab — every invoice for this client (Billing shows only the latest 10).
+function InvoicesTab({ state }: { state: ClientDetailState }) {
+  const { client } = state
+  const invoices = (client.invoices || []).slice().sort((a, b) =>
+    new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+  )
+
+  const markInvoicePaid = async (id: string) => {
+    try {
+      const res = await fetch(`/api/invoices/${id}/mark-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentMethod: 'MANUAL', paymentNotes: 'Marked paid from client profile' }),
+      })
+      if (!res.ok) { await showApiError(res, 'Failed to mark invoice paid'); return }
+      showSuccess('Invoice marked as paid')
+      state.router.refresh()
+    } catch { showError('Failed to mark invoice paid') }
+  }
+
+  const outstanding = invoices
+    .filter(inv => inv.status !== 'PAID' && inv.status !== 'VOID')
+    .reduce((sum, inv) => sum + inv.totalAmount, 0)
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
+        <div className="flex items-center justify-between px-5 pb-2 pt-4">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">All invoices</span>
+          <span className="text-[11px] text-slate-400">
+            {invoices.length} total{outstanding > 0 ? ` / ${formatCurrency(outstanding)} outstanding` : ''}
+          </span>
+        </div>
+        <div className="px-5 pb-4">
+          {invoices.length === 0 ? (
+            <p className="text-sm text-slate-500">No invoices yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {invoices.map(inv => (
+                <div key={inv.id} className="flex items-center gap-3 border-b border-slate-100 py-1.5 last:border-b-0">
+                  <span className="w-[104px] flex-shrink-0 text-[12px] text-slate-600">{safeFormat(inv.dateCreated, 'MMM d, yyyy')}</span>
+                  <button
+                    onClick={() => state.router.push(`/invoices/${inv.id}`)}
+                    className="flex-1 text-left font-mono text-[12px] font-semibold text-slate-900 hover:underline"
+                  >
+                    {formatCurrency(inv.totalAmount)}
+                  </button>
+                  {inv.status !== 'PAID' && inv.status !== 'VOID' && (
+                    <button
+                      onClick={() => markInvoicePaid(inv.id)}
+                      className="flex-shrink-0 rounded-md px-2.5 py-1 text-[10px] font-semibold text-white transition-opacity hover:opacity-90"
+                      style={{ background: '#16A34A' }}
+                    >
+                      Mark Paid
+                    </button>
+                  )}
+                  <span
+                    className="flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
+                    style={{
+                      background: inv.status === 'PAID' ? '#DCFCE7' : inv.status === 'SENT' ? '#DBEAFE' : inv.status === 'VOID' ? '#F1F5F9' : '#FEF3C7',
+                      color: inv.status === 'PAID' ? '#15803D' : inv.status === 'SENT' ? '#1D4ED8' : inv.status === 'VOID' ? '#64748B' : '#92400E',
+                    }}
+                  >
+                    {inv.status.toLowerCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
 
 function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpToTab: (tab: CockpitTab) => void }) {
   const { client } = state

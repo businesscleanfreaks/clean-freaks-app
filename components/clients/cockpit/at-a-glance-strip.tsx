@@ -5,7 +5,7 @@ import { formatCurrency } from "@/lib/utils"
 import type { ClientWithDetails } from "@/lib/types"
 
 // Cockpit tab union — single source of truth, imported by the detail view too.
-export type CockpitTab = "overview" | "schedule" | "billing" | "contacts" | "access" | "scope" | "history"
+export type CockpitTab = "overview" | "schedule" | "billing" | "contacts" | "access" | "scope" | "notes" | "invoices" | "history"
 
 interface NextClean {
   date: string
