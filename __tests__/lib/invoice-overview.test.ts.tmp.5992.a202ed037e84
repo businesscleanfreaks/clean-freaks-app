@@ -1,0 +1,88 @@
+import { describe, expect, it } from 'vitest'
+import {
+  computeOverviewMetrics,
+  monthBounds,
+  isValidPeriod,
+  currentPeriod,
+  type OverviewInvoice,
+} from '@/lib/invoice-overview'
+
+const NOW = new Date('2026-07-20T12:00:00Z')
+
+const inv = (over: Partial<OverviewInvoice> & { id: string }): OverviewInvoice => ({
+  invoiceNumber: `INV-${over.id}`,
+  clientName: 'Client',
+  status: 'DRAFT',
+  totalAmount: 100,
+  dateCreated: '2026-07-01T12:00:00Z',
+  dateDue: null,
+  datePaid: null,
+  ...over,
+})
+
+describe('computeOverviewMetrics', () => {
+  it('sums collected, expected and outstanding, ignoring VOID', () => {
+    const m = computeOverviewMetrics([
+      inv({ id: '1', status: 'PAID', totalAmount: 300 }),
+      inv({ id: '2', status: 'SENT', totalAmount: 200 }),
+      inv({ id: '3', status: 'DRAFT', totalAmount: 100 }),
+      inv({ id: '4', status: 'VOID', totalAmount: 999 }),
+    ], NOW)
+
+    expect(m.collected).toBe(300)
+    expect(m.expected).toBe(600)      // VOID excluded
+    expect(m.outstanding).toBe(200)   // SENT only — drafts aren't owed yet
+    expect(m.invoiceCount).toBe(3)
+    expect(m.collectedPct).toBe(50)
+  })
+
+  it('excludes drafts from outstanding', () => {
+    const m = computeOverviewMetrics([inv({ id: '1', status: 'DRAFT', totalAmount: 500 })], NOW)
+    expect(m.outstanding).toBe(0)
+  })
+
+  it('flags sent invoices past their due date, newest overdue last', () => {
+    const m = computeOverviewMetrics([
+      inv({ id: 'a', status: 'SENT', totalAmount: 100, dateDue: '2026-07-10T12:00:00Z' }), // 10d
+      inv({ id: 'b', status: 'SENT', totalAmount: 50, dateDue: '2026-07-18T12:00:00Z' }),  // 2d
+      inv({ id: 'c', status: 'SENT', totalAmount: 70, dateDue: '2026-08-01T12:00:00Z' }),  // future
+    ], NOW)
+
+    expect(m.overdue.map(o => o.id)).toEqual(['a', 'b'])
+    expect(m.overdue[0].daysOverdue).toBe(10)
+    expect(m.overdueTotal).toBe(150)
+  })
+
+  it('never counts a PAID invoice as overdue', () => {
+    const m = computeOverviewMetrics(
+      [inv({ id: '1', status: 'PAID', totalAmount: 100, dateDue: '2026-01-01T12:00:00Z' })],
+      NOW,
+    )
+    expect(m.overdue).toHaveLength(0)
+  })
+
+  it('handles an empty month without dividing by zero', () => {
+    const m = computeOverviewMetrics([], NOW)
+    expect(m).toMatchObject({ collected: 0, expected: 0, outstanding: 0, collectedPct: 0, sentPct: 0 })
+  })
+})
+
+describe('period helpers', () => {
+  it('computes inclusive month bounds', () => {
+    const { start, end } = monthBounds('2026-02')
+    expect(start.toISOString()).toBe('2026-02-01T00:00:00.000Z')
+    expect(end.toISOString()).toBe('2026-02-28T23:59:59.999Z') // 2026 is not a leap year
+  })
+
+  it('validates period strings', () => {
+    expect(isValidPeriod('2026-07')).toBe(true)
+    expect(isValidPeriod('2026-13')).toBe(false)
+    expect(isValidPeriod('2026-00')).toBe(false)
+    expect(isValidPeriod('July')).toBe(false)
+    expect(isValidPeriod(null)).toBe(false)
+  })
+
+  it('formats the current period zero-padded', () => {
+    expect(currentPeriod(new Date('2026-03-09T00:00:00Z'))).toBe('2026-03')
+  })
+})

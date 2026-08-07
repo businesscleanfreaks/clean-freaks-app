@@ -1,11 +1,11 @@
 import { requireAuth } from "@/lib/auth"
-import { InvoicingWorkspace } from "@/components/invoices/workspace/invoicing-workspace"
+import { InvoicesOverview } from "@/components/invoices/invoices-overview"
 
 export const dynamic = "force-dynamic"
 
-// Redesigned three-column invoicing workspace (was the review-queue). The
-// previous page is preserved at /invoices/classic during rollout.
+// Invoices overview: month picker + the four money cards + that month's list.
+// The left-to-right review workspace now lives at /invoices/workspace.
 export default async function InvoicesPage() {
   await requireAuth()
-  return <InvoicingWorkspace />
+  return <InvoicesOverview />
 }
