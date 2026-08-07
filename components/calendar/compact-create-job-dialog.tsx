@@ -60,12 +60,31 @@ const customAddOnServiceValue = "custom"
 
 // Trials are short recurring runs, so only weekly-based cadences make sense here.
 type TrialDuration = "1wk" | "2wk" | "3wk" | "1mo"
+// Cadences offered in this quick dialog. 2X_MONTHLY and CUSTOM are deliberately
+// NOT here: both need a monthlyPattern / customDates payload, and without one
+// the schedule generates zero cleans. Use the full schedule editor for those.
 const trialFrequencies: Array<{ value: string; label: string }> = [
   { value: "WEEKLY", label: "Weekly" },
   { value: "BI_WEEKLY", label: "Every 2 wks" },
   { value: "EVERY_3_WEEKS", label: "Every 3 wks" },
   { value: "EVERY_4_WEEKS", label: "Every 4 wks" },
+  { value: "EVERY_6_WEEKS", label: "Every 6 wks" },
+  { value: "MONTHLY", label: "Monthly" },
 ]
+// MONTHLY repeats on the start date's day-of-month, so weekday circles don't apply.
+const usesDaysOfWeek = (frequency: string) => frequency !== "MONTHLY"
+const FREQUENCY_PHRASES: Record<string, string> = {
+  WEEKLY: "weekly",
+  BI_WEEKLY: "every 2 weeks",
+  EVERY_3_WEEKS: "every 3 weeks",
+  EVERY_4_WEEKS: "every 4 weeks",
+  EVERY_6_WEEKS: "every 6 weeks",
+  MONTHLY: "monthly",
+}
+const ordinalOf = (n: number) => {
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th"
+  return `${n}${suffix}`
+}
 const trialDurations: Array<{ value: TrialDuration; label: string }> = [
   { value: "1wk", label: "1 week" },
   { value: "2wk", label: "2 weeks" },
@@ -205,14 +224,17 @@ export function CompactCreateJobDialog({
     (timeMode === "specific" ? !!startTime : !!startWindowBegin && !!startWindowEnd)
 
   const profit = (Number(clientRate) || 0) - (Number(cleanerPay) || 0)
-  // Trials become a short recurring schedule, so they need at least one weekday picked.
-  const trialReady = !isTrial || trialDaysOfWeek.length > 0
+  // Trials become a short recurring schedule, so they need at least one weekday
+  // picked — unless the cadence is monthly, which repeats on the date's
+  // day-of-month and has no weekday circles.
+  const needsServiceDays = usesDaysOfWeek(trialFrequency)
+  const trialReady = !isTrial || !needsServiceDays || trialDaysOfWeek.length > 0
   const canCreate =
     !!jobDate &&
     hasValidTime &&
     (!isRecurring || timeMode !== "tbd") &&
     trialReady &&
-    (!isRecurring || trialDaysOfWeek.length > 0) &&
+    (!isRecurring || !needsServiceDays || trialDaysOfWeek.length > 0) &&
     Number(clientRate) >= 0 &&
     Number(cleanerPay) >= 0 &&
     clientRate !== "" &&
@@ -850,35 +872,42 @@ export function CompactCreateJobDialog({
                     </button>
                   ))}
                 </div>
-                <div className="flex gap-1.5">
-                  {dayLetters.map((letter, index) => {
-                    const selected = trialDaysOfWeek.includes(index)
-                    return (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() =>
-                          setTrialDaysOfWeek(current =>
-                            current.includes(index)
-                              ? current.filter(day => day !== index)
-                              : [...current, index].sort((a, b) => a - b)
-                          )
-                        }
-                        className={`flex h-9 w-9 items-center justify-center rounded-full text-[12px] font-bold transition-colors ${
-                          selected ? "bg-[#0B7A4E] text-white" : "border border-[#e2e8f0] bg-white text-[#334155] hover:bg-[#f6f8fa]"
-                        }`}
-                      >
-                        {letter}
-                      </button>
-                    )
-                  })}
-                </div>
-                {trialDaysOfWeek.length === 0 ? (
+                {usesDaysOfWeek(trialFrequency) && (
+                  <div className="flex gap-1.5">
+                    {dayLetters.map((letter, index) => {
+                      const selected = trialDaysOfWeek.includes(index)
+                      return (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() =>
+                            setTrialDaysOfWeek(current =>
+                              current.includes(index)
+                                ? current.filter(day => day !== index)
+                                : [...current, index].sort((a, b) => a - b)
+                            )
+                          }
+                          className={`flex h-9 w-9 items-center justify-center rounded-full text-[12px] font-bold transition-colors ${
+                            selected ? "bg-[#0B7A4E] text-white" : "border border-[#e2e8f0] bg-white text-[#334155] hover:bg-[#f6f8fa]"
+                          }`}
+                        >
+                          {letter}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {!usesDaysOfWeek(trialFrequency) ? (
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#dff0e9] px-2.5 py-1 text-[11px] font-bold text-[#075f40]">
+                    <Repeat className="h-3 w-3" />
+                    Repeats monthly on the {ordinalOf((jobDate ?? new Date()).getDate())}
+                  </div>
+                ) : trialDaysOfWeek.length === 0 ? (
                   <p className="text-[10.5px] font-medium text-[#7f8ea3]">Pick at least one service day.</p>
                 ) : (
                   <div className="inline-flex items-center gap-1.5 rounded-full bg-[#dff0e9] px-2.5 py-1 text-[11px] font-bold text-[#075f40]">
                     <Repeat className="h-3 w-3" />
-                    Repeats {trialFrequency === 'WEEKLY' ? 'weekly' : trialFrequency === 'BI_WEEKLY' ? 'every 2 weeks' : trialFrequency === 'EVERY_3_WEEKS' ? 'every 3 weeks' : 'every 4 weeks'} on {trialDaysOfWeek.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}
+                    Repeats {FREQUENCY_PHRASES[trialFrequency] ?? "on schedule"} on {trialDaysOfWeek.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}
                   </div>
                 )}
               </div>
