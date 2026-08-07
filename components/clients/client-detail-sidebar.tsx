@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import useSWR from "swr"
 import {
   addMonths,
@@ -131,6 +131,8 @@ function compactLocationName(locationName: string, clientName: string) {
   return name || locationName || "Location"
 }
 
+const JOB_VIEW_STORAGE_KEY = "cf-client-job-view"
+
 export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
   const {
     router,
@@ -139,7 +141,17 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
   } = state
   const [locationFilter, setLocationFilter] = useState("all")
   const [showAll, setShowAll] = useState(false)
-  const [view, setView] = useState<"list" | "calendar">("list")
+  // Remember the last choice so an operator who prefers the calendar keeps it.
+  // Read lazily (and guarded) so server rendering is unaffected.
+  const [view, setView] = useState<"list" | "calendar">(() => {
+    if (typeof window === "undefined") return "list"
+    return window.localStorage.getItem(JOB_VIEW_STORAGE_KEY) === "calendar" ? "calendar" : "list"
+  })
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    window.localStorage.setItem(JOB_VIEW_STORAGE_KEY, view)
+  }, [view])
 
   const locationOptions = useMemo(() => {
     return (client.locations || []).map((location) => ({
@@ -208,24 +220,26 @@ export function ClientDetailJobFeed({ state }: ClientDetailJobFeedProps) {
           <div className="text-sm font-bold text-[var(--cf-ink)]">
             {view === "list" ? `Upcoming (${upcomingJobs.length})` : `Jobs calendar (${calendarJobs.length})`}
           </div>
-          <div className="flex items-center rounded-md bg-[var(--cf-field)] p-0.5" aria-label="Job display">
+          {/* Labelled, not icon-only: the calendar was easy to miss behind a
+              bare icon. The choice is remembered across visits. */}
+          <div className="flex flex-none items-center rounded-md bg-[var(--cf-field)] p-0.5" aria-label="Job display">
             <button
               type="button"
               onClick={() => setView("list")}
-              className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${view === "list" ? "bg-white text-[var(--cf-ink)] shadow-sm" : "text-[var(--cf-ink-muted)] hover:text-[var(--cf-ink)]"}`}
+              className={`flex h-7 items-center gap-1.5 rounded px-2.5 text-[11.5px] font-bold transition-colors ${view === "list" ? "bg-white text-[var(--cf-ink)] shadow-sm" : "text-[var(--cf-ink-muted)] hover:text-[var(--cf-ink)]"}`}
               aria-label="Show upcoming jobs list"
-              title="List"
             >
               <List className="h-3.5 w-3.5" />
+              List
             </button>
             <button
               type="button"
               onClick={() => setView("calendar")}
-              className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${view === "calendar" ? "bg-white text-[var(--cf-ink)] shadow-sm" : "text-[var(--cf-ink-muted)] hover:text-[var(--cf-ink)]"}`}
+              className={`flex h-7 items-center gap-1.5 rounded px-2.5 text-[11.5px] font-bold transition-colors ${view === "calendar" ? "bg-white text-[var(--cf-ink)] shadow-sm" : "text-[var(--cf-ink-muted)] hover:text-[var(--cf-ink)]"}`}
               aria-label="Show all jobs calendar"
-              title="Calendar"
             >
               <CalendarDays className="h-3.5 w-3.5" />
+              Calendar
             </button>
           </div>
         </div>
