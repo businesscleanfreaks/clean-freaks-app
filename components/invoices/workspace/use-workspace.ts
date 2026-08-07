@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import useSWR from "swr"
 import { format, startOfMonth, endOfMonth } from "date-fns"
 import { fetcher } from "@/lib/fetcher"
@@ -123,8 +123,16 @@ export function buildVerdict(inv: WorkspaceInvoice): Verdict {
   return { text: `${cleans} clean${cleans === 1 ? "" : "s"} this month at the usual rate — no changes.`, tone: "green" }
 }
 
-export function useWorkspace() {
-  const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"))
+export interface UseWorkspaceOptions {
+  /** Month to open on, "yyyy-MM". Defaults to the current month. */
+  initialMonth?: string
+  /** Open focused on this existing invoice (used by /invoices/[id]). */
+  focusInvoiceId?: string
+}
+
+export function useWorkspace(options: UseWorkspaceOptions = {}) {
+  const { initialMonth, focusInvoiceId } = options
+  const [month, setMonth] = useState(() => initialMonth || format(new Date(), "yyyy-MM"))
   const [tab, setTab] = useState<WorkspaceTab>("All")
   const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -241,6 +249,24 @@ export function useWorkspace() {
     [invoices],
   )
 
+  // When opened for a specific invoice, select its row once the list arrives.
+  const focusRow = useMemo(
+    () => (focusInvoiceId ? invoices.find((i) => i.existingInvoiceId === focusInvoiceId) ?? null : null),
+    [invoices, focusInvoiceId],
+  )
+
+  useEffect(() => {
+    if (focusRow) setSelectedId(focusRow.candidateId)
+  }, [focusRow])
+
+  /**
+   * True when we were asked to focus an invoice that this month's workspace
+   * cannot represent (e.g. a standalone invoice with no candidate). Callers must
+   * handle this: `selected` falls back to the first row, so without this flag the
+   * operator would silently be shown a DIFFERENT invoice than they clicked.
+   */
+  const focusMissing = !!focusInvoiceId && !isLoading && !focusRow
+
   const selected = useMemo(
     () => filtered.find((i) => i.candidateId === selectedId) || filtered[0] || null,
     [filtered, selectedId],
@@ -265,5 +291,6 @@ export function useWorkspace() {
     isLoading, error, mutate: refreshAll,
     invoices, totals, groups, verifiedReady, selected,
     overdueCount, overdueTotal,
+    focusMissing,
   }
 }

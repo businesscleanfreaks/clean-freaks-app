@@ -24,8 +24,22 @@ const STATUS_BADGE: Record<string, React.CSSProperties> = {
   Paid: { background: "#ECFDF5", borderColor: "#A7F3D0", color: "#047857" },
 }
 
-export function InvoicingWorkspace() {
-  const ws = useWorkspace()
+export function InvoicingWorkspace({
+  initialMonth,
+  focusInvoiceId,
+  onFocusUnavailable,
+}: {
+  initialMonth?: string
+  focusInvoiceId?: string
+  /** Called when the focused invoice has no row in this month's workspace. */
+  onFocusUnavailable?: () => void
+} = {}) {
+  const ws = useWorkspace({ initialMonth, focusInvoiceId })
+
+  // Never silently show a different invoice than the one that was opened.
+  useEffect(() => {
+    if (ws.focusMissing) onFocusUnavailable?.()
+  }, [ws.focusMissing, onFocusUnavailable])
   const [confirmSend, setConfirmSend] = useState<{ targets: WorkspaceInvoice[]; isAll: boolean } | null>(null)
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
   const [mounted, setMounted] = useState(false)
