@@ -34,6 +34,11 @@ model Client {
   // How we bill this client: EMAIL sends an invoice; TRACK_ONLY means they pay
   // on their own and we only track what's owed (no email ever goes out).
   billingDelivery     String?    // EMAIL (default) | TRACK_ONLY
+  // Billing schedule (Invoices → Billing schedule sheet)
+  paymentTerms        String?    // NET_7 | NET_15 | NET_30 — when payment is due after sending
+  payMethod           String?    // ZELLE | ACH | PORTAL | CHECK — how this client pays us
+  // Multi-location clients: one combined invoice (default) or one per location.
+  separateLocationInvoices Boolean @default(false)
   preferredPaymentMethod String?  // ZELLE, DIRECT_DEPOSIT, CHECK, OTHER — client's preferred way to pay
   startDate           DateTime?  // When the client relationship started
   isActive            Boolean    @default(true)

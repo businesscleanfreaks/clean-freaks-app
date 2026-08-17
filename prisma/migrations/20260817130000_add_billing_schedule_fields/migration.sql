@@ -1,0 +1,4 @@
+ALTER TABLE "clients"
+ADD COLUMN IF NOT EXISTS "paymentTerms" TEXT,
+ADD COLUMN IF NOT EXISTS "payMethod" TEXT,
+ADD COLUMN IF NOT EXISTS "separateLocationInvoices" BOOLEAN NOT NULL DEFAULT false;

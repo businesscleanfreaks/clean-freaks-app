@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal } from "luc
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { MatchPaymentsPanel } from "./match-payments-panel"
+import { BillingScheduleSheet } from "./billing-schedule-sheet"
 import {
   LEDGER_TABS,
   filterByTab,
@@ -82,6 +83,7 @@ export function InvoicesOverview() {
   const [period, setPeriod] = useState(() => periodOf(new Date()))
   const [tab, setTab] = useState<LedgerTab>("All")
   const [matchOpen, setMatchOpen] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
 
   const { data, isLoading, mutate } = useSWR<LedgerResponse>(
     `/api/invoices/overview?period=${period}`,
@@ -141,9 +143,8 @@ export function InvoicesOverview() {
           </button>
           <button
             type="button"
-            disabled
-            title="Billing schedule is coming next"
-            className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-[9px] border border-[#e4e7ec] bg-white px-3.5 py-[9px] text-[12.5px] font-bold text-[#475467] opacity-50"
+            onClick={() => setScheduleOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-[9px] border border-[#e4e7ec] bg-white px-3.5 py-[9px] text-[12.5px] font-bold text-[#475467] transition-colors hover:bg-[#f7f8fa]"
           >
             <SlidersHorizontal className="h-[15px] w-[15px]" />
             Billing schedule
@@ -349,6 +350,8 @@ export function InvoicesOverview() {
         onClose={() => setMatchOpen(false)}
         onMatched={() => { mutate(); mutateInbox() }}
       />
+
+      <BillingScheduleSheet open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
     </div>
   )
 }
