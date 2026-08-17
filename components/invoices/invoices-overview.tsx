@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { MatchPaymentsPanel } from "./match-payments-panel"
 import {
   LEDGER_TABS,
   filterByTab,
@@ -79,12 +80,21 @@ export function InvoicesOverview() {
   const router = useRouter()
   const [period, setPeriod] = useState(() => periodOf(new Date()))
   const [tab, setTab] = useState<LedgerTab>("All")
+  const [matchOpen, setMatchOpen] = useState(false)
 
-  const { data, isLoading } = useSWR<LedgerResponse>(
+  const { data, isLoading, mutate } = useSWR<LedgerResponse>(
     `/api/invoices/overview?period=${period}`,
     fetcher,
     { revalidateOnFocus: false },
   )
+
+  // Unmatched Zelle payments drive the banner above the tabs.
+  const { data: inbox, mutate: mutateInbox } = useSWR<{ count: number }>(
+    "/api/payments/inbox",
+    fetcher,
+    { revalidateOnFocus: false },
+  )
+  const toMatch = inbox?.count ?? 0
 
   const rows = useMemo(() => data?.rows ?? [], [data])
   const visible = useMemo(() => filterByTab(rows, tab), [rows, tab])
@@ -192,6 +202,25 @@ export function InvoicesOverview() {
         </button>
       </div>
 
+      {/* Zelle banner — only when there is something waiting. */}
+      {toMatch > 0 && (
+        <button
+          type="button"
+          onClick={() => setMatchOpen(true)}
+          className="mt-[14px] flex w-full items-center gap-3 rounded-[11px] border border-[#e3d9f5] bg-[#f3effb] px-4 py-3 text-left transition-colors hover:bg-[#ede6f8]"
+        >
+          <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-white text-[12px] font-extrabold text-[#6b46c1]">
+            {toMatch}
+          </span>
+          <span className="min-w-0 flex-1 text-[13px] font-bold text-[#4c3383]">
+            {toMatch} Zelle payment{toMatch === 1 ? "" : "s"} to match
+          </span>
+          <span className="flex-none rounded-[8px] bg-[#6b46c1] px-3 py-1.5 text-[12px] font-bold text-white">
+            Review &amp; match
+          </span>
+        </button>
+      )}
+
       {/* Tabs — name and count only, never money. */}
       <div className="mt-[18px] flex flex-wrap items-center gap-1 border-b border-[#e4e7ec]">
         {LEDGER_TABS.map(t => {
@@ -285,6 +314,12 @@ export function InvoicesOverview() {
           })
         )}
       </div>
+
+      <MatchPaymentsPanel
+        open={matchOpen}
+        onClose={() => setMatchOpen(false)}
+        onMatched={() => { mutate(); mutateInbox() }}
+      />
     </div>
   )
 }
