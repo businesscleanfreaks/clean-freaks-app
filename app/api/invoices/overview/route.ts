@@ -2,13 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
-import {
-  computeOverviewMetrics,
-  monthBounds,
-  isValidPeriod,
-  currentPeriod,
-  type OverviewInvoice,
-} from '@/lib/invoice-overview'
+import { monthBounds, isValidPeriod, currentPeriod } from '@/lib/invoice-overview'
+import { toLedgerRow, sortRows, tabCounts, computeStats, type LedgerSource } from '@/lib/invoice-ledger'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,10 +15,8 @@ export async function GET(request: Request) {
     const period = isValidPeriod(requested) ? requested : currentPeriod()
     const { start, end } = monthBounds(period)
 
-    // VOID is excluded: creating an invoice PREVIEW stores a VOID row
-    // (see invoices/route.ts `previewOnly ? 'VOID' : 'DRAFT'`), so a month can
-    // hold dozens of throwaway rows that would bury the real invoices and make
-    // the list count disagree with the metric cards.
+    // VOID rows are invoice PREVIEWS (invoices/route.ts `previewOnly ? 'VOID' : 'DRAFT'`),
+    // never real invoices — they must never appear in the ledger or its totals.
     const rows = await prisma.invoice.findMany({
       where: { dateCreated: { gte: start, lte: end }, status: { not: 'VOID' } },
       select: {
@@ -31,47 +24,44 @@ export async function GET(request: Request) {
         invoiceNumber: true,
         status: true,
         totalAmount: true,
-        dateCreated: true,
         dateDue: true,
         datePaid: true,
-        client: { select: { name: true } },
+        scheduledSendAt: true,
+        paymentMethod: true,
+        paymentTransactionId: true,
+        client: { select: { name: true, billingType: true } },
+        // A one-off invoice is one whose billed work is all unscheduled jobs.
+        lineItems: { select: { job: { select: { scheduleId: true } } } },
       },
       orderBy: { dateCreated: 'desc' },
     })
 
-    const invoices: OverviewInvoice[] = rows.map(inv => ({
+    const sources: LedgerSource[] = rows.map(inv => ({
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
       clientName: inv.client?.name ?? 'Unknown client',
       status: inv.status,
       totalAmount: inv.totalAmount,
-      dateCreated: inv.dateCreated.toISOString(),
       dateDue: inv.dateDue?.toISOString() ?? null,
       datePaid: inv.datePaid?.toISOString() ?? null,
+      scheduledSendAt: inv.scheduledSendAt?.toISOString() ?? null,
+      billingType: inv.client?.billingType ?? null,
+      // Only call it one-off when there are job-backed lines AND none are scheduled.
+      isOneOff: (() => {
+        const jobLines = inv.lineItems.filter(li => li.job)
+        return jobLines.length > 0 && jobLines.every(li => !li.job?.scheduleId)
+      })(),
+      paymentMethod: inv.paymentMethod,
+      paymentReference: inv.paymentTransactionId,
     }))
 
-    // Which months of this period's year have any invoices — drives the dots in
-    // the month picker so empty months are obvious before clicking.
-    const year = Number(period.split('-')[0])
-    const yearRows = await prisma.invoice.findMany({
-      where: {
-        status: { not: 'VOID' },
-        dateCreated: {
-          gte: new Date(Date.UTC(year, 0, 1)),
-          lte: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)),
-        },
-      },
-      select: { dateCreated: true },
-    })
-    const monthsWithInvoices = Array.from(
-      new Set(yearRows.map(row => row.dateCreated.getUTCMonth() + 1)),
-    ).sort((a, b) => a - b)
+    const ledger = sortRows(sources.map(s => toLedgerRow(s)))
 
     return NextResponse.json({
       period,
-      metrics: computeOverviewMetrics(invoices),
-      invoices,
-      monthsWithInvoices,
+      rows: ledger,
+      counts: tabCounts(ledger),
+      stats: computeStats(ledger),
     })
   } catch (error) {
     return handleApiError(error, 'Failed to load invoices overview')
