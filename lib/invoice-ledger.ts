@@ -10,10 +10,16 @@
  *   Payment late SENT and past its due date
  *   Sent: Paid   PAID
  *
- * Not yet modelled (need schema work, deliberately out of this slice):
- *   Clearing     ACH/check in flight — no field exists for it yet
- *   Track only   a per-client billing preference, not an invoice state
+ * Two further states are NOT tabs — the design fixes the tab list at six:
+ *   Clearing     a sub-state of "Sent: Unpaid" (ACH/check in flight). The row
+ *                still files under Sent: Unpaid; only the pill changes to
+ *                "Clearing ~Jul 8".
+ *   Track only   a per-CLIENT billing preference (we never email them; we just
+ *                track what's owed). Surfaces as row subtext, not a status.
  */
+
+/** ACH and checks take 5-7 days to land; we show the far end of that window. */
+export const CLEARING_DAYS = 7
 
 export type LedgerStatus = "To send" | "Scheduled" | "Sent: Unpaid" | "Payment late" | "Sent: Paid"
 
@@ -52,10 +58,19 @@ export interface LedgerSource {
   isOneOff: boolean
   paymentMethod: string | null
   paymentReference: string | null
+  /** Set when an ACH/check payment is in flight. */
+  clearingSince: string | null
+  /** Client billingDelivery === 'TRACK_ONLY' — we never email this client. */
+  trackOnly: boolean
 }
 
 export interface LedgerRow extends LedgerSource {
+  /** Which TAB this row files under. Clearing rows still file as Sent: Unpaid. */
   ledgerStatus: LedgerStatus
+  /** What the pill actually reads, e.g. "Clearing ~Jul 8" or "12d late". */
+  statusLabel: string
+  /** True while an ACH/check payment is in flight. */
+  clearing: boolean
   kind: InvoiceKind
   /** Days past the due date; 0 unless Payment late. */
   daysLate: number
@@ -92,6 +107,8 @@ export function deriveKind(inv: LedgerSource): InvoiceKind {
 }
 
 function deriveSubtext(inv: LedgerSource, status: LedgerStatus): string | null {
+  // Track-only clients never receive an email, so say so before anything else.
+  if (inv.trackOnly && status !== "Sent: Paid") return "Track only · client pays on their own"
   if (status === "Scheduled" && inv.scheduledSendAt) {
     return `Scheduled to send on ${shortDate(inv.scheduledSendAt)}`
   }
@@ -109,9 +126,25 @@ export function toLedgerRow(inv: LedgerSource, now: Date = new Date()): LedgerRo
   const ledgerStatus = deriveLedgerStatus(inv, now)
   const daysLate =
     ledgerStatus === "Payment late" && inv.dateDue ? Math.max(0, daysBetween(new Date(inv.dateDue), now)) : 0
+
+  // Clearing only applies while money is genuinely in flight — never on a paid
+  // invoice, and never on one that was still a draft.
+  const clearing =
+    !!inv.clearingSince && (ledgerStatus === "Sent: Unpaid" || ledgerStatus === "Payment late")
+
+  let statusLabel: string = ledgerStatus
+  if (clearing) {
+    const expected = new Date(new Date(inv.clearingSince as string).getTime() + CLEARING_DAYS * DAY_MS)
+    statusLabel = `Clearing ~${shortDate(expected.toISOString())}`
+  } else if (ledgerStatus === "Payment late") {
+    statusLabel = `${daysLate}d late`
+  }
+
   return {
     ...inv,
     ledgerStatus,
+    statusLabel,
+    clearing,
     kind: deriveKind(inv),
     daysLate,
     subtext: deriveSubtext(inv, ledgerStatus),

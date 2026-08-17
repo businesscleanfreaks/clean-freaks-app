@@ -1,0 +1,5 @@
+ALTER TABLE "invoices"
+ADD COLUMN IF NOT EXISTS "clearingSince" TIMESTAMP(3);
+
+ALTER TABLE "clients"
+ADD COLUMN IF NOT EXISTS "billingDelivery" TEXT;

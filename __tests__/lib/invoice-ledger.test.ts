@@ -23,6 +23,8 @@ const src = (over: Partial<LedgerSource> & { id: string }): LedgerSource => ({
   isOneOff: false,
   paymentMethod: null,
   paymentReference: null,
+  clearingSince: null,
+  trackOnly: false,
   ...over,
 })
 
@@ -62,6 +64,46 @@ describe('ledger status derivation', () => {
     expect(row({ id: '1', status: 'DRAFT', dateDue: '2026-07-19T12:00:00Z' }).urgent).toBe(true)
     expect(row({ id: '2', status: 'DRAFT', dateDue: '2026-08-19T12:00:00Z' }).urgent).toBe(false)
     expect(row({ id: '3', status: 'SENT', dateDue: '2026-07-01T12:00:00Z' }).urgent).toBe(false)
+  })
+})
+
+describe('clearing (a sub-state of Sent: Unpaid, never its own tab)', () => {
+  it('keeps the row filed under Sent: Unpaid but relabels the pill', () => {
+    const r = row({
+      id: '1', status: 'SENT', dateDue: '2026-08-01T12:00:00Z', clearingSince: '2026-07-18T12:00:00Z',
+    })
+    expect(r.ledgerStatus).toBe('Sent: Unpaid')
+    expect(r.clearing).toBe(true)
+    // 18 Jul + 7 days
+    expect(r.statusLabel).toBe('Clearing ~Jul 25')
+  })
+
+  it('still applies to a late invoice without hiding that it is late', () => {
+    const r = row({ id: '1', status: 'SENT', dateDue: '2026-07-01T12:00:00Z', clearingSince: '2026-07-19T12:00:00Z' })
+    expect(r.ledgerStatus).toBe('Payment late')
+    expect(r.clearing).toBe(true)
+    expect(r.daysLate).toBe(19)
+  })
+
+  it('never shows clearing on a paid invoice, even if the flag lingers', () => {
+    const r = row({ id: '1', status: 'PAID', clearingSince: '2026-07-18T12:00:00Z' })
+    expect(r.clearing).toBe(false)
+    expect(r.statusLabel).toBe('Sent: Paid')
+  })
+
+  it('never shows clearing on a draft', () => {
+    expect(row({ id: '1', status: 'DRAFT', clearingSince: '2026-07-18T12:00:00Z' }).clearing).toBe(false)
+  })
+})
+
+describe('track only', () => {
+  it('explains that no invoice is emailed', () => {
+    expect(row({ id: '1', status: 'DRAFT', trackOnly: true }).subtext).toBe('Track only · client pays on their own')
+  })
+
+  it('does not override the paid-via line once the money is in', () => {
+    const r = row({ id: '1', status: 'PAID', trackOnly: true, paymentMethod: 'ZELLE' })
+    expect(r.subtext).toBe('Paid via Zelle')
   })
 })
 

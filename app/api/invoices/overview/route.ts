@@ -27,9 +27,10 @@ export async function GET(request: Request) {
         dateDue: true,
         datePaid: true,
         scheduledSendAt: true,
+        clearingSince: true,
         paymentMethod: true,
         paymentTransactionId: true,
-        client: { select: { name: true, billingType: true } },
+        client: { select: { name: true, billingType: true, billingDelivery: true } },
         // A one-off invoice is one whose billed work is all unscheduled jobs.
         lineItems: { select: { job: { select: { scheduleId: true } } } },
       },
@@ -53,6 +54,8 @@ export async function GET(request: Request) {
       })(),
       paymentMethod: inv.paymentMethod,
       paymentReference: inv.paymentTransactionId,
+      clearingSince: inv.clearingSince?.toISOString() ?? null,
+      trackOnly: inv.client?.billingDelivery === 'TRACK_ONLY',
     }))
 
     const ledger = sortRows(sources.map(s => toLedgerRow(s)))

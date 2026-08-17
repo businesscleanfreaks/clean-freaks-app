@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { showSuccess, showError } from "@/lib/toast"
 import { MatchPaymentsPanel } from "./match-payments-panel"
 import {
   LEDGER_TABS,
@@ -293,12 +294,22 @@ export function InvoicesOverview() {
                   {formatCurrency(row.totalAmount)}
                 </span>
 
-                <Tip text={meta.tip}>
+                <Tip
+                  text={
+                    row.clearing
+                      ? "Payment is on its way. ACH and checks take about 5 to 7 days to land."
+                      : meta.tip
+                  }
+                >
                   <span
                     className="w-max cursor-default rounded-full px-2.5 py-0.5 text-[10.5px] font-bold"
-                    style={{ background: meta.bg, color: meta.color }}
+                    style={
+                      row.clearing
+                        ? { background: "#fdf6ea", color: "#8a5e12" }
+                        : { background: meta.bg, color: meta.color }
+                    }
                   >
-                    {row.ledgerStatus === "Payment late" ? `${row.daysLate}d late` : row.ledgerStatus}
+                    {row.statusLabel}
                   </span>
                 </Tip>
 
@@ -307,7 +318,25 @@ export function InvoicesOverview() {
                 </span>
 
                 <div className="flex justify-end" onClick={e => e.stopPropagation()}>
-                  <RowAction row={row} onOpen={() => router.push(`/invoices/${row.id}`)} />
+                  <RowAction
+                    row={row}
+                    onOpen={() => router.push(`/invoices/${row.id}`)}
+                    onToggleClearing={async () => {
+                      try {
+                        const res = await fetch(`/api/invoices/${row.id}/clearing`, {
+                          method: row.clearing ? "DELETE" : "POST",
+                        })
+                        if (!res.ok) {
+                          const err = await res.json().catch(() => null)
+                          throw new Error(err?.error || "Could not update clearing")
+                        }
+                        showSuccess(row.clearing ? "No longer clearing" : "Marked as clearing")
+                        mutate()
+                      } catch (e) {
+                        showError(e instanceof Error ? e.message : "Could not update clearing")
+                      }
+                    }}
+                  />
                 </div>
               </div>
             )
@@ -328,7 +357,11 @@ export function InvoicesOverview() {
  * One action per status. Never a one-click "Send" — the row's primary action is
  * always review, so urgency is a small red badge rather than a red send button.
  */
-function RowAction({ row, onOpen }: { row: LedgerRow; onOpen: () => void }) {
+function RowAction({ row, onOpen, onToggleClearing }: {
+  row: LedgerRow
+  onOpen: () => void
+  onToggleClearing: () => void
+}) {
   if (row.ledgerStatus === "To send") {
     return (
       <span className="relative inline-flex items-center">
@@ -363,14 +396,26 @@ function RowAction({ row, onOpen }: { row: LedgerRow; onOpen: () => void }) {
   if (row.ledgerStatus === "Sent: Paid") {
     return <span className="px-1 text-[12px] font-bold text-[#15803d]">Paid</span>
   }
-  // Sent: Unpaid and Payment late both offer the quiet mark-paid route.
+  // Sent: Unpaid and Payment late both offer the quiet mark-paid route, plus a
+  // way to flag (or un-flag) an ACH/check payment that is still in flight.
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="rounded-[8px] border border-[#e4e7ec] bg-white px-3 py-1.5 text-[12px] font-bold text-[#475467] transition-colors hover:bg-[#f7f8fa]"
-    >
-      Mark paid
-    </button>
+    <div className="flex items-center justify-end gap-1">
+      <Tip text={row.clearing ? "Not actually clearing" : "Payment sent but not landed yet (ACH or check)"}>
+        <button
+          type="button"
+          onClick={onToggleClearing}
+          className="rounded-[8px] px-2 py-1.5 text-[12px] font-bold text-[#8a5e12] transition-colors hover:bg-[#fdf6ea]"
+        >
+          {row.clearing ? "Undo" : "Clearing"}
+        </button>
+      </Tip>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="rounded-[8px] border border-[#e4e7ec] bg-white px-3 py-1.5 text-[12px] font-bold text-[#475467] transition-colors hover:bg-[#f7f8fa]"
+      >
+        Mark paid
+      </button>
+    </div>
   )
 }

@@ -31,6 +31,9 @@ model Client {
   invoiceFrequency    String     @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
   propertyType        String?    // RESIDENTIAL or COMMERCIAL
   paymentRulePreset   String?    // RESIDENTIAL_STANDARD or COMMERCIAL_STANDARD
+  // How we bill this client: EMAIL sends an invoice; TRACK_ONLY means they pay
+  // on their own and we only track what's owed (no email ever goes out).
+  billingDelivery     String?    // EMAIL (default) | TRACK_ONLY
   preferredPaymentMethod String?  // ZELLE, DIRECT_DEPOSIT, CHECK, OTHER — client's preferred way to pay
   startDate           DateTime?  // When the client relationship started
   isActive            Boolean    @default(true)
@@ -287,6 +290,9 @@ model Invoice {
   billingPeriodEnd   DateTime? // End of the billing period this invoice covers
   scheduledSendAt    DateTime? // "Send later": when this invoice should auto-send
   scheduledPayload   Json?     // Captured email (to/cc/subject/message/showPaymentOptions) for the scheduled send
+  // "Clearing": ACH/check payments take 5-7 days to land. Set when the operator
+  // marks a payment as on its way; cleared by marking paid or undoing.
+  clearingSince      DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime?
 
