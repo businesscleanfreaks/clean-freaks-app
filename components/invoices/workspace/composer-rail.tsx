@@ -11,6 +11,7 @@ import { formatMonthLabel, type WorkspaceInvoice } from "./use-workspace"
 import { ensureInvoiceId, sendInvoiceEmail } from "./invoice-send"
 import { useConfirm } from "@/hooks/use-confirm"
 import { SendLaterPopover } from "./send-later-popover"
+import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
 
 interface ClientContact { id: string; name: string | null; email: string | null; role?: string | null }
 
@@ -84,6 +85,16 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   const [manual, setManual] = useState("")
   const [payNow, setPayNow] = useState(true)
   const [sending, setSending] = useState(false)
+
+  // Same SWR key as AdjustmentsPanel, so this shares one request and updates
+  // the moment an adjustment is approved or removed.
+  const { data: adjData } = useSWR<{ adjustments: Adjustment[] }>(
+    `/api/invoices/adjustments?candidateId=${encodeURIComponent(inv.candidateId)}&period=${month}`,
+    fetcher,
+  )
+  // The server refuses these too; disabling here just avoids a pointless click.
+  const adjustmentsBlockedReason = sendBlockedReason(adjData?.adjustments ?? [])
+
   const [marking, setMarking] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [schedAnchor, setSchedAnchor] = useState<DOMRect | null>(null)
@@ -434,7 +445,8 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
             <input type="checkbox" checked={payNow} onChange={(e) => { markTouched(); setPayNow(e.target.checked) }} className="h-3.5 w-3.5 accent-teal-600" />
             Pay Now (Zelle)
           </label>
-          <button onClick={(e) => setSchedAnchor(e.currentTarget.getBoundingClientRect())} disabled={sending}
+          <button onClick={(e) => setSchedAnchor(e.currentTarget.getBoundingClientRect())} disabled={sending || !!adjustmentsBlockedReason}
+            title={adjustmentsBlockedReason || undefined}
             className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-500 hover:bg-stone-50 disabled:opacity-50">
             <Clock size={12} /> Send later
           </button>
@@ -446,7 +458,13 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
             "Draft auto-saves as you type"
           )}
         </div>
-        <button onClick={() => send(false)} disabled={sending}
+        {adjustmentsBlockedReason && (
+          <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-amber-800">
+            {adjustmentsBlockedReason}
+          </div>
+        )}
+        <button onClick={() => send(false)} disabled={sending || !!adjustmentsBlockedReason}
+          title={adjustmentsBlockedReason || undefined}
           className="flex w-full items-center justify-center gap-1.5 rounded-md py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
           style={{ background: "#0D9488" }}>
           <Send size={15} /> {sending ? "Sending…" : "Send to client"}
