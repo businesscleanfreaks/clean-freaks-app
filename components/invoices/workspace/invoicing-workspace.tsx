@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -48,6 +48,23 @@ export function InvoicingWorkspace({
   const [detailWidth, setDetailWidth] = useState(340)
   const [listWidth, setListWidth] = useState(330)
   useEffect(() => setMounted(true), [])
+
+  // Keyboard queue navigation. Ignored while typing in a field or with a modal
+  // open, so it never fights with normal editing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return
+      const el = e.target as HTMLElement | null
+      const tag = el?.tagName?.toLowerCase()
+      if (tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable) return
+      if (confirmSend || templatesOpen) return
+      e.preventDefault()
+      ws.stepReview(e.key === "ArrowDown" ? 1 : -1)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [ws, confirmSend, templatesOpen])
+
   // Restore saved column widths — list width persists across sessions (Ticket 1).
   useEffect(() => {
     try {
@@ -153,6 +170,38 @@ export function InvoicingWorkspace({
             <span className="px-2 text-sm font-medium tabular-nums text-stone-700">{formatMonthLabel(ws.month)}</span>
             <button onClick={() => ws.setMonth(shiftMonth(ws.month, 1))} className="rounded p-1 text-stone-600 transition-colors hover:bg-white" aria-label="Next month"><ChevronRight size={15} /></button>
           </div>
+
+          {/* Review queue position. Fixed-width label so the arrows never shift. */}
+          {ws.queuePositionLabel && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-1">
+                <span className="w-[104px] flex-none truncate text-[12.5px] font-semibold tabular-nums text-stone-700">
+                  Reviewing {ws.queuePositionLabel}
+                </span>
+                <div className="h-1 w-16 flex-none overflow-hidden rounded-full bg-stone-100">
+                  <div className="h-full rounded-full bg-[#15793f] transition-all" style={{ width: `${ws.queueProgress}%` }} />
+                </div>
+                <div className="flex flex-none items-center gap-0.5">
+                  <button
+                    onClick={() => ws.stepReview(-1)}
+                    aria-label="Previous invoice to review"
+                    title="Previous (Up arrow)"
+                    className="rounded p-0.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
+                  >
+                    <ChevronUp size={14} />
+                  </button>
+                  <button
+                    onClick={() => ws.stepReview(1)}
+                    aria-label="Next invoice to review"
+                    title="Next (Down arrow)"
+                    className="rounded p-0.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-5 text-sm tabular-nums">
           {([["Not sent", ws.totals.notSent], ["Sent", ws.totals.sent], ["Paid", ws.totals.paid]] as const).map(([label, amt]) => (

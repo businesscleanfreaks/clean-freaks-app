@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import useSWR from "swr"
 import { format, startOfMonth, endOfMonth } from "date-fns"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { deriveVerification, type InvoiceVerification } from "@/lib/invoice-verification"
+import { orderQueue, queueLabel, queueProgressPct, stepQueue } from "@/lib/review-queue"
 import type { InvoiceCandidate } from "@/components/invoices/candidate-card"
 
 export type WorkspaceTab = "All" | "Not sent" | "Sent" | "Overdue" | "Paid"
@@ -278,6 +279,27 @@ export function useWorkspace(options: UseWorkspaceOptions = {}) {
     [invoices, checked],
   )
 
+  // Review queue: the unsent invoices in the order the VA should work them
+  // (flat rate first, needs-attention first within each). Drives the top pill,
+  // the up/down arrows and the keyboard shortcuts.
+  const reviewQueue = useMemo(
+    () => orderQueue(invoices.filter(i => i.uiStatus === "Not sent")),
+    [invoices],
+  )
+  const queuePositionLabel = useMemo(
+    () => queueLabel(reviewQueue, selected?.candidateId ?? null),
+    [reviewQueue, selected],
+  )
+  const queueProgress = useMemo(
+    () => queueProgressPct(reviewQueue, selected?.candidateId ?? null),
+    [reviewQueue, selected],
+  )
+  const stepReview = useCallback((delta: number) => {
+    const next = stepQueue(reviewQueue, selected?.candidateId ?? null, delta)
+    if (next) setSelectedId(next.candidateId)
+    return !!next
+  }, [reviewQueue, selected])
+
   const overdueCount = overdueInvoices.length
   const overdueTotal = useMemo(() => overdueInvoices.reduce((s, i) => s + i.total, 0), [overdueInvoices])
   const refreshAll = () => { mutate(); mutateOverdue() }
@@ -292,5 +314,6 @@ export function useWorkspace(options: UseWorkspaceOptions = {}) {
     invoices, totals, groups, verifiedReady, selected,
     overdueCount, overdueTotal,
     focusMissing,
+    reviewQueue, queuePositionLabel, queueProgress, stepReview,
   }
 }
