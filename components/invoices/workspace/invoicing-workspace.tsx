@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
-import { MiniCalendar } from "./mini-calendar"
+import { ScheduleCheck } from "./schedule-check"
 import { TemplatesModal } from "./templates-modal"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
@@ -442,8 +442,10 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
 
   const cleans = useMemo(() => {
-    const jobs = (client?.locations || []).flatMap((l: { jobs?: Array<{ date: string; status: string }> }) => l.jobs || [])
-    return jobs.map((j: { date: string; status: string }) => ({ date: j.date, status: j.status }))
+    type ClientJob = { id?: string; date: string; status: string; scheduleId?: string | null }
+    const jobs = (client?.locations || []).flatMap((l: { jobs?: ClientJob[] }) => l.jobs || [])
+    // A job with no schedule is one-off work, which the schedule check marks amber.
+    return jobs.map((j: ClientJob) => ({ jobId: j.id, date: j.date, status: j.status, isOneOff: !j.scheduleId }))
   }, [client])
 
   const cleaner = useMemo(() => {
@@ -558,18 +560,20 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
           <div className="mb-2 text-[12px] text-stone-500">
             <span className="font-semibold text-stone-700">{monthCleans.length} clean{monthCleans.length === 1 ? "" : "s"}</span> this month · {flaggedRows.length === 0 ? "no changes" : `${flaggedRows.length} change${flaggedRows.length === 1 ? "" : "s"}`}
           </div>
-          <div className="rounded-lg border border-stone-200 bg-white p-2.5">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-stone-600">{formatMonthLabel(month)}</span>
-              <span className="text-[11px] text-stone-400">{monthCleans.length} clean{monthCleans.length === 1 ? "" : "s"}</span>
-            </div>
-            <MiniCalendar month={month} cleans={cleans} />
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
-              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed</span>
-              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled</span>
-              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Missed</span>
-            </div>
-          </div>
+          {/* Per-clean only: a flat-rate client bills the same regardless of the
+              visit count, so the day grid says nothing about their total. */}
+          {inv.billingType !== "FLAT_RATE" ? (
+            <ScheduleCheck
+              month={month}
+              cleans={cleans}
+              clientId={inv.clientId}
+              clientName={inv.clientName}
+            />
+          ) : (
+            <p className="rounded-lg border border-stone-200 bg-white p-2.5 text-[11.5px] text-stone-500">
+              Flat monthly rate · the total does not change with the visit count.
+            </p>
+          )}
         </div>
 
         {/* Credits, discounts and charges. Every row must be approved before

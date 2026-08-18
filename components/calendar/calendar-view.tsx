@@ -936,6 +936,13 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
     setLoadedRanges(initialMonths)
   }, [initialJobs])
 
+  // Deep link from the invoice review workspace: show only this client's
+  // cleans, so "Open in Calendar" lands on exactly what was being reviewed.
+  useEffect(() => {
+    const clientId = searchParams?.get('clientId')
+    if (clientId) setSelectedClientId(clientId)
+  }, [searchParams])
+
   // Handle jobId from URL query parameter
   useEffect(() => {
     const jobId = searchParams?.get('jobId')
