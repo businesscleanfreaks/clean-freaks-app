@@ -4,7 +4,7 @@ import { resolveTemplate, DEFAULT_SUBJECT, DEFAULT_MESSAGE } from "@/lib/invoice
 import { formatMonthLabel, type WorkspaceInvoice } from "./use-workspace"
 
 /** Create the invoice from a candidate if it doesn't exist yet (preview → finalize). */
-export async function ensureInvoiceId(inv: WorkspaceInvoice): Promise<string | null> {
+export async function ensureInvoiceId(inv: WorkspaceInvoice, period?: string): Promise<string | null> {
   if (inv.existingInvoiceId) return inv.existingInvoiceId
   if (!inv.jobIds || inv.jobIds.length === 0) {
     showError(`${inv.clientName}: no billable cleans to invoice this month.`)
@@ -16,6 +16,10 @@ export async function ensureInvoiceId(inv: WorkspaceInvoice): Promise<string | n
     body: JSON.stringify({
       clientId: inv.clientId,
       jobIds: inv.jobIds,
+      // Lets the server gate on unapproved adjustments and fold approved ones
+      // into the invoice, using DB amounts rather than anything sent from here.
+      candidateId: inv.candidateId,
+      period,
       previewOnly: true,
       showPaymentOptions: true,
       lineItems: (inv.lineItems || []).map((li) => ({
@@ -30,6 +34,10 @@ export async function ensureInvoiceId(inv: WorkspaceInvoice): Promise<string | n
   if (res.status === 409) {
     const body = await res.json().catch(() => null)
     if (body?.existingInvoice?.id) return body.existingInvoice.id
+    if (body?.code === "ADJUSTMENTS_UNAPPROVED") {
+      showError(`${inv.clientName}: ${body.error}`)
+      return null
+    }
   }
   if (!res.ok) { await showApiError(res, `Failed to create invoice for ${inv.clientName}`); return null }
   const created = await res.json()
@@ -106,7 +114,7 @@ export async function runBatchSend(
         total: formatCurrency(inv.total),
         dueDate,
       }
-      const invoiceId = await ensureInvoiceId(inv)
+      const invoiceId = await ensureInvoiceId(inv, month)
       if (!invoiceId) { result.failed++; continue }
 
       const r = await sendInvoiceEmail(invoiceId, {

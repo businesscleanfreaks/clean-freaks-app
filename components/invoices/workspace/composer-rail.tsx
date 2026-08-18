@@ -173,7 +173,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     if (to.length === 0 && !isTest) { showError("Add at least one recipient."); return }
     setSending(true)
     try {
-      const invoiceId = await ensureInvoiceId(inv)
+      const invoiceId = await ensureInvoiceId(inv, month)
       if (!invoiceId) return
       const base = { to, cc: cc || undefined, subject, message, isTest, showPaymentOptions: payNow }
       let r = await sendInvoiceEmail(invoiceId, base)
@@ -199,7 +199,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   const saveDraft = async () => {
     setSavingDraft(true)
     try {
-      const invoiceId = await ensureInvoiceId(inv)
+      const invoiceId = await ensureInvoiceId(inv, month)
       if (invoiceId) { showSuccess("Draft saved"); onChanged() }
     } catch { showError("Failed to save draft") } finally { setSavingDraft(false) }
   }
@@ -211,7 +211,7 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     if (to.length === 0) { showError("Add at least one recipient before scheduling."); return }
     setSending(true)
     try {
-      const invoiceId = await ensureInvoiceId(inv)
+      const invoiceId = await ensureInvoiceId(inv, month)
       if (!invoiceId) return
       const res = await fetch(`/api/invoices/${invoiceId}/schedule`, {
         method: "POST",

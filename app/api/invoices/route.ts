@@ -6,6 +6,8 @@ import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { getInvoiceDefaults, computeDefaultDueDate } from '@/lib/invoice-defaults'
+import { sendBlockedReason } from '@/lib/invoice-adjustments'
+import { isValidPeriod as isValidAdjPeriod } from '@/lib/invoice-overview'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -44,6 +46,9 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const { clientId, jobIds, dateDue, notes, showPaymentOptions, status, previewOnly } = body
+    // Supplied by the review workspace so adjustments can be gated and folded in.
+    const adjustmentCandidateId: string | null = typeof body.candidateId === 'string' ? body.candidateId : null
+    const adjustmentPeriod: string | null = typeof body.period === 'string' ? body.period : null
     isPreviewRequest = Boolean(previewOnly)
     const customLineItems = Array.isArray(body.lineItems) ? body.lineItems : null
 
@@ -275,6 +280,33 @@ export async function POST(request: Request) {
         })
       })
     }
+    }
+
+    // ── Review adjustments ────────────────────────────────────────────────
+    // Credits/charges added while reviewing. Read from the DB rather than
+    // trusting client-supplied amounts, and refuse outright while any are
+    // unapproved: the design makes approval a hard gate on sending.
+    if (adjustmentCandidateId && isValidAdjPeriod(adjustmentPeriod)) {
+      const adjustments = await prisma.invoiceAdjustment.findMany({
+        where: { candidateId: adjustmentCandidateId, period: adjustmentPeriod },
+        orderBy: { createdAt: 'asc' },
+      })
+
+      const blocked = sendBlockedReason(adjustments)
+      if (blocked) {
+        return NextResponse.json({ error: blocked, code: 'ADJUSTMENTS_UNAPPROVED' }, { status: 409 })
+      }
+
+      for (const adj of adjustments) {
+        lineItems.push({
+          jobId: null,
+          addOnServiceId: null,
+          description: adj.label,
+          amount: adj.amount, // already signed: credits negative, charges positive
+          serviceDate: new Date(),
+        })
+        totalAmount += adj.amount
+      }
     }
 
     // Generate invoice number
