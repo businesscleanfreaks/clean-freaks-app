@@ -14,6 +14,7 @@ import {
   type WorkspaceInvoice, type WorkspaceTab,
 } from "./use-workspace"
 import { ComposerRail } from "./composer-rail"
+import { AdjustmentsPanel } from "./adjustments-panel"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
@@ -570,6 +571,17 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
             </div>
           </div>
         </div>
+
+        {/* Credits, discounts and charges. Every row must be approved before
+            this invoice can be sent. */}
+        <AdjustmentsPanel
+          candidateId={inv.candidateId}
+          clientId={inv.clientId}
+          period={month}
+          baseTotal={inv.total}
+          billingType={inv.billingType}
+          cleanCount={inv.completedCount || inv.jobCount || 0}
+        />
       </div>
     </div>
   )

@@ -890,3 +890,24 @@ model ProspectActivity {
   @@index([prospectId])
   @@map("prospect_activities")
 }
+
+// Credits, discounts and charges added by the VA while reviewing an invoice.
+// Keyed by candidateId + period so they can exist BEFORE the invoice does
+// (the review workspace works on computed candidates, not saved invoices).
+model InvoiceAdjustment {
+  id          String   @id @default(uuid())
+  candidateId String   // "<clientId>:<billingGroupId>" or an existing invoice id
+  period      String   // yyyy-MM the adjustment belongs to
+  clientId    String
+  mode        String   // PCT_OFF | COMP | COURTESY | CHARGE
+  label       String
+  amount      Float    // SIGNED: credits are negative, charges positive
+  serviceDay  Int?     // day-of-month the credit refers to (PCT_OFF / COMP)
+  approved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([candidateId, period])
+  @@index([clientId])
+  @@map("invoice_adjustments")
+}
