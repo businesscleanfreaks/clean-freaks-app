@@ -12,6 +12,7 @@ import { ensureInvoiceId, sendInvoiceEmail } from "./invoice-send"
 import { useConfirm } from "@/hooks/use-confirm"
 import { SendLaterPopover } from "./send-later-popover"
 import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
+import { subscribeDraftMessage, currentDraftMessage } from "./use-draft-message"
 
 interface ClientContact { id: string; name: string | null; email: string | null; role?: string | null }
 
@@ -95,6 +96,15 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
   // The server refuses these too; disabling here just avoids a pointless click.
   const adjustmentsBlockedReason = sendBlockedReason(adjData?.adjustments ?? [])
 
+  // The "Client will receive" pane edits the same draft. Mirror it here so the
+  // compose window always shows what the reviewer actually approved.
+  useEffect(() => {
+    const saved = currentDraftMessage(inv.candidateId)
+    if (saved !== null) setMessage(saved)
+    return subscribeDraftMessage(inv.candidateId, next => setMessage(next))
+  }, [inv.candidateId])
+
+
   const [marking, setMarking] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [schedAnchor, setSchedAnchor] = useState<DOMRect | null>(null)
@@ -132,7 +142,9 @@ export function ComposerRail({ inv, month, onChanged }: { inv: WorkspaceInvoice;
     }
     const tpl = templateData || { subject: "Invoice · {client} · {month}", message: "Hi {client}, please find attached your invoice for {total} for {month}. Payment is due by {due_date}. Thank you for your business." }
     setSubject(resolveTemplate(tpl.subject, vars))
-    setMessage(resolveTemplate(tpl.message, vars))
+    // The "Client will receive" pane owns the body copy. Only fall back to the
+    // template when that pane has not published anything for this candidate.
+    setMessage(currentDraftMessage(inv.candidateId) ?? resolveTemplate(tpl.message, vars))
     setCc(clientData?.invoicingCcEmail || "")
     const def = clientData?.invoicingEmail || clientData?.communicationEmail || pool[0]
     setTo(def ? [def] : [])

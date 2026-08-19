@@ -15,6 +15,7 @@ import {
 } from "./use-workspace"
 import { ComposerRail } from "./composer-rail"
 import { AdjustmentsPanel } from "./adjustments-panel"
+import { ClientWillReceive } from "./client-will-receive"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
@@ -575,6 +576,9 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
             </p>
           )}
         </div>
+
+        {/* Exactly what the client will get, editable in place. */}
+        <ClientWillReceive inv={inv} month={month} />
 
         {/* Credits, discounts and charges. Every row must be approved before
             this invoice can be sent. */}
