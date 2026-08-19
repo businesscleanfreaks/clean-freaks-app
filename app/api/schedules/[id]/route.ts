@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { invalidateReconciliationCache } from '@/lib/operational-reconciliation'
 import { prisma } from '@/lib/db'
 import { revalidateSchedulePages } from '@/lib/revalidate'
 import { updateScheduleSchema } from '@/lib/validations'
@@ -13,6 +14,8 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // A schedule change must show its new cleans immediately.
+  invalidateReconciliationCache()
   try {
     await requireAuth()
 
@@ -88,6 +91,8 @@ export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // A schedule change must show its new cleans immediately.
+  invalidateReconciliationCache()
   try {
     await requireAuth()
 

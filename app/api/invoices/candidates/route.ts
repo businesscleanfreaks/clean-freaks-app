@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { startOfMonth, endOfMonth, format } from "date-fns"
 import { getBillingStartDate } from "@/lib/billing-settings"
-import { computeClientProration } from "@/lib/proration"
+import { computeClientProrationBatch } from "@/lib/proration"
 import { logger } from "@/lib/logger"
 import { calculateScheduleDates } from "@/lib/regenerate-schedule-jobs"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
@@ -98,7 +98,10 @@ export async function GET(request: Request) {
       existingInvoices,
       clientsWithSchedules,
       pauseSchedules,
-    ] = await prisma.$transaction([
+      // Parallel, not a transaction: these are four independent reads for a
+      // derived view, and $transaction runs them one after another — four
+      // serialized round trips to a pooled database instead of one.
+    ] = await Promise.all([
       // 1. Fetch ALL jobs in the period (including invoiced ones for detection)
       prisma.job.findMany({
         where: {
@@ -263,6 +266,14 @@ export async function GET(request: Request) {
       hasEmail: boolean
       jobIds: string[]
     }
+
+    // One query for every client's proration, instead of one per client inside
+    // the loop below.
+    const prorationByClient = await computeClientProrationBatch(
+      [...jobsByClient.keys()],
+      periodStart,
+      periodEnd,
+    )
 
     const candidates: Candidate[] = []
     const representedInvoiceIds = new Set<string>()
@@ -636,7 +647,7 @@ export async function GET(request: Request) {
         // Proration credit for flat-rate cleans missed this month (e.g. a pause).
         // Only on fresh candidates — never retro-adjust an existing invoice.
         if (!hasExistingActiveInvoice && lineItems.length > 0) {
-          const prorations = await computeClientProration(clientId, periodStart, periodEnd)
+          const prorations = prorationByClient.get(clientId) ?? []
           for (const p of prorations) {
             lineItems.push({
               description: `Proration credit — ${p.missed} missed clean${p.missed === 1 ? '' : 's'} (${p.locationName})`,
@@ -916,7 +927,7 @@ export async function GET(request: Request) {
     })
 
     // 6. Check for older uninvoiced work (outside the selected period)
-    const [olderUninvoicedCount, olderJobs] = await prisma.$transaction([
+    const [olderUninvoicedCount, olderJobs] = await Promise.all([
       prisma.job.count({
         where: {
           invoiced: false,

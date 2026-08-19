@@ -31,6 +31,22 @@ function utcDateOnly(date: Date): Date {
  *
  *   credit = round( missed × (flatRate ÷ expected) )
  */
+const prorationInclude = (mStart: Date, mEnd: Date) => ({
+  schedules: {
+    where: { isActive: true, clientPayType: 'FLAT_RATE' as const },
+  },
+  jobs: {
+    where: { date: { gte: mStart, lte: mEnd }, status: { not: 'CANCELLED' } },
+    select: { id: true, date: true, scheduleId: true },
+  },
+})
+
+type ProrationLocation = Awaited<ReturnType<typeof loadProrationLocations>>[number]
+
+async function loadProrationLocations(where: { clientId: string | { in: string[] } }, mStart: Date, mEnd: Date) {
+  return prisma.location.findMany({ where, include: prorationInclude(mStart, mEnd) })
+}
+
 export async function computeClientProration(
   clientId: string,
   monthStart: Date,
@@ -38,20 +54,46 @@ export async function computeClientProration(
 ): Promise<LocationProration[]> {
   const mStart = utcDateOnly(monthStart)
   const mEnd = utcDateOnly(monthEnd)
+  const locations = await loadProrationLocations({ clientId }, mStart, mEnd)
+  return prorationForLocations(locations, mStart, mEnd)
+}
 
-  const locations = await prisma.location.findMany({
-    where: { clientId },
-    include: {
-      schedules: {
-        where: { isActive: true, clientPayType: 'FLAT_RATE' },
-      },
-      jobs: {
-        where: { date: { gte: mStart, lte: mEnd }, status: { not: 'CANCELLED' } },
-        select: { id: true, date: true, scheduleId: true },
-      },
-    },
-  })
+/**
+ * The same computation for many clients in ONE query.
+ *
+ * The invoice workspace needs this per client; calling the single-client
+ * version inside its loop meant one round trip per client, which was the
+ * slowest part of building the candidate list.
+ */
+export async function computeClientProrationBatch(
+  clientIds: string[],
+  monthStart: Date,
+  monthEnd: Date,
+): Promise<Map<string, LocationProration[]>> {
+  const byClient = new Map<string, LocationProration[]>()
+  if (clientIds.length === 0) return byClient
 
+  const mStart = utcDateOnly(monthStart)
+  const mEnd = utcDateOnly(monthEnd)
+  const locations = await loadProrationLocations({ clientId: { in: clientIds } }, mStart, mEnd)
+
+  const grouped = new Map<string, ProrationLocation[]>()
+  for (const loc of locations) {
+    const list = grouped.get(loc.clientId) ?? []
+    list.push(loc)
+    grouped.set(loc.clientId, list)
+  }
+  for (const [clientId, locs] of grouped) {
+    byClient.set(clientId, prorationForLocations(locs, mStart, mEnd))
+  }
+  return byClient
+}
+
+function prorationForLocations(
+  locations: ProrationLocation[],
+  mStart: Date,
+  mEnd: Date,
+): LocationProration[] {
   const out: LocationProration[] = []
 
   for (const loc of locations) {

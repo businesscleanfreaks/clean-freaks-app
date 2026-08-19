@@ -32,7 +32,7 @@ function makeSchedule(over: Partial<ReconciliationSchedule> = {}): Reconciliatio
 }
 
 function makeJob(date: Date, over: Partial<ReconciliationJob> = {}): ReconciliationJob {
-  return { id: `j-${iso(date)}`, date, startTime: '09:00', startWindowBegin: null, invoiceLineItems: [], ...over }
+  return { id: `j-${iso(date)}`, date, startTime: '09:00', startWindowBegin: null, ...over }
 }
 
 describe('reconciliation is additive — fills gaps', () => {
@@ -80,5 +80,32 @@ describe('split schedule does not regenerate pre-start duplicates', () => {
     for (const c of splitCreated) {
       expect(c.date.getTime()).toBeGreaterThanOrEqual(utc(2026, 6, 11).getTime())
     }
+  })
+})
+
+describe('repairing a clean that has no time on it', () => {
+  const timed = () => makeSchedule({ startTime: '09:00' })
+
+  it('fills in the missing time', () => {
+    const untimed = makeJob(utc(2026, 5, 4), { startTime: null })
+    const plan = planScheduleJobReconciliation(
+      [timed()],
+      new Map([['s1', [untimed]]]),
+      utc(2026, 5, 4),
+      utc(2026, 5, 4),
+    )
+    expect(plan.toRepair.flatMap(r => r.ids)).toContain(untimed.id)
+  })
+
+  it('leaves a clean alone once it is on a sent or paid invoice · never edit billed work', () => {
+    const untimed = makeJob(utc(2026, 5, 4), { startTime: null })
+    const plan = planScheduleJobReconciliation(
+      [timed()],
+      new Map([['s1', [untimed]]]),
+      utc(2026, 5, 4),
+      utc(2026, 5, 4),
+      new Set([untimed.id]),
+    )
+    expect(plan.toRepair.flatMap(r => r.ids)).not.toContain(untimed.id)
   })
 })

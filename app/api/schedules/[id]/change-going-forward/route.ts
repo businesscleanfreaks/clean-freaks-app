@@ -1,4 +1,5 @@
 import { subDays, startOfDay } from 'date-fns'
+import { invalidateReconciliationCache } from '@/lib/operational-reconciliation'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
@@ -14,6 +15,8 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // A schedule change must show its new cleans immediately.
+  invalidateReconciliationCache()
   try {
     await requireAuth()
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { invalidateReconciliationCache } from '@/lib/operational-reconciliation'
 import { z } from 'zod'
 import { addDays, subDays, startOfDay } from 'date-fns'
 import { prisma } from '@/lib/db'
@@ -35,6 +36,8 @@ const pauseSchema = z.object({
  * cleans (protected/invoiced ones stay) and rebuilds the resumed ones.
  */
 export async function POST(request: Request, { params }: { params: { id: string } }) {
+  // A schedule change must show its new cleans immediately.
+  invalidateReconciliationCache()
   try {
     await requireAuth()
     const parsed = pauseSchema.safeParse(await request.json())

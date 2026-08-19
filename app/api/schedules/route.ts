@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { invalidateReconciliationCache } from '@/lib/operational-reconciliation'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { revalidateSchedulePages } from '@/lib/revalidate'
@@ -78,6 +79,8 @@ async function generateJobsForSchedule(scheduleId: string, tx?: TransactionClien
 }
 
 export async function POST(request: Request) {
+  // A schedule change must show its new cleans immediately.
+  invalidateReconciliationCache()
   try {
     await requireAuth()
 

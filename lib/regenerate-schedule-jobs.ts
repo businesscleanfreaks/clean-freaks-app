@@ -340,7 +340,6 @@ export interface ReconciliationJob {
   date: Date
   startTime?: string | null
   startWindowBegin?: string | null
-  invoiceLineItems: Array<{ invoice: { status: string | null } | null }>
 }
 
 export interface JobReconciliationPlan {
@@ -384,6 +383,8 @@ export function planScheduleJobReconciliation(
   jobsBySchedule: ReadonlyMap<string, ReconciliationJob[]>,
   rangeStart: Date,
   rangeEnd: Date,
+  /** Jobs already on a sent or paid invoice · never repaired underneath one. */
+  finalInvoicedJobIds: ReadonlySet<string> = new Set(),
 ): JobReconciliationPlan {
   const earliestScheduleStartByLocation = getEarliestScheduleStartByLocation(schedules)
   const toCreate: JobReconciliationPlan['toCreate'] = []
@@ -416,7 +417,7 @@ export function planScheduleJobReconciliation(
 
     if (hasScheduleTime(schedule)) {
       const repairableIds = scheduleJobs
-        .filter((job) => !hasJobTime(job) && !hasFinalInvoice(job.invoiceLineItems))
+        .filter((job) => !hasJobTime(job) && !finalInvoicedJobIds.has(job.id))
         .map((job) => job.id)
       if (repairableIds.length > 0) {
         toRepair.push({
@@ -461,7 +462,7 @@ export async function ensureJobsForDateRange({
   const rangeStart = utcDateOnly(startDate)
   const rangeEnd = utcDateOnly(endDate)
 
-  const [schedules, existingJobs] = await Promise.all([
+  const [schedules, existingJobs, finalInvoicedJobs] = await Promise.all([
     prisma.schedule.findMany({
       where: {
         isActive: true,
@@ -506,18 +507,23 @@ export async function ensureJobsForDateRange({
         startTime: true,
         startWindowBegin: true,
         startWindowEnd: true,
-        invoiceLineItems: {
-          select: {
-            invoice: {
-              select: {
-                status: true,
-              },
-            },
-          },
-        },
       },
     }),
+    // Which of those jobs are already on a sent or paid invoice. Fetched as a
+    // flat id list rather than hydrating invoiceLineItems -> invoice for every
+    // job in the range: the planner only needs the yes/no, and the nested
+    // version made this the slowest read on the invoice workspace.
+    prisma.job.findMany({
+      where: {
+        scheduleId: { not: null },
+        date: { gte: rangeStart, lte: rangeEnd },
+        invoiceLineItems: { some: { invoice: { status: { in: ['SENT', 'PAID'] } } } },
+      },
+      select: { id: true },
+    }),
   ])
+
+  const finalInvoicedJobIds = new Set(finalInvoicedJobs.map((j) => j.id))
 
   const jobsBySchedule = new Map<string, typeof existingJobs>()
   for (const job of existingJobs) {
@@ -532,6 +538,7 @@ export async function ensureJobsForDateRange({
     jobsBySchedule,
     rangeStart,
     rangeEnd,
+    finalInvoicedJobIds,
   )
 
   let repairedCount = 0
