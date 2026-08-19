@@ -1,5 +1,8 @@
 {
   "framework": "nextjs",
+  "regions": [
+    "sfo1"
+  ],
   "buildCommand": "npm run vercel-build",
   "installCommand": "npm install",
   "crons": [
