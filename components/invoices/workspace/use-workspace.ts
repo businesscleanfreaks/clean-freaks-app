@@ -6,7 +6,7 @@ import { format, startOfMonth, endOfMonth } from "date-fns"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { deriveVerification, type InvoiceVerification } from "@/lib/invoice-verification"
-import { orderQueue, queueLabel, queueProgressPct, stepQueue } from "@/lib/review-queue"
+import { orderQueue, queueGroupPhrase, queueLabel, queuePosition, queueProgressPct, stepQueue } from "@/lib/review-queue"
 import type { InvoiceCandidate } from "@/components/invoices/candidate-card"
 
 export type WorkspaceTab = "All" | "Not sent" | "Sent" | "Overdue" | "Paid"
@@ -221,9 +221,16 @@ export function useWorkspace(options: UseWorkspaceOptions = {}) {
   // Group by billing type (Flat Rate / Per Clean / One-Time); yellows-first then
   // alphabetical within each group. Status is shown per-item and filtered by tab.
   const groups = useMemo(() => {
+    // The design labels each group with what reviewing it actually involves,
+    // not just the billing type: a flat rate is a quick check, a per-clean
+    // invoice means checking the schedule.
     const labelOf = (i: WorkspaceInvoice) =>
-      i.billingType === "FLAT_RATE" ? "Flat Rate" : i.billingType === "PER_CLEAN" ? "Per Clean" : "One-Time"
-    const order = ["Flat Rate", "Per Clean", "One-Time"]
+      i.billingType === "FLAT_RATE"
+        ? "Flat rate · quick checks"
+        : i.billingType === "PER_CLEAN"
+          ? "Per-clean · check the schedule"
+          : "One-time work"
+    const order = ["Flat rate · quick checks", "Per-clean · check the schedule", "One-time work"]
     return order
       .map((label) => {
         const items = filtered
@@ -290,6 +297,17 @@ export function useWorkspace(options: UseWorkspaceOptions = {}) {
     () => queueLabel(reviewQueue, selected?.candidateId ?? null),
     [reviewQueue, selected],
   )
+  // Position and size separately, so the pill can hold the digits in
+  // fixed-width slots instead of truncating the whole sentence.
+  const queuePos = useMemo(
+    () => queuePosition(reviewQueue, selected?.candidateId ?? null),
+    [reviewQueue, selected],
+  )
+  const queueTotal = reviewQueue.length
+  const queueGroup = useMemo(
+    () => (selected ? queueGroupPhrase(selected.billingType) : null),
+    [selected],
+  )
   const queueProgress = useMemo(
     () => queueProgressPct(reviewQueue, selected?.candidateId ?? null),
     [reviewQueue, selected],
@@ -314,6 +332,6 @@ export function useWorkspace(options: UseWorkspaceOptions = {}) {
     invoices, totals, groups, verifiedReady, selected,
     overdueCount, overdueTotal,
     focusMissing,
-    reviewQueue, queuePositionLabel, queueProgress, stepReview,
+    reviewQueue, queuePositionLabel, queuePos, queueTotal, queueGroup, queueProgress, stepReview,
   }
 }

@@ -66,3 +66,15 @@ export function stepQueue<T extends QueueItem>(
   if (index < 0) return delta > 0 ? items[0] : items[items.length - 1]
   return items[index + delta] ?? null
 }
+
+/**
+ * How the queue describes the kind of invoice being reviewed, shown next to the
+ * position ("Reviewing 3 of 7 to send · Per-clean · check the schedule").
+ *
+ * The phrasing is the design's: it tells the reviewer what the job in front of
+ * them actually requires — a flat rate is a quick check, a per-clean invoice
+ * means checking the schedule.
+ */
+export function queueGroupPhrase(billingType: string | null | undefined): string {
+  return billingType === "FLAT_RATE" ? "Flat rate · quick check" : "Per-clean · check the schedule"
+}

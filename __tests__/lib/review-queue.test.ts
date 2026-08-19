@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   queuePriority, orderQueue, queuePosition, queueLabel, queueProgressPct, stepQueue,
   type QueueItem,
+  queueGroupPhrase,
 } from '@/lib/review-queue'
 
 const item = (over: Partial<QueueItem> & { candidateId: string }): QueueItem => ({
@@ -91,5 +92,20 @@ describe('stepQueue', () => {
     expect(stepQueue(items, null, 1)?.candidateId).toBe('a')
     expect(stepQueue(items, null, -1)?.candidateId).toBe('c')
     expect(stepQueue([], null, 1)).toBeNull()
+  })
+})
+
+describe('queueGroupPhrase', () => {
+  it('tells the reviewer a flat rate is a quick check', () => {
+    expect(queueGroupPhrase('FLAT_RATE')).toBe('Flat rate · quick check')
+  })
+
+  it('tells them a per-clean invoice means checking the schedule', () => {
+    expect(queueGroupPhrase('PER_CLEAN')).toBe('Per-clean · check the schedule')
+  })
+
+  it('treats anything else as per-clean · that is the one that needs checking', () => {
+    expect(queueGroupPhrase(null)).toBe('Per-clean · check the schedule')
+    expect(queueGroupPhrase('ONE_TIME')).toBe('Per-clean · check the schedule')
   })
 })

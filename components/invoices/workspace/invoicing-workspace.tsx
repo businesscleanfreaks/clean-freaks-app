@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -19,6 +19,7 @@ import { ClientWillReceive } from "./client-will-receive"
 import { SentTracking } from "./sent-tracking"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
+import { buildServiceSummary } from "@/lib/invoice-service-summary"
 import type { ComposeMode } from "@/lib/invoice-compose"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
@@ -162,9 +163,21 @@ export function InvoicingWorkspace({
           {ws.queuePositionLabel && (
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-1">
-                <span className="w-[104px] flex-none truncate text-[12.5px] font-semibold tabular-nums text-stone-700">
-                  Reviewing {ws.queuePositionLabel}
+                {/* Only the digits sit in fixed-width slots — that is what
+                    keeps the arrows still as you walk the queue. Truncating
+                    the whole sentence (as this used to) just clipped it. */}
+                <span className="flex-none whitespace-nowrap text-[12.5px] font-semibold text-stone-700">
+                  Reviewing{" "}
+                  <span className="inline-block w-[2ch] text-right tabular-nums">{ws.queuePos > 0 ? ws.queuePos : "-"}</span>
+                  {" of "}
+                  <span className="inline-block w-[2ch] text-right tabular-nums">{ws.queueTotal}</span>
+                  {" to send"}
                 </span>
+                {ws.queueGroup && (
+                  <span className="hidden flex-none whitespace-nowrap text-[12px] text-stone-400 xl:inline">
+                    · {ws.queueGroup}
+                  </span>
+                )}
                 <div className="h-1 w-16 flex-none overflow-hidden rounded-full bg-stone-100">
                   <div className="h-full rounded-full bg-[#15793f] transition-all" style={{ width: `${ws.queueProgress}%` }} />
                 </div>
@@ -270,7 +283,7 @@ export function InvoicingWorkspace({
                       <span className="ml-auto font-mono text-[10px] text-stone-400">{formatCurrency(g.total)}</span>
                     </div>
                     {g.items.map((inv) => (
-                      <ListItem key={inv.candidateId} inv={inv}
+                      <ListItem key={inv.candidateId} inv={inv} month={ws.month}
                         selected={ws.selected?.candidateId === inv.candidateId}
                         checked={ws.checked.has(inv.candidateId)}
                         onSelect={() => ws.setSelectedId(inv.candidateId)}
@@ -397,32 +410,58 @@ function Box({ checked }: { checked: boolean }) {
   )
 }
 
-function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: WorkspaceInvoice; selected: boolean; checked: boolean; onSelect: () => void; onCheck: () => void }) {
-  const green = inv.verification.level === "green"
+/** Row status pill, matching the ledger's vocabulary. */
+const ROW_PILL: Record<string, { bg: string; color: string; label: string }> = {
+  "Not sent": { bg: "#fdf6ea", color: "#8a5e12", label: "To send" },
+  Sent: { bg: "#eff6ff", color: "#1d4ed8", label: "Sent" },
+  Paid: { bg: "#ecfdf5", color: "#047857", label: "Paid" },
+}
+
+function ListItem({ inv, month, selected, checked, onSelect, onCheck }: {
+  inv: WorkspaceInvoice
+  month: string
+  selected: boolean
+  checked: boolean
+  onSelect: () => void
+  onCheck: () => void
+}) {
   const reason = shortReason(inv)
   const notSent = inv.uiStatus === "Not sent"
   const overdue = !!inv.overdueDays && inv.overdueDays > 0
+  const pill = overdue
+    ? { bg: "#fdecec", color: "#c0342a", label: `${inv.overdueDays}d overdue` }
+    : ROW_PILL[inv.uiStatus] ?? ROW_PILL["Not sent"]
+
+  // Same due date the detail pane shows, so the two never disagree.
+  const [y, m] = month.split("-").map(Number)
+  const dueLabel = new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+
   return (
     <div className={`mb-0.5 flex items-center gap-2 rounded-md px-2 py-2 transition-colors ${selected ? "bg-stone-100 ring-1 ring-stone-300" : "hover:bg-stone-50"}`}>
       {notSent && (
         <button onClick={onCheck} className="flex-shrink-0" aria-label="Select invoice for bulk send"><Box checked={checked} /></button>
       )}
-      <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <span className="flex-shrink-0">
-          {overdue ? <AlertTriangle size={14} className="text-rose-500" /> : green ? <CheckCircle2 size={14} className="text-emerald-500" /> : <AlertTriangle size={14} className="text-amber-500" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium text-stone-900">{inv.clientName}</div>
-          {overdue ? (
-            <div className="truncate text-[11px] font-semibold text-rose-600">{inv.overdueDays}d overdue</div>
-          ) : reason ? (
-            <div className="truncate text-[11px] text-amber-600">{reason}</div>
-          ) : null}
+      <button onClick={onSelect} className="min-w-0 flex-1 text-left">
+        <div className="flex items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-stone-900">{inv.clientName}</span>
+          <span
+            className="flex-none rounded-full px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.04em]"
+            style={{ background: pill.bg, color: pill.color }}
+          >
+            {pill.label}
+          </span>
         </div>
-        <div className="flex-shrink-0 text-right">
-          <div className="font-mono text-[12px] font-semibold text-stone-700">{formatCurrency(inv.total)}</div>
-          <div className={`text-[9px] uppercase tracking-wide ${overdue ? "font-bold text-rose-600" : "text-stone-400"}`}>{overdue ? "Overdue" : inv.uiStatus}</div>
+        <div className="mt-0.5 flex items-baseline justify-between gap-2">
+          <span className="truncate text-[11px] text-stone-400">Due {dueLabel}</span>
+          <span className="flex-none font-mono text-[12px] font-semibold text-stone-700">{formatCurrency(inv.total)}</span>
         </div>
+        {/* What still needs a decision on this one, e.g. an add-on to confirm. */}
+        {!overdue && reason && (
+          <div className="mt-px flex items-center gap-1 truncate text-[11px] text-amber-600">
+            <span className="h-1 w-1 flex-none rounded-full bg-amber-500" />
+            {reason}
+          </div>
+        )}
       </button>
     </div>
   )
@@ -537,39 +576,102 @@ function DetailPanel({ inv, month, onCompose }: {
   const flaggedRows = changeRows.filter((r) => r.flag)
   // Already scoped to this month by the request, so this is just the count.
   const monthCleans = cleans
+  // "Single location" / "3 locations" — the design puts this next to the name
+  // so a combined invoice is obvious before you read the line items.
+  const locationCount = (client?.locations || []).length
+  const locationLabel = locationCount > 1 ? `${locationCount} locations` : "Single location"
+
   const billingModel = inv.billingType === "FLAT_RATE" ? "Flat monthly" : inv.billingType === "ONE_TIME" ? "One-time" : "Per clean"
+
+  // Cancelled cleans are counted so the summary can explain a light total
+  // ("4 of 5 scheduled cleans found in August").
+  const cancelledThisMonth = (Array.isArray(inv.exceptions) ? inv.exceptions : []).filter(
+    e => e.type === "SKIPPED",
+  ).length
+  const serviceSummary = buildServiceSummary({
+    billingType: inv.billingType,
+    cleanCount: inv.completedCount || inv.jobCount || 0,
+    cancelledCount: cancelledThisMonth,
+    monthLabel: formatMonthLabel(month).split(" ")[0],
+    scheduleSummary: inv.scheduleSummary,
+    firstLineDescription: (inv.lineItems || [])[0]?.description,
+  })
+
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header (Ticket 5): full name → due → amount on its own line + status inline */}
+      {/* Header — client, where the work is and when it is due on one line,
+          with the total labelled and right-aligned, per the design. */}
       <div className="border-b border-stone-200 bg-white px-5 py-4">
-        <div className="text-[17px] font-semibold leading-snug text-stone-900">{inv.clientName}</div>
-        <div className="mt-1.5 text-[12px] text-stone-400">Due {dueDate}</div>
-        <div className="mt-3.5 flex items-center gap-3">
-          <span className="font-mono text-[26px] font-bold leading-none text-stone-900">{formatCurrency(inv.total)}</span>
-          <span className="rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={badge}>{inv.uiStatus}</span>
+        <div className="flex items-start gap-[13px]">
+          <span
+            className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full text-white"
+            style={{ background: "#15793f" }}
+          >
+            <Building2 size={17} strokeWidth={1.7} />
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <div className="text-[18px] font-bold leading-[1.2] tracking-[-0.02em] text-stone-900">{inv.clientName}</div>
+            <div className="mt-[3px] flex flex-wrap items-center gap-2 text-[12px] text-[#8b95a1]">
+              <span className="inline-flex items-center gap-1">
+                <MapPin size={13} />
+                {locationLabel}
+              </span>
+              <span className="text-[#d2d8de]">·</span>
+              <span className="inline-flex items-center gap-1">
+                <CalendarDays size={13} />
+                Due {dueDate}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex-none text-right">
+            <div className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9aa3af]">Invoice total</div>
+            <div
+              className="mt-px tabular-nums"
+              style={{ fontSize: 20, fontWeight: 740, letterSpacing: "-0.025em", color: "#10131a" }}
+            >
+              {formatCurrency(inv.total)}
+            </div>
+            <span
+              className="mt-1 inline-block rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+              style={badge}
+            >
+              {inv.uiStatus}
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Scrollable detail (Ticket 2): schedule · changes · headline · calendar */}
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
-        {/* Schedule */}
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Schedule</div>
-          <dl className="mt-2 space-y-1.5">
-            <div className="flex items-center justify-between gap-3 text-[12.5px]">
-              <dt className="text-stone-500">Frequency</dt>
-              <dd className="text-right font-medium text-stone-800">{inv.scheduleSummary || "—"}</dd>
+        {/* Service summary — what this invoice is actually for, in plain
+            English. Replaces a key-value block that printed schedule enums
+            ("EVERY_4_WEEKS") straight at the reviewer. */}
+        <div style={{ border: "1px solid #eef0f3", borderRadius: 14, padding: "12px 15px" }}>
+          <div className="mb-3 text-[15.5px] font-bold tracking-[-0.01em] text-stone-900">Service summary</div>
+          <div className="flex items-center gap-[11px]">
+            <span
+              className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg"
+              style={{ background: "#eaf5ee", color: "#15793f" }}
+            >
+              <CalendarDays size={15} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-semibold text-[#374151]">{serviceSummary.title}</div>
+              <div className="mt-px text-[11.5px] text-[#9aa3af]">{serviceSummary.sub}</div>
             </div>
-            <div className="flex items-center justify-between gap-3 text-[12.5px]">
-              <dt className="text-stone-500">Billing</dt>
-              <dd className="text-right font-medium text-stone-800">{billingModel}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-3 text-[12.5px]">
-              <dt className="text-stone-500">Cleaner</dt>
-              <dd className="text-right font-medium text-stone-800">{cleaner || "Unassigned"}</dd>
-            </div>
-          </dl>
+            <span className="flex-none text-[13.5px] font-bold tabular-nums text-stone-900">
+              {formatCurrency(inv.total)}
+            </span>
+          </div>
+
+          <div className="mt-3 flex items-center gap-1.5 border-t border-[#f1f3f6] pt-[11px] text-[11.5px] text-[#9aa3af]">
+            <span>{billingModel}</span>
+            <span className="text-stone-300">·</span>
+            <span className="truncate">{cleaner || "No cleaner assigned"}</span>
+          </div>
         </div>
 
         {/* Changes this month — shown only when there are changes */}
@@ -714,8 +816,12 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
     // readable width so its columns never overlap when the panel is narrow.
     <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mx-auto w-full min-w-[400px] max-w-[540px]">
-        {/* Demoted secondary action — the exact client-facing PDF (Ticket 3) */}
-        <div className="mb-2 flex justify-end">
+        {/* Titled the way the design titles it: the point of this pane is that
+            it is the client's view, not ours. */}
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold tracking-[0.02em] text-[#8b95a1]">
+            <FileText size={13} /> What your client receives
+          </span>
           <button onClick={openPdf} disabled={generating}
             className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-medium text-stone-600 transition-colors hover:bg-stone-50 disabled:opacity-60"
             title="Open the exact PDF the client receives">
