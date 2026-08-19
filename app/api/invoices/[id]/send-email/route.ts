@@ -186,6 +186,12 @@ export async function POST(
           emailSubject: subject,
           emailBody: message,
           status: 'SENT',
+          // Kept so a later reminder can reply into this same thread. Simulated
+          // sends carry a placeholder id, which would thread onto nothing.
+          emailMessageId:
+            result.messageId && !result.messageId.startsWith('simulated-')
+              ? result.messageId
+              : null,
         },
       })
     }

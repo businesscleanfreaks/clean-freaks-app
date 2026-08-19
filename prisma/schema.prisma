@@ -298,6 +298,9 @@ model Invoice {
   // "Clearing": ACH/check payments take 5-7 days to land. Set when the operator
   // marks a payment as on its way; cleared by marking paid or undoing.
   clearingSince      DateTime?
+  // Message-ID of the invoice email we sent. Reminders quote it in In-Reply-To
+  // so they land in the SAME thread the client already has, per the design.
+  emailMessageId     String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime?
 
@@ -305,6 +308,7 @@ model Invoice {
   lineItems     InvoiceLineItem[]
   pdfCacheEntry InvoicePdfCache?
   paymentMatches PaymentMatch[]
+  reminders     InvoiceReminder[]
 
   @@index([dateCreated])
   @@index([status])
@@ -910,4 +914,21 @@ model InvoiceAdjustment {
   @@index([candidateId, period])
   @@index([clientId])
   @@map("invoice_adjustments")
+}
+
+/// One late-payment nudge on the reminder ladder: stage 1 (1-4 days late),
+/// stage 2 (5-13), stage 3 (14+, which is a phone call and never an email).
+model InvoiceReminder {
+  id        String   @id @default(uuid())
+  invoiceId String
+  stage     Int      // 1 | 2 | 3
+  channel   String   // EMAIL | CALL
+  daysLate  Int
+  body      String?  // what actually went out, or the call note
+  sentAt    DateTime @default(now())
+
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_reminders")
 }

@@ -57,7 +57,7 @@ export interface SendInvoiceResult {
 /** Generate (host) the PDF, then send the invoice email. */
 export async function sendInvoiceEmail(
   invoiceId: string,
-  payload: { to: string[]; cc?: string; subject: string; message: string; isTest: boolean; showPaymentOptions?: boolean; confirmMismatch?: boolean },
+  payload: { to: string[]; cc?: string | string[]; subject: string; message: string; isTest: boolean; showPaymentOptions?: boolean; confirmMismatch?: boolean },
 ): Promise<SendInvoiceResult> {
   await fetch(`/api/invoices/${invoiceId}/generate-pdf`, { method: "POST" })
   const res = await fetch(`/api/invoices/${invoiceId}/send-email`, {

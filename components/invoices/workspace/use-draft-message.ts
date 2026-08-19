@@ -17,6 +17,58 @@ const DRAFT_KEY = (candidateId: string) => `cf-invoice-draft-${candidateId}`
 type Listener = (message: string) => void
 const listeners = new Map<string, Set<Listener>>()
 
+/** The whole locally-saved compose draft for one candidate. */
+export interface ComposeDraft {
+  to: string[]
+  cc: string
+  subject: string
+  message: string
+  payNow: boolean
+}
+
+/**
+ * Reads the saved draft. Returns null when nothing is saved or the stored shape
+ * is not one we recognise, so a stale or hand-edited entry can never leave the
+ * compose window half-filled.
+ */
+export function loadComposeDraft(candidateId: string): ComposeDraft | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY(candidateId))
+    if (!raw) return null
+    const d = JSON.parse(raw)
+    if (!d || !Array.isArray(d.to)) return null
+    return {
+      to: d.to.filter((x: unknown): x is string => typeof x === "string"),
+      cc: typeof d.cc === "string" ? d.cc : "",
+      subject: typeof d.subject === "string" ? d.subject : "",
+      message: typeof d.message === "string" ? d.message : "",
+      payNow: d.payNow !== false,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function saveComposeDraft(candidateId: string, draft: ComposeDraft) {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(DRAFT_KEY(candidateId), JSON.stringify(draft))
+  } catch {
+    /* quota / disabled */
+  }
+}
+
+export function clearComposeDraft(candidateId: string) {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.removeItem(DRAFT_KEY(candidateId))
+  } catch {
+    /* noop */
+  }
+  current.delete(candidateId)
+}
+
 /**
  * The message currently on screen for a candidate, seeded or edited.
  *

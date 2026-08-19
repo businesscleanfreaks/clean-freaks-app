@@ -13,10 +13,13 @@ import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
   type WorkspaceInvoice, type WorkspaceTab,
 } from "./use-workspace"
-import { ComposerRail } from "./composer-rail"
+import { ComposeWindow } from "./compose-window"
 import { AdjustmentsPanel } from "./adjustments-panel"
 import { ClientWillReceive } from "./client-will-receive"
+import { SentTracking } from "./sent-tracking"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
+import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
+import type { ComposeMode } from "@/lib/invoice-compose"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
@@ -46,7 +49,8 @@ export function InvoicingWorkspace({
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
-  const [railWidth, setRailWidth] = useState(360)
+  // Which invoice the compose window is open for, and why it was opened.
+  const [composeFor, setComposeFor] = useState<{ inv: WorkspaceInvoice; mode: ComposeMode } | null>(null)
   const [detailWidth, setDetailWidth] = useState(340)
   const [listWidth, setListWidth] = useState(330)
   useEffect(() => setMounted(true), [])
@@ -72,7 +76,6 @@ export function InvoicingWorkspace({
     try {
       const l = Number(localStorage.getItem("cf-inv-listW")); if (l >= 240 && l <= 480) setListWidth(l)
       const d = Number(localStorage.getItem("cf-inv-detailW")); if (d >= 280 && d <= 560) setDetailWidth(d)
-      const r = Number(localStorage.getItem("cf-inv-railW")); if (r >= 340 && r <= 600) setRailWidth(r)
     } catch { /* localStorage unavailable */ }
   }, [])
 
@@ -89,24 +92,6 @@ export function InvoicingWorkspace({
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
       try { localStorage.setItem("cf-inv-listW", String(finalW)) } catch { /* noop */ }
-    }
-    document.body.style.cursor = "col-resize"
-    document.body.style.userSelect = "none"
-    document.addEventListener("mousemove", onMove)
-    document.addEventListener("mouseup", onUp)
-  }
-
-  // Drag-to-resize the composer rail (rightmost column → width from the right edge).
-  const startResize = (e: React.MouseEvent) => {
-    e.preventDefault()
-    let finalW = railWidth
-    const onMove = (ev: MouseEvent) => { finalW = Math.min(600, Math.max(340, window.innerWidth - ev.clientX)); setRailWidth(finalW) }
-    const onUp = () => {
-      document.removeEventListener("mousemove", onMove)
-      document.removeEventListener("mouseup", onUp)
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-      try { localStorage.setItem("cf-inv-railW", String(finalW)) } catch { /* noop */ }
     }
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
@@ -315,7 +300,13 @@ export function InvoicingWorkspace({
 
         {/* Detail column: schedule · changes · calendar */}
         <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: detailWidth }}>
-          {ws.selected ? <DetailPanel inv={ws.selected} month={ws.month} /> : (
+          {ws.selected ? (
+            <DetailPanel
+              inv={ws.selected}
+              month={ws.month}
+              onCompose={mode => setComposeFor({ inv: ws.selected!, mode })}
+            />
+          ) : (
             <div className="m-auto p-6 text-center text-sm text-stone-400">Select an invoice.</div>
           )}
         </div>
@@ -332,30 +323,28 @@ export function InvoicingWorkspace({
           )}
         </div>
 
-        {/* Resize handle (preview ↔ composer) */}
-        <div onMouseDown={startResize} onDoubleClick={() => setRailWidth(360)}
-          className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
-          title="Drag to resize · Double-click to reset" />
-
-        {/* Right rail: composer (not sent) or receipt (sent/paid) */}
-        <div className="shrink-0 bg-white" style={{ width: railWidth }}>
-          {ws.selected ? (
-            <ComposerRail
-              key={ws.selected.candidateId}
-              inv={ws.selected}
-              month={ws.month}
-              onChanged={() => {
-                // Auto-advance to the next not-sent invoice for momentum, then refresh.
-                const next = ws.invoices.find(
-                  (i) => i.uiStatus === "Not sent" && i.candidateId !== ws.selected?.candidateId,
-                )
-                if (next) ws.setSelectedId(next.candidateId)
-                ws.mutate()
-              }}
-            />
-          ) : null}
-        </div>
       </div>
+
+      {/* Compose window · every send path goes through it, so nothing leaves
+          without the reviewer seeing the actual email. */}
+      {composeFor && (
+        <ComposeWindow
+          key={`${composeFor.inv.candidateId}:${composeFor.mode}`}
+          inv={composeFor.inv}
+          month={ws.month}
+          mode={composeFor.mode}
+          onClose={() => setComposeFor(null)}
+          onSent={() => {
+            // Move to the next invoice still waiting, so the queue keeps its
+            // momentum, then refresh what the ledger shows.
+            const next = ws.invoices.find(
+              i => i.uiStatus === "Not sent" && i.candidateId !== composeFor.inv.candidateId,
+            )
+            if (next) ws.setSelectedId(next.candidateId)
+            ws.mutate()
+          }}
+        />
+      )}
 
       {/* Bulk-send confirmation (portaled to escape the transformed page wrapper) */}
       {mounted && confirmSend && createPortal(
@@ -439,8 +428,44 @@ function ListItem({ inv, selected, checked, onSelect, onCheck }: { inv: Workspac
   )
 }
 
-function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
+function DetailPanel({ inv, month, onCompose }: {
+  inv: WorkspaceInvoice
+  month: string
+  onCompose: (mode: ComposeMode) => void
+}) {
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
+
+  // Same SWR key as AdjustmentsPanel, so this shares one request and the CTA
+  // unlocks the moment the last adjustment is approved.
+  const { data: adjData } = useSWR<{ adjustments: Adjustment[] }>(
+    `/api/invoices/adjustments?candidateId=${encodeURIComponent(inv.candidateId)}&period=${month}`,
+    fetcher,
+  )
+  const blockedReason = sendBlockedReason(adjData?.adjustments ?? [])
+  const [savingDraft, setSavingDraft] = useState(false)
+
+  // Creates the invoice record without emailing anything.
+  const saveDraft = async () => {
+    setSavingDraft(true)
+    try {
+      const id = await ensureInvoiceId(inv, month)
+      if (id) showSuccess("Draft saved")
+    } catch {
+      showError("Failed to save draft")
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
+  // Once an invoice exists the tracking states (sent / due / paid / clearing)
+  // live on the row itself, not on the computed candidate.
+  const { data: sentInvoice } = useSWR(
+    inv.existingInvoiceId ? `/api/invoices/${inv.existingInvoiceId}` : null,
+    fetcher,
+  )
+  const tracked = sentInvoice && (sentInvoice.status === "SENT" || sentInvoice.status === "PAID")
+    ? sentInvoice
+    : null
 
   const cleans = useMemo(() => {
     type ClientJob = { id?: string; date: string; status: string; scheduleId?: string | null }
@@ -458,9 +483,15 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
   }, [client])
 
   const dueDate = useMemo(() => {
+    // Prefer the real due date once one exists; the month-based guess is only
+    // for candidates that have not been invoiced yet.
+    const real = tracked?.dateDue ? new Date(tracked.dateDue) : null
+    if (real && !isNaN(real.getTime())) {
+      return real.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    }
     const [y, m] = month.split("-").map(Number)
     return new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-  }, [month])
+  }, [month, tracked])
   const badge = STATUS_BADGE[inv.uiStatus] || STATUS_BADGE["Not sent"]
 
   // Structured "what changed this month" rows — with the $ impact pulled from the
@@ -577,20 +608,57 @@ function DetailPanel({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
           )}
         </div>
 
-        {/* Exactly what the client will get, editable in place. */}
-        <ClientWillReceive inv={inv} month={month} />
+        {/* After sending, this becomes a tracking screen: there is nothing left
+            to review, so the preview and the adjustments give way to the
+            Sent → Due → Paid timeline and its one primary action. */}
+        {tracked ? (
+          <SentTracking invoiceId={tracked.id} invoice={tracked} onEditResend={() => onCompose("resend")} />
+        ) : (
+          <>
+            {/* Exactly what the client will get, editable in place. */}
+            <ClientWillReceive inv={inv} month={month} />
 
-        {/* Credits, discounts and charges. Every row must be approved before
-            this invoice can be sent. */}
-        <AdjustmentsPanel
-          candidateId={inv.candidateId}
-          clientId={inv.clientId}
-          period={month}
-          baseTotal={inv.total}
-          billingType={inv.billingType}
-          cleanCount={inv.completedCount || inv.jobCount || 0}
-        />
+            {/* Credits, discounts and charges. Every row must be approved before
+                this invoice can be sent. */}
+            <AdjustmentsPanel
+              candidateId={inv.candidateId}
+              clientId={inv.clientId}
+              period={month}
+              baseTotal={inv.total}
+              billingType={inv.billingType}
+              cleanCount={inv.completedCount || inv.jobCount || 0}
+            />
+          </>
+        )}
       </div>
+
+      {/* Primary action. Pinned rather than in the scroller: this is the one
+          thing the reviewer is here to do, and it used to sit below the fold. */}
+      {!tracked && (
+        <div className="flex-none border-t border-stone-200 bg-white px-5 py-3">
+          {blockedReason && (
+            <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-amber-800">
+              {blockedReason}
+            </div>
+          )}
+          <button
+            onClick={() => onCompose("send")}
+            disabled={!!blockedReason}
+            title={blockedReason || undefined}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold text-white transition-opacity hover:opacity-95 disabled:opacity-60"
+            style={{ background: "#0f5a36" }}
+          >
+            <Send size={15} /> Review email &amp; send
+          </button>
+          <button
+            onClick={saveDraft}
+            disabled={savingDraft}
+            className="mt-2 w-full text-[11.5px] font-semibold text-stone-400 transition-colors hover:text-stone-700 disabled:opacity-50"
+          >
+            {savingDraft ? "Saving…" : "Save as draft · nothing is emailed"}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

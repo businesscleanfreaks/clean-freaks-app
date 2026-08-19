@@ -19,6 +19,10 @@ export interface EmailOptions {
     path?: string
     href?: string
   }[]
+  /** Message-ID being replied to, so the mail lands in the same thread. */
+  inReplyTo?: string
+  /** Thread history header; the original Message-ID is enough for one reply. */
+  references?: string | string[]
 }
 
 export interface EmailResult {
@@ -44,6 +48,9 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
     return {
       success: true,
       messageId: 'safety-test-mode-' + Date.now(),
+      // Callers MUST be able to tell "held in test mode" from "sent", or the UI
+      // reports a client was chased when nothing left the building.
+      warning: 'SENDING_DISABLED',
     }
   }
 
@@ -95,6 +102,8 @@ async function sendViaGmail(options: EmailOptions, config: EmailConfig): Promise
     html: options.html,
     text: options.text || stripHtml(options.html),
     attachments: options.attachments,
+    inReplyTo: options.inReplyTo,
+    references: options.references,
   })
 
   console.log('[EMAIL] Gmail sent successfully:', info.messageId)
@@ -153,6 +162,18 @@ async function sendViaResend(options: EmailOptions, config: EmailConfig): Promis
       html: options.html,
       text: options.text || stripHtml(options.html),
       attachments,
+      // Same threading as the Gmail path, or a reminder sent through Resend
+      // would quietly start a new conversation instead of replying.
+      ...(options.inReplyTo
+        ? {
+            headers: {
+              'In-Reply-To': options.inReplyTo,
+              References: Array.isArray(options.references)
+                ? options.references.join(' ')
+                : options.references || options.inReplyTo,
+            },
+          }
+        : {}),
     }),
   })
 
