@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
-import { ScheduleCheck } from "./schedule-check"
+import { ScheduleCheck, type ScheduleCheckClean } from "./schedule-check"
 import { TemplatesModal } from "./templates-modal"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
@@ -467,12 +467,14 @@ function DetailPanel({ inv, month, onCompose }: {
     ? sentInvoice
     : null
 
-  const cleans = useMemo(() => {
-    type ClientJob = { id?: string; date: string; status: string; scheduleId?: string | null }
-    const jobs = (client?.locations || []).flatMap((l: { jobs?: ClientJob[] }) => l.jobs || [])
-    // A job with no schedule is one-off work, which the schedule check marks amber.
-    return jobs.map((j: ClientJob) => ({ jobId: j.id, date: j.date, status: j.status, isOneOff: !j.scheduleId }))
-  }, [client])
+  // The cleans for the month being reviewed. Deliberately not taken from the
+  // client profile: that route returns a rolling window around today, so a
+  // month reviewed late silently came back empty.
+  const { data: cleansData, mutate: refreshCleans } = useSWR<{ cleans: ScheduleCheckClean[] }>(
+    `/api/clients/${inv.clientId}/cleans?month=${month}`,
+    fetcher,
+  )
+  const cleans = useMemo(() => cleansData?.cleans ?? [], [cleansData])
 
   const cleaner = useMemo(() => {
     for (const l of client?.locations || []) {
@@ -533,7 +535,8 @@ function DetailPanel({ inv, month, onCompose }: {
   // Only the rows that represent an actual change this month (the "Changes" card +
   // the headline count are driven off these).
   const flaggedRows = changeRows.filter((r) => r.flag)
-  const monthCleans = cleans.filter((c: { date: string }) => (c.date || "").startsWith(month))
+  // Already scoped to this month by the request, so this is just the count.
+  const monthCleans = cleans
   const billingModel = inv.billingType === "FLAT_RATE" ? "Flat monthly" : inv.billingType === "ONE_TIME" ? "One-time" : "Per clean"
 
   return (
@@ -600,6 +603,7 @@ function DetailPanel({ inv, month, onCompose }: {
               cleans={cleans}
               clientId={inv.clientId}
               clientName={inv.clientName}
+              onCorrected={refreshCleans}
             />
           ) : (
             <p className="rounded-lg border border-stone-200 bg-white p-2.5 text-[11.5px] text-stone-500">

@@ -1,8 +1,11 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowRight } from "lucide-react"
+import { useSWRConfig } from "swr"
+import { ArrowRight, Loader2, RotateCcw } from "lucide-react"
+import { showError, showSuccess } from "@/lib/toast"
+import { buildCorrectionRows, correctionToast, type CorrectionTarget } from "@/lib/invoice-correction"
 
 /**
  * Schedule check — "did the month go as planned?" for a per-clean invoice.
@@ -25,6 +28,12 @@ export interface ScheduleCheckClean {
   status: string
   /** One-off / add-on work, which the design marks amber. */
   isOneOff?: boolean
+  /** What this clean bills when it counts. */
+  clientRate?: number | null
+  /** Late-cancel fee attached while it is cancelled. */
+  cancellationFee?: number | null
+  /** Who performed it, so the toast can say who gets credited. */
+  cleanerName?: string | null
 }
 
 const MARK_STYLE: Record<CleanMark, { bg: string; text: string; strike?: boolean }> = {
@@ -70,14 +79,21 @@ export function countByMark(byDay: Map<number, { mark: CleanMark }>): Record<Cle
 }
 
 export function ScheduleCheck({
-  month, cleans, clientId, clientName,
+  month, cleans, clientId, clientName, onCorrected,
 }: {
   month: string
   cleans: ScheduleCheckClean[]
   clientId: string
   clientName: string
+  /** Refetch the cleans this grid draws, owned by the pane that fetched them. */
+  onCorrected?: () => Promise<unknown> | unknown
 }) {
   const router = useRouter()
+  const { mutate } = useSWRConfig()
+  // Cleans corrected in this sitting stay listed so the change can be undone
+  // without going hunting for the day again.
+  const [corrected, setCorrected] = useState<string[]>([])
+  const [busyJobId, setBusyJobId] = useState<string | null>(null)
   const byDay = useMemo(() => buildDayMap(month, cleans), [month, cleans])
   const counts = useMemo(() => countByMark(byDay), [byDay])
 
@@ -91,6 +107,55 @@ export function ScheduleCheck({
     ...Array(leadBlanks).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ]
+
+  const rows = useMemo(
+    () => buildCorrectionRows(month, cleans, corrected),
+    [month, cleans, corrected],
+  )
+
+  /**
+   * Write the correction back to the visit itself, not to this invoice.
+   * The same PUT the calendar uses, so the clean, the cleaner's pay and the
+   * invoice all move together instead of drifting apart.
+   */
+  const correct = async (jobId: string, target: CorrectionTarget, droppedFee: number, cleanerName?: string | null) => {
+    setBusyJobId(jobId)
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: target }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        showError(body?.error || "Could not update this clean.")
+        return
+      }
+      setCorrected(prev => (prev.includes(jobId) ? prev : [...prev, jobId]))
+      showSuccess(correctionToast(target, cleanerName, droppedFee))
+      // Refetch this grid through the hook that owns its key, then let the
+      // ledger and calendar catch up: the invoice is derived from the visits,
+      // so everything downstream has to recompute.
+      await onCorrected?.()
+      // Everything else that reads this visit. The cleans key is deliberately
+      // excluded: onCorrected already owns it, and refetching it again here
+      // only re-runs a slow request and can flash the pre-correction state
+      // back on screen.
+      await mutate(
+        key =>
+          typeof key === "string" &&
+          !key.includes("/cleans?") &&
+          (key.startsWith("/api/invoices/candidates") ||
+            key.startsWith("/api/invoices/overview") ||
+            key.startsWith(`/api/clients/${clientId}`) ||
+            key.startsWith("/api/calendar/data")),
+      )
+    } catch {
+      showError("Could not update this clean.")
+    } finally {
+      setBusyJobId(null)
+    }
+  }
 
   const openDay = (jobId?: string) => {
     // With a job we can open its card directly; otherwise just filter the month.
@@ -163,11 +228,65 @@ export function ScheduleCheck({
           )}
         </div>
 
-        {counts.cancelled > 0 && (
-          <p className="mt-2 border-t border-stone-100 pt-2 text-[10.5px] text-stone-500">
-            {counts.cancelled} cancelled {counts.cancelled === 1 ? "clean" : "cleans"} this month. Open the day to correct it
-            before sending.
-          </p>
+        {/* Invoice-time correction. The reviewer often knows the clean did
+            happen; fixing it here writes back to the visit, so the calendar,
+            the cleaner's pay and this invoice all move together. */}
+        {rows.length > 0 && (
+          <div className="mt-2 border-t border-stone-100 pt-2">
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+              Cancelled this month
+            </div>
+            <div className="space-y-1">
+              {rows.map(row => {
+                const busy = busyJobId === row.jobId
+                const cleanerName = cleans.find(c => c.jobId === row.jobId)?.cleanerName
+                return (
+                  <div key={row.jobId} className="flex items-center gap-2">
+                    <span
+                      className="h-1.5 w-1.5 flex-none rounded-full"
+                      style={{ background: row.billed ? "#15793f" : "#c0c7cf" }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11.5px] font-semibold text-stone-700">{row.dateLabel}</div>
+                      <div className="truncate text-[10.5px]" style={{ color: row.billed ? "#15793f" : "#8b95a1" }}>
+                        {row.description}
+                      </div>
+                    </div>
+                    {row.effect && (
+                      <span
+                        className="flex-none text-[11px] font-semibold tabular-nums"
+                        style={{ color: row.billed ? "#15793f" : "#8b95a1" }}
+                      >
+                        {row.effect}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => correct(row.jobId, row.target, row.droppedFee, cleanerName)}
+                      title={
+                        row.billed
+                          ? "Put this clean back to cancelled"
+                          : "This clean did happen · bill it and credit the cleaner"
+                      }
+                      className="inline-flex flex-none items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-semibold transition-colors disabled:opacity-50"
+                      style={
+                        row.billed
+                          ? { borderColor: "#d7dbe0", color: "#64748b", background: "#fff" }
+                          : { borderColor: "#f3b4b4", color: "#c0342a", background: "#fdecec" }
+                      }
+                    >
+                      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : row.billed ? <RotateCcw className="h-3 w-3" /> : null}
+                      {row.actionLabel}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-[10px] text-stone-400">
+              Correcting a clean updates the calendar and the cleaner&apos;s pay too.
+            </p>
+          </div>
         )}
       </div>
     </div>

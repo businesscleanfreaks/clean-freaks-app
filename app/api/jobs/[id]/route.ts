@@ -249,7 +249,12 @@ export async function PUT(
 
       // Handle cancelled job cleanup
       const isBeingCancelled = status === 'CANCELLED' && currentJob.status !== 'CANCELLED'
-      const isBeingRestored = status === 'SCHEDULED' && currentJob.status === 'CANCELLED'
+      // COMPLETED counts as a restore too: the invoice workspace corrects a
+      // cancelled clean straight to completed when the reviewer knows it did
+      // happen, and that clean must recover its rate and shed its late-cancel
+      // fee exactly as one restored to SCHEDULED does.
+      const isBeingRestored =
+        (status === 'SCHEDULED' || status === 'COMPLETED') && currentJob.status === 'CANCELLED'
 
       // Skipped recurring cleans intentionally zero their rates while cancelled.
       // Restoring without an explicit override should recover schedule defaults.
