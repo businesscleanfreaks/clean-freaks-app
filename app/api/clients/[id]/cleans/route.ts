@@ -38,6 +38,10 @@ export async function GET(request: Request, { params }: { params: { id: string }
         scheduleId: true,
         clientRate: true,
         cancellationFee: true,
+        // What the cleaner is owed for this clean, and whether it is settled —
+        // the review workspace shows the payout alongside the invoice.
+        subcontractorRate: true,
+        subcontractorPaid: true,
         subcontractor: { select: { name: true } },
         vendor: { select: { name: true } },
       },
@@ -52,6 +56,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
       isOneOff: !j.scheduleId,
       clientRate: j.clientRate,
       cancellationFee: j.cancellationFee,
+      subcontractorRate: j.subcontractorRate,
+      subcontractorPaid: j.subcontractorPaid,
       cleanerName: j.subcontractor?.name || j.vendor?.name || null,
     }))
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin, Lock, Check, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -20,6 +20,8 @@ import { SentTracking } from "./sent-tracking"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
 import { buildServiceSummary } from "@/lib/invoice-service-summary"
+import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
+import { TERM_LABELS } from "@/lib/billing-schedule"
 import type { ComposeMode } from "@/lib/invoice-compose"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
@@ -54,6 +56,7 @@ export function InvoicingWorkspace({
   const [composeFor, setComposeFor] = useState<{ inv: WorkspaceInvoice; mode: ComposeMode } | null>(null)
   const [detailWidth, setDetailWidth] = useState(340)
   const [listWidth, setListWidth] = useState(330)
+  const [listCollapsed, setListCollapsed] = useState(false)
   useEffect(() => setMounted(true), [])
 
   // Keyboard queue navigation. Ignored while typing in a field or with a modal
@@ -143,6 +146,8 @@ export function InvoicingWorkspace({
 
   const verifiedTotal = ws.verifiedReady.reduce((s, i) => s + i.total, 0)
   const checkedTotal = ws.checkedList.reduce((s, i) => s + i.total, 0)
+  const overdueCount = ws.invoices.filter(i => !!i.overdueDays && i.overdueDays > 0).length
+  const toSendCount = ws.invoices.filter(i => i.uiStatus === "Not sent").length
   const attentionCount = ws.verifiedReady.length > 0
     ? ws.invoices.filter((i) => i.uiStatus === "Not sent" && i.verification.level === "yellow").length
     : 0
@@ -153,11 +158,6 @@ export function InvoicingWorkspace({
       <header className="flex items-center justify-between gap-6 border-b border-stone-200 bg-white px-6 py-3">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold tracking-tight text-stone-900">Invoices</h1>
-          <div className="flex items-center gap-1 rounded-md bg-stone-100 px-1 py-0.5">
-            <button onClick={() => ws.setMonth(shiftMonth(ws.month, -1))} className="rounded p-1 text-stone-600 transition-colors hover:bg-white" aria-label="Previous month"><ChevronLeft size={15} /></button>
-            <span className="px-2 text-sm font-medium tabular-nums text-stone-700">{formatMonthLabel(ws.month)}</span>
-            <button onClick={() => ws.setMonth(shiftMonth(ws.month, 1))} className="rounded p-1 text-stone-600 transition-colors hover:bg-white" aria-label="Next month"><ChevronRight size={15} /></button>
-          </div>
 
           {/* Review queue position. Fixed-width label so the arrows never shift. */}
           {ws.queuePositionLabel && (
@@ -241,8 +241,44 @@ export function InvoicingWorkspace({
       {/* ── Three columns ── */}
       <div className="flex min-h-0 flex-1">
         {/* Left: invoice list */}
-        <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: listWidth }}>
-          {ws.verifiedReady.length > 0 && (
+        <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: listCollapsed ? 44 : listWidth }}>
+          {/* Month nav lives with the list it filters, per the design, with a
+              collapse so the review panes can take the full width. */}
+          <div className="flex items-center gap-1 border-b border-stone-100 px-2 py-2">
+            {!listCollapsed && (
+              <>
+                <button onClick={() => ws.setMonth(shiftMonth(ws.month, -1))} className="rounded p-1 text-stone-500 transition-colors hover:bg-stone-100" aria-label="Previous month"><ChevronLeft size={15} /></button>
+                <span className="flex-1 text-center text-[13px] font-semibold tabular-nums text-stone-700">{formatMonthLabel(ws.month)}</span>
+                <button onClick={() => ws.setMonth(shiftMonth(ws.month, 1))} className="rounded p-1 text-stone-500 transition-colors hover:bg-stone-100" aria-label="Next month"><ChevronRight size={15} /></button>
+              </>
+            )}
+            <button
+              onClick={() => setListCollapsed(v => !v)}
+              aria-label={listCollapsed ? "Show the invoice list" : "Hide the invoice list"}
+              title={listCollapsed ? "Show the full list" : "Hide the list"}
+              className="rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+            >
+              {listCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            </button>
+          </div>
+
+          {!listCollapsed && (
+            <div className="flex items-center gap-2 border-b border-stone-100 px-3 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-stone-400">Clients</span>
+              {overdueCount > 0 && (
+                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "#fdecec", color: "#c0342a" }}>
+                  {overdueCount} overdue
+                </span>
+              )}
+              {toSendCount > 0 && (
+                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "#fdf6ea", color: "#8a5e12" }}>
+                  {toSendCount} to send
+                </span>
+              )}
+            </div>
+          )}
+
+          {!listCollapsed && ws.verifiedReady.length > 0 && (
             <div className="border-b border-stone-100 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[12px] text-stone-600">
@@ -261,7 +297,7 @@ export function InvoicingWorkspace({
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto py-1">
+          <div className={`min-h-0 flex-1 overflow-y-auto py-1 ${listCollapsed ? "hidden" : ""}`}>
             {ws.isLoading ? (
               <div className="p-6 text-center text-sm text-stone-400">Loading…</div>
             ) : ws.groups.length === 0 ? (
@@ -581,6 +617,28 @@ function DetailPanel({ inv, month, onCompose }: {
   const locationCount = (client?.locations || []).length
   const locationLabel = locationCount > 1 ? `${locationCount} locations` : "Single location"
 
+  // What the cleaner is owed for this month's work, and how the sent invoice
+  // went out — both only meaningful once it has been sent.
+  const payout = useMemo(
+    () => buildPayoutSummary({
+      cleans,
+      invoiceStatus: tracked?.status,
+      overdue: !!inv.overdueDays && inv.overdueDays > 0,
+    }),
+    [cleans, tracked, inv.overdueDays],
+  )
+  const showPayout = shouldShowPayout(payout)
+
+  const sentWhenLabel = useMemo(() => {
+    const sent = tracked?.dateSent ? new Date(tracked.dateSent) : null
+    if (!sent || isNaN(sent.getTime())) return "Not sent yet"
+    const days = Math.floor((Date.now() - sent.getTime()) / 86_400_000)
+    if (days <= 0) return "Sent today"
+    return `Sent ${days} day${days === 1 ? "" : "s"} ago`
+  }, [tracked])
+
+  const termsLabel = client?.paymentTerms ? TERM_LABELS[client.paymentTerms] ?? null : null
+
   const billingModel = inv.billingType === "FLAT_RATE" ? "Flat monthly" : inv.billingType === "ONE_TIME" ? "One-time" : "Per clean"
 
   // Cancelled cleans are counted so the summary can explain a light total
@@ -718,7 +776,59 @@ function DetailPanel({ inv, month, onCompose }: {
             to review, so the preview and the adjustments give way to the
             Sent → Due → Paid timeline and its one primary action. */}
         {tracked ? (
-          <SentTracking invoiceId={tracked.id} invoice={tracked} onEditResend={() => onCompose("resend")} />
+          <>
+            <SentTracking invoiceId={tracked.id} invoice={tracked} onEditResend={() => onCompose("resend")} />
+
+            {/* The same month's work seen from the other side: once the client
+                has paid, settling with the cleaner is the next decision. */}
+            {showPayout && payout && (
+              <div
+                className="flex items-center gap-2.5 rounded-[9px] px-3 py-2.5"
+                style={
+                  payout.state === "locked"
+                    ? { background: "#fafbfc", border: "1px solid #eef1f4" }
+                    : { background: "#f1faf4", border: "1px solid #c7ebd3" }
+                }
+              >
+                <span className="flex flex-none items-center" style={{ color: payout.state === "locked" ? "#94a3af" : "#16a34a" }}>
+                  {payout.state === "locked" ? <Lock size={14} /> : <Check size={14} strokeWidth={2.6} />}
+                </span>
+                <span
+                  className="flex-none text-[12px] font-bold"
+                  style={{ color: payout.state === "locked" ? "#475569" : "#15803d" }}
+                >
+                  {payout.title}
+                </span>
+                <span className="min-w-0 truncate text-[11.5px] text-[#9aa3af]">· {payout.sub}</span>
+                {payout.actionable ? (
+                  <a
+                    href="/payables"
+                    className="ml-auto flex-none rounded-lg px-3 py-1.5 text-[12px] font-bold text-white"
+                    style={{ background: "#16a34a" }}
+                    title="Open Payables to settle this · paying happens there, not here"
+                  >
+                    Pay {formatCurrency(payout.amount)}
+                  </a>
+                ) : payout.state === "paid" ? (
+                  <span className="ml-auto flex-none text-[11.5px] font-bold text-[#16a34a]">✓ Paid</span>
+                ) : null}
+              </div>
+            )}
+
+            {/* When it was sent, when it is due, and the terms it went out on. */}
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-[13.5px] font-bold text-[#374151]">{sentWhenLabel}</span>
+                <span className="text-[#d2d8de]">·</span>
+                <span className="truncate text-[12.5px] text-stone-500">Due {dueDate}</span>
+              </div>
+              {termsLabel && (
+                <span className="flex flex-none items-center gap-1.5 text-[11.5px] font-bold text-[#aab2bd]">
+                  <Lock size={12} /> {termsLabel}
+                </span>
+              )}
+            </div>
+          </>
         ) : (
           <>
             {/* Exactly what the client will get, editable in place. */}
