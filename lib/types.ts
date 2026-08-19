@@ -42,9 +42,12 @@ export type ClientWithDetails = Prisma.ClientGetPayload<{
     invoices: {
       select: {
         id: true
+        invoiceNumber: true
         status: true
         totalAmount: true
         dateCreated: true
+        dateSent: true
+        datePaid: true
       }
     }
     _count: { select: { locations: true } }

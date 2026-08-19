@@ -14,6 +14,9 @@ import type { ClientWithDetails } from "@/lib/types"
 import { ClientNotesPanel, OpenIssuesEditor, WhatToKnow, type ClientNote } from "./client-notes-panel"
 import { ContactsSection } from "./contacts-section"
 import { AtAGlanceStrip, type CockpitTab } from "./cockpit/at-a-glance-strip"
+import { InvoicingAcrossLocations } from "./billing/invoicing-across-locations"
+import { InvoiceRecipients } from "./billing/invoice-recipients"
+import { InvoiceHistory } from "./billing/invoice-history"
 import { PauseServiceModal } from "./cockpit/pause-service-modal"
 import { ProrationCard } from "./cockpit/proration-card"
 import { TrialStatusPanel } from "./cockpit/trial-status-panel"
@@ -55,7 +58,13 @@ const TABS: { key: CockpitTab; label: string }[] = [
 export function ClientDetailView({ client: initialClient, onDataChange }: ClientDetailViewProps) {
   const state = useClientDetail({ client: initialClient, onDataChange })
   const { mounted, ConfirmDialog } = state
-  const [activeTab, setActiveTab] = useState<CockpitTab>('overview')
+  // Deep links land on a tab: ?tab=billing (the ledger's "View past invoices"
+  // adds &hist=1 to scroll to the invoice history from there).
+  const [activeTab, setActiveTab] = useState<CockpitTab>(() => {
+    if (typeof window === 'undefined') return 'overview'
+    const wanted = new URLSearchParams(window.location.search).get('tab')
+    return TABS.some(t => t.key === wanted) ? (wanted as CockpitTab) : 'overview'
+  })
   const [pauseOpen, setPauseOpen] = useState(false)
 
   const activeSchedules = state.client.locations.flatMap(loc =>
@@ -480,22 +489,23 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
     new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
   )
 
-  const markInvoicePaid = async (id: string) => {
-    try {
-      const res = await fetch(`/api/invoices/${id}/mark-paid`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentMethod: 'MANUAL', paymentNotes: 'Marked paid from client profile' }),
-      })
-      if (!res.ok) { await showApiError(res, 'Failed to mark invoice paid'); return }
-      showSuccess('Invoice marked as paid')
-      state.router.refresh()
-    } catch { showError('Failed to mark invoice paid') }
-  }
+  // Deep link ?tab=billing&hist=1 lands on the invoice history (the ledger's
+  // "View past invoices" uses it).
+  const histDeepLink =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("hist") === "1"
 
   return (
     <div className="space-y-4">
       <ProrationCard clientId={client.id} />
+
+      <InvoicingAcrossLocations
+        clientId={client.id}
+        locationCount={client.locations.length}
+        separateLocationInvoices={!!client.separateLocationInvoices}
+        onChanged={() => state.router.refresh()}
+      />
+
+      <InvoiceRecipients clientId={client.id} />
       <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">
@@ -562,44 +572,7 @@ function BillingTab({ state, onJumpToTab }: { state: ClientDetailState; onJumpTo
         </div>
       </section>
 
-      <section className="rounded-[10px] bg-white" style={{ border: '1px solid #E4E4E7' }}>
-        <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-zinc-400">Recent invoices</span>
-          <span className="text-[11px] text-slate-400">{invoices.length} total</span>
-        </div>
-        <div className="px-5 pb-4">
-          {invoices.length === 0 ? (
-            <p className="text-sm text-slate-500">No invoices yet.</p>
-          ) : (
-            <div className="space-y-1">
-              {invoices.slice(0, 10).map(inv => (
-                <div key={inv.id} className="flex items-center gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
-                  <span className="text-[12px] text-slate-600 w-[104px] flex-shrink-0">{safeFormat(inv.dateCreated, 'MMM d, yyyy')}</span>
-                  <span className="text-[12px] font-mono font-semibold text-slate-900 flex-1">{formatCurrency(inv.totalAmount)}</span>
-                  {inv.status !== 'PAID' && inv.status !== 'VOID' && (
-                    <button
-                      onClick={() => markInvoicePaid(inv.id)}
-                      className="text-[10px] font-semibold px-2.5 py-1 rounded-md text-white hover:opacity-90 transition-opacity flex-shrink-0"
-                      style={{ background: '#16A34A' }}
-                    >
-                      Mark Paid
-                    </button>
-                  )}
-                  <span
-                    className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full flex-shrink-0"
-                    style={{
-                      background: inv.status === 'PAID' ? '#DCFCE7' : inv.status === 'SENT' ? '#DBEAFE' : inv.status === 'VOID' ? '#F1F5F9' : '#FEF3C7',
-                      color: inv.status === 'PAID' ? '#15803D' : inv.status === 'SENT' ? '#1D4ED8' : inv.status === 'VOID' ? '#64748B' : '#92400E',
-                    }}
-                  >
-                    {inv.status.toLowerCase()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+      <InvoiceHistory invoices={invoices} autoScroll={histDeepLink} />
     </div>
   )
 }

@@ -729,6 +729,12 @@ model ClientContact {
   role      String   @default("GENERAL") // COMMUNICATION | INVOICING | GENERAL
   isPrimary Boolean  @default(false)
   notes     String?
+  // Billing tab's "Invoices sent to" card. A contact can exist without being on
+  // the invoice, so membership is its own flag; billingOrder decides who is
+  // addressed (first) and who is CC'd. See lib/billing-recipients.ts.
+  isBillingRecipient Boolean @default(false)
+  billingOrder       Int?
+  billingRole        String?  // job title, e.g. "Accounts payable" (free text allowed)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

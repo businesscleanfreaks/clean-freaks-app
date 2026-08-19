@@ -93,9 +93,14 @@ async function getClientWithDetails(id: string) {
       invoices: {
         select: {
           id: true,
+          // The Billing tab's invoice history shows the number and the one date
+          // that matters (paid, else sent).
+          invoiceNumber: true,
           status: true,
           totalAmount: true,
           dateCreated: true,
+          dateSent: true,
+          datePaid: true,
         },
         orderBy: {
           dateCreated: 'desc',
