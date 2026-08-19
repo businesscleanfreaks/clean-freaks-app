@@ -10,6 +10,8 @@ import { requireAuth } from '@/lib/auth'
 import { decodeInvoiceToken } from '@/lib/invoice-tokens'
 import { getBusinessProfile } from '@/lib/business-settings'
 import { getInvoiceDefaults } from '@/lib/invoice-defaults'
+import { getBillingSectionSettings } from '@/lib/billing-section-settings'
+import { resolveInvoiceFooter } from '@/lib/billing-sections'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -207,13 +209,25 @@ async function getUploadedLogoDataUri(): Promise<string | null> {
  * fresh PDF and store it. Keeps repeat previews instant without ever serving a
  * stale PDF — any line-item, clean, amount, or contact change bumps the fp.
  */
-async function getOrRenderInvoicePdf(invoice: { id: string }, logoSettings: LogoSettings | undefined): Promise<Buffer> {
-  const [business, invoiceDefaults, uploadedLogoIdentity] = await Promise.all([
+async function getOrRenderInvoicePdf(
+  invoice: { id: string; client?: { payMethod?: string | null; preferredPaymentMethod?: string | null } | null },
+  logoSettings: LogoSettings | undefined,
+): Promise<Buffer> {
+  const [business, invoiceDefaults, sections, uploadedLogoIdentity] = await Promise.all([
     getBusinessProfile(),
     getInvoiceDefaults(),
+    getBillingSectionSettings(),
     getUploadedLogoIdentity(),
   ])
-  const footerNote = invoiceDefaults.invoiceFooterNote
+  // The footer follows how this client pays (billing schedule → Invoice footer
+  // templates), falling back to the one generic note. It stays the same
+  // variable so the PDF cache fingerprint below already covers it: change the
+  // template or the client's method and the cached PDF is invalidated.
+  const footerNote = resolveInvoiceFooter(
+    sections.invoiceFooterTemplates,
+    invoice.client?.payMethod ?? invoice.client?.preferredPaymentMethod ?? null,
+    invoiceDefaults.invoiceFooterNote,
+  )
   const fingerprint = computePdfFingerprint(
     invoice as unknown as PdfFingerprintSource,
     logoSettings,

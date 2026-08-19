@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import useSWR from "swr"
 import { X, Loader2 } from "lucide-react"
 import { showError } from "@/lib/toast"
+import { BillingSections } from "./billing-sections"
 import {
   CADENCES, CADENCE_LABELS,
   TERMS, TERM_LABELS,
@@ -59,6 +60,15 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
   )
   const [savingId, setSavingId] = useState<string | null>(null)
 
+  // Drives the "Applies to N clients" lines in the one-time job defaults.
+  const clientCounts = useMemo(() => {
+    const rows = data?.rows ?? []
+    return {
+      residential: rows.filter(r => r.clientType === "RESIDENTIAL").length,
+      commercial: rows.filter(r => r.clientType !== "RESIDENTIAL").length,
+    }
+  }, [data])
+
   if (!open) return null
   const rows = data?.rows ?? []
 
@@ -108,6 +118,8 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto">
+          <BillingSections clientCounts={clientCounts} />
+
           {isLoading ? (
             <div className="flex items-center justify-center py-20 text-[#98a2b3]">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -214,7 +226,7 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
         </div>
 
         <div className="flex-none border-t border-[#eef0f3] px-5 py-3 text-[11.5px] text-[#7d8795]">
-          Changes save as you make them. One-time job defaults, invoice footers and reminder templates are coming next.
+          Client rows save as you change them. The sections above have their own Save changes button.
         </div>
       </aside>
     </>

@@ -13,6 +13,7 @@ import {
   formatShortDate,
   primaryAction,
   reminderStage,
+  REMINDER_TEMPLATES,
   type StepState,
   type TrackedInvoice,
 } from "@/lib/invoice-tracking"
@@ -55,7 +56,17 @@ export function SentTracking({ invoiceId, invoice, onEditResend }: Props) {
 
   const steps = useMemo(() => buildTimeline(invoice), [invoice])
   const action = useMemo(() => primaryAction(invoice), [invoice])
-  const ladder = useMemo(() => reminderStage(invoice), [invoice])
+  // The same templates the server will use, so the dialog shows what actually
+  // sends rather than the built-in default.
+  const { data: sectionSettings } = useSWR<{ reminderTemplates: Partial<typeof REMINDER_TEMPLATES> }>(
+    "/api/settings/billing-sections",
+    fetcher,
+    { revalidateOnFocus: false },
+  )
+  const ladder = useMemo(
+    () => reminderStage(invoice, sectionSettings?.reminderTemplates ?? {}),
+    [invoice, sectionSettings],
+  )
   const late = daysLate(invoice)
 
   const { data: historyData, mutate: refetchHistory } = useSWR(

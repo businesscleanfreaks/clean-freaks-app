@@ -830,6 +830,12 @@ model BusinessSettings {
   // Payment methods you accept (Settings → Payments received). Informational
   // only — a record of what clients can use. JSON array of strings.
   acceptedPaymentMethods   Json?
+  // Billing schedule sheet's three sections. JSON because each is a small map
+  // keyed by job kind / pay method / reminder slot, and they are read as a
+  // whole. Every reader normalises (see lib/billing-sections.ts).
+  oneTimeJobDefaults       Json?
+  invoiceFooterTemplates   Json?
+  reminderTemplates        Json?
   autoGenerateInvoices Boolean   @default(true)
   billingStartDate     DateTime?
   projectedExpenses    Json?    // Dashboard monthly expense assumptions by category

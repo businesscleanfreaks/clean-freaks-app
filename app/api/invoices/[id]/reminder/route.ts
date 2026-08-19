@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { sendEmail } from '@/lib/email'
 import { daysLate, reminderStage, replySubject } from '@/lib/invoice-tracking'
+import { getReminderTemplates } from '@/lib/billing-section-settings'
 
 /** Reminder history for the tracking panel, newest first. */
 export async function GET(
@@ -58,7 +59,9 @@ export async function POST(
     }
 
     const days = daysLate(invoice)
-    const ladder = reminderStage(invoice)
+    // Josh edits these in the billing schedule sheet; fall back to the
+    // shipped copy when they have not been touched.
+    const ladder = reminderStage(invoice, await getReminderTemplates())
     if (!ladder) {
       return NextResponse.json(
         { error: 'This invoice is not past due yet.' },
