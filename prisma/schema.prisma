@@ -301,6 +301,11 @@ model Invoice {
   // Message-ID of the invoice email we sent. Reminders quote it in In-Reply-To
   // so they land in the SAME thread the client already has, per the design.
   emailMessageId     String?
+  // Identity of the review-workspace candidate this invoice came from
+  // (`YYYY-MM|locationIds`). The workspace creates a VOID preview and finalizes
+  // it straight away, so without this a retried send left a second finalized
+  // invoice behind. See lib/invoice-candidate-key.ts.
+  candidateKey       String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime?
 
@@ -315,6 +320,7 @@ model Invoice {
   @@index([clientId])
   @@index([dateCreated, status])
   @@index([scheduledSendAt])
+  @@index([clientId, candidateKey])
   @@map("invoices")
 }
 

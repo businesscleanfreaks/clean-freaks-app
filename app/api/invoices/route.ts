@@ -7,6 +7,7 @@ import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { getInvoiceDefaults, computeDefaultDueDate } from '@/lib/invoice-defaults'
 import { sendBlockedReason } from '@/lib/invoice-adjustments'
+import { invoiceCandidateKey } from '@/lib/invoice-candidate-key'
 import { isValidPeriod as isValidAdjPeriod } from '@/lib/invoice-overview'
 
 export const dynamic = 'force-dynamic'
@@ -320,6 +321,59 @@ export async function POST(request: Request) {
       resolvedDateDue = computeDefaultDueDate(client.propertyType, new Date(), invoiceDefaults)
     }
 
+    // Identify which candidate this invoice is, so a retry recognises itself.
+    //
+    // The workspace creates a VOID preview and finalizes it immediately. The
+    // double-billing guards below are skipped for previews on purpose, so
+    // without this a failed send that was retried left a second finalized
+    // invoice behind. Keyed on locations rather than the caller's candidate id
+    // so a client invoiced separately per location keeps its separate invoices.
+    let candidateKey: string | null = null
+    if (adjustmentPeriod) {
+      const jobLocations = await prisma.job.findMany({
+        where: { id: { in: jobIds } },
+        select: { locationId: true },
+      })
+      candidateKey = invoiceCandidateKey(adjustmentPeriod, jobLocations.map((j) => j.locationId))
+    }
+
+    if (candidateKey) {
+      const existing = await prisma.invoice.findFirst({
+        where: {
+          clientId,
+          status: { not: 'VOID' },
+          OR: [
+            { candidateKey },
+            // Invoices created before this column existed carry no key. Job
+            // overlap still identifies the per-clean ones; a legacy flat-rate
+            // invoice has no job-linked line items and is only recognised once
+            // it has been through here. Scoped to this path on purpose: the
+            // quick-invoice flow sends no period and is left alone.
+            { lineItems: { some: { jobId: { in: jobIds } } } },
+          ],
+        },
+        select: { id: true, invoiceNumber: true, status: true, totalAmount: true },
+        orderBy: { dateCreated: 'asc' },
+      })
+      if (existing) {
+        if (isPreviewRequest) {
+          console.info('[invoice:create-preview] reusing existing invoice', {
+            requestId,
+            invoiceId: existing.id,
+            invoiceNumber: existing.invoiceNumber,
+            candidateKey,
+          })
+        }
+        return NextResponse.json(
+          {
+            error: `An invoice already exists for this client and billing period (${existing.invoiceNumber}).`,
+            existingInvoice: existing,
+          },
+          { status: 409 },
+        )
+      }
+    }
+
     // Use transaction to ensure invoice creation and job updates happen atomically
     const invoice = await prisma.$transaction(async (tx) => {
       // Double-billing prevention: do not create another real invoice for jobs
@@ -363,6 +417,7 @@ export async function POST(request: Request) {
           clientId,
           totalAmount,
           status: previewOnly ? 'VOID' : 'DRAFT',
+          candidateKey,
           dateDue: resolvedDateDue,
           notes,
           showPaymentOptions: showPaymentOptions !== undefined ? showPaymentOptions : true,
