@@ -46,7 +46,10 @@ export async function POST(request: Request) {
     await requireAuth()
 
     const body = await request.json()
-    const { clientId, jobIds, dateDue, notes, showPaymentOptions, status, previewOnly } = body
+    const { clientId, jobIds: rawJobIds, dateDue, notes, showPaymentOptions, status, previewOnly } = body
+    // Normalised once: an ad-hoc invoice (a fee, supplies, damage) carries no
+    // jobs at all, and every query below would otherwise see `undefined`.
+    const jobIds: string[] = Array.isArray(rawJobIds) ? rawJobIds : []
     // Supplied by the review workspace so adjustments can be gated and folded in.
     const adjustmentCandidateId: string | null = typeof body.candidateId === 'string' ? body.candidateId : null
     const adjustmentPeriod: string | null = typeof body.period === 'string' ? body.period : null
@@ -57,15 +60,22 @@ export async function POST(request: Request) {
       console.info('[invoice:create-preview] start', {
         requestId,
         clientId,
-        jobCount: Array.isArray(jobIds) ? jobIds.length : 0,
+        jobCount: jobIds.length,
         customLineItemCount: customLineItems?.length || 0,
         dateDue: dateDue || null,
       })
     }
 
-    if (!clientId || !jobIds || jobIds.length === 0) {
+    // An invoice needs a client and something to bill. Usually that is cleans,
+    // but an ad-hoc invoice (a fee, supplies, damage) has no jobs at all and
+    // carries its own line items instead.
+    const hasCustomLines = !!customLineItems && customLineItems.length > 0
+    if (!clientId) {
+      return NextResponse.json({ error: 'Client is required' }, { status: 400 })
+    }
+    if (jobIds.length === 0 && !hasCustomLines) {
       return NextResponse.json(
-        { error: 'Client and at least one job are required' },
+        { error: 'Add at least one clean or a line item to invoice.' },
         { status: 400 }
       )
     }
@@ -99,8 +109,9 @@ export async function POST(request: Request) {
       },
     })
 
-    // If no valid jobs found, the jobs may have already been invoiced (double-click prevention)
-    if (jobs.length === 0) {
+    // If no valid jobs found, the jobs may have already been invoiced (double-click prevention).
+    // An ad-hoc invoice legitimately has none — it bills its own line items.
+    if (jobs.length === 0 && !hasCustomLines) {
       if (isPreviewRequest) {
         console.warn('[invoice:create-preview] no-valid-jobs', {
           requestId,

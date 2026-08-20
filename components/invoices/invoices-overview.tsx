@@ -10,6 +10,7 @@ import { MatchPaymentsPanel } from "./match-payments-panel"
 import { BillingScheduleSheet } from "./billing-schedule-sheet"
 import { RowOverflowMenu, buildRowMenu } from "./row-overflow-menu"
 import { MonthPicker } from "./month-picker"
+import { NewInvoicePanel } from "./new-invoice-panel"
 import {
   LEDGER_TABS,
   filterByTab,
@@ -102,6 +103,7 @@ export function InvoicesOverview() {
   const toMatch = inbox?.count ?? 0
 
   const [query, setQuery] = useState("")
+  const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const rows = useMemo(() => {
     const all = data?.rows ?? []
     const q = query.trim().toLowerCase()
@@ -205,7 +207,8 @@ export function InvoicesOverview() {
           </button>
           <button
             type="button"
-            onClick={() => router.push("/invoices/workspace")}
+            onClick={() => setNewInvoiceOpen(true)}
+            title="For charges that don't come from a scheduled clean · fees, supplies, or work done off-calendar."
             className="inline-flex items-center gap-1.5 rounded-[9px] border border-[#e4e7ec] bg-white px-3.5 py-[9px] text-[12.5px] font-bold text-[#475467] transition-colors hover:bg-[#f7f8fa]"
           >
             <Plus className="h-[15px] w-[15px]" />
@@ -484,6 +487,12 @@ export function InvoicesOverview() {
       />
 
       <BillingScheduleSheet open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+
+      <NewInvoicePanel
+        open={newInvoiceOpen}
+        onClose={() => setNewInvoiceOpen(false)}
+        onCreated={() => mutate()}
+      />
     </div>
   )
 }
