@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSWRConfig } from "swr"
-import { ArrowRight, Loader2, RotateCcw } from "lucide-react"
+import { CircleCheck, Loader2, RotateCcw } from "lucide-react"
 import { showError, showSuccess } from "@/lib/toast"
 import { buildCorrectionRows, correctionToast, type CorrectionTarget } from "@/lib/invoice-correction"
+import { cadenceLabel, cellStyle, scheduleSummaryLabel, type CellMark } from "@/lib/schedule-check"
 
 /**
  * Schedule check — "did the month go as planned?" for a per-clean invoice.
@@ -113,6 +114,26 @@ export function ScheduleCheck({
     [month, cleans, corrected],
   )
 
+  // The month's pattern in words, from the cleans that actually happened.
+  const cadence = useMemo(() => {
+    const dayOf = (c: ScheduleCheckClean) => {
+      const d = c.date instanceof Date ? c.date : new Date(c.date)
+      return isNaN(d.getTime()) || d.getFullYear() !== y || d.getMonth() !== m - 1 ? null : d.getDate()
+    }
+    const cleanDays: number[] = []
+    const cancelledDays: number[] = []
+    for (const c of cleans) {
+      const day = dayOf(c)
+      if (day === null) continue
+      if (c.status === "CANCELLED" || c.status === "SKIPPED") cancelledDays.push(day)
+      else cleanDays.push(day)
+    }
+    return cadenceLabel({ cleanDays, cancelledDays, year: y, month: m })
+  }, [cleans, y, m])
+
+  const ranAsScheduled = counts.cancelled === 0 && counts.oneoff === 0
+  const monthTitle = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+
   /**
    * Write the correction back to the visit itself, not to this invoice.
    * The same PUT the calendar uses, so the clean, the cleaner's pay and the
@@ -163,70 +184,89 @@ export function ScheduleCheck({
   }
 
   return (
-    <div>
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Schedule check</span>
-        <button
-          type="button"
-          onClick={() => router.push(`/calendar?clientId=${clientId}`)}
-          title={`Open the calendar showing only ${clientName}`}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold text-stone-500 transition-colors hover:text-stone-900"
-        >
-          Open in Calendar
-          <ArrowRight className="h-3 w-3" />
-        </button>
+    // Warm card, per the design — the schedule check is a moment of scrutiny
+    // and reads as its own surface rather than another white panel.
+    <div style={{ border: "1px solid #eee7db", background: "#faf9f6", borderRadius: 14, padding: "11px 16px" }}>
+      <div className="mb-[5px] flex items-baseline justify-between gap-2.5">
+        <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#9aa3af]">Schedule check</span>
+        <span className="inline-flex items-center gap-2.5">
+          <span className="text-[11.5px] font-semibold text-[#8b95a1]">
+            {scheduleSummaryLabel(counts.completed, counts.cancelled)}
+          </span>
+          <button
+            type="button"
+            onClick={() => router.push(`/calendar?clientId=${clientId}`)}
+            title={`Something wrong? Fix the schedule on the calendar · this invoice recomputes from it`}
+            className="whitespace-nowrap text-[11.5px] font-bold text-[#15793f] transition-opacity hover:opacity-80"
+          >
+            Open in Calendar →
+          </button>
+        </span>
       </div>
 
-      <div className="rounded-lg border border-stone-200 bg-white p-2.5">
-        <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[8px] font-medium text-stone-400">
-          {DOW.map((d, i) => <div key={i}>{d}</div>)}
-        </div>
-        <div className="grid grid-cols-7 gap-0.5">
-          {cells.map((day, i) => {
-            if (day === null) return <div key={i} className="h-6" />
-            const entry = byDay.get(day)
-            const style = entry ? MARK_STYLE[entry.mark] : null
-            const isToday = isThisMonth && today.getDate() === day
-            const label = entry
-              ? `${clientName} · ${new Date(y, m - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · ${entry.mark}`
-              : undefined
+      {/* What the month's pattern actually was, in words. */}
+      <div className="text-[17px] font-bold leading-tight tracking-[-0.015em] text-[#111827]">{cadence}</div>
 
-            if (!entry) {
-              return (
-                <div key={i} className="flex h-6 items-center justify-center rounded text-[10px] tabular-nums text-stone-300">
-                  <span className={isToday ? "flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-stone-900" : ""}>{day}</span>
-                </div>
-              )
-            }
+      {ranAsScheduled && (
+        <div className="mt-1.5 flex items-center gap-[7px]">
+          <CircleCheck className="h-[15px] w-[15px] flex-none text-[#15793f]" strokeWidth={2.2} />
+          <span className="text-[13px] font-bold text-[#15793f]">Ran as scheduled</span>
+        </div>
+      )}
+
+      <div className="mt-[9px] border-t border-[#eee7db] pt-2">
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-[13px] font-bold text-[#111827]">{monthTitle}</span>
+          <span className="flex items-center gap-[11px] text-[10.5px] text-[#9aa3af]">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full" style={{ background: "#15793f" }} />Clean
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full" style={{ background: "#f59e0b" }} />Add-on
+            </span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-7 gap-[3px]" style={{ maxWidth: 206 }}>
+          {DOW.map((d, i) => (
+            <span key={`dow-${i}`} className="pb-px text-center text-[10px] text-[#9aa3af]">{d}</span>
+          ))}
+          {cells.map((day, i) => {
+            if (day === null) return <div key={i} style={{ aspectRatio: "1" }} />
+            const entry = byDay.get(day)
+            const mark: CellMark = entry
+              ? entry.mark === "completed" ? "clean"
+                : entry.mark === "oneoff" ? "oneoff"
+                  : entry.mark === "cancelled" ? "cancelled"
+                    : "scheduled"
+              : "empty"
+            const st = cellStyle(mark)
+            const label = entry
+              ? `${new Date(y, m - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · open this day on the calendar to correct it`
+              : undefined
             return (
-              <button
+              <div
                 key={i}
-                type="button"
-                onClick={() => openDay(entry.jobId)}
+                onClick={entry ? () => openDay(entry.jobId) : undefined}
                 title={label}
                 aria-label={label}
-                className="flex h-6 items-center justify-center rounded text-[10px] font-semibold tabular-nums transition-opacity hover:opacity-75"
-                style={{ background: style!.bg, color: style!.text }}
+                className="flex items-center justify-center rounded-full text-[10.5px] tabular-nums"
+                style={{
+                  aspectRatio: "1",
+                  background: st.background,
+                  color: st.color,
+                  fontWeight: st.fontWeight,
+                  boxShadow: st.boxShadow,
+                  textDecoration: st.textDecoration,
+                  cursor: entry ? "pointer" : "default",
+                }}
               >
-                <span
-                  className={isToday ? "flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-stone-900" : ""}
-                  style={style!.strike ? { textDecoration: "line-through" } : undefined}
-                >
-                  {day}
-                </span>
-              </button>
+                {day}
+              </div>
             )
           })}
         </div>
-
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-400">
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#86EFAC" }} />Completed{counts.completed ? ` ${counts.completed}` : ""}</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#93C5FD" }} />Scheduled{counts.scheduled ? ` ${counts.scheduled}` : ""}</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCA5A5" }} />Cancelled{counts.cancelled ? ` ${counts.cancelled}` : ""}</span>
-          {counts.oneoff > 0 && (
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: "#FCD34D" }} />One-off {counts.oneoff}</span>
-          )}
-        </div>
+      </div>
 
         {/* Invoice-time correction. The reviewer often knows the clean did
             happen; fixing it here writes back to the visit, so the calendar,
@@ -288,7 +328,6 @@ export function ScheduleCheck({
             </p>
           </div>
         )}
-      </div>
     </div>
   )
 }
