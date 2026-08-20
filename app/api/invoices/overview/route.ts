@@ -30,7 +30,7 @@ export async function GET(request: Request) {
         clearingSince: true,
         paymentMethod: true,
         paymentTransactionId: true,
-        client: { select: { name: true, billingType: true, billingDelivery: true } },
+        client: { select: { id: true, name: true, billingType: true, billingDelivery: true } },
         // A one-off invoice is one whose billed work is all unscheduled jobs.
         lineItems: { select: { job: { select: { scheduleId: true } } } },
       },
@@ -40,6 +40,7 @@ export async function GET(request: Request) {
     const sources: LedgerSource[] = rows.map(inv => ({
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
+      clientId: inv.client?.id ?? null,
       clientName: inv.client?.name ?? 'Unknown client',
       status: inv.status,
       totalAmount: inv.totalAmount,

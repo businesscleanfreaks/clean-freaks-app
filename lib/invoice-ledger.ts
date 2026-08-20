@@ -39,6 +39,8 @@ export type InvoiceKind = "Flat rate" | "Per clean" | "One-off"
 export interface LedgerSource {
   id: string
   invoiceNumber: string
+  /** Lets a row deep-link into the client's billing history. */
+  clientId?: string | null
   clientName: string
   /** Stored status: DRAFT | SENT | PAID */
   status: string

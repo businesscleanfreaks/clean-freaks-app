@@ -3,11 +3,13 @@
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal, Play, Check, Zap } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { MatchPaymentsPanel } from "./match-payments-panel"
 import { BillingScheduleSheet } from "./billing-schedule-sheet"
+import { RowOverflowMenu, buildRowMenu } from "./row-overflow-menu"
+import { MonthPicker } from "./month-picker"
 import {
   LEDGER_TABS,
   filterByTab,
@@ -105,6 +107,27 @@ export function InvoicesOverview() {
   const counts = data?.counts
   const toSendCount = counts?.["To send"] ?? 0
 
+  // One implementation for the row button and the overflow menu.
+  const toggleClearing = async (row: LedgerRow) => {
+    try {
+      const res = await fetch(`/api/invoices/${row.id}/clearing`, {
+        method: row.clearing ? "DELETE" : "POST",
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.error || "Could not update clearing")
+      }
+      showSuccess(row.clearing ? "No longer clearing" : "Marked as clearing")
+      mutate()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not update clearing")
+    }
+  }
+  // Share of this month's billing that has actually been collected.
+  const collectedPct = stats?.billed
+    ? Math.min(100, Math.round(((stats.collected ?? 0) / stats.billed) * 100))
+    : 0
+
   return (
     <div className="mx-auto w-full max-w-[1180px] px-6 py-6 md:px-8">
       {/* Header */}
@@ -119,9 +142,9 @@ export function InvoicesOverview() {
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="min-w-[112px] text-center text-[13px] font-bold tabular-nums text-[#101828]">
-            {periodLabel(period)}
-          </span>
+          {/* Click the month to jump straight to another one rather than
+              stepping the arrows a year at a time. */}
+          <MonthPicker month={period} onChange={setPeriod} />
           <button
             type="button"
             onClick={() => setPeriod(p => shiftPeriod(p, 1))}
@@ -133,14 +156,18 @@ export function InvoicesOverview() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            disabled={toSendCount === 0}
-            onClick={() => router.push("/invoices/workspace")}
-            className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#15793f] px-3.5 py-[9px] text-[12.5px] font-bold text-white transition-colors hover:bg-[#0f5a36] disabled:opacity-40"
-          >
-            Start reviewing{toSendCount > 0 ? ` · ${toSendCount}` : ""}
-          </button>
+          {/* Hidden rather than disabled when the queue is empty — the design
+              does not keep a dead button on screen. */}
+          {toSendCount > 0 && (
+            <button
+              type="button"
+              onClick={() => router.push("/invoices/workspace")}
+              className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#0f5a36] px-3.5 py-[9px] text-[12.5px] font-bold text-white shadow-[0_2px_6px_rgba(15,90,54,.26)] transition-colors hover:bg-[#0d4c2e]"
+            >
+              <Play className="h-3 w-3 fill-current" />
+              Start reviewing · {toSendCount}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setScheduleOpen(true)}
@@ -160,68 +187,96 @@ export function InvoicesOverview() {
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="mt-[18px] grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard>
+      {/* Metrics strip — one card with dividers, as the design has it, so the
+          three numbers read as one summary rather than three widgets. */}
+      <div className="mt-[14px] flex flex-col items-stretch rounded-[13px] border border-[#eaecef] bg-white py-3 sm:flex-row">
+        <div className="min-w-0 flex-[1.2] px-[18px]">
           <div className={statLabel}>Collected this month</div>
-          <div className="mt-1.5 text-[27px] font-extrabold tabular-nums leading-none tracking-[-0.02em] text-[#15793f]">
-            {formatCurrency(stats?.collected ?? 0)}
+          <div className="mt-[3px] flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className="text-[19px] font-extrabold tabular-nums tracking-[-0.02em] text-[#15793f]">
+              {formatCurrency(stats?.collected ?? 0)}
+            </span>
+            <span className="text-[12px] text-[#98a2b3]">of</span>
+            <span className="text-[19px] font-extrabold tabular-nums tracking-[-0.02em] text-[#101828]">
+              {formatCurrency(stats?.billed ?? 0)}
+            </span>
+            <span className="text-[12px] text-[#98a2b3]">billed</span>
           </div>
-          <div className="mt-1.5 text-[11.5px] text-[#7d8795]">
-            of <span className="font-bold tabular-nums text-[#475467]">{formatCurrency(stats?.billed ?? 0)}</span> billed
+          {/* How much of what was billed has actually come in. */}
+          <div className="mt-[7px] h-1 overflow-hidden rounded-sm bg-[#eef1f4]">
+            <div className="h-full rounded-sm bg-[#15793f]" style={{ width: `${collectedPct}%` }} />
           </div>
-        </StatCard>
+        </div>
 
-        <StatCard>
+        <div className="w-px flex-none bg-[#f0f2f4]" />
+
+        <div className="min-w-0 flex-[0.97] px-[18px] pt-3 sm:pt-0">
           <div className={statLabel}>Outstanding · unpaid</div>
-          <div className="mt-1.5 text-[27px] font-extrabold tabular-nums leading-none tracking-[-0.02em] text-[#101828]">
-            {formatCurrency(stats?.outstanding ?? 0)}
+          <div className="mt-[3px] flex items-baseline gap-[7px]">
+            <span className="text-[19px] font-extrabold tabular-nums tracking-[-0.02em] text-[#101828]">
+              {formatCurrency(stats?.outstanding ?? 0)}
+            </span>
+            <span className="whitespace-nowrap text-[11.5px] text-[#98a2b3]">
+              {stats?.unpaidCount ?? 0} unpaid invoice{(stats?.unpaidCount ?? 0) === 1 ? "" : "s"}
+            </span>
           </div>
-          <div className="mt-1.5 text-[11.5px] text-[#7d8795]">
-            {stats?.unpaidCount ?? 0} unpaid invoice{(stats?.unpaidCount ?? 0) === 1 ? "" : "s"}
-          </div>
-        </StatCard>
+        </div>
+
+        <div className="w-px flex-none bg-[#f0f2f4]" />
 
         <button
           type="button"
           onClick={() => setTab("Payment late")}
-          className="rounded-[13px] border border-[#e4e7ec] bg-white px-[18px] py-4 text-left transition-colors hover:bg-[#fdf3f2]"
+          className="min-w-0 flex-[0.9] rounded-[9px] px-[18px] pt-3 text-left transition-colors hover:bg-[#fdf3f2] sm:pt-0"
+          title="See late payments"
         >
           <div className={statLabel}>Late payments</div>
-          <div className="mt-1.5 text-[27px] font-extrabold tabular-nums leading-none tracking-[-0.02em] text-[#dc2626]">
-            {formatCurrency(stats?.lateTotal ?? 0)}
-          </div>
           {stats?.worstOffender ? (
-            <div className="mt-1.5 truncate text-[11.5px] text-[#7d8795]">
-              {stats.lateClientCount} client{stats.lateClientCount === 1 ? "" : "s"} ·{" "}
-              <span className="font-bold text-[#c0342a]">
+            <>
+              <div className="mt-[3px] flex items-baseline gap-[7px]">
+                <span className="text-[19px] font-extrabold tabular-nums tracking-[-0.02em] text-[#c0342a]">
+                  {formatCurrency(stats?.lateTotal ?? 0)}
+                </span>
+                <span className="whitespace-nowrap text-[11.5px] text-[#98a2b3]">
+                  {stats.lateClientCount} client{stats.lateClientCount === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="mt-[5px] truncate text-[11.5px] font-bold text-[#c0342a]">
                 {stats.worstOffender.clientName} · {stats.worstOffender.daysLate}d
-              </span>
-            </div>
+              </div>
+            </>
           ) : (
-            <div className="mt-1.5 text-[11.5px] text-[#7d8795]">Nobody is late</div>
+            // Nothing late is good news, so the design says so rather than
+            // printing a $0.00 that reads like a broken number.
+            <div className="mt-[5px] flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 text-[#22a35a]" strokeWidth={2.8} />
+              <span className="text-[14px] font-extrabold text-[#15803d]">All current</span>
+            </div>
           )}
         </button>
       </div>
 
-      {/* Zelle banner — only when there is something waiting. */}
-      {toMatch > 0 && (
-        <button
-          type="button"
-          onClick={() => setMatchOpen(true)}
-          className="mt-[14px] flex w-full items-center gap-3 rounded-[11px] border border-[#e3d9f5] bg-[#f3effb] px-4 py-3 text-left transition-colors hover:bg-[#ede6f8]"
-        >
-          <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-white text-[12px] font-extrabold text-[#6b46c1]">
-            {toMatch}
-          </span>
-          <span className="min-w-0 flex-1 text-[13px] font-bold text-[#4c3383]">
-            {toMatch} Zelle payment{toMatch === 1 ? "" : "s"} to match
-          </span>
-          <span className="flex-none rounded-[8px] bg-[#6b46c1] px-3 py-1.5 text-[12px] font-bold text-white">
-            Review &amp; match
-          </span>
-        </button>
-      )}
+      {/* Zelle banner. Always shown: "all matched" is information too, and a
+          banner that only appears when something is wrong trains people to
+          stop looking for it. */}
+      <button
+        type="button"
+        onClick={() => setMatchOpen(true)}
+        className="mt-[10px] flex w-full items-center gap-2.5 rounded-[11px] border border-[#e2d9f3] bg-white px-3.5 py-[7px] text-left transition-colors hover:border-[#cbb9ea]"
+      >
+        <span className="flex h-6 w-6 flex-none items-center justify-center rounded-[7px] bg-[#f3effb] text-[#6b46c1]">
+          <Zap className="h-[13px] w-[13px]" />
+        </span>
+        <span className="min-w-0 flex-1 text-[13px] font-extrabold tracking-[-0.01em] text-[#101828]">
+          {toMatch > 0
+            ? `${toMatch} Zelle payment${toMatch === 1 ? "" : "s"} to match`
+            : "All Zelle payments matched"}
+        </span>
+        <span className="flex flex-none items-center gap-1 text-[12px] font-bold text-[#6b46c1]">
+          Review &amp; match
+          <ChevronRight className="h-3 w-3" />
+        </span>
+      </button>
 
       {/* Tabs — name and count only, never money. */}
       <div className="mt-[18px] flex flex-wrap items-center gap-1 border-b border-[#e4e7ec]">
@@ -318,25 +373,24 @@ export function InvoicesOverview() {
                   {row.ledgerStatus === "Sent: Paid" ? `Paid ${shortDate(row.datePaid)}` : shortDate(row.dateDue)}
                 </span>
 
-                <div className="flex justify-end" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                   <RowAction
                     row={row}
                     onOpen={() => router.push(`/invoices/${row.id}`)}
-                    onToggleClearing={async () => {
-                      try {
-                        const res = await fetch(`/api/invoices/${row.id}/clearing`, {
-                          method: row.clearing ? "DELETE" : "POST",
-                        })
-                        if (!res.ok) {
-                          const err = await res.json().catch(() => null)
-                          throw new Error(err?.error || "Could not update clearing")
-                        }
-                        showSuccess(row.clearing ? "No longer clearing" : "Marked as clearing")
-                        mutate()
-                      } catch (e) {
-                        showError(e instanceof Error ? e.message : "Could not update clearing")
-                      }
-                    }}
+                    onToggleClearing={() => toggleClearing(row)}
+                  />
+
+                  <RowOverflowMenu
+                    items={buildRowMenu(row, {
+                      onViewHistory: () =>
+                        row.clientId
+                          ? router.push(`/clients/${row.clientId}?tab=billing&hist=1`)
+                          : showError("This invoice has no client on file."),
+                      onMarkPaid: () => router.push(`/invoices/${row.id}`),
+                      onUndoPaid: () => router.push(`/invoices/${row.id}`),
+                      onToggleClearing: () => toggleClearing(row),
+                      onCancelSchedule: () => router.push(`/invoices/${row.id}`),
+                    })}
                   />
                 </div>
               </div>
