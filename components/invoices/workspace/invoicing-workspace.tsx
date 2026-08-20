@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin, Lock, Check, PanelLeftClose, PanelLeftOpen } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin, Lock, Check, PanelLeftClose } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -56,7 +56,11 @@ export function InvoicingWorkspace({
   const [composeFor, setComposeFor] = useState<{ inv: WorkspaceInvoice; mode: ComposeMode } | null>(null)
   const [detailWidth, setDetailWidth] = useState(340)
   const [listWidth, setListWidth] = useState(330)
-  const [listCollapsed, setListCollapsed] = useState(false)
+  // The design opens an invoice in TWO panes — the review and what the client
+  // receives — and only reveals the list when you ask for it via the
+  // "N to send in the queue" pill. The list is a way back to the queue, not
+  // something that competes with the invoice you are reviewing.
+  const [listCollapsed, setListCollapsed] = useState(true)
   useEffect(() => setMounted(true), [])
 
   // Keyboard queue navigation. Ignored while typing in a field or with a modal
@@ -159,6 +163,18 @@ export function InvoicingWorkspace({
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold tracking-tight text-stone-900">Invoices</h1>
 
+          {/* Opens the list. The only way back to the queue when the two-pane
+              layout is showing, so it stays available whatever the invoice. */}
+          {listCollapsed && ws.queueTotal > 0 && (
+            <button
+              onClick={() => setListCollapsed(false)}
+              title="See the full list"
+              className="whitespace-nowrap rounded-full border border-stone-200 bg-white px-3 py-1 text-[12.5px] font-semibold text-[#8b95a1] transition-colors hover:text-stone-700"
+            >
+              {ws.queueTotal} to send in the queue
+            </button>
+          )}
+
           {/* Review queue position. Fixed-width label so the arrows never shift. */}
           {ws.queuePositionLabel && (
             <div className="flex items-center gap-2">
@@ -241,28 +257,24 @@ export function InvoicingWorkspace({
       {/* ── Three columns ── */}
       <div className="flex min-h-0 flex-1">
         {/* Left: invoice list */}
-        <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: listCollapsed ? 44 : listWidth }}>
-          {/* Month nav lives with the list it filters, per the design, with a
-              collapse so the review panes can take the full width. */}
+        {!listCollapsed && (
+        <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: listWidth }}>
+          {/* Month nav lives with the list it filters, per the design. */}
           <div className="flex items-center gap-1 border-b border-stone-100 px-2 py-2">
-            {!listCollapsed && (
-              <>
-                <button onClick={() => ws.setMonth(shiftMonth(ws.month, -1))} className="rounded p-1 text-stone-500 transition-colors hover:bg-stone-100" aria-label="Previous month"><ChevronLeft size={15} /></button>
-                <span className="flex-1 text-center text-[13px] font-semibold tabular-nums text-stone-700">{formatMonthLabel(ws.month)}</span>
-                <button onClick={() => ws.setMonth(shiftMonth(ws.month, 1))} className="rounded p-1 text-stone-500 transition-colors hover:bg-stone-100" aria-label="Next month"><ChevronRight size={15} /></button>
-              </>
-            )}
+            <button onClick={() => ws.setMonth(shiftMonth(ws.month, -1))} className="rounded p-1 text-stone-500 transition-colors hover:bg-stone-100" aria-label="Previous month"><ChevronLeft size={15} /></button>
+            <span className="flex-1 text-center text-[13px] font-semibold tabular-nums text-stone-700">{formatMonthLabel(ws.month)}</span>
+            <button onClick={() => ws.setMonth(shiftMonth(ws.month, 1))} className="rounded p-1 text-stone-500 transition-colors hover:bg-stone-100" aria-label="Next month"><ChevronRight size={15} /></button>
             <button
-              onClick={() => setListCollapsed(v => !v)}
-              aria-label={listCollapsed ? "Show the invoice list" : "Hide the invoice list"}
-              title={listCollapsed ? "Show the full list" : "Hide the list"}
+              onClick={() => setListCollapsed(true)}
+              aria-label="Hide the invoice list"
+              title="Hide the list · back to the two-pane review"
               className="rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
             >
-              {listCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+              <PanelLeftClose size={15} />
             </button>
           </div>
 
-          {!listCollapsed && (
+          {(
             <div className="flex items-center gap-2 border-b border-stone-100 px-3 py-2">
               <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-stone-400">Clients</span>
               {overdueCount > 0 && (
@@ -297,7 +309,7 @@ export function InvoicingWorkspace({
             </div>
           )}
 
-          <div className={`min-h-0 flex-1 overflow-y-auto py-1 ${listCollapsed ? "hidden" : ""}`}>
+          <div className="min-h-0 flex-1 overflow-y-auto py-1">
             {ws.isLoading ? (
               <div className="p-6 text-center text-sm text-stone-400">Loading…</div>
             ) : ws.groups.length === 0 ? (
@@ -342,13 +354,22 @@ export function InvoicingWorkspace({
           )}
         </div>
 
+        )}
+
         {/* Resize handle (list ↔ detail) — Ticket 1 */}
+        {!listCollapsed && (
         <div onMouseDown={startListResize} onDoubleClick={() => { setListWidth(330); try { localStorage.setItem("cf-inv-listW", "330") } catch { /* noop */ } }}
           className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
           title="Drag to resize · Double-click to reset" />
+        )}
 
-        {/* Detail column: schedule · changes · calendar */}
-        <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: detailWidth }}>
+        {/* Detail column. With the list hidden this shares the width with the
+            client's view rather than staying at its three-column size — the
+            review is the point of the two-pane layout, not a sidebar. */}
+        <div
+          className={`flex flex-col border-r border-stone-200 bg-white ${listCollapsed ? "min-w-0 flex-1" : "shrink-0"}`}
+          style={listCollapsed ? { maxWidth: 720 } : { width: detailWidth }}
+        >
           {ws.selected ? (
             <DetailPanel
               inv={ws.selected}
@@ -361,9 +382,11 @@ export function InvoicingWorkspace({
         </div>
 
         {/* Resize handle (detail ↔ preview) */}
-        <div onMouseDown={startDetailResize} onDoubleClick={() => setDetailWidth(340)}
-          className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
-          title="Drag to resize · Double-click to reset" />
+        {!listCollapsed && (
+          <div onMouseDown={startDetailResize} onDoubleClick={() => setDetailWidth(340)}
+            className="w-1.5 shrink-0 cursor-col-resize bg-stone-200 transition-colors hover:bg-teal-400"
+            title="Drag to resize · Double-click to reset" />
+        )}
 
         {/* PDF preview column */}
         <div className="flex min-w-0 flex-1 flex-col bg-stone-100">
