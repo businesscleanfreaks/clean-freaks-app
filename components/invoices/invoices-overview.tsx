@@ -1,9 +1,9 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal, Play, Check, Zap } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal, Play, Check, Zap, Search } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { MatchPaymentsPanel } from "./match-payments-panel"
@@ -101,7 +101,15 @@ export function InvoicesOverview() {
   )
   const toMatch = inbox?.count ?? 0
 
-  const rows = useMemo(() => data?.rows ?? [], [data])
+  const [query, setQuery] = useState("")
+  const rows = useMemo(() => {
+    const all = data?.rows ?? []
+    const q = query.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(r =>
+      r.clientName.toLowerCase().includes(q) || r.invoiceNumber.toLowerCase().includes(q),
+    )
+  }, [data, query])
   const visible = useMemo(() => filterByTab(rows, tab), [rows, tab])
   const stats = data?.stats
   const counts = data?.counts
@@ -123,6 +131,25 @@ export function InvoicesOverview() {
       showError(e instanceof Error ? e.message : "Could not update clearing")
     }
   }
+  // Row selection. The design shows checkboxes on every row; the only bulk
+  // action offered is REVIEW, never send — sending always goes through the
+  // workspace one invoice at a time.
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const toggleRow = (id: string) =>
+    setChecked(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  const visibleIds = rows.map(r => r.id)
+  const allChecked = visibleIds.length > 0 && visibleIds.every(id => checked.has(id))
+  const toggleAll = () =>
+    setChecked(prev => (allChecked ? new Set() : new Set([...prev, ...visibleIds])))
+
+  // Selection is per view; a row that scrolls out of the filter should not stay
+  // silently selected.
+  useEffect(() => { setChecked(new Set()) }, [tab, period, query])
+
   // Share of this month's billing that has actually been collected.
   const collectedPct = stats?.billed
     ? Math.min(100, Math.round(((stats.collected ?? 0) / stats.billed) * 100))
@@ -298,11 +325,50 @@ export function InvoicesOverview() {
             </button>
           )
         })}
+
+        {/* Find a client without paging through the month. */}
+        <div className="relative ml-auto mb-1.5 w-[230px] flex-none">
+          <Search className="pointer-events-none absolute left-[11px] top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-[#7d8795]" />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search clients…"
+            aria-label="Search clients"
+            className="w-full rounded-[10px] border border-[#e4e7ec] bg-white py-[9px] pl-8 pr-3 text-[13px] outline-none focus:border-[#15793f]"
+          />
+        </div>
       </div>
+
+      {/* What selection is for. Reviewing, never sending — the handoff is
+          explicit that a row's action is always review. */}
+      {checked.size > 0 && (
+        <div className="mt-[14px] flex items-center gap-3 rounded-[11px] border border-[#c7ebd3] bg-[#f1faf4] px-4 py-2.5">
+          <span className="text-[12.5px] font-bold text-[#15803d]">
+            {checked.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => setChecked(new Set())}
+            className="text-[12px] font-semibold text-[#15803d]/70 transition-colors hover:text-[#15803d]"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/invoices/workspace")}
+            className="ml-auto rounded-[8px] bg-[#15793f] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#0f5a36]"
+          >
+            Review {checked.size} in the workspace
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="mt-[14px] overflow-hidden rounded-[13px] border border-[#e4e7ec] bg-white">
-        <div className="grid grid-cols-[minmax(200px,1fr)_104px_110px_136px_120px_132px] items-center gap-3 border-b border-[#eef0f3] bg-[#fbfcfd] px-5 py-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#7d8795]">
+        <div className="grid grid-cols-[18px_minmax(200px,1fr)_104px_110px_136px_120px_132px] items-center gap-3 border-b border-[#eef0f3] bg-[#fbfcfd] px-5 py-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#7d8795]">
+          <button type="button" onClick={toggleAll} aria-label="Select all invoices" className="flex">
+            <CheckBox checked={allChecked} />
+          </button>
           <span>Client ↑</span>
           <span>Type</span>
           <span className="text-right">Amount</span>
@@ -330,8 +396,20 @@ export function InvoicesOverview() {
                 tabIndex={0}
                 onClick={() => router.push(`/invoices/${row.id}`)}
                 onKeyDown={e => { if (e.key === "Enter") router.push(`/invoices/${row.id}`) }}
-                className="grid cursor-pointer grid-cols-[minmax(200px,1fr)_104px_110px_136px_120px_132px] items-center gap-3 border-b border-[#f4f5f7] px-5 py-3 transition-colors last:border-b-0 hover:bg-[#f9fafb]"
+                className="irow grid cursor-pointer grid-cols-[18px_minmax(200px,1fr)_104px_110px_136px_120px_132px] items-center gap-3 border-b border-[#f4f5f7] px-5 py-3 transition-colors last:border-b-0"
+                // Inline rather than an arbitrary Tailwind class: the value is
+                // one the JIT has no other reason to emit.
+                style={{ background: checked.has(row.id) ? "#f3f9f5" : "#fff" }}
               >
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); toggleRow(row.id) }}
+                  aria-label={`Select ${row.clientName}`}
+                  className="flex"
+                >
+                  <CheckBox checked={checked.has(row.id)} />
+                </button>
+
                 <div className="min-w-0">
                   <div className="truncate text-[13.5px] font-bold tracking-[-0.01em] text-[#101828]">{row.clientName}</div>
                   <div className="mt-px truncate text-[11.5px] text-[#7d8795]">
@@ -407,6 +485,21 @@ export function InvoicesOverview() {
 
       <BillingScheduleSheet open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
     </div>
+  )
+}
+
+/** The design's 18px checkbox: square, rounded 5, green when on. */
+function CheckBox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[5px]"
+      style={{
+        border: `1.6px solid ${checked ? "#15793f" : "#cbd2da"}`,
+        background: checked ? "#15793f" : "#fff",
+      }}
+    >
+      {checked && <Check className="h-[11px] w-[11px] text-white" strokeWidth={3.2} />}
+    </span>
   )
 }
 

@@ -98,8 +98,10 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
 
   return (
     <>
+      {/* Centred, as the design has it: this is a settings dialog you come back
+          out of, not a side panel you work alongside the ledger. */}
       <div className="fixed inset-0 z-40 bg-[#101828]/25" onClick={onClose} />
-      <aside className="fixed right-0 top-0 z-50 flex h-full w-[900px] max-w-[96vw] flex-col border-l border-[#e4e7ec] bg-white shadow-[0_12px_32px_rgba(16,24,40,.18)]">
+      <aside className="fixed left-1/2 top-1/2 z-50 flex max-h-[88vh] w-[1000px] max-w-[94vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[16px] border border-[#e4e7ec] bg-white shadow-[0_24px_64px_rgba(16,24,40,.24)]">
         <div className="flex items-start gap-3 border-b border-[#eef0f3] px-5 py-4">
           <div className="min-w-0 flex-1">
             <div className="text-[15px] font-extrabold tracking-[-0.01em] text-[#101828]">Billing schedule</div>
