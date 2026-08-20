@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin, Lock, Check, PanelLeftClose } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin, Lock, Check, PanelLeftClose, Eye } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
@@ -15,13 +15,12 @@ import {
 } from "./use-workspace"
 import { ComposeWindow } from "./compose-window"
 import { AdjustmentsPanel } from "./adjustments-panel"
-import { ClientWillReceive } from "./client-will-receive"
 import { SentTracking } from "./sent-tracking"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
 import { buildServiceSummary } from "@/lib/invoice-service-summary"
 import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
-import { TERM_LABELS } from "@/lib/billing-schedule"
+import { TERMS, TERM_LABELS } from "@/lib/billing-schedule"
 import type { ComposeMode } from "@/lib/invoice-compose"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
@@ -531,7 +530,7 @@ function DetailPanel({ inv, month, onCompose }: {
   month: string
   onCompose: (mode: ComposeMode) => void
 }) {
-  const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
+  const { data: client, mutate: mutateClient } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
 
   // Same SWR key as AdjustmentsPanel, so this shares one request and the CTA
   // unlocks the moment the last adjustment is approved.
@@ -541,6 +540,31 @@ function DetailPanel({ inv, month, onCompose }: {
   )
   const blockedReason = sendBlockedReason(adjData?.adjustments ?? [])
   const [savingDraft, setSavingDraft] = useState(false)
+  const [savingTerms, setSavingTerms] = useState(false)
+
+  // Terms live on the client, so this is the same write the billing schedule
+  // sheet makes — one source of truth for how long they have to pay.
+  const setTerms = async (terms: string) => {
+    setSavingTerms(true)
+    try {
+      const res = await fetch("/api/settings/billing-schedule", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: inv.clientId, terms }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        showError(err?.error || "Could not change the payment terms")
+        return
+      }
+      showSuccess(`Payment terms set to ${TERM_LABELS[terms] ?? terms}`)
+      mutateClient()
+    } catch {
+      showError("Could not change the payment terms")
+    } finally {
+      setSavingTerms(false)
+    }
+  }
 
   // Creates the invoice record without emailing anything.
   const saveDraft = async () => {
@@ -854,9 +878,6 @@ function DetailPanel({ inv, month, onCompose }: {
           </>
         ) : (
           <>
-            {/* Exactly what the client will get, editable in place. */}
-            <ClientWillReceive inv={inv} month={month} />
-
             {/* Credits, discounts and charges. Every row must be approved before
                 this invoice can be sent. */}
             <AdjustmentsPanel
@@ -880,19 +901,65 @@ function DetailPanel({ inv, month, onCompose }: {
               {blockedReason}
             </div>
           )}
-          <button
-            onClick={() => onCompose("send")}
-            disabled={!!blockedReason}
-            title={blockedReason || undefined}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold text-white transition-opacity hover:opacity-95 disabled:opacity-60"
-            style={{ background: "#0f5a36" }}
-          >
-            <Send size={15} /> Review email &amp; send
-          </button>
+          {/* Payment terms sit with the send action, because they decide the
+              due date the client is about to be given. */}
+          <div className="mb-2.5 flex items-center gap-3">
+            <span className="flex-none text-[13px] font-bold text-[#111827]">Payment terms</span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-[#9aa3af]">Due {dueDate}</span>
+            <div className="flex flex-none gap-0.5 rounded-[9px] bg-[#f1f3f5] p-0.5">
+              {TERMS.map(t => {
+                const active = (client?.paymentTerms ?? null) === t
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTerms(t)}
+                    disabled={savingTerms}
+                    className="rounded-[6px] px-2.5 py-1.5 text-[12px] transition-colors disabled:opacity-60"
+                    style={
+                      active
+                        ? { background: "#fff", color: "#111827", fontWeight: 700, boxShadow: "0 1px 2px rgba(16,24,40,.08)" }
+                        : { color: "#8b95a1", fontWeight: 600 }
+                    }
+                  >
+                    {TERM_LABELS[t]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => onCompose("send")}
+              disabled={!!blockedReason}
+              title={blockedReason || undefined}
+              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold text-white transition-opacity hover:opacity-95 disabled:opacity-60"
+              style={{ background: "#0f5a36" }}
+            >
+              <Send size={15} /> Review email &amp; send
+            </button>
+            <a
+              href={inv.existingInvoiceId ? `/api/invoices/${inv.existingInvoiceId}/generate-pdf` : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={inv.existingInvoiceId ? "Open the full invoice" : "Available once the invoice exists"}
+              className={`inline-flex flex-none items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2.5 text-[13px] font-semibold text-stone-600 transition-colors hover:bg-stone-50 ${
+                inv.existingInvoiceId ? "" : "pointer-events-none opacity-50"
+              }`}
+            >
+              <Eye size={15} /> Preview full invoice
+            </a>
+          </div>
+
+          <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-stone-400">
+            <Lock size={11} /> Invoice will be emailed as a PDF attachment
+          </div>
+
           <button
             onClick={saveDraft}
             disabled={savingDraft}
-            className="mt-2 w-full text-[11.5px] font-semibold text-stone-400 transition-colors hover:text-stone-700 disabled:opacity-50"
+            className="mt-1.5 w-full text-[11.5px] font-semibold text-stone-400 transition-colors hover:text-stone-700 disabled:opacity-50"
           >
             {savingDraft ? "Saving…" : "Save as draft · nothing is emailed"}
           </button>

@@ -10,7 +10,7 @@ import { showSuccess, showError, showApiError } from "@/lib/toast"
 import { resolveTemplate } from "@/lib/invoice-template"
 import { useConfirm } from "@/hooks/use-confirm"
 import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
-import { firstNameOf, paysByZelle, resolvePayMethod } from "@/lib/invoice-client-message"
+import { buildClientMessage, firstNameOf, paysByZelle, resolvePayMethod } from "@/lib/invoice-client-message"
 import {
   addRecipient,
   applyWarningFix,
@@ -186,10 +186,21 @@ export function ComposeWindow({
     }
     const tpl = templateData || { subject: DEFAULT_SUBJECT, message: "" }
     setSubject(resolveTemplate(tpl.subject || DEFAULT_SUBJECT, vars))
-    // The review pane owns the body copy — it is what the reviewer approved.
+    // An edit already made for this invoice wins. Otherwise seed the designed
+    // copy — which includes the Zelle paragraph only for clients who pay that
+    // way — falling back to the configured template.
     const shared = currentDraftMessage(inv.candidateId)
-    if (shared !== null) setMessage(shared)
-    else if (tpl.message) setMessage(resolveTemplate(tpl.message, vars))
+    if (shared !== null) {
+      setMessage(shared)
+    } else {
+      const seeded = buildClientMessage({
+        firstName: firstNameOf(contactName, inv.clientName),
+        month: monthName,
+        payMethod,
+        zelleEmail,
+      })
+      setMessage(seeded || (tpl.message ? resolveTemplate(tpl.message, vars) : ""))
+    }
     setCc(parseEmails(clientData?.invoicingCcEmail || ""))
     const def = clientData?.invoicingEmail || clientData?.communicationEmail || pool[0]
     setTo(def ? [def] : [])

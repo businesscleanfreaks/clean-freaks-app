@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react"
 import useSWR from "swr"
-import { X, Check, Plus, Loader2 } from "lucide-react"
+import { X, Check, PlusCircle, Loader2 } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { showError } from "@/lib/toast"
 import {
@@ -180,16 +180,26 @@ export function AdjustmentsPanel({
       )}
 
       {formOpen ? (
-        <div ref={formRef} className="mt-3 rounded-[10px] border border-stone-200 bg-stone-50 p-3">
-          <div className="flex flex-wrap gap-1.5">
+        <div
+          ref={formRef}
+          className="mt-3 rounded-[14px] p-[14px_15px]"
+          style={{ border: "1.5px solid #dcdff2", background: "#fafbff", padding: "14px 15px" }}
+        >
+          <div className="mb-[11px] text-[14px] font-bold" style={{ color: "#3b4380" }}>
+            Add a credit or charge
+          </div>
+          <div className="flex flex-wrap gap-[7px]">
             {ADJUSTMENT_MODES.map(m => (
               <button
                 key={m}
                 type="button"
                 onClick={() => { setMode(m); setAmount(m === "COMP" ? String(perClean) : "") }}
-                className={`rounded-full border px-3 py-1.5 text-[12px] font-bold transition-colors ${
-                  mode === m ? "border-indigo-600 bg-indigo-600 text-white" : "border-stone-300 bg-white text-stone-600 hover:bg-stone-100"
-                }`}
+                className="rounded-[20px] px-3 py-1.5 text-[12px] font-bold transition-colors"
+                style={
+                  mode === m
+                    ? { background: "#4f46e5", color: "#fff", border: "1.5px solid #4f46e5" }
+                    : { background: "#fff", color: "#4b5563", border: "1.5px solid #d7dbe0" }
+                }
               >
                 {MODE_LABELS[m]}
               </button>
@@ -258,7 +268,8 @@ export function AdjustmentsPanel({
                 type="button"
                 onClick={apply}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#15793f] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#0f5a36] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-[9px] px-4 py-[9px] text-[12.5px] font-bold text-white transition-opacity hover:opacity-95 disabled:opacity-50"
+                style={{ background: "#4f46e5" }}
               >
                 {busy && <Loader2 className="h-3 w-3 animate-spin" />}
                 {isCharge(mode) ? "Add charge" : "Add credit"}
@@ -270,10 +281,11 @@ export function AdjustmentsPanel({
         <button
           type="button"
           onClick={openForm}
-          className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-stone-500 transition-colors hover:text-stone-800"
+          className="mt-2.5 inline-flex items-center gap-[7px] text-[12.5px] font-bold transition-opacity hover:opacity-80"
+          style={{ color: "#4f46e5" }}
         >
-          <Plus className="h-3.5 w-3.5" />
-          Add a credit, discount, or charge
+          <PlusCircle className="h-[13px] w-[13px]" />
+          Add credit, discount, or charge
         </button>
       )}
     </section>
