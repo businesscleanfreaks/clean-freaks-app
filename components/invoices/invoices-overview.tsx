@@ -5,7 +5,17 @@ import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal, Play, Check, Zap, Search } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
-import { showSuccess, showError } from "@/lib/toast"
+import { showSuccess, showError, showUndoToast } from "@/lib/toast"
+import { LedgerHeader } from "./ledger-header"
+import {
+  DEFAULT_COL_ORDER,
+  gridTemplate,
+  loadColOrder,
+  saveColOrder,
+  sortRows,
+  type ColumnKey,
+  type SortDir,
+} from "@/lib/ledger-columns"
 import { MatchPaymentsPanel } from "./match-payments-panel"
 import { BillingScheduleSheet } from "./billing-schedule-sheet"
 import { RowOverflowMenu, buildRowMenu } from "./row-overflow-menu"
@@ -60,10 +70,15 @@ const KIND_STYLE: Record<string, { bg: string; color: string }> = {
 }
 
 /** Instant dark tooltip — the design explicitly rejects slow native `title`. */
-function Tip({ text, children }: { text: string; children: React.ReactNode }) {
+function Tip({ text, style, children }: {
+  text: string
+  /** Lets a caller place the tip in a grid slot. */
+  style?: React.CSSProperties
+  children: React.ReactNode
+}) {
   const [show, setShow] = useState(false)
   return (
-    <span className="relative inline-flex" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <span className="relative inline-flex" style={style} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       {children}
       {show && (
         <span className="pointer-events-none absolute bottom-[calc(100%+7px)] left-1/2 z-30 w-max max-w-[230px] -translate-x-1/2 rounded-lg bg-[#101828] px-2.5 py-1.5 text-[11.5px] font-semibold leading-snug text-white shadow-lg">
@@ -103,6 +118,12 @@ export function InvoicesOverview() {
   const toMatch = inbox?.count ?? 0
 
   const [query, setQuery] = useState("")
+
+  // Column order and sort are the VA's own layout, kept between visits.
+  // Read after mount so the server and first client render agree.
+  const [colOrder, setColOrder] = useState<ColumnKey[]>(DEFAULT_COL_ORDER)
+  const [sort, setSort] = useState<{ key: ColumnKey; dir: SortDir }>({ key: "client", dir: 1 })
+  useEffect(() => { setColOrder(loadColOrder()) }, [])
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
 
@@ -121,8 +142,20 @@ export function InvoicesOverview() {
           }).then(r => r.ok).catch(() => false),
         ),
       )
-      const ok = results.filter(Boolean).length
-      if (ok === ids.length) showSuccess(`${ok} marked paid`)
+      const done = ids.filter((_, i) => results[i])
+      const ok = done.length
+      // Undo reverts only the rows that actually flipped, and puts each one
+      // back where it was rather than blanket-SENT.
+      const undo = async () => {
+        const prior = new Map((data?.rows ?? []).map(r => [r.id, r.status]))
+        await Promise.all(done.map(id =>
+          fetch(`/api/invoices/${id}/mark-paid?to=${prior.get(id) === "DRAFT" ? "DRAFT" : "SENT"}`, {
+            method: "DELETE",
+          }).catch(() => null),
+        ))
+        mutate()
+      }
+      if (ok === ids.length) showUndoToast(`${ok} marked paid`, undo)
       else if (ok === 0) showError("Could not mark those paid")
       else showError(`${ok} of ${ids.length} marked paid · the rest failed`)
       setChecked(new Set())
@@ -139,7 +172,16 @@ export function InvoicesOverview() {
       r.clientName.toLowerCase().includes(q) || r.invoiceNumber.toLowerCase().includes(q),
     )
   }, [data, query])
-  const visible = useMemo(() => filterByTab(rows, tab), [rows, tab])
+  // Grid slot per column, so a reordered header carries the cells with it.
+  const slot = useMemo(() => {
+    const m = {} as Record<ColumnKey, number>
+    colOrder.forEach((k, i) => { m[k] = i + 1 })
+    return m
+  }, [colOrder])
+  const visible = useMemo(
+    () => sortRows(filterByTab(rows, tab), sort.key, sort.dir),
+    [rows, tab, sort],
+  )
   const stats = data?.stats
   const counts = data?.counts
   const toSendCount = counts?.["To send"] ?? 0
@@ -154,7 +196,11 @@ export function InvoicesOverview() {
         const err = await res.json().catch(() => null)
         throw new Error(err?.error || "Could not update clearing")
       }
-      showSuccess(row.clearing ? "No longer clearing" : "Marked as clearing")
+      showUndoToast(row.clearing ? "No longer clearing" : "Marked as clearing", async () => {
+        await fetch(`/api/invoices/${row.id}/clearing`, { method: row.clearing ? "POST" : "DELETE" })
+          .catch(() => null)
+        mutate()
+      })
       mutate()
     } catch (e) {
       showError(e instanceof Error ? e.message : "Could not update clearing")
@@ -371,17 +417,16 @@ export function InvoicesOverview() {
 
       {/* Table */}
       <div className="mt-[14px] overflow-hidden rounded-[13px] border border-[#e4e7ec] bg-white">
-        <div className="grid grid-cols-[18px_minmax(200px,1fr)_104px_110px_136px_120px_132px] items-center gap-3 border-b border-[#eef0f3] bg-[#fbfcfd] px-5 py-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#7d8795]">
+        <LedgerHeader
+          order={colOrder}
+          sort={sort}
+          onSort={setSort}
+          onReorder={next => { setColOrder(next); saveColOrder(next) }}
+        >
           <button type="button" onClick={toggleAll} aria-label="Select all invoices" className="flex">
             <CheckBox checked={allChecked} />
           </button>
-          <span>Client ↑</span>
-          <span>Type</span>
-          <span className="text-right">Amount</span>
-          <span>Status</span>
-          <span>Payment due</span>
-          <span className="text-right">Action</span>
-        </div>
+        </LedgerHeader>
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-[#98a2b3]">
@@ -402,21 +447,26 @@ export function InvoicesOverview() {
                 tabIndex={0}
                 onClick={() => router.push(`/invoices/${row.id}`)}
                 onKeyDown={e => { if (e.key === "Enter") router.push(`/invoices/${row.id}`) }}
-                className="irow grid cursor-pointer grid-cols-[18px_minmax(200px,1fr)_104px_110px_136px_120px_132px] items-center gap-3 border-b border-[#f4f5f7] px-5 py-3 transition-colors last:border-b-0"
+                className="irow grid cursor-pointer items-center gap-3 border-b border-[#f4f5f7] px-5 py-3 transition-colors last:border-b-0"
                 // Inline rather than an arbitrary Tailwind class: the value is
-                // one the JIT has no other reason to emit.
-                style={{ background: checked.has(row.id) ? "#f3f9f5" : "#fff" }}
+                // one the JIT has no other reason to emit. The tracks follow
+                // the reordered columns; each cell claims its slot with `order`.
+                style={{
+                  background: checked.has(row.id) ? "#f3f9f5" : "#fff",
+                  gridTemplateColumns: gridTemplate(colOrder),
+                }}
               >
                 <button
                   type="button"
                   onClick={e => { e.stopPropagation(); toggleRow(row.id) }}
                   aria-label={`Select ${row.clientName}`}
                   className="flex"
+                  style={{ order: 0 }}
                 >
                   <CheckBox checked={checked.has(row.id)} />
                 </button>
 
-                <div className="min-w-0">
+                <div className="min-w-0" style={{ order: slot.client }}>
                   <div className="truncate text-[13.5px] font-bold tracking-[-0.01em] text-[#101828]">{row.clientName}</div>
                   <div className="mt-px truncate text-[11.5px] text-[#7d8795]">
                     {row.subtext ?? row.invoiceNumber}
@@ -425,16 +475,17 @@ export function InvoicesOverview() {
 
                 <span
                   className="w-max rounded-full px-2 py-0.5 text-[10.5px] font-bold"
-                  style={{ background: kind.bg, color: kind.color }}
+                  style={{ background: kind.bg, color: kind.color, order: slot.type }}
                 >
                   {row.kind}
                 </span>
 
-                <span className="text-right text-[13.5px] font-bold tabular-nums text-[#101828]">
+                <span className="text-right text-[13.5px] font-bold tabular-nums text-[#101828]" style={{ order: slot.amount }}>
                   {formatCurrency(row.totalAmount)}
                 </span>
 
                 <Tip
+                  style={{ order: slot.status }}
                   text={
                     row.clearing
                       ? "Payment is on its way. ACH and checks take about 5 to 7 days to land."
@@ -453,11 +504,11 @@ export function InvoicesOverview() {
                   </span>
                 </Tip>
 
-                <span className="text-[12px] tabular-nums text-[#475467]">
+                <span className="text-[12px] tabular-nums text-[#475467]" style={{ order: slot.due }}>
                   {row.ledgerStatus === "Sent: Paid" ? `Paid ${shortDate(row.datePaid)}` : shortDate(row.dateDue)}
                 </span>
 
-                <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-end gap-1" style={{ order: 99 }} onClick={e => e.stopPropagation()}>
                   <RowAction
                     row={row}
                     onOpen={() => router.push(`/invoices/${row.id}`)}

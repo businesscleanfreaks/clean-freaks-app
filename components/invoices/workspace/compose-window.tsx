@@ -207,6 +207,33 @@ export function ComposeWindow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inv.candidateId, templateData, clientData, pool.join(",")])
 
+  /**
+   * Throw away what is in the box and rebuild the message from the template —
+   * the escape hatch when a restored draft has drifted (stale month, wrong
+   * name) and fixing it by hand is more work than starting over.
+   */
+  const startFresh = () => {
+    const vars = {
+      client: inv.clientName,
+      month: monthLabel,
+      monthShort: monthLabel,
+      total: formatCurrency(inv.total),
+      dueDate,
+      invoice_number: invoiceNumber,
+    }
+    const tpl = templateData || { subject: DEFAULT_SUBJECT, message: "" }
+    const fresh = buildClientMessage({
+      firstName: firstNameOf(contactName, inv.clientName),
+      month: monthName,
+      payMethod,
+      zelleEmail,
+    }) || (tpl.message ? resolveTemplate(tpl.message, vars) : "")
+    setSubject(resolveTemplate(tpl.subject || DEFAULT_SUBJECT, vars))
+    setMessage(fresh)
+    publishDraftMessage(inv.candidateId, fresh)
+    markTouched()
+  }
+
   // Stay in step with the "Client will receive" pane behind the window.
   useEffect(() => subscribeDraftMessage(inv.candidateId, next => setMessage(next)), [inv.candidateId])
 
@@ -519,6 +546,14 @@ export function ComposeWindow({
                 To <strong style={{ color: "#4b5563", fontWeight: 700 }}>{toName}</strong>
                 {to[0] ? ` · ${to[0]}` : ""}
               </span>
+              <button
+                type="button"
+                onClick={startFresh}
+                className="ml-auto flex-none text-[11.5px] font-bold"
+                style={{ color: "#15793f" }}
+              >
+                Start fresh
+              </button>
             </div>
 
             <div style={{ background: "#fff", border: "1px solid #e7ebef", borderRadius: 14, padding: 20 }}>

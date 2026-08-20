@@ -91,3 +91,25 @@ export function computeDefaultDueDate(
   if (term === 'MONTH_END') return endOfMonth(from)
   return addDays(from, TERM_DAYS[term] ?? 0)
 }
+
+/**
+ * The due date for a new invoice, preferring what this client agreed to.
+ *
+ * Settings -> Invoice defaults are exactly that — a default. A client with
+ * their own terms on file has them for a reason (usually because they asked),
+ * so those win; the property-type default only fills the gap for clients who
+ * have never had terms set.
+ *
+ * An unrecognised stored term falls through to the default rather than
+ * silently becoming due-on-receipt.
+ */
+export function resolveDueDate(
+  client: { paymentTerms?: string | null; propertyType?: string | null },
+  from: Date,
+  defaults: InvoiceDefaultsData,
+): Date {
+  const own = client.paymentTerms?.trim().toUpperCase()
+  if (own === 'MONTH_END') return endOfMonth(from)
+  if (own && own in TERM_DAYS) return addDays(from, TERM_DAYS[own])
+  return computeDefaultDueDate(client.propertyType, from, defaults)
+}

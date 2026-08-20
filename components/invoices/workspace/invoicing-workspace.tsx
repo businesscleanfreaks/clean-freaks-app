@@ -15,6 +15,10 @@ import {
 } from "./use-workspace"
 import { ComposeWindow } from "./compose-window"
 import { AdjustmentsPanel } from "./adjustments-panel"
+import { InvoiceFooterAndNote } from "./invoice-footer-note"
+import { ScrollWithMoreBelow } from "./scroll-more"
+import { PreviewModal, previewMessage } from "./preview-modal"
+import { loadComposeDraft } from "./use-draft-message"
 import { SentTracking } from "./sent-tracking"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
@@ -539,6 +543,8 @@ function DetailPanel({ inv, month, onCompose }: {
     fetcher,
   )
   const blockedReason = sendBlockedReason(adjData?.adjustments ?? [])
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const { data: emailSettings } = useSWR(previewOpen ? "/api/settings/email" : null, fetcher)
   const [savingDraft, setSavingDraft] = useState(false)
   const [savingTerms, setSavingTerms] = useState(false)
 
@@ -750,7 +756,7 @@ function DetailPanel({ inv, month, onCompose }: {
       </div>
 
       {/* Scrollable detail (Ticket 2): schedule · changes · headline · calendar */}
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+      <ScrollWithMoreBelow className="h-full space-y-5 overflow-y-auto px-5 py-4" resetKey={inv.candidateId}>
         {/* Service summary — what this invoice is actually for, in plain
             English. Replaces a key-value block that printed schedule enums
             ("EVERY_4_WEEKS") straight at the reviewer. */}
@@ -888,9 +894,16 @@ function DetailPanel({ inv, month, onCompose }: {
               billingType={inv.billingType}
               cleanCount={inv.completedCount || inv.jobCount || 0}
             />
+
+            {/* What prints at the bottom of the invoice. */}
+            <InvoiceFooterAndNote
+              clientId={inv.clientId}
+              invoiceId={inv.existingInvoiceId ?? null}
+              initialNote={sentInvoice?.notes ?? null}
+            />
           </>
         )}
-      </div>
+      </ScrollWithMoreBelow>
 
       {/* Primary action. Pinned rather than in the scroller: this is the one
           thing the reviewer is here to do, and it used to sit below the fold. */}
@@ -946,17 +959,14 @@ function DetailPanel({ inv, month, onCompose }: {
                   action is obvious without reading the notice above. */}
               {blockedReason ? "Approve adjustments to send" : "Review email & send"}
             </button>
-            <a
-              href={inv.existingInvoiceId ? `/api/invoices/${inv.existingInvoiceId}/generate-pdf` : undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={inv.existingInvoiceId ? "Open the full invoice" : "Available once the invoice exists"}
-              className={`inline-flex flex-none items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2.5 text-[13px] font-semibold text-stone-600 transition-colors hover:bg-stone-50 ${
-                inv.existingInvoiceId ? "" : "pointer-events-none opacity-50"
-              }`}
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              title="See the email and the invoice exactly as the client gets them"
+              className="inline-flex flex-none items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2.5 text-[13px] font-semibold text-stone-600 transition-colors hover:bg-stone-50"
             >
               <Eye size={15} /> Preview full invoice
-            </a>
+            </button>
           </div>
 
           <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-stone-400">
@@ -972,6 +982,28 @@ function DetailPanel({ inv, month, onCompose }: {
           </button>
         </div>
       )}
+
+      {/* Last look before sending: the covering email and the invoice itself,
+          both read-only. */}
+      <PreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        from={emailSettings?.fromEmail || "invoicing@thecleanfreaks.co"}
+        to={
+          loadComposeDraft(inv.candidateId)?.to[0]
+          || client?.invoicingEmail
+          || client?.communicationEmail
+          || ""
+        }
+        subject={
+          loadComposeDraft(inv.candidateId)?.subject
+          || `Invoice from The Clean Freaks · ${formatMonthLabel(month)}`
+        }
+        clientName={inv.clientName}
+        message={previewMessage(inv.candidateId, "")}
+      >
+        <InvoicePreview inv={inv} month={month} bare />
+      </PreviewModal>
     </div>
   )
 }
@@ -979,7 +1011,12 @@ function DetailPanel({ inv, month, onCompose }: {
 // The PDF the client actually receives — rendered on demand through the same server
 // generator (ensureInvoiceId → generate-pdf), so the preview is exact. Until that's
 // generated it shows a quick teal approximation so you can read it without creating it.
-function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }) {
+function InvoicePreview({ inv, month, bare = false }: {
+  inv: WorkspaceInvoice
+  month: string
+  /** Drops the pane chrome so the document can sit inside the preview modal. */
+  bare?: boolean
+}) {
   const [pdfId, setPdfId] = useState<string | null>(inv.existingInvoiceId || null)
   const [generating, setGenerating] = useState(false)
   const [pdfOpen, setPdfOpen] = useState(false)
@@ -1021,11 +1058,11 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
   return (
     // Scroll (both axes) rather than crush the invoice: the card keeps a minimum
     // readable width so its columns never overlap when the panel is narrow.
-    <div className="min-h-0 flex-1 overflow-auto p-6">
-      <div className="mx-auto w-full min-w-[400px] max-w-[540px]">
+    <div className={bare ? "" : "min-h-0 flex-1 overflow-auto p-6"}>
+      <div className={bare ? "mx-auto w-full max-w-[456px]" : "mx-auto w-full min-w-[400px] max-w-[540px]"}>
         {/* Titled the way the design titles it: the point of this pane is that
             it is the client's view, not ours. */}
-        <div className="mb-2 flex items-center justify-between gap-3">
+        <div className={`mb-2 flex items-center justify-between gap-3 ${bare ? "hidden" : ""}`}>
           <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold tracking-[0.02em] text-[#8b95a1]">
             <FileText size={13} /> What your client receives
           </span>
@@ -1035,7 +1072,9 @@ function InvoicePreview({ inv, month }: { inv: WorkspaceInvoice; month: string }
             <FileText size={12} /> {generating ? "Preparing…" : pdfId ? "Open exact PDF" : "Exact PDF"}
           </button>
         </div>
-        <div className="rounded-md bg-white p-10 shadow-lg">
+        <div className={bare
+          ? "overflow-hidden rounded-[14px] border border-[#e7ebef] bg-white p-8 shadow-[0_1px_2px_rgba(16,24,40,.05)]"
+          : "rounded-md bg-white p-10 shadow-lg"}>
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">

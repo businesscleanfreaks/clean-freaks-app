@@ -5,7 +5,7 @@ import { createInvoiceSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
-import { getInvoiceDefaults, computeDefaultDueDate } from '@/lib/invoice-defaults'
+import { getInvoiceDefaults, resolveDueDate } from '@/lib/invoice-defaults'
 import { sendBlockedReason } from '@/lib/invoice-adjustments'
 import { invoiceCandidateKey } from '@/lib/invoice-candidate-key'
 import { isValidPeriod as isValidAdjPeriod } from '@/lib/invoice-overview'
@@ -324,12 +324,12 @@ export async function POST(request: Request) {
     // Generate invoice number
     const invoiceNumber = await generateInvoiceNumber()
 
-    // Resolve the due date: use the explicit one, otherwise fall back to the
-    // configured payment-terms default for this client's property type.
+    // Resolve the due date: an explicit one wins, then the client's own agreed
+    // terms, and only then the configured default for their property type.
     let resolvedDateDue: Date | null = dateDue ? new Date(dateDue + 'T12:00:00') : null
     if (!resolvedDateDue) {
       const invoiceDefaults = await getInvoiceDefaults()
-      resolvedDateDue = computeDefaultDueDate(client.propertyType, new Date(), invoiceDefaults)
+      resolvedDateDue = resolveDueDate(client, new Date(), invoiceDefaults)
     }
 
     // Identify which candidate this invoice is, so a retry recognises itself.

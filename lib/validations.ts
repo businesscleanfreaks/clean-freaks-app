@@ -192,6 +192,8 @@ export const createInvoiceSchema = z.object({
 export const updateInvoiceSchema = z.object({
   status: z.enum(['DRAFT', 'SENT', 'PAID']).optional(),
   showPaymentOptions: z.boolean().optional(),
+  /** Free-text note printed on the invoice. Empty string clears it. */
+  notes: z.string().max(2000, 'Note is too long').optional().nullable(),
 })
 
 // Subcontractor schemas

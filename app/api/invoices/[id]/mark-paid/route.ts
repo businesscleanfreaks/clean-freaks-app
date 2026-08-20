@@ -6,6 +6,7 @@ import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { markInvoicePaidSchema, formatZodErrors } from '@/lib/validations'
 import { markInvoicePaid } from '@/lib/mark-invoice-paid'
+import { unmarkInvoicePaid } from '@/lib/unmark-invoice-paid'
 
 export async function POST(
   request: Request,
@@ -53,5 +54,41 @@ export async function POST(
   } catch (error) {
     logger.error('Error marking invoice as paid:', error)
     return handleApiError(error, 'Failed to mark invoice as paid')
+  }
+}
+
+/**
+ * Undo a mark-paid. Backs the ledger's "Undo" on the paid toast, so a misclick
+ * costs one click rather than a trip through the invoice record.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> | { id: string } }
+) {
+  try {
+    await requireAuth()
+
+    const resolvedParams = await Promise.resolve(params)
+    const url = new URL(request.url)
+    const to = url.searchParams.get('to') === 'DRAFT' ? 'DRAFT' : 'SENT'
+
+    const result = await unmarkInvoicePaid(prisma, resolvedParams.id, to)
+
+    if (result.status === 'NOT_FOUND') {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    }
+
+    revalidatePath('/invoices')
+    revalidatePath(`/invoices/${resolvedParams.id}`)
+    revalidatePath(`/view-invoice/[token]`)
+
+    return NextResponse.json({
+      success: true,
+      reverted: result.status === 'REVERTED',
+      status: result.status === 'REVERTED' ? result.to : undefined,
+    })
+  } catch (error) {
+    logger.error('Error reverting mark-paid:', error)
+    return handleApiError(error, 'Failed to undo mark as paid')
   }
 }

@@ -67,7 +67,7 @@ export async function PUT(
       )
     }
     
-    const { status, showPaymentOptions } = validationResult.data
+    const { status, showPaymentOptions, notes } = validationResult.data
     const confirmMismatch = body?.confirmMismatch === true
 
     // Pre-send guard: block marking a DRAFT as SENT if it no longer matches the
@@ -92,7 +92,8 @@ export async function PUT(
       }
     }
 
-    const updateData: { status?: string; showPaymentOptions?: boolean } = {}
+    const updateData: { status?: string; showPaymentOptions?: boolean; notes?: string | null } = {}
+    if (notes !== undefined) updateData.notes = notes?.trim() ? notes.trim() : null
     if (status !== undefined) updateData.status = status
     if (showPaymentOptions !== undefined) updateData.showPaymentOptions = showPaymentOptions
 
