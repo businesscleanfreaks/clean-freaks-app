@@ -104,6 +104,33 @@ export function InvoicesOverview() {
 
   const [query, setQuery] = useState("")
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  /** Mark every selected invoice paid. Reports partial failure rather than
+   *  claiming success for rows that did not take. */
+  const bulkMarkPaid = async () => {
+    const ids = [...checked]
+    setBulkBusy(true)
+    try {
+      const results = await Promise.all(
+        ids.map(id =>
+          fetch(`/api/invoices/${id}/mark-paid`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paymentMethod: "MANUAL", paymentNotes: "Marked paid from the ledger" }),
+          }).then(r => r.ok).catch(() => false),
+        ),
+      )
+      const ok = results.filter(Boolean).length
+      if (ok === ids.length) showSuccess(`${ok} marked paid`)
+      else if (ok === 0) showError("Could not mark those paid")
+      else showError(`${ok} of ${ids.length} marked paid · the rest failed`)
+      setChecked(new Set())
+      mutate()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
   const rows = useMemo(() => {
     const all = data?.rows ?? []
     const q = query.trim().toLowerCase()
@@ -342,30 +369,6 @@ export function InvoicesOverview() {
         </div>
       </div>
 
-      {/* What selection is for. Reviewing, never sending — the handoff is
-          explicit that a row's action is always review. */}
-      {checked.size > 0 && (
-        <div className="mt-[14px] flex items-center gap-3 rounded-[11px] border border-[#c7ebd3] bg-[#f1faf4] px-4 py-2.5">
-          <span className="text-[12.5px] font-bold text-[#15803d]">
-            {checked.size} selected
-          </span>
-          <button
-            type="button"
-            onClick={() => setChecked(new Set())}
-            className="text-[12px] font-semibold text-[#15803d]/70 transition-colors hover:text-[#15803d]"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push("/invoices/workspace")}
-            className="ml-auto rounded-[8px] bg-[#15793f] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#0f5a36]"
-          >
-            Review {checked.size} in the workspace
-          </button>
-        </div>
-      )}
-
       {/* Table */}
       <div className="mt-[14px] overflow-hidden rounded-[13px] border border-[#e4e7ec] bg-white">
         <div className="grid grid-cols-[18px_minmax(200px,1fr)_104px_110px_136px_120px_132px] items-center gap-3 border-b border-[#eef0f3] bg-[#fbfcfd] px-5 py-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#7d8795]">
@@ -493,6 +496,34 @@ export function InvoicesOverview() {
         onClose={() => setNewInvoiceOpen(false)}
         onCreated={() => mutate()}
       />
+
+      {/* Bulk bar. Marking paid is the only bulk action the design offers —
+          there is deliberately no bulk send, because every invoice is reviewed
+          one at a time. */}
+      {checked.size > 0 && (
+        <div
+          className="fixed bottom-6 left-1/2 z-[55] flex -translate-x-1/2 items-center gap-3.5 rounded-[13px] py-2.5 pl-[18px] pr-3 text-white shadow-[0_12px_34px_rgba(16,24,40,0.3)]"
+          style={{ background: "#101828" }}
+        >
+          <span className="text-[13px] font-bold">{checked.size} selected</span>
+          <span className="h-5 w-px" style={{ background: "#33405a" }} />
+          <button
+            type="button"
+            onClick={bulkMarkPaid}
+            disabled={bulkBusy}
+            className="rounded-[9px] bg-white px-3.5 py-2 text-[12.5px] font-bold text-[#101828] transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {bulkBusy ? "Marking…" : "Mark paid"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setChecked(new Set())}
+            className="px-2 py-2 text-[12.5px] font-bold text-[#7d8795] transition-colors hover:text-white"
+          >
+            Clear
+          </button>
+        </div>
+      )}
     </div>
   )
 }

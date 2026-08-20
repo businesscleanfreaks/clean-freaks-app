@@ -934,10 +934,17 @@ function DetailPanel({ inv, month, onCompose }: {
               onClick={() => onCompose("send")}
               disabled={!!blockedReason}
               title={blockedReason || undefined}
-              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold text-white transition-opacity hover:opacity-95 disabled:opacity-60"
-              style={{ background: "#0f5a36" }}
+              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold transition-opacity hover:opacity-95"
+              style={
+                blockedReason
+                  ? { background: "#cfd9d3", color: "#7c8a82", cursor: "not-allowed" }
+                  : { background: "#0f5a36", color: "#fff", boxShadow: "0 2px 6px rgba(15,90,54,.26)" }
+              }
             >
-              <Send size={15} /> Review email &amp; send
+              <Send size={15} />
+              {/* The design puts the blocker in the button itself, so the next
+                  action is obvious without reading the notice above. */}
+              {blockedReason ? "Approve adjustments to send" : "Review email & send"}
             </button>
             <a
               href={inv.existingInvoiceId ? `/api/invoices/${inv.existingInvoiceId}/generate-pdf` : undefined}
