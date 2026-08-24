@@ -6,6 +6,7 @@ import { getBillingStartDate } from "@/lib/billing-settings"
 import { getEffectiveCadence, isJobPayable, getPayableStatusText } from "@/lib/payment-cadence"
 import type { CadenceSubcontractorInfo, CadenceScheduleInfo, CadenceJobInfo } from "@/lib/payment-cadence"
 import { buildSubcontractorPayLedger } from "@/lib/payout-calculator"
+import { applyLargePayoutHold } from "@/lib/payout-threshold"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 
 export const dynamic = 'force-dynamic'
@@ -150,7 +151,13 @@ export async function GET(request: Request) {
         subcontractorId: { in: subIds },
         subcontractorPaid: false,
         ...(billingStartDate ? { date: { gte: billingStartDate } } : {}),
-        OR: [{ status: 'COMPLETED' }, { status: 'SCHEDULED', date: { lte: today } }],
+        OR: [
+          { status: 'COMPLETED' },
+          { status: 'SCHEDULED', date: { lte: today } },
+          // A cancelled clean pays nothing UNLESS a gas fee was charged, which
+          // is passed to the cleaner in full.
+          { status: 'CANCELLED', cancellationFee: { gt: 0 } },
+        ],
       },
       include: {
         location: { include: { client: true } },
@@ -218,9 +225,23 @@ export async function GET(request: Request) {
             let reason = waitingJob
               ? getPayableStatusText(waitingJob as unknown as CadenceJobInfo, cadenceSub, scheduleFor(waitingJob.scheduleId))
               : 'Ready to pay'
+
+            // A large balance overrides the cadence: past the threshold the
+            // business stops floating the gap and waits for the client's money.
+            // Applied before fast-pay so it cannot be undercut by it.
+            // Paid means an invoice covers this work AND none of the covering
+            // invoices are outstanding. Work that was never invoiced is not
+            // paid work, so an empty list on its own does not clear the hold.
+            const coveringLineItems = groupJobs.flatMap((job) => job.invoiceLineItems)
+            const clientHasPaid = coveringLineItems.length > 0 && clientInvoiceIds.length === 0
+            const largeHold = applyLargePayoutHold({ owed: g.owedAmount, clientHasPaid })
+            if (largeHold.held) {
+              status = 'waiting'
+              reason = largeHold.reason
+            }
             // Fast-pay (residential): a ready account flips to "Pay today" once its
             // latest clean has gone past 72h unpaid.
-            if (sub.fastPay && status === 'safe') {
+            if (sub.fastPay && status === 'safe' && !largeHold.held) {
               const payableDates = groupJobs.filter(payableOf).map((j) => j.date.getTime())
               if (payableDates.length > 0) {
                 const overdue = Date.now() - Math.max(...payableDates) >= 3 * 86400000

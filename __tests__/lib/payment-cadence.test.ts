@@ -75,7 +75,7 @@ describe('payment timing - residential and commercial payout rules', () => {
     expect(isJobPayable(job({ date: new Date('2026-05-29T12:00:00Z') }), residentialFastPay, null, NOW)).toBe(true)
   })
 
-  it('commercial paid-or-7th work becomes payable when the client pays', () => {
+  it('commercial paid-or-5th work becomes payable when the client pays', () => {
     const commercial = sub({ paymentCadence: 'COMMERCIAL_CLIENT_PAID_OR_7TH' })
     const unpaidInvoice = job({
       date: new Date('2026-05-20T12:00:00Z'),
@@ -91,10 +91,20 @@ describe('payment timing - residential and commercial payout rules', () => {
     expect(isJobPayable(paidInvoice, commercial, null, NOW)).toBe(true)
   })
 
-  it('commercial paid-or-7th work falls back to the 7th of the next month', () => {
+  it('commercial work falls back to the 5th of the next month · Josh 2026-08-24', () => {
     const commercial = sub({ paymentCadence: 'COMMERCIAL_CLIENT_PAID_OR_7TH' })
     const unpaid = job({ date: new Date('2026-05-20T12:00:00Z') })
-    expect(isJobPayable(unpaid, commercial, null, new Date('2026-06-06T12:00:00Z'))).toBe(false)
-    expect(isJobPayable(unpaid, commercial, null, new Date('2026-06-07T12:00:00Z'))).toBe(true)
+    expect(isJobPayable(unpaid, commercial, null, new Date('2026-06-04T12:00:00Z'))).toBe(false)
+    expect(isJobPayable(unpaid, commercial, null, new Date('2026-06-05T12:00:00Z'))).toBe(true)
+  })
+
+  it('pays commercial work on the 5th even though the client has not paid', () => {
+    const commercial = sub({ paymentCadence: 'COMMERCIAL_CLIENT_PAID_OR_7TH' })
+    const unpaid = job({
+      date: new Date('2026-05-20T12:00:00Z'),
+      invoiced: true,
+      invoiceLineItems: [{ invoice: { status: 'SENT' } }],
+    })
+    expect(isJobPayable(unpaid, commercial, null, new Date('2026-06-05T12:00:00Z'))).toBe(true)
   })
 })

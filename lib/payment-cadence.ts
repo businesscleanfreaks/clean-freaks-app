@@ -27,7 +27,7 @@ export const CADENCE_LABELS: Record<string, string> = {
   END_OF_MONTH: 'End of Month',
   SEMI_MONTHLY: 'Semi-Monthly',
   RESIDENTIAL_7_DAY: 'Residential 7-Day',
-  COMMERCIAL_CLIENT_PAID_OR_7TH: 'Commercial Paid/7th',
+  COMMERCIAL_CLIENT_PAID_OR_7TH: 'Commercial paid/5th',
   ON_CLEANER_INVOICE: 'On Cleaner Invoice',
 }
 
@@ -37,7 +37,7 @@ export const CADENCE_DESCRIPTIONS: Record<string, string> = {
   END_OF_MONTH: 'Payable after the calendar month containing the job ends',
   SEMI_MONTHLY: 'Jobs from 1st–15th payable after the 20th; jobs from 16th–end payable after the 5th of next month',
   RESIDENTIAL_7_DAY: 'Residential work is payable 7 days after service; fast-pay releases after 72 hours',
-  COMMERCIAL_CLIENT_PAID_OR_7TH: 'Commercial work is payable when the client pays or by the 7th of the next month, whichever comes first',
+  COMMERCIAL_CLIENT_PAID_OR_7TH: 'Commercial work is payable when the client pays or by the 5th of the next month, whichever comes first',
   ON_CLEANER_INVOICE: 'Only payable when manually released (cleaner must submit their own invoice first)',
 }
 
@@ -118,11 +118,18 @@ function isFastPayReady(
   return now.getTime() - jobDate.getTime() >= 3 * 86400000
 }
 
-function seventhOfNextMonth(jobDate: Date): Date {
+/**
+ * Commercial work is paid shortly after the month it was done — Josh's rule is
+ * the 3rd to the 5th of the following month, so the 5th is the outer bound we
+ * hold ourselves to.
+ */
+export const COMMERCIAL_PAYOUT_DAY = 5
+
+function commercialPayoutDate(jobDate: Date): Date {
   const nextMonth = addMonths(jobDate, 1)
-  const seventh = setDate(new Date(nextMonth), 7)
-  seventh.setHours(0, 0, 0, 0)
-  return seventh
+  const day = setDate(new Date(nextMonth), COMMERCIAL_PAYOUT_DAY)
+  day.setHours(0, 0, 0, 0)
+  return day
 }
 
 /**
@@ -183,7 +190,7 @@ export function isJobPayable(
       return isFastPayReady(jobDate, subcontractor, now) || now >= addDays(jobDate, 7)
 
     case 'COMMERCIAL_CLIENT_PAID_OR_7TH':
-      return isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= seventhOfNextMonth(jobDate)
+      return isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= commercialPayoutDate(jobDate)
 
     case 'ON_CLEANER_INVOICE':
       // Never auto-payable — requires manual release
@@ -258,8 +265,8 @@ export function getPayableStatusText(
     case 'COMMERCIAL_CLIENT_PAID_OR_7TH': {
       const jobDate = new Date(job.date)
       const now = new Date()
-      if (isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= seventhOfNextMonth(jobDate)) return 'Ready to pay'
-      return 'Awaiting client payment or 7th of next month'
+      if (isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= commercialPayoutDate(jobDate)) return 'Ready to pay'
+      return `Awaiting client payment or the ${COMMERCIAL_PAYOUT_DAY}th of next month`
     }
 
     case 'ON_CLEANER_INVOICE':

@@ -62,3 +62,54 @@ describe('cleaner payout — add-on credit rules (who actually gets paid)', () =
     expect(buildSubcontractorPayLedger([j]).totalOwed).toBe(110)
   })
 })
+
+describe('cleaner payout — cancelled cleans (Josh 2026-08-24)', () => {
+  const perClean = (over: Record<string, any> = {}) =>
+    job({ subcontractorRate: 80, schedule: { subcontractorPayType: 'PER_CLEAN' }, ...over })
+
+  it('pays the gas fee, not the rate, for a cancelled clean', () => {
+    const jobs = [perClean({ id: 'a', status: 'CANCELLED', cancellationFee: 20 })]
+    expect(buildSubcontractorPayLedger(jobs).totalOwed).toBe(20)
+  })
+
+  it('pays nothing for a cancelled clean with no fee charged', () => {
+    const jobs = [perClean({ id: 'a', status: 'CANCELLED', cancellationFee: null })]
+    expect(buildSubcontractorPayLedger(jobs).totalOwed).toBe(0)
+  })
+
+  it('adds the fee alongside the cleans that did happen', () => {
+    const jobs = [
+      perClean({ id: 'a' }),
+      perClean({ id: 'b', status: 'CANCELLED', cancellationFee: 20 }),
+    ]
+    expect(buildSubcontractorPayLedger(jobs).totalOwed).toBe(100) // 80 + 20
+  })
+
+  it('ignores add-ons on a cancelled clean · they did not happen either', () => {
+    const jobs = [perClean({
+      id: 'a',
+      status: 'CANCELLED',
+      cancellationFee: 20,
+      addOnServices: [{ subcontractorRate: 50 }],
+    })]
+    expect(buildSubcontractorPayLedger(jobs).totalOwed).toBe(20)
+  })
+
+  it('still owes the flat monthly rate plus the fee when cleans happened', () => {
+    const jobs = [job({ id: 'a' }), job({ id: 'b', status: 'CANCELLED', cancellationFee: 20 })]
+    expect(buildSubcontractorPayLedger(jobs).totalOwed).toBe(320) // 300 + 20
+  })
+
+  it('a flat-rate month of nothing but cancellations owes the fees only', () => {
+    const jobs = [
+      job({ id: 'a', status: 'CANCELLED', cancellationFee: 20 }),
+      job({ id: 'b', status: 'CANCELLED', cancellationFee: 20 }),
+    ]
+    expect(buildSubcontractorPayLedger(jobs).totalOwed).toBe(40) // never the 300 rate
+  })
+
+  it('drops a cancelled clean once its fee has been paid out', () => {
+    const jobs = [perClean({ id: 'a', status: 'CANCELLED', cancellationFee: 20, subcontractorPaid: true })]
+    expect(buildSubcontractorPayLedger(jobs).totalOwed).toBe(0)
+  })
+})

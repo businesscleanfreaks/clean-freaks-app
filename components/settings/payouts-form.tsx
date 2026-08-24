@@ -23,7 +23,7 @@ const CADENCE_OPTIONS: { value: string; label: string }[] = [
   { value: "IMMEDIATE", label: "Right away (once the clean is done)" },
   { value: "AFTER_CLIENT_PAYS", label: "After the client pays" },
   { value: "RESIDENTIAL_7_DAY", label: "7 days after the clean (fast-pay after 72h)" },
-  { value: "COMMERCIAL_CLIENT_PAID_OR_7TH", label: "When the client pays, or by the 7th" },
+  { value: "COMMERCIAL_CLIENT_PAID_OR_7TH", label: "When the client pays, or by the 5th" },
   { value: "END_OF_MONTH", label: "End of the month" },
   { value: "SEMI_MONTHLY", label: "Twice a month" },
   { value: "ON_CLEANER_INVOICE", label: "Only when I release it manually" },

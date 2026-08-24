@@ -12,6 +12,7 @@ import { calculateDayPauseCredit, calculateVisitPauseCredit } from "@/lib/pause-
 import { showApiError, showError, showSuccess, showUndoToast } from "@/lib/toast"
 import { refreshCalendarData } from "./calendar-client"
 import type { AddOnService, JobWithFullRelations, Subcontractor } from "@/types"
+import { parseFeeInput, suggestedCancellationFee } from "@/lib/cancellation-fee"
 
 type QuickJob = JobWithFullRelations & {
   notes?: string | null
@@ -254,7 +255,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   const [editAddOnDesc, setEditAddOnDesc] = useState("")
   const [editAddOnClientRate, setEditAddOnClientRate] = useState("")
   const [editAddOnProviderRate, setEditAddOnProviderRate] = useState("")
-  const [cancelFee, setCancelFee] = useState("0")
+  const [cancelFee, setCancelFee] = useState("")
   const [pauseFrom, setPauseFrom] = useState("")
   const [pauseTo, setPauseTo] = useState("")
   const [pauseName, setPauseName] = useState("")
@@ -287,7 +288,9 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
     setServiceDays([new Date(job.date).getDay()])
     setServiceClientRate("")
     setServiceProviderRate("")
-    setCancelFee("0")
+    // Same-day cancellations get the standard gas fee offered; anything with
+    // notice opens empty, because no fee has been decided.
+    setCancelFee(suggestedCancellationFee(new Date(job.date)))
     const today = format(new Date(), "yyyy-MM-dd")
     const jobDate = format(new Date(job.date), "yyyy-MM-dd")
     const initialPauseFrom = jobDate >= today ? jobDate : today
@@ -597,7 +600,7 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
   const cancelSingleClean = async () => {
     setBusyAction("cancel-single")
     try {
-      const fee = Number(cancelFee)
+      const fee = parseFeeInput(cancelFee)
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1071,7 +1074,20 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
         </div>
         <DialogDescription className="px-6 pt-1 text-[13px] text-[#66758b]">{job.location.client.name}{job.scheduleId ? ' is recurring. How much should be cancelled?' : ' is a one-time clean.'}</DialogDescription>
         <div className="space-y-2.5 px-6 py-4">
-          <label className="mb-2 block text-[10px] font-bold text-[#718096]">Cancellation fee for this clean (optional)<input type="number" min="0" step="0.01" value={cancelFee} onChange={event => setCancelFee(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#d9e1ea] px-3 text-[13px]" /></label>
+          <label className="mb-2 block text-[10px] font-bold text-[#718096]">
+            Cancellation / gas fee for this clean (optional)
+            {/* Text + decimal, never `type=number`: a number input changes value
+                on scroll, which silently rewrites money the operator already set. */}
+            <input
+              type="text"
+              inputMode="decimal"
+              value={cancelFee}
+              onChange={event => setCancelFee(event.target.value)}
+              placeholder="0.00"
+              className="mt-1 h-10 w-full rounded-lg border border-[#d9e1ea] px-3 text-[13px]"
+            />
+            <span className="mt-1 block font-medium text-[#8a95a5]">Charged to the client and paid to the cleaner.</span>
+          </label>
           <button type="button" onClick={cancelSingleClean} disabled={Boolean(busyAction)} aria-busy={busyAction === 'cancel-single'} className="flex w-full items-center gap-3 rounded-xl border border-[#dfe5eb] px-4 py-3 text-left hover:bg-[#f8fafc] disabled:cursor-wait disabled:opacity-70">
             {busyAction === 'cancel-single' && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#078556]" />}
             <span><span className="block text-[14px] font-extrabold text-[#263246]">{busyAction === 'cancel-single' ? 'Cancelling clean...' : 'Cancel just this clean'}</span><span className="mt-0.5 block text-[11px] text-[#718096]">{format(new Date(job.date), 'EEE, MMM d')} only · the schedule continues</span></span>

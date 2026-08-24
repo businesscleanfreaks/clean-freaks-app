@@ -1,4 +1,5 @@
 import { format } from "date-fns"
+import { cleanerOwedForCancellation } from "./cancellation-fee"
 
 /** Add-on shape this ledger reads (a subset of AddOnService). */
 export interface PayLedgerAddOn {
@@ -20,6 +21,10 @@ export interface PayLedgerJob {
   subcontractorId?: string | null
   subcontractorRate: number
   subcontractorPaid: boolean
+  /** COMPLETED | SCHEDULED | CANCELLED. Absent on older callers. */
+  status?: string | null
+  /** Gas fee charged for a late cancellation, passed through to the cleaner. */
+  cancellationFee?: number | null
   location: {
     id: string
     name: string
@@ -64,6 +69,18 @@ export interface PayLedgerResult {
  */
 function addOnCreditsJobCleaner(a: PayLedgerAddOn, job: PayLedgerJob): boolean {
   return !a.vendorId && (!a.subcontractorId || a.subcontractorId === job.subcontractorId)
+}
+
+/**
+ * A cancelled clean earns no rate — nobody cleaned — but the gas fee charged
+ * to the client is passed to the cleaner in full. Add-ons did not happen
+ * either, so they are not counted.
+ */
+function owedForJob(job: PayLedgerJob): number {
+  if (job.status === 'CANCELLED') return cleanerOwedForCancellation(job.cancellationFee)
+  let total = job.subcontractorRate || 0
+  job.addOnServices?.forEach((a) => { if (addOnCreditsJobCleaner(a, job)) total += a.subcontractorRate || 0 })
+  return total
 }
 
 /**
@@ -125,23 +142,34 @@ export function buildSubcontractorPayLedger(jobs: PayLedgerJob[]): PayLedgerResu
         : (schedule?.defaultSubcontractorRate ?? firstJob.subcontractorRate)
 
       // For flat rate: owed = monthlyRate if ANY jobs are unpaid, else 0
-      const hasUnpaid = unpaidCount > 0
+      // The monthly rate is earned by cleans that actually happened, so a month
+      // holding nothing but cancellations owes the gas fees and no more.
+      const hasUnpaidClean = groupJobs.some((j) => !j.subcontractorPaid && j.status !== 'CANCELLED')
       let groupOwed = 0
-      if (hasUnpaid) {
+      if (hasUnpaidClean) {
         groupOwed += monthlyRate
         groupJobs.forEach((job) => {
-          if (!job.subcontractorPaid) {
+          if (!job.subcontractorPaid && job.status !== 'CANCELLED') {
             // Add-ons performed by an outside vendor OR a different in-house cleaner
             // are paid through them, not the schedule's cleaner.
             job.addOnServices?.forEach((a) => { if (addOnCreditsJobCleaner(a, job)) groupOwed += a.subcontractorRate })
           }
         })
       }
+      groupJobs.forEach((job) => {
+        if (!job.subcontractorPaid && job.status === 'CANCELLED') {
+          groupOwed += cleanerOwedForCancellation(job.cancellationFee)
+        }
+      })
       totalOwed += groupOwed
 
       // Calculate total (all jobs) for reference
       let addOnTotal = 0
       groupJobs.forEach((job) => {
+        if (job.status === 'CANCELLED') {
+          addOnTotal += cleanerOwedForCancellation(job.cancellationFee)
+          return
+        }
         job.addOnServices?.forEach((a) => { if (addOnCreditsJobCleaner(a, job)) addOnTotal += a.subcontractorRate })
       })
 
@@ -164,10 +192,9 @@ export function buildSubcontractorPayLedger(jobs: PayLedgerJob[]): PayLedgerResu
       let groupOwedAmount = 0
 
       groupJobs.forEach((job) => {
-        let jobTotal = job.subcontractorRate || 0
-        // Add-ons performed by a vendor or a different in-house cleaner are paid via
-        // them, not this cleaner.
-        job.addOnServices?.forEach((a) => { if (addOnCreditsJobCleaner(a, job)) jobTotal += a.subcontractorRate || 0 })
+        // Add-ons performed by a vendor or a different in-house cleaner are paid
+        // via them, not this cleaner; a cancelled clean pays only its gas fee.
+        const jobTotal = owedForJob(job)
 
         groupTotalAmount += jobTotal
         if (!job.subcontractorPaid) {

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Building2, Users, Mail, FileText, CreditCard, Coins, Loader2 } from "lucide-react"
+import { Building2, Users, Mail, FileText, CreditCard, Coins, Loader2, UserCheck } from "lucide-react"
 import type { BusinessProfileData } from "@/lib/business-settings"
 import type { InvoiceDefaultsData } from "@/lib/invoice-defaults"
 import { showSuccess, showError } from "@/lib/toast"
@@ -11,8 +11,9 @@ import { InvoiceDefaultsForm } from "./invoice-defaults-form"
 import { PaymentsReceivedForm, type PaymentDetectionData } from "./payments-received-form"
 import { PayoutsForm, type PayoutTimingData } from "./payouts-form"
 import { TeamForm } from "./team-form"
+import { RecipientWorklist } from "./recipient-worklist"
 
-type Section = "business" | "team" | "delivery" | "invoicedefaults" | "payments" | "payouts"
+type Section = "business" | "team" | "delivery" | "invoicedefaults" | "recipients" | "payments" | "payouts"
 
 const NAV_GROUPS: { label: string; items: { id: Section; name: string; icon: typeof Building2 }[] }[] = [
   {
@@ -27,6 +28,7 @@ const NAV_GROUPS: { label: string; items: { id: Section; name: string; icon: typ
     items: [
       { id: "delivery", name: "Invoice delivery", icon: Mail },
       { id: "invoicedefaults", name: "Invoice defaults", icon: FileText },
+      { id: "recipients", name: "Invoice recipients", icon: UserCheck },
       { id: "payments", name: "Payments received", icon: CreditCard },
     ],
   },
@@ -38,7 +40,7 @@ const NAV_GROUPS: { label: string; items: { id: Section; name: string; icon: typ
 
 // Sections whose content is a self-contained form with its own save controls,
 // so the global save bar is hidden for them.
-const SELF_SAVING: Section[] = ["delivery"]
+const SELF_SAVING: Section[] = ["delivery", "recipients"]
 
 interface SettingsShellProps {
   initialBusiness: BusinessProfileData
@@ -298,6 +300,7 @@ export function SettingsShell({
             )}
             {cat === "team" && <TeamForm />}
             {cat === "delivery" && <EmailSettingsForm />}
+            {cat === "recipients" && <RecipientWorklist />}
             {cat === "invoicedefaults" && (
               <InvoiceDefaultsForm
                 value={invoiceDefaults}
