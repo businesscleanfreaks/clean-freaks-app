@@ -11,39 +11,39 @@ datasource db {
 }
 
 model Client {
-  id                       String     @id @default(uuid())
+  id                       String    @id @default(uuid())
   name                     String
   phone                    String?
   communicationEmail       String?
-  communicationContactName String?    // Optional name of the person for communication emails
-  communicationPhone       String?    // Phone number for the communication contact
+  communicationContactName String? // Optional name of the person for communication emails
+  communicationPhone       String? // Phone number for the communication contact
   invoicingEmail           String?
-  invoicingCcEmail         String?    // Optional CC recipient(s) for invoice emails
-  invoicingContactName     String?    // Optional name of the person for invoicing emails
-  invoicingPhone           String?    // Phone number for the invoicing contact
+  invoicingCcEmail         String? // Optional CC recipient(s) for invoice emails
+  invoicingContactName     String? // Optional name of the person for invoicing emails
+  invoicingPhone           String? // Phone number for the invoicing contact
   notes                    String?
-  openIssues               String[]   @default([]) // Overview "Open Issues" — short unresolved-issue strings
-  scopeNotes               String?    // Scope tab — quick scope notes
-  scopeDocUrl              String?    // Scope tab — link to the scope document (Canva/Drive PDF)
-  scopeStructured          Json?      // Scope tab — { tasks, frequency, exclusions, preferences } (each multiline text)
-  billingType         String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN
-  cleanerPayType      String     @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid)
-  invoiceFrequency    String     @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
-  propertyType        String?    // RESIDENTIAL or COMMERCIAL
-  paymentRulePreset   String?    // RESIDENTIAL_STANDARD or COMMERCIAL_STANDARD
+  openIssues               String[]  @default([]) // Overview "Open Issues" — short unresolved-issue strings
+  scopeNotes               String? // Scope tab — quick scope notes
+  scopeDocUrl              String? // Scope tab — link to the scope document (Canva/Drive PDF)
+  scopeStructured          Json? // Scope tab — { tasks, frequency, exclusions, preferences } (each multiline text)
+  billingType              String    @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN
+  cleanerPayType           String    @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid)
+  invoiceFrequency         String    @default("END_OF_MONTH") // AFTER_EACH_CLEAN, BI_WEEKLY, END_OF_MONTH, CUSTOM
+  propertyType             String? // RESIDENTIAL or COMMERCIAL
+  paymentRulePreset        String? // RESIDENTIAL_STANDARD or COMMERCIAL_STANDARD
   // How we bill this client: EMAIL sends an invoice; TRACK_ONLY means they pay
   // on their own and we only track what's owed (no email ever goes out).
-  billingDelivery     String?    // EMAIL (default) | TRACK_ONLY
+  billingDelivery          String? // EMAIL (default) | TRACK_ONLY
   // Billing schedule (Invoices → Billing schedule sheet)
-  paymentTerms        String?    // NET_7 | NET_15 | NET_30 — when payment is due after sending
-  payMethod           String?    // ZELLE | ACH | PORTAL | CHECK — how this client pays us
+  paymentTerms             String? // NET_7 | NET_15 | NET_30 — when payment is due after sending
+  payMethod                String? // ZELLE | ACH | PORTAL | CHECK — how this client pays us
   // Multi-location clients: one combined invoice (default) or one per location.
-  separateLocationInvoices Boolean @default(false)
-  preferredPaymentMethod String?  // ZELLE, DIRECT_DEPOSIT, CHECK, OTHER — client's preferred way to pay
-  startDate           DateTime?  // When the client relationship started
-  isActive            Boolean    @default(true)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  separateLocationInvoices Boolean   @default(false)
+  preferredPaymentMethod   String? // ZELLE, DIRECT_DEPOSIT, CHECK, OTHER — client's preferred way to pay
+  startDate                DateTime? // When the client relationship started
+  isActive                 Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   // Table view contract fields (Grace's spreadsheet data)
   clientPrice         Float?
@@ -62,16 +62,16 @@ model Client {
   addon2Frequency     String?
   addon2CleanerPayout Float?
 
-  cleanerAssigned     Subcontractor? @relation(fields: [cleanerAssignedId], references: [id], onDelete: SetNull)
-  locations           Location[]
-  invoices            Invoice[]
-  messages            Message[]
-  inboxContacts       InboxContact[]
-  contacts            ClientContact[]
-  clientNotes         ClientNote[]
-  emailMessages       EmailMessage[]
-  convertedProspects  Prospect[]
-  paymentAliases      ClientPaymentAlias[]
+  cleanerAssigned    Subcontractor?       @relation(fields: [cleanerAssignedId], references: [id], onDelete: SetNull)
+  locations          Location[]
+  invoices           Invoice[]
+  messages           Message[]
+  inboxContacts      InboxContact[]
+  contacts           ClientContact[]
+  clientNotes        ClientNote[]
+  emailMessages      EmailMessage[]
+  convertedProspects Prospect[]
+  paymentAliases     ClientPaymentAlias[]
 
   @@index([isActive])
   @@index([billingType])
@@ -97,15 +97,15 @@ model ClientNote {
 }
 
 model Location {
-  id         String     @id @default(uuid())
-  clientId   String
-  address    String
-  name       String
-  accessInfo String?    // Gate codes, key locations, entry instructions, etc. (legacy free-text)
-  accessFields Json?    // Access tab — { entry, alarm, gate, lockbox, parking, notes }
-  latitude   Float?
-  longitude  Float?
-  createdAt  DateTime   @default(now())
+  id           String   @id @default(uuid())
+  clientId     String
+  address      String
+  name         String
+  accessInfo   String? // Gate codes, key locations, entry instructions, etc. (legacy free-text)
+  accessFields Json? // Access tab — { entry, alarm, gate, lockbox, parking, notes }
+  latitude     Float?
+  longitude    Float?
+  createdAt    DateTime @default(now())
 
   client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   schedules Schedule[]
@@ -116,16 +116,16 @@ model Location {
 }
 
 model Subcontractor {
-  id           String                      @id @default(uuid())
-  name         String
-  phone        String?
-  email        String?
-  notes        String?
-  teamMembers  String?                     // Comma-separated team member names (e.g. "Amy, Jessica, Maria")
-  createdAt    DateTime                    @default(now())
+  id          String   @id @default(uuid())
+  name        String
+  phone       String?
+  email       String?
+  notes       String?
+  teamMembers String? // Comma-separated team member names (e.g. "Amy, Jessica, Maria")
+  createdAt   DateTime @default(now())
 
   // Payment cadence rules
-  paymentCadence      String   @default("IMMEDIATE")
+  paymentCadence      String  @default("IMMEDIATE")
   // IMMEDIATE — payable as soon as job is past (default / current behavior)
   // AFTER_CLIENT_PAYS — payable only after the job's linked invoice is PAID
   // END_OF_MONTH — payable after the calendar month of the job ends
@@ -133,17 +133,17 @@ model Subcontractor {
   // RESIDENTIAL_7_DAY — payable 7 days after service; fastPay releases after 72h
   // COMMERCIAL_CLIENT_PAID_OR_7TH — payable when client pays or by the 7th of next month
   // ON_CLEANER_INVOICE — only payable when manually released
-  paymentCadenceNotes String?  // Free-text notes about this cleaner's payment rules
-  excludeClientIds    String?  // JSON array of client IDs whose jobs are excluded from payouts
-  isActive            Boolean  @default(true)
-  fastPay             Boolean  @default(false) // Residential — pay within 72h; ready work flips to "Pay today" once a clean has gone >72h unpaid
+  paymentCadenceNotes String? // Free-text notes about this cleaner's payment rules
+  excludeClientIds    String? // JSON array of client IDs whose jobs are excluded from payouts
+  isActive            Boolean @default(true)
+  fastPay             Boolean @default(false) // Residential — pay within 72h; ready work flips to "Pay today" once a clean has gone >72h unpaid
 
-  schedules        Schedule[]
-  jobs             Job[]
-  payments         SubcontractorPayment[]
-  assignedClients  Client[]
-  addOnServices    AddOnService[]
-  cleanerInvoices  CleanerInvoice[]
+  schedules       Schedule[]
+  jobs            Job[]
+  payments        SubcontractorPayment[]
+  assignedClients Client[]
+  addOnServices   AddOnService[]
+  cleanerInvoices CleanerInvoice[]
 
   @@index([isActive])
   @@map("subcontractors")
@@ -154,24 +154,24 @@ model Subcontractor {
 // matches what we compute we owe. `computedOwed` is snapshotted at intake; a
 // MISMATCH blocks payout until a human RESOLVES it.
 model CleanerInvoice {
-  id              String    @id @default(uuid())
-  subcontractorId String
-  period          String    // the month being billed, "yyyy-MM"
-  claimedAmount   Float     // what the cleaner says we owe
-  computedOwed    Float     // what we computed we owe for that cleaner+period at intake
-  reference       String?   // the cleaner's invoice number/reference
-  notes           String?
-  status          String    @default("PENDING") // PENDING | MATCHED | MISMATCH | RESOLVED
+  id                 String    @id @default(uuid())
+  subcontractorId    String
+  period             String // the month being billed, "yyyy-MM"
+  claimedAmount      Float // what the cleaner says we owe
+  computedOwed       Float // what we computed we owe for that cleaner+period at intake
+  reference          String? // the cleaner's invoice number/reference
+  notes              String?
+  status             String    @default("PENDING") // PENDING | MATCHED | MISMATCH | RESOLVED
   attachmentFileName String?
   attachmentMimeType String?
-  attachmentSize Int?
-  attachmentData Bytes?
-  receivedAt      DateTime  @default(now())
-  resolvedAt      DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  attachmentSize     Int?
+  attachmentData     Bytes?
+  receivedAt         DateTime  @default(now())
+  resolvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
 
   @@index([subcontractorId])
   @@index([subcontractorId, period])
@@ -179,37 +179,37 @@ model CleanerInvoice {
 }
 
 model Job {
-  id                   String      @id @default(uuid())
-  locationId           String
-  subcontractorId      String?
-  vendorId             String?
-  scheduleId           String?
-  date                 DateTime
-  startTime            String?
-  startWindowBegin     String?
-  startWindowEnd       String?
-  clientRate           Float
-  subcontractorRate    Float
-  status               String      @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
-  invoiced             Boolean     @default(false)
-  subcontractorPaid    Boolean     @default(false)
-  vendorPaid           Boolean     @default(false)
-  cancellationFee      Float?      // Set when a clean is cancelled with a fee; billed as a line item on the client's regular invoice
-  notes                String?
-  isTrial              Boolean     @default(false)
-  trialNotes           String?
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
+  id                String   @id @default(uuid())
+  locationId        String
+  subcontractorId   String?
+  vendorId          String?
+  scheduleId        String?
+  date              DateTime
+  startTime         String?
+  startWindowBegin  String?
+  startWindowEnd    String?
+  clientRate        Float
+  subcontractorRate Float
+  status            String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  invoiced          Boolean  @default(false)
+  subcontractorPaid Boolean  @default(false)
+  vendorPaid        Boolean  @default(false)
+  cancellationFee   Float? // Set when a clean is cancelled with a fee; billed as a line item on the client's regular invoice
+  notes             String?
+  isTrial           Boolean  @default(false)
+  trialNotes        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  location             Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  subcontractor        Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
-  vendor               Vendor?     @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  schedule             Schedule?   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  location      Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  subcontractor Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
+  vendor        Vendor?        @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  schedule      Schedule?      @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
-  invoiceLineItems     InvoiceLineItem[]
-  paymentLineItems     SubcontractorPaymentLineItem[]
+  invoiceLineItems       InvoiceLineItem[]
+  paymentLineItems       SubcontractorPaymentLineItem[]
   vendorPaymentLineItems VendorPaymentLineItem[]
-  addOnServices        AddOnService[]
+  addOnServices          AddOnService[]
 
   @@unique([scheduleId, date], name: "unique_schedule_date")
   @@index([date])
@@ -224,44 +224,44 @@ model Job {
 }
 
 model Schedule {
-  id                      String       @id @default(uuid())
-  locationId              String
-  subcontractorId         String?
-  frequency               String       // WEEKLY, BI_WEEKLY, MONTHLY, 2X_MONTHLY, CUSTOM
-  daysOfWeek              String?      // JSON array of integers [0-6]
-  customDates             String?      // JSON array of dates
-  monthlyPattern          String?      // JSON: {"type": "FIXED_DATES"|"NTH_WEEKDAY", "dates": [1,15]} or {"weekday": 6, "weeks": [2,4]}
-  timeType                String       // SPECIFIC or WINDOW
-  startTime               String?
-  startWindowBegin        String?
-  startWindowEnd          String?
-  defaultClientRate       Float
+  id                       String    @id @default(uuid())
+  locationId               String
+  subcontractorId          String?
+  frequency                String // WEEKLY, BI_WEEKLY, MONTHLY, 2X_MONTHLY, CUSTOM
+  daysOfWeek               String? // JSON array of integers [0-6]
+  customDates              String? // JSON array of dates
+  monthlyPattern           String? // JSON: {"type": "FIXED_DATES"|"NTH_WEEKDAY", "dates": [1,15]} or {"weekday": 6, "weeks": [2,4]}
+  timeType                 String // SPECIFIC or WINDOW
+  startTime                String?
+  startWindowBegin         String?
+  startWindowEnd           String?
+  defaultClientRate        Float
   defaultSubcontractorRate Float
-  clientPayType           String       @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how client is billed for this schedule)
-  subcontractorPayType     String       @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid for this schedule)
-  startDate               DateTime
-  endDate                 DateTime?
-  excludedDates           String?      // JSON array of date strings to skip during regeneration
-  isActive                Boolean      @default(true)
-  createdAt               DateTime     @default(now())
-  updatedAt               DateTime     @updatedAt
+  clientPayType            String    @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how client is billed for this schedule)
+  subcontractorPayType     String    @default("PER_CLEAN") // FLAT_RATE or PER_CLEAN (how subcontractor is paid for this schedule)
+  startDate                DateTime
+  endDate                  DateTime?
+  excludedDates            String? // JSON array of date strings to skip during regeneration
+  isActive                 Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
-  location                Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  subcontractor           Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
-  jobs                    Job[]
-  recurringAddOnServices  AddOnService[]
+  location               Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  subcontractor          Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
+  jobs                   Job[]
+  recurringAddOnServices AddOnService[]
 
-  paymentCadenceOverride  String?      // Per-schedule override of subcontractor's default cadence (same enum values)
+  paymentCadenceOverride String? // Per-schedule override of subcontractor's default cadence (same enum values)
 
   // A pause ends this interval and, when finite, creates a resumed interval.
   // Billing metadata stays on the ended interval so invoice generation can
   // distinguish a normal credit from "bill as usual" without fake jobs.
-  pauseFrom               DateTime?
-  pauseTo                 DateTime?
-  pauseName               String?
-  pauseBilling            String?      // REDUCE or FULL
-  pauseCreditMode         String?      // VISITS, DAYS, or CUSTOM
-  pauseCreditAmount       Float?
+  pauseFrom         DateTime?
+  pauseTo           DateTime?
+  pauseName         String?
+  pauseBilling      String? // REDUCE or FULL
+  pauseCreditMode   String? // VISITS, DAYS, or CUSTOM
+  pauseCreditAmount Float?
 
   @@index([locationId])
   @@index([isActive])
@@ -271,49 +271,54 @@ model Schedule {
 }
 
 model Invoice {
-  id            String        @id @default(uuid())
-  invoiceNumber String        @unique
-  clientId      String
-  dateCreated   DateTime      @default(now())
-  dateDue       DateTime?
-  datePaid      DateTime?     // When invoice was paid
-  totalAmount   Float
-  status        String        @default("DRAFT") // DRAFT, SENT, PAID
-  pdfPath       String?
-  pdfUrl        String?       // Public URL to PDF
-  notes         String?
-  dateSent      DateTime?     // When email was sent
-  sentTo        String?       // Email address sent to
-  emailSubject  String?       // Subject line used
-  emailBody     String?       // Message body used
-  paymentMethod String?       // "SQUARE", "ZELLE", "CHECK", "BANK_TRANSFER"
+  id                   String    @id @default(uuid())
+  invoiceNumber        String    @unique
+  clientId             String
+  dateCreated          DateTime  @default(now())
+  dateDue              DateTime?
+  datePaid             DateTime? // When invoice was paid
+  totalAmount          Float
+  status               String    @default("DRAFT") // DRAFT, SENT, PAID
+  pdfPath              String?
+  pdfUrl               String? // Public URL to PDF
+  notes                String?
+  dateSent             DateTime? // When email was sent
+  sentTo               String? // Email address sent to
+  emailSubject         String? // Subject line used
+  emailBody            String? // Message body used
+  paymentMethod        String? // "SQUARE", "ZELLE", "CHECK", "BANK_TRANSFER"
   paymentTransactionId String? // Square transaction ID or Zelle reference
-  paymentReceivedAt DateTime? // When payment was actually received
-  paymentNotes  String?       // Additional payment notes
-  showPaymentOptions Boolean  @default(true) // Whether to show payment options on public invoice
-  billingPeriodStart DateTime? // Start of the billing period this invoice covers
-  billingPeriodEnd   DateTime? // End of the billing period this invoice covers
-  scheduledSendAt    DateTime? // "Send later": when this invoice should auto-send
-  scheduledPayload   Json?     // Captured email (to/cc/subject/message/showPaymentOptions) for the scheduled send
+  paymentReceivedAt    DateTime? // When payment was actually received
+  paymentNotes         String? // Additional payment notes
+  showPaymentOptions   Boolean   @default(true) // Whether to show payment options on public invoice
+  billingPeriodStart   DateTime? // Start of the billing period this invoice covers
+  billingPeriodEnd     DateTime? // End of the billing period this invoice covers
+  scheduledSendAt      DateTime? // "Send later": when this invoice should auto-send
+  scheduledPayload     Json? // Captured email (to/cc/subject/message/showPaymentOptions) for the scheduled send
   // "Clearing": ACH/check payments take 5-7 days to land. Set when the operator
   // marks a payment as on its way; cleared by marking paid or undoing.
-  clearingSince      DateTime?
+  clearingSince        DateTime?
   // Message-ID of the invoice email we sent. Reminders quote it in In-Reply-To
   // so they land in the SAME thread the client already has, per the design.
-  emailMessageId     String?
+  emailMessageId       String?
   // Identity of the review-workspace candidate this invoice came from
   // (`YYYY-MM|locationIds`). The workspace creates a VOID preview and finalizes
   // it straight away, so without this a retried send left a second finalized
   // invoice behind. See lib/invoice-candidate-key.ts.
-  candidateKey       String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime?
+  candidateKey         String?
+  // Set when this month was invoiced by hand outside the app (QuickBooks, an
+  // emailed PDF). The invoice stays as the record of what was billed but leaves
+  // the send queue, so it can be looked up later instead of silently deleted.
+  externallyBilledAt   DateTime?
+  externallyBilledNote String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime?
 
-  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  lineItems     InvoiceLineItem[]
-  pdfCacheEntry InvoicePdfCache?
+  client         Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  lineItems      InvoiceLineItem[]
+  pdfCacheEntry  InvoicePdfCache?
   paymentMatches PaymentMatch[]
-  reminders     InvoiceReminder[]
+  reminders      InvoiceReminder[]
 
   @@index([dateCreated])
   @@index([status])
@@ -321,6 +326,7 @@ model Invoice {
   @@index([dateCreated, status])
   @@index([scheduledSendAt])
   @@index([clientId, candidateKey])
+  @@index([externallyBilledAt])
   @@map("invoices")
 }
 
@@ -338,17 +344,17 @@ model InvoicePdfCache {
 }
 
 model InvoiceLineItem {
-  id            String        @id @default(uuid())
-  invoiceId     String
-  jobId         String?
+  id             String    @id @default(uuid())
+  invoiceId      String
+  jobId          String?
   addOnServiceId String?
-  description   String
-  amount        Float
-  serviceDate   DateTime?
+  description    String
+  amount         Float
+  serviceDate    DateTime?
 
-  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  job           Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  addOnService  AddOnService? @relation(fields: [addOnServiceId], references: [id], onDelete: SetNull)
+  invoice      Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  job          Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  addOnService AddOnService? @relation(fields: [addOnServiceId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
   @@index([jobId])
@@ -366,8 +372,8 @@ model SubcontractorPayment {
   notes           String?
   createdAt       DateTime  @default(now())
 
-  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
-  lineItems       SubcontractorPaymentLineItem[]
+  subcontractor Subcontractor                  @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  lineItems     SubcontractorPaymentLineItem[]
 
   @@index([datePaid])
   @@index([subcontractorId])
@@ -376,13 +382,13 @@ model SubcontractorPayment {
 }
 
 model SubcontractorPaymentLineItem {
-  id        String               @id @default(uuid())
+  id        String @id @default(uuid())
   paymentId String
   jobId     String
   amount    Float
 
-  payment   SubcontractorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  job       Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  payment SubcontractorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  job     Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@unique([paymentId, jobId])
   @@index([jobId])
@@ -390,28 +396,28 @@ model SubcontractorPaymentLineItem {
 }
 
 model AddOnService {
-  id                String    @id @default(uuid())
-  jobId             String?   // Optional - if linked to a specific job
-  scheduleId        String?   // Optional - if recurring, link to schedule
+  id                String   @id @default(uuid())
+  jobId             String? // Optional - if linked to a specific job
+  scheduleId        String? // Optional - if recurring, link to schedule
   description       String
   clientRate        Float
   subcontractorRate Float
-  frequency         String?   // For recurring: WEEKLY, BI_WEEKLY, MONTHLY, EVERY_6_WEEKS, etc.
-  isRecurring       Boolean   @default(false)
-  outsourcedVendor  String?   // DEPRECATED — kept temporarily for backfill migration
-  vendorId          String?   // FK to Vendor model (replaces outsourcedVendor)
-  subcontractorId   String?   // Assigned in-house cleaner (alternative to a vendor). null = schedule's cleaner / vendor.
-  dayOfWeek         Int?      // 0=Sun..6=Sat — which day the add-on is performed (scheduling reference)
-  vendorPaid        Boolean   @default(false)
-  subcontractorPaid Boolean   @default(false) // Paid to the assigned in-house cleaner (when a different cleaner performs the add-on)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  frequency         String? // For recurring: WEEKLY, BI_WEEKLY, MONTHLY, EVERY_6_WEEKS, etc.
+  isRecurring       Boolean  @default(false)
+  outsourcedVendor  String? // DEPRECATED — kept temporarily for backfill migration
+  vendorId          String? // FK to Vendor model (replaces outsourcedVendor)
+  subcontractorId   String? // Assigned in-house cleaner (alternative to a vendor). null = schedule's cleaner / vendor.
+  dayOfWeek         Int? // 0=Sun..6=Sat — which day the add-on is performed (scheduling reference)
+  vendorPaid        Boolean  @default(false)
+  subcontractorPaid Boolean  @default(false) // Paid to the assigned in-house cleaner (when a different cleaner performs the add-on)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  job               Job?      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  schedule          Schedule? @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  vendor            Vendor?   @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  subcontractor     Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
-  invoiceLineItems  InvoiceLineItem[]
+  job                    Job?                    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  schedule               Schedule?               @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  vendor                 Vendor?                 @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  subcontractor          Subcontractor?          @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
+  invoiceLineItems       InvoiceLineItem[]
   vendorPaymentLineItems VendorPaymentLineItem[]
 
   @@index([jobId])
@@ -428,7 +434,7 @@ model Vendor {
   email     String?
   zelle     String?
   services  String[] @default([])
-  contacts  Json?    // Array of { name, phone, email } — multi-contact support
+  contacts  Json? // Array of { name, phone, email } — multi-contact support
   notes     String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -447,24 +453,24 @@ model Vendor {
 // payouts can use the same "invoice first, then pay" reconciliation gate as
 // cleaner payouts.
 model VendorInvoice {
-  id              String    @id @default(uuid())
-  vendorId        String
-  period          String    // the month being billed, "yyyy-MM"
-  claimedAmount   Float     // what the vendor says we owe
-  computedOwed    Float     // what we computed we owe for that vendor+period at intake
-  reference       String?
-  notes           String?
-  status          String    @default("PENDING") // PENDING | MATCHED | MISMATCH | RESOLVED
+  id                 String    @id @default(uuid())
+  vendorId           String
+  period             String // the month being billed, "yyyy-MM"
+  claimedAmount      Float // what the vendor says we owe
+  computedOwed       Float // what we computed we owe for that vendor+period at intake
+  reference          String?
+  notes              String?
+  status             String    @default("PENDING") // PENDING | MATCHED | MISMATCH | RESOLVED
   attachmentFileName String?
   attachmentMimeType String?
-  attachmentSize Int?
-  attachmentData Bytes?
-  receivedAt      DateTime  @default(now())
-  resolvedAt      DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  attachmentSize     Int?
+  attachmentData     Bytes?
+  receivedAt         DateTime  @default(now())
+  resolvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  vendor          Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   @@index([vendorId])
   @@index([vendorId, period])
@@ -479,7 +485,7 @@ model VendorPayment {
   notes       String?
   createdAt   DateTime @default(now())
 
-  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor    Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   lineItems VendorPaymentLineItem[]
 
   @@index([vendorId])
@@ -488,7 +494,7 @@ model VendorPayment {
 }
 
 model VendorPaymentLineItem {
-  id             String   @id @default(uuid())
+  id             String  @id @default(uuid())
   paymentId      String
   addOnServiceId String?
   jobId          String?
@@ -508,21 +514,21 @@ model VendorPaymentLineItem {
 // Singleton row holding the in-app email configuration (Settings → Email).
 // Secret fields (gmailAppPassword, resendApiKey) are stored AES-256-GCM encrypted.
 model EmailSettings {
-  id                    String   @id @default(uuid())
-  provider              String   @default("gmail") // "gmail" | "resend"
-  fromName              String?  // display name, e.g. "The Clean Freaks"
-  fromEmail             String?  // sending address, e.g. invoicing@thecleanfreaks.co
-  gmailUser             String?  // Gmail/Workspace login (often == fromEmail)
-  gmailAppPassword      String?  // ENCRYPTED 16-char App Password
-  resendApiKey          String?  // ENCRYPTED Resend API key
-  testEmail             String?  // where "Send test" goes
-  enableSending         Boolean  @default(false) // master switch
-  allowRealClientEmails Boolean  @default(false) // safety: allow sending to real clients
-  enableInboxSync       Boolean  @default(false) // opt-in: read the Gmail inbox over IMAP to detect payment notices
-  autoConfirmHighConfidencePayments Boolean @default(false) // opt-in: auto-apply HIGH-confidence payment matches
-  lastInboxUid          String?  // IMAP watermark — highest UID processed by the payment scan
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                                String   @id @default(uuid())
+  provider                          String   @default("gmail") // "gmail" | "resend"
+  fromName                          String? // display name, e.g. "The Clean Freaks"
+  fromEmail                         String? // sending address, e.g. invoicing@thecleanfreaks.co
+  gmailUser                         String? // Gmail/Workspace login (often == fromEmail)
+  gmailAppPassword                  String? // ENCRYPTED 16-char App Password
+  resendApiKey                      String? // ENCRYPTED Resend API key
+  testEmail                         String? // where "Send test" goes
+  enableSending                     Boolean  @default(false) // master switch
+  allowRealClientEmails             Boolean  @default(false) // safety: allow sending to real clients
+  enableInboxSync                   Boolean  @default(false) // opt-in: read the Gmail inbox over IMAP to detect payment notices
+  autoConfirmHighConfidencePayments Boolean  @default(false) // opt-in: auto-apply HIGH-confidence payment matches
+  lastInboxUid                      String? // IMAP watermark — highest UID processed by the payment scan
+  createdAt                         DateTime @default(now())
+  updatedAt                         DateTime @updatedAt
 
   @@map("email_settings")
 }
@@ -530,21 +536,21 @@ model EmailSettings {
 // A detected inbound payment (parsed from a Zelle/processor notification email) awaiting
 // reconciliation to an invoice. Phase 1 = review-only; a human confirms each one.
 model PaymentMatch {
-  id                 String   @id @default(uuid())
-  messageId          String   @unique // email Message-ID (or IMAP UID) — primary idempotency key
-  confirmationNumber String?  @unique // Payment confirmation/reference # — secondary idempotency key
-  senderName         String   // raw payer name as it appeared in the notification
+  id                 String    @id @default(uuid())
+  messageId          String    @unique // email Message-ID (or IMAP UID) — primary idempotency key
+  confirmationNumber String?   @unique // Payment confirmation/reference # — secondary idempotency key
+  senderName         String // raw payer name as it appeared in the notification
   amount             Float
   sentAt             DateTime? // when the payer says the payment was sent, if parseable
   receivedAt         DateTime // when the notification email arrived
-  rawSnippet         String?  // short excerpt of the source email for the reviewer
-  status             String   @default("NEEDS_REVIEW") // NEEDS_REVIEW | CONFIRMED | DISMISSED | AUTO_APPLIED
-  confidence         String?  // HIGH | MEDIUM | REVIEW — the matcher's suggestion strength
-  matchedInvoiceId   String?  // the suggested/confirmed invoice
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  rawSnippet         String? // short excerpt of the source email for the reviewer
+  status             String    @default("NEEDS_REVIEW") // NEEDS_REVIEW | CONFIRMED | DISMISSED | AUTO_APPLIED
+  confidence         String? // HIGH | MEDIUM | REVIEW — the matcher's suggestion strength
+  matchedInvoiceId   String? // the suggested/confirmed invoice
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  matchedInvoice     Invoice? @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
+  matchedInvoice Invoice? @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([receivedAt])
@@ -554,12 +560,12 @@ model PaymentMatch {
 // Learned map of payer names → client. Built as the user confirms matches, so the
 // matcher can resolve "VISIONNAIRE LIFESTYLE LLC" → the Visionnaire client.
 model ClientPaymentAlias {
-  id                  String   @id @default(uuid())
-  clientId            String
-  normalizedSenderName String  @unique // uppercased/trimmed/punctuation-stripped payer name
-  createdAt           DateTime @default(now())
+  id                   String   @id @default(uuid())
+  clientId             String
+  normalizedSenderName String   @unique // uppercased/trimmed/punctuation-stripped payer name
+  createdAt            DateTime @default(now())
 
-  client              Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@map("client_payment_aliases")
@@ -578,68 +584,68 @@ model EmailTemplate {
 }
 
 model Expense {
-  id            String        @id @default(uuid())
-  date          DateTime
-  amount        Float
-  description   String
-  category      String?       // ExpenseCategory enum values (nullable for uncategorized)
-  type          String?       // FIXED, VARIABLE, or null (for uncategorized expenses)
-  vendor        String?
-  receiptUrl    String?       // Optional receipt image
-  notes         String?
-  isRecurring   Boolean       @default(false)
+  id          String   @id @default(uuid())
+  date        DateTime
+  amount      Float
+  description String
+  category    String? // ExpenseCategory enum values (nullable for uncategorized)
+  type        String? // FIXED, VARIABLE, or null (for uncategorized expenses)
+  vendor      String?
+  receiptUrl  String? // Optional receipt image
+  notes       String?
+  isRecurring Boolean  @default(false)
 
   // QuickBooks sync
-  qbSynced      Boolean       @default(false)
-  qbExpenseId   String?       // QuickBooks expense ID
+  qbSynced      Boolean   @default(false)
+  qbExpenseId   String? // QuickBooks expense ID
   qbSyncedAt    DateTime?
-  qbCategory    String?       // QuickBooks category/account name
-  qbAccountType String?       // QuickBooks account type
-  isCleanerPay  Boolean       @default(false) // Flag for cleaner pay expenses
+  qbCategory    String? // QuickBooks category/account name
+  qbAccountType String? // QuickBooks account type
+  isCleanerPay  Boolean   @default(false) // Flag for cleaner pay expenses
 
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("expenses")
 }
 
 model QuickBooksConfig {
-  id              String    @id @default(uuid())
-  realmId         String?   // QuickBooks company ID
-  accessToken     String?   // Encrypted
-  refreshToken    String?   // Encrypted
-  tokenExpiresAt  DateTime?
-  isConnected     Boolean   @default(false)
-  lastSyncedAt    DateTime?
-  autoSync        Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String    @id @default(uuid())
+  realmId        String? // QuickBooks company ID
+  accessToken    String? // Encrypted
+  refreshToken   String? // Encrypted
+  tokenExpiresAt DateTime?
+  isConnected    Boolean   @default(false)
+  lastSyncedAt   DateTime?
+  autoSync       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@map("quickbooks_config")
 }
 
 model InvoiceLogoSettings {
-  id            String   @id @default(uuid())
-  logoPath      String?  // Legacy: path to a bundled logo file (e.g., "/images/invoice-logo.png")
+  id           String   @id @default(uuid())
+  logoPath     String? // Legacy: path to a bundled logo file (e.g., "/images/invoice-logo.png")
   // Uploaded logo stored in the DB — the filesystem is ephemeral on Vercel, so
   // an uploaded file could not survive a deploy. Falls back to the bundled
   // public/images/invoice-logo.png when no upload exists.
-  logoData      Bytes?
-  logoMimeType  String?
-  logoFileName  String?
-  logoSize      Int?
-  width         Float    @default(100) // Width in points (PDF units)
-  height        Float?   // Height in points (null = maintain aspect ratio)
-  positionX     String   @default("left") // "left" | "center" | "right" | "custom"
-  positionY     String   @default("top") // "top" | "middle" | "bottom" | "custom"
-  customX       Float?   // Custom X position in points
-  customY       Float?   // Custom Y position in points
-  maxWidth      Float    @default(200) // Maximum width constraint
-  maxHeight     Float    @default(100) // Maximum height constraint
-  opacity       Float    @default(1.0) // 0.0 to 1.0
-  enabled       Boolean  @default(true) // Whether logo is enabled
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  logoData     Bytes?
+  logoMimeType String?
+  logoFileName String?
+  logoSize     Int?
+  width        Float    @default(100) // Width in points (PDF units)
+  height       Float? // Height in points (null = maintain aspect ratio)
+  positionX    String   @default("left") // "left" | "center" | "right" | "custom"
+  positionY    String   @default("top") // "top" | "middle" | "bottom" | "custom"
+  customX      Float? // Custom X position in points
+  customY      Float? // Custom Y position in points
+  maxWidth     Float    @default(200) // Maximum width constraint
+  maxHeight    Float    @default(100) // Maximum height constraint
+  opacity      Float    @default(1.0) // 0.0 to 1.0
+  enabled      Boolean  @default(true) // Whether logo is enabled
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@map("invoice_logo_settings")
 }
@@ -656,22 +662,22 @@ model User {
 }
 
 model Message {
-  id                String    @id @default(uuid())
-  externalId        String    @unique
-  direction         String    // "incoming" | "outgoing"
+  id                String   @id @default(uuid())
+  externalId        String   @unique
+  direction         String // "incoming" | "outgoing"
   body              String
   fromNumber        String
   toNumber          String
-  status            String    @default("delivered")
+  status            String   @default("delivered")
   quoPhoneId        String?
   clientId          String?
-  isRead            Boolean   @default(false)
+  isRead            Boolean  @default(false)
   externalCreatedAt DateTime
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime @default(now())
 
-  scheduledAt       DateTime? // non-null when status = "scheduled"
+  scheduledAt DateTime? // non-null when status = "scheduled"
 
-  client            Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
   @@index([fromNumber])
@@ -683,13 +689,13 @@ model Message {
 }
 
 model QuoConfig {
-  id              String    @id @default("singleton")
-  apiKey          String?
-  phoneNumbers    String?
-  lastSyncAt      DateTime?
-  webhookId       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id           String    @id @default("singleton")
+  apiKey       String?
+  phoneNumbers String?
+  lastSyncAt   DateTime?
+  webhookId    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@map("quo_config")
 }
@@ -699,11 +705,11 @@ model InboxContact {
   id        String   @id @default(uuid())
   phone     String   @unique
   name      String
-  clientId  String?  // set when "linked to client" or "add as new client"
+  clientId  String? // set when "linked to client" or "add as new client"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@map("inbox_contacts")
 }
@@ -711,7 +717,7 @@ model InboxContact {
 model MessageTemplate {
   id        String   @id @default(uuid())
   body      String
-  category  String?  // "Scheduling" | "Invoicing" | "Day Of" | "Payment" | "General"
+  category  String? // "Scheduling" | "Invoicing" | "Day Of" | "Payment" | "General"
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -721,24 +727,24 @@ model MessageTemplate {
 
 // Multi-contact support per client
 model ClientContact {
-  id        String   @id @default(uuid())
-  clientId  String
-  name      String
-  email     String?
-  phone     String?
-  role      String   @default("GENERAL") // COMMUNICATION | INVOICING | GENERAL
-  isPrimary Boolean  @default(false)
-  notes     String?
+  id                 String   @id @default(uuid())
+  clientId           String
+  name               String
+  email              String?
+  phone              String?
+  role               String   @default("GENERAL") // COMMUNICATION | INVOICING | GENERAL
+  isPrimary          Boolean  @default(false)
+  notes              String?
   // Billing tab's "Invoices sent to" card. A contact can exist without being on
   // the invoice, so membership is its own flag; billingOrder decides who is
   // addressed (first) and who is CC'd. See lib/billing-recipients.ts.
-  isBillingRecipient Boolean @default(false)
+  isBillingRecipient Boolean  @default(false)
   billingOrder       Int?
-  billingRole        String?  // job title, e.g. "Accounts payable" (free text allowed)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  billingRole        String? // job title, e.g. "Accounts payable" (free text allowed)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@index([email])
@@ -757,7 +763,7 @@ model EmailAccount {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  messages     EmailMessage[]
+  messages EmailMessage[]
 
   @@map("email_accounts")
 }
@@ -775,15 +781,15 @@ model EmailMessage {
   bodyHtml       String?
   bodyText       String?
   snippet        String?
-  direction      String   // "incoming" | "outgoing"
+  direction      String // "incoming" | "outgoing"
   isRead         Boolean  @default(false)
   isDraft        Boolean  @default(false)
   draftId        String?  @unique
   receivedAt     DateTime
   createdAt      DateTime @default(now())
 
-  emailAccount   EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
-  client         Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  emailAccount EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
   @@index([threadId])
@@ -815,19 +821,19 @@ model HiddenConversation {
 
 // Business settings (singleton — one row, upserted on first access)
 model BusinessSettings {
-  id                   String   @id @default("singleton")
-  businessName         String   @default("The Clean Freaks")
-  legalName            String?  // Legal entity on invoices, e.g. "Shiloh Pro Cleaning Services" (businessName is the DBA)
-  email                String?
-  phone                String?
-  address              String?
-  paymentEmail         String?  // Zelle / payment address shown on the invoice payment block
-  defaultPaymentTerms  String   @default("NET_30")
+  id                       String    @id @default("singleton")
+  businessName             String    @default("The Clean Freaks")
+  legalName                String? // Legal entity on invoices, e.g. "Shiloh Pro Cleaning Services" (businessName is the DBA)
+  email                    String?
+  phone                    String?
+  address                  String?
+  paymentEmail             String? // Zelle / payment address shown on the invoice payment block
+  defaultPaymentTerms      String    @default("NET_30")
   // Invoice defaults — used to auto-fill a new invoice's due date by client type,
   // and the footer note shown on every invoice.
-  residentialPaymentTerms String? // DUE_ON_RECEIPT | NET_7 | NET_14
-  commercialPaymentTerms  String? // NET_15 | NET_30 | MONTH_END
-  invoiceFooterNote       String?
+  residentialPaymentTerms  String? // DUE_ON_RECEIPT | NET_7 | NET_14
+  commercialPaymentTerms   String? // NET_15 | NET_30 | MONTH_END
+  invoiceFooterNote        String?
   // Default cleaner payout cadence by client type (see Subcontractor.paymentCadence enum).
   // These drive cadenceOverrideForClientPaymentRule when a client is on the
   // Residential/Commercial preset. Null falls back to the historical defaults.
@@ -842,10 +848,10 @@ model BusinessSettings {
   oneTimeJobDefaults       Json?
   invoiceFooterTemplates   Json?
   reminderTemplates        Json?
-  autoGenerateInvoices Boolean   @default(true)
-  billingStartDate     DateTime?
-  projectedExpenses    Json?    // Dashboard monthly expense assumptions by category
-  updatedAt            DateTime  @updatedAt
+  autoGenerateInvoices     Boolean   @default(true)
+  billingStartDate         DateTime?
+  projectedExpenses        Json? // Dashboard monthly expense assumptions by category
+  updatedAt                DateTime  @updatedAt
 
   @@map("business_settings")
 }
@@ -853,11 +859,11 @@ model BusinessSettings {
 // Singleton config for the AI messaging assistant
 model AIConfig {
   id             String   @id @default("singleton")
-  tone           String?  // freeform tone description
-  rules          String?  // JSON array of rule strings
-  examples       String?  // JSON array of example SMS strings (max 20)
-  apiKey         String?  // Anthropic API key (stored in DB as fallback when env var not set)
-  emailSignature String?  // HTML content of email signature
+  tone           String? // freeform tone description
+  rules          String? // JSON array of rule strings
+  examples       String? // JSON array of example SMS strings (max 20)
+  apiKey         String? // Anthropic API key (stored in DB as fallback when env var not set)
+  emailSignature String? // HTML content of email signature
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -866,28 +872,28 @@ model AIConfig {
 
 // Prospect pipeline — potential clients Grace is actively pursuing
 model Prospect {
-  id              String    @id @default(uuid())
-  businessName    String
-  contactName     String?
-  phone           String?
-  email           String?
-  notes           String?
-  status          String    @default("ACTIVE") // ACTIVE, WON, LOST
-  stage           String    @default("NEW") // NEW, WALKTHROUGH_SCHEDULED, WALKTHROUGH_DONE, PROPOSAL_SENT, FOLLOW_UP, NEGOTIATION, WON, LOST
-  nextActionType  String?
-  nextActionDueAt DateTime? @map("followUpDate")
-  nextActionNote  String?
-  lastTouchedAt   DateTime?
-  proposalSentAt  DateTime?
-  walkthroughAt   DateTime?
+  id                String    @id @default(uuid())
+  businessName      String
+  contactName       String?
+  phone             String?
+  email             String?
+  notes             String?
+  status            String    @default("ACTIVE") // ACTIVE, WON, LOST
+  stage             String    @default("NEW") // NEW, WALKTHROUGH_SCHEDULED, WALKTHROUGH_DONE, PROPOSAL_SENT, FOLLOW_UP, NEGOTIATION, WON, LOST
+  nextActionType    String?
+  nextActionDueAt   DateTime? @map("followUpDate")
+  nextActionNote    String?
+  lastTouchedAt     DateTime?
+  proposalSentAt    DateTime?
+  walkthroughAt     DateTime?
   convertedClientId String?
-  source          String?
-  priority        String?
-  lostReason      String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  source            String?
+  priority          String?
+  lostReason        String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  convertedClient Client?   @relation(fields: [convertedClientId], references: [id], onDelete: SetNull)
+  convertedClient Client?            @relation(fields: [convertedClientId], references: [id], onDelete: SetNull)
   activities      ProspectActivity[]
 
   @@index([status])
@@ -907,7 +913,7 @@ model ProspectActivity {
   note       String?
   happenedAt DateTime @default(now()) @map("createdAt")
 
-  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospect Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
 
   @@index([prospectId])
   @@map("prospect_activities")
@@ -918,13 +924,13 @@ model ProspectActivity {
 // (the review workspace works on computed candidates, not saved invoices).
 model InvoiceAdjustment {
   id          String   @id @default(uuid())
-  candidateId String   // "<clientId>:<billingGroupId>" or an existing invoice id
-  period      String   // yyyy-MM the adjustment belongs to
+  candidateId String // "<clientId>:<billingGroupId>" or an existing invoice id
+  period      String // yyyy-MM the adjustment belongs to
   clientId    String
-  mode        String   // PCT_OFF | COMP | COURTESY | CHARGE
+  mode        String // PCT_OFF | COMP | COURTESY | CHARGE
   label       String
-  amount      Float    // SIGNED: credits are negative, charges positive
-  serviceDay  Int?     // day-of-month the credit refers to (PCT_OFF / COMP)
+  amount      Float // SIGNED: credits are negative, charges positive
+  serviceDay  Int? // day-of-month the credit refers to (PCT_OFF / COMP)
   approved    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -939,13 +945,13 @@ model InvoiceAdjustment {
 model InvoiceReminder {
   id        String   @id @default(uuid())
   invoiceId String
-  stage     Int      // 1 | 2 | 3
-  channel   String   // EMAIL | CALL
+  stage     Int // 1 | 2 | 3
+  channel   String // EMAIL | CALL
   daysLate  Int
-  body      String?  // what actually went out, or the call note
+  body      String? // what actually went out, or the call note
   sentAt    DateTime @default(now())
 
-  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@map("invoice_reminders")

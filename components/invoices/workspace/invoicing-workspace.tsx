@@ -21,7 +21,8 @@ import { PreviewModal, previewMessage } from "./preview-modal"
 import { loadComposeDraft } from "./use-draft-message"
 import { SentTracking } from "./sent-tracking"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
-import { sendBlockedReason, type Adjustment } from "@/lib/invoice-adjustments"
+import { type Adjustment } from "@/lib/invoice-adjustments"
+import { confirmBlockedReason, confirmationText, needsConfirmation } from "@/lib/invoice-confirmation"
 import { buildServiceSummary } from "@/lib/invoice-service-summary"
 import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
 import { TERMS, TERM_LABELS } from "@/lib/billing-schedule"
@@ -542,7 +543,13 @@ function DetailPanel({ inv, month, onCompose }: {
     `/api/invoices/adjustments?candidateId=${encodeURIComponent(inv.candidateId)}&period=${month}`,
     fetcher,
   )
-  const blockedReason = sendBlockedReason(adjData?.adjustments ?? [])
+  const adjustments = adjData?.adjustments ?? []
+  // Josh chose the blocking confirmation (2026-08-25): an invoice carrying
+  // changes cannot be sent until the reviewer signs off on the set.
+  const [confirmed, setConfirmed] = useState(false)
+  const blockedReason = confirmBlockedReason(adjustments, confirmed)
+  // A new invoice is a new decision — never inherit the last one's tick.
+  useEffect(() => { setConfirmed(false) }, [inv.candidateId])
   const [previewOpen, setPreviewOpen] = useState(false)
   const { data: emailSettings } = useSWR(previewOpen ? "/api/settings/email" : null, fetcher)
   const [savingDraft, setSavingDraft] = useState(false)
@@ -914,6 +921,37 @@ function DetailPanel({ inv, month, onCompose }: {
               {blockedReason}
             </div>
           )}
+
+          {/* The sign-off. Only shown when something actually changed — asking
+              on every routine invoice would train people to tick without
+              reading, which costs the gate the value it exists for. */}
+          {needsConfirmation(adjustments) && (
+            <button
+              type="button"
+              onClick={() => setConfirmed(v => !v)}
+              aria-pressed={confirmed}
+              className="mb-2.5 flex w-full items-center gap-[11px] text-left"
+            >
+              <span
+                className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[5px] transition-colors"
+                style={
+                  confirmed
+                    ? { background: "#15793f", border: "1px solid #15793f" }
+                    : { background: "#fff", border: "1.5px solid #cbd5e1" }
+                }
+              >
+                {confirmed && (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff"
+                    strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m5 12 5 5L20 7" />
+                  </svg>
+                )}
+              </span>
+              <span className="text-[12.5px] font-semibold text-[#5b6470]">
+                {confirmationText(adjustments)}
+              </span>
+            </button>
+          )}
           {/* Payment terms sit with the send action, because they decide the
               due date the client is about to be given. */}
           <div className="mb-2.5 flex items-center gap-3">
@@ -957,7 +995,7 @@ function DetailPanel({ inv, month, onCompose }: {
               <Send size={15} />
               {/* The design puts the blocker in the button itself, so the next
                   action is obvious without reading the notice above. */}
-              {blockedReason ? "Approve adjustments to send" : "Review email & send"}
+              {blockedReason ? blockedReason : "Review email & send"}
             </button>
             <button
               type="button"

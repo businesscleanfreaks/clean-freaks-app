@@ -60,6 +60,7 @@ const STATUS_META: Record<LedgerStatus, { bg: string; color: string; tip: string
   Scheduled: { bg: "#eaf5ee", color: "#15793f", tip: "Will send automatically on the scheduled date. You can cancel it." },
   "Sent: Unpaid": { bg: "#eef2f7", color: "#475467", tip: "Sent to the client, waiting on payment." },
   "Payment late": { bg: "#fdecec", color: "#c0342a", tip: "Past its due date. Time to follow up." },
+  "Billed externally": { bg: "#eef2f7", color: "#5b6470", tip: "Invoiced by hand outside the app. Kept here so you can check what was billed." },
   "Sent: Paid": { bg: "#eaf5ee", color: "#15803d", tip: "Paid in full and reconciled." },
 }
 
@@ -206,6 +207,36 @@ export function InvoicesOverview() {
       showError(e instanceof Error ? e.message : "Could not update clearing")
     }
   }
+  /**
+   * Record that this month was invoiced by hand outside the app. Keeps the
+   * invoice as the record of what was billed and takes it out of the queue,
+   * so nothing is lost and nobody bills it twice.
+   */
+  const setExternallyBilled = async (row: LedgerRow, on: boolean) => {
+    try {
+      const res = await fetch(`/api/invoices/${row.id}/external-billing`, {
+        method: on ? "POST" : "DELETE",
+        ...(on ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) } : {}),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.error || "Could not update")
+      }
+      showUndoToast(
+        on ? "Marked as billed outside the app" : "Back in the send queue",
+        async () => {
+          await fetch(`/api/invoices/${row.id}/external-billing`, { method: on ? "DELETE" : "POST",
+            ...(on ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }) })
+            .catch(() => null)
+          mutate()
+        },
+      )
+      mutate()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not update")
+    }
+  }
+
   // Row selection. The design shows checkboxes on every row; the only bulk
   // action offered is REVIEW, never send — sending always goes through the
   // workspace one invoice at a time.
@@ -525,6 +556,8 @@ export function InvoicesOverview() {
                       onUndoPaid: () => router.push(`/invoices/${row.id}`),
                       onToggleClearing: () => toggleClearing(row),
                       onCancelSchedule: () => router.push(`/invoices/${row.id}`),
+                      onMarkExternallyBilled: () => setExternallyBilled(row, true),
+                      onUndoExternallyBilled: () => setExternallyBilled(row, false),
                     })}
                   />
                 </div>

@@ -21,7 +21,13 @@
 /** ACH and checks take 5-7 days to land; we show the far end of that window. */
 export const CLEARING_DAYS = 7
 
-export type LedgerStatus = "To send" | "Scheduled" | "Sent: Unpaid" | "Payment late" | "Sent: Paid"
+export type LedgerStatus =
+  | "To send"
+  | "Scheduled"
+  | "Sent: Unpaid"
+  | "Payment late"
+  | "Sent: Paid"
+  | "Billed externally"
 
 export type LedgerTab = "All" | LedgerStatus
 
@@ -32,6 +38,9 @@ export const LEDGER_TABS: LedgerTab[] = [
   "Sent: Unpaid",
   "Sent: Paid",
   "Payment late",
+  // Josh 2026-08-25: work billed by hand outside the app needs somewhere to be
+  // looked up later, or there is no way to check what was already sent.
+  "Billed externally",
 ]
 
 export type InvoiceKind = "Flat rate" | "Per clean" | "One-off"
@@ -64,6 +73,14 @@ export interface LedgerSource {
   clearingSince: string | null
   /** Client billingDelivery === 'TRACK_ONLY' — we never email this client. */
   trackOnly: boolean
+  /**
+   * Set when this month was invoiced by hand outside the app (QuickBooks, an
+   * emailed PDF, whatever). The invoice stays on the books as the record of
+   * what was billed, but drops out of the send queue.
+   */
+  externallyBilledAt?: string | null
+  /** Free text: where it was sent, a reference number, who did it. */
+  externallyBilledNote?: string | null
 }
 
 export interface LedgerRow extends LedgerSource {
@@ -93,6 +110,9 @@ const shortDate = (iso: string) =>
 
 export function deriveLedgerStatus(inv: LedgerSource, now: Date): LedgerStatus {
   if (inv.status === "PAID") return "Sent: Paid"
+  // Billed by hand outside the app: nothing left for the VA to send, but it is
+  // deliberately NOT "Paid" — being invoiced is not the same as being paid.
+  if (inv.externallyBilledAt) return "Billed externally"
   if (inv.status === "SENT") {
     if (inv.dateDue && new Date(inv.dateDue) < now) return "Payment late"
     return "Sent: Unpaid"
@@ -113,6 +133,12 @@ function deriveSubtext(inv: LedgerSource, status: LedgerStatus): string | null {
   if (inv.trackOnly && status !== "Sent: Paid") return "Track only · client pays on their own"
   if (status === "Scheduled" && inv.scheduledSendAt) {
     return `Scheduled to send on ${shortDate(inv.scheduledSendAt)}`
+  }
+  if (status === "Billed externally" && inv.externallyBilledAt) {
+    const when = shortDate(inv.externallyBilledAt)
+    return inv.externallyBilledNote
+      ? `Billed outside the app on ${when} · ${inv.externallyBilledNote}`
+      : `Billed outside the app on ${when}`
   }
   if (status === "Sent: Paid" && inv.paymentMethod) {
     const method = inv.paymentMethod.charAt(0) + inv.paymentMethod.slice(1).toLowerCase()

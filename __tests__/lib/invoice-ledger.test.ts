@@ -159,3 +159,67 @@ describe('computeStats', () => {
     expect(computeStats([row({ id: '1', status: 'PAID' })]).worstOffender).toBeNull()
   })
 })
+
+describe("billed externally (Josh 2026-08-25)", () => {
+  const base = {
+    id: "i1",
+    invoiceNumber: "INV-1",
+    clientName: "A&B Development",
+    status: "DRAFT",
+    totalAmount: 2000,
+    dateDue: "2026-08-10",
+    datePaid: null,
+    scheduledSendAt: null,
+    billingType: "FLAT_RATE",
+    isOneOff: false,
+    paymentMethod: null,
+    paymentReference: null,
+    clearingSince: null,
+    trackOnly: false,
+  }
+  const NOW = new Date("2026-08-25T12:00:00Z")
+
+  it("leaves the to-send queue once marked", () => {
+    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T00:00:00Z" }, NOW)
+    expect(row.ledgerStatus).toBe("Billed externally")
+  })
+
+  it("is still 'To send' until it is marked", () => {
+    expect(toLedgerRow(base, NOW).ledgerStatus).toBe("To send")
+  })
+
+  it("is not called paid · being invoiced is not being paid", () => {
+    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T00:00:00Z" }, NOW)
+    expect(row.ledgerStatus).not.toBe("Sent: Paid")
+  })
+
+  it("lets a real payment win over the mark", () => {
+    const row = toLedgerRow(
+      { ...base, status: "PAID", externallyBilledAt: "2026-08-19T00:00:00Z" },
+      NOW,
+    )
+    expect(row.ledgerStatus).toBe("Sent: Paid")
+  })
+
+  it("says when it was billed, so it can be checked later", () => {
+    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T00:00:00Z" }, NOW)
+    expect(row.subtext).toBe("Billed outside the app on Aug 19")
+  })
+
+  it("carries the note when one was left", () => {
+    const row = toLedgerRow(
+      { ...base, externallyBilledAt: "2026-08-19T00:00:00Z", externallyBilledNote: "QuickBooks #4471" },
+      NOW,
+    )
+    expect(row.subtext).toBe("Billed outside the app on Aug 19 · QuickBooks #4471")
+  })
+
+  it("never reads as overdue · nothing is owed through the app", () => {
+    const row = toLedgerRow(
+      { ...base, dateDue: "2026-07-01", externallyBilledAt: "2026-08-19T00:00:00Z" },
+      NOW,
+    )
+    expect(row.ledgerStatus).toBe("Billed externally")
+    expect(row.daysLate).toBe(0)
+  })
+})

@@ -28,6 +28,8 @@ export async function GET(request: Request) {
         datePaid: true,
         scheduledSendAt: true,
         clearingSince: true,
+        externallyBilledAt: true,
+        externallyBilledNote: true,
         paymentMethod: true,
         paymentTransactionId: true,
         client: { select: { id: true, name: true, billingType: true, billingDelivery: true } },
@@ -57,6 +59,8 @@ export async function GET(request: Request) {
       paymentReference: inv.paymentTransactionId,
       clearingSince: inv.clearingSince?.toISOString() ?? null,
       trackOnly: inv.client?.billingDelivery === 'TRACK_ONLY',
+      externallyBilledAt: inv.externallyBilledAt?.toISOString() ?? null,
+      externallyBilledNote: inv.externallyBilledNote,
     }))
 
     const ledger = sortRows(sources.map(s => toLedgerRow(s)))

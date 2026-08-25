@@ -82,6 +82,8 @@ export function buildRowMenu(
     onUndoPaid: () => void
     onToggleClearing: () => void
     onCancelSchedule: () => void
+    onMarkExternallyBilled: () => void
+    onUndoExternallyBilled: () => void
   },
 ): OverflowItem[] {
   const history: OverflowItem = {
@@ -102,8 +104,25 @@ export function buildRowMenu(
       history,
     ]
   }
+  if (row.ledgerStatus === "Billed externally") {
+    return [
+      {
+        label: "Not billed outside the app",
+        sub: "Marked by mistake · puts it back in the send queue",
+        onSelect: actions.onUndoExternallyBilled,
+      },
+      history,
+    ]
+  }
   if (row.ledgerStatus === "To send") {
-    return [history]
+    return [
+      {
+        label: "Already billed outside the app",
+        sub: "You invoiced this by hand · keeps the record, stops the reminder",
+        onSelect: actions.onMarkExternallyBilled,
+      },
+      history,
+    ]
   }
   if (row.clearing) {
     return [

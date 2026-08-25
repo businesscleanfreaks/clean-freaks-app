@@ -103,6 +103,8 @@ const STATUS_RANK: Record<LedgerStatus, number> = {
   "Sent: Unpaid": 2,
   Scheduled: 3,
   "Sent: Paid": 4,
+  // Nothing to action and no money expected through the app: last.
+  "Billed externally": 5,
 }
 
 /**
