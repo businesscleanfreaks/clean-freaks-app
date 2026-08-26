@@ -22,7 +22,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/clients')) return 'Clients'
   if (pathname.startsWith('/calendar')) return 'Calendar'
   if (pathname.startsWith('/invoices')) return 'Invoices'
-  if (pathname.startsWith('/payables')) return 'Payables'
+  if (pathname.startsWith('/payables')) return 'Cleaners'
   return 'Clean Freaks'
 }
 

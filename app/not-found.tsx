@@ -51,7 +51,7 @@ export default function NotFound() {
             </Link>
             <span className="text-gray-300">•</span>
             <Link href="/payables" className="text-sm text-teal-600 hover:text-teal-700 underline">
-              Payables
+              Cleaners
             </Link>
           </div>
         </div>

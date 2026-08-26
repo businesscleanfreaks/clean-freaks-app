@@ -240,7 +240,7 @@ export function PaymentsReceivedForm({
       <div className="mt-[14px] flex items-start gap-[9px] rounded-[11px] border border-[#ededea] bg-[#f7f7f5] px-[15px] py-[13px] text-[12.5px] leading-relaxed text-[#7e8489]">
         <Info className="mt-px h-4 w-4 flex-none" />
         <span>
-          Detected payments show up in <strong className="text-[#55585c]">Payables → Payments</strong>. This only spots
+          Detected payments show up in <strong className="text-[#55585c]">Cleaners → Payments</strong>. This only spots
           them — you always confirm the money before an invoice is marked paid.
         </span>
       </div>

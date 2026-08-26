@@ -27,7 +27,7 @@ const items: NavItem[] = [
   { name: "Calendar", href: "/calendar", icon: Calendar },
   { name: "Clients", href: "/clients", icon: Users },
   { name: "Invoices", href: "/invoices", icon: FileText },
-  { name: "Payables", href: "/payables", icon: Wallet },
+  { name: "Cleaners", href: "/payables", icon: Wallet },
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 

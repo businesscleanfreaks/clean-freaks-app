@@ -105,7 +105,7 @@ export function PaymentInbox() {
       <div className="border-b border-stone-200 bg-white">
         <div className="mx-auto w-full max-w-[900px] px-4 sm:px-6 pt-5 pb-4">
           <Link href="/payables" className="mb-2 inline-flex items-center gap-1 text-[12px] font-medium text-stone-500 hover:text-stone-800">
-            <ChevronLeft size={14} /> Payables
+            <ChevronLeft size={14} /> Cleaners
           </Link>
           <h1 className="text-[20px] font-bold text-stone-900">Payments to review</h1>
           <p className="mt-1 text-[13px] text-stone-500">

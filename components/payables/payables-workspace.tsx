@@ -147,8 +147,13 @@ export function PayablesWorkspace() {
       <div className="mx-auto w-full max-w-[1120px] px-4 py-5 sm:px-7 sm:py-7 lg:px-9">
         <header className="flex flex-col gap-4 border-b border-[#2d2a25] pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-[30px] font-extrabold leading-none">Payables</h1>
-            <p className="mt-2 text-[14px] font-medium text-[var(--cf-ink-secondary)]">
+            <h1 className="text-[30px] font-extrabold leading-none tracking-[-0.025em]">Cleaners</h1>
+            {/* The design's own subtitle. The page is still where you pay people,
+                but it is named for who you pay, not the accounting term. */}
+            <p className="mt-1 text-[13px] font-semibold text-[var(--cf-ink-secondary)]">
+              Cleaner profiles &amp; payables
+            </p>
+            <p className="mt-1 text-[13px] font-medium text-[var(--cf-ink-secondary)]">
               What you owe {payeeLabel} in {formatMonthLabel(workspace.month)}
             </p>
             <div className="mt-4 inline-flex rounded-lg border border-[var(--cf-rule)] bg-white p-1 shadow-[var(--cf-panel-shadow)]">

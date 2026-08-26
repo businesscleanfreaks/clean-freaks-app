@@ -865,7 +865,7 @@ function DetailPanel({ inv, month, onCompose }: {
                     href="/payables"
                     className="ml-auto flex-none rounded-lg px-3 py-1.5 text-[12px] font-bold text-white"
                     style={{ background: "#16a34a" }}
-                    title="Open Payables to settle this · paying happens there, not here"
+                    title="Open Cleaners to settle this · paying happens there, not here"
                   >
                     Pay {formatCurrency(payout.amount)}
                   </a>
