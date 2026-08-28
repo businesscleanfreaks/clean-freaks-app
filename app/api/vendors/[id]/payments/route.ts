@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { z } from "zod"
 import { format } from "date-fns"
+import { logger } from "@/lib/logger"
+import { handleApiError } from "@/lib/api-error-handler"
 
 export const dynamic = 'force-dynamic'
 
@@ -347,5 +349,77 @@ export async function PATCH(
       { error: error instanceof Error ? error.message : 'Failed to update vendor payment state' },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * Undo a vendor payment — the mirror of the subcontractor one, so the batch-pay
+ * Undo works for every payee on the Cleaners page rather than silently doing
+ * nothing for vendors.
+ *
+ * Removes the line items for these jobs, re-totals or deletes the payments they
+ * belonged to, and puts the work back to unpaid.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await requireAuth()
+    const { id: vendorId } = await params
+    const { jobIds } = await request.json().catch(() => ({ jobIds: [] }))
+
+    if (!Array.isArray(jobIds) || jobIds.length === 0 || !jobIds.every(id => typeof id === 'string')) {
+      return NextResponse.json({ error: 'jobIds must be a non-empty array' }, { status: 400 })
+    }
+
+    const jobs = await prisma.job.findMany({
+      where: { id: { in: jobIds }, vendorId },
+      select: { id: true },
+    })
+    if (jobs.length === 0) {
+      return NextResponse.json({ error: 'No matching jobs for this vendor' }, { status: 404 })
+    }
+    const validJobIds = jobs.map(j => j.id)
+
+    const result = await prisma.$transaction(async (tx) => {
+      const lineItems = await tx.vendorPaymentLineItem.findMany({
+        where: { jobId: { in: validJobIds } },
+        select: { id: true, paymentId: true },
+      })
+      const affected = Array.from(new Set(lineItems.map(i => i.paymentId)))
+
+      if (lineItems.length > 0) {
+        await tx.vendorPaymentLineItem.deleteMany({
+          where: { id: { in: lineItems.map(i => i.id) } },
+        })
+      }
+
+      for (const paymentId of affected) {
+        const remaining = await tx.vendorPaymentLineItem.findMany({
+          where: { paymentId },
+          select: { amount: true },
+        })
+        if (remaining.length === 0) {
+          await tx.vendorPayment.delete({ where: { id: paymentId } })
+        } else {
+          await tx.vendorPayment.update({
+            where: { id: paymentId },
+            data: { totalAmount: remaining.reduce((s, i) => s + i.amount, 0) },
+          })
+        }
+      }
+
+      const updated = await tx.job.updateMany({
+        where: { id: { in: validJobIds } },
+        data: { vendorPaid: false },
+      })
+      return { unmarkedCount: updated.count, removedLineItemCount: lineItems.length }
+    })
+
+    return NextResponse.json({ success: true, ...result })
+  } catch (error) {
+    logger.error('Error reverting vendor payment:', error)
+    return handleApiError(error, 'Failed to undo the vendor payment')
   }
 }

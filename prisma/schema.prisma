@@ -191,26 +191,38 @@ model CleanerInvoice {
 /// month end). Residential and one-off work is invoiced per CLEAN instead, so
 /// `jobId` is set for those and null for the account-wide case. The unique
 /// index therefore covers both shapes without letting either be recorded twice.
+/// One payee invoice we are waiting on, or have received.
+///
+/// Cleaners invoice per ACCOUNT (a company with 7 accounts sends 7 invoices at
+/// month end); residential, one-offs and vendor work invoice per CLEAN, so
+/// `jobId` is set for those and null for the account-wide case.
+///
+/// Exactly one of `subcontractorId` / `vendorId` is set — vendors are a
+/// separate model but the same mechanic, and the design puts them in the same
+/// table. A CHECK constraint in the migration enforces the either/or, since
+/// Prisma cannot express it.
 model CleanerInvoiceReceipt {
   id              String   @id @default(uuid())
-  subcontractorId String
+  subcontractorId String?
+  vendorId        String?
   locationId      String
   period          String // "yyyy-MM"
-  // Null = covers the whole account for the period. Set = one specific clean.
+  /// Null = covers the whole account for the period. Set = one specific clean.
   jobId           String?
   receivedAt      DateTime @default(now())
   reference       String?
   createdAt       DateTime @default(now())
 
-  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
-  location      Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  job           Job?          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  subcontractor Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  vendor        Vendor?        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  location      Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  job           Job?           @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  // NOTE: the real guard is two PARTIAL unique indexes in the migration — one
-  // for jobId IS NOT NULL, one for IS NULL — because Postgres treats NULLs as
-  // distinct and this @@unique alone would let the account-wide case double up.
-  @@unique([subcontractorId, locationId, period, jobId])
+  // NOTE: the real guards are PARTIAL unique indexes in the migration — one per
+  // (payee kind x shape) — because Postgres treats NULLs as distinct and a
+  // plain @@unique would let the account-wide case double up.
   @@index([subcontractorId, period])
+  @@index([vendorId, period])
   @@index([locationId, period])
   @@map("cleaner_invoice_receipts")
 }
@@ -486,6 +498,8 @@ model Vendor {
   jobs           Job[]
   payments       VendorPayment[]
   vendorInvoices VendorInvoice[]
+
+  invoiceReceipts CleanerInvoiceReceipt[]
 
   @@index([isActive])
   @@map("vendors")

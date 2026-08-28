@@ -13,6 +13,9 @@ const PERIOD = /^\d{4}-\d{2}$/
  * (`jobId` omitted, covering the whole account), while residential and one-off
  * work invoices per clean (`jobId` set). The unique indexes let an account hold
  * either shape without recording the same thing twice.
+ *
+ * `[id]` is a cleaner by default; pass `?payee=vendor` for a vendor, which is a
+ * separate model but the same mechanic.
  */
 export async function POST(
   request: Request,
@@ -20,7 +23,9 @@ export async function POST(
 ) {
   try {
     await requireAuth()
-    const { id: subcontractorId } = await Promise.resolve(params)
+    const { id: payeeId } = await Promise.resolve(params)
+    const isVendor = new URL(request.url).searchParams.get('payee') === 'vendor'
+    const payee = isVendor ? { vendorId: payeeId } : { subcontractorId: payeeId }
     const body = await request.json().catch(() => ({}))
 
     const locationId = typeof body?.locationId === 'string' ? body.locationId : ''
@@ -51,7 +56,7 @@ export async function POST(
 
     // Idempotent: ticking an already-ticked box is a no-op, not a 500.
     const existing = await prisma.cleanerInvoiceReceipt.findFirst({
-      where: { subcontractorId, locationId, period, jobId },
+      where: { ...payee, locationId, period, jobId },
       select: { id: true },
     })
     const receipt = existing
@@ -60,7 +65,7 @@ export async function POST(
           data: { reference: reference || null },
         })
       : await prisma.cleanerInvoiceReceipt.create({
-          data: { subcontractorId, locationId, period, jobId, reference: reference || null },
+          data: { ...payee, locationId, period, jobId, reference: reference || null },
         })
 
     return NextResponse.json({ success: true, receipt })
@@ -77,8 +82,10 @@ export async function DELETE(
 ) {
   try {
     await requireAuth()
-    const { id: subcontractorId } = await Promise.resolve(params)
+    const { id: payeeId } = await Promise.resolve(params)
     const url = new URL(request.url)
+    const isVendor = url.searchParams.get('payee') === 'vendor'
+    const payee = isVendor ? { vendorId: payeeId } : { subcontractorId: payeeId }
     const locationId = url.searchParams.get('locationId') || ''
     const period = url.searchParams.get('period') || ''
     const jobId = url.searchParams.get('jobId') || null
@@ -89,7 +96,7 @@ export async function DELETE(
     }
 
     await prisma.cleanerInvoiceReceipt.deleteMany({
-      where: { subcontractorId, locationId, period, jobId },
+      where: { ...payee, locationId, period, jobId },
     })
 
     return NextResponse.json({ success: true })

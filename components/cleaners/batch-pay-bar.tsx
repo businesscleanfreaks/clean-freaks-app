@@ -11,7 +11,15 @@ export interface PaySelection {
   cleanerName: string
   jobIds: string[]
   amount: number
+  /** Vendors are a separate model with their own payments endpoint. */
+  isVendor?: boolean
 }
+
+/** Cleaners and vendors record payments against different tables. */
+const payUrl = (p: PaySelection) =>
+  p.isVendor
+    ? `/api/vendors/${p.cleanerId}/payments`
+    : `/api/subcontractors/${p.cleanerId}/payments`
 
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join("").toUpperCase()
@@ -47,7 +55,7 @@ export function BatchPayBar({ selection, onDone, onClear, hidden }: {
       // Zelle transfer each, so the record should match.
       const results = await Promise.all(
         selection.map(p =>
-          fetch(`/api/subcontractors/${p.cleanerId}/payments`, {
+          fetch(payUrl(p), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -75,7 +83,7 @@ export function BatchPayBar({ selection, onDone, onClear, hidden }: {
           async () => {
             await Promise.all(
               done.map(p =>
-                fetch(`/api/subcontractors/${p.cleanerId}/payments`, {
+                fetch(payUrl(p), {
                   method: "DELETE",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ jobIds: p.jobIds }),

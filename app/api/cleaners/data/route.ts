@@ -49,7 +49,7 @@ export async function GET(request: Request) {
     const { start, end } = monthRange(period)
     const now = new Date()
 
-    const [cleaners, jobs, receipts, payments] = await Promise.all([
+    const [cleaners, jobs, receipts, payments, vendors] = await Promise.all([
       prisma.subcontractor.findMany({
         where: { isActive: true },
         select: {
@@ -114,6 +114,39 @@ export async function GET(request: Request) {
           _count: { select: { lineItems: true } },
         },
         orderBy: { datePaid: 'desc' },
+      }),
+      // Vendors are a separate model but the same mechanic: they invoice per
+      // job and are paid per job. Their work is one-offs and add-ons, so it is
+      // never held for a pay-by day — once the invoice is in, it is ready.
+      prisma.vendor.findMany({
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          services: true,
+          jobs: {
+            where: {
+              vendorPaid: false,
+              date: { gte: start, lte: end },
+              // The vendor payment route only settles one-offs, so anything on a
+              // schedule must not be offered here as payable.
+              scheduleId: null,
+              OR: [{ status: 'COMPLETED' }, { status: 'SCHEDULED', date: { lte: now } }],
+            },
+            select: {
+              id: true,
+              date: true,
+              subcontractorRate: true,
+              vendorPaid: true,
+              locationId: true,
+              location: {
+                select: { id: true, name: true, client: { select: { id: true, name: true, propertyType: true } } },
+              },
+              invoiceLineItems: { select: { invoice: { select: { status: true } } } },
+            },
+          },
+        },
       }),
     ])
 
@@ -238,7 +271,102 @@ export async function GET(request: Request) {
       })
       .filter(r => r.accounts.length > 0)
 
-    const totals = rows.reduce(
+    const vendorRows = vendors
+      .map(v => {
+        const byAccount = new Map<string, (typeof v.jobs)[number][]>()
+        for (const j of v.jobs) {
+          const list = byAccount.get(j.locationId) ?? []
+          list.push(j)
+          byAccount.set(j.locationId, list)
+        }
+
+        const accounts = Array.from(byAccount.entries()).map(([locationId, accountJobs]) => {
+          const first = accountJobs[0]
+          const unpaid = accountJobs.filter(j => !j.vendorPaid)
+          const invoicedJobIds = unpaid
+            .filter(j => perClean.has(`${v.id}|${locationId}|${j.id}`))
+            .map(j => j.id)
+
+          const lineItems = accountJobs.flatMap(j => j.invoiceLineItems)
+          const clientHasPaid =
+            lineItems.length > 0 && lineItems.every(li => li.invoice.status === 'PAID')
+
+          const account: CleanerAccount = {
+            id: locationId,
+            clientName: first.location.client.name,
+            invoiceUnit: 'PER_CLEAN',
+            jobIds: unpaid.map(j => j.id),
+            invoicedJobIds,
+            clientHasPaid,
+            // Vendor work is one-off: nothing to wait a pay-by day for.
+            holdsUntilPayByDay: false,
+          }
+
+          return {
+            id: locationId,
+            clientId: first.location.client.id,
+            clientName: first.location.client.name,
+            locationName: first.location.name,
+            propertyType: first.location.client.propertyType,
+            invoiceUnit: 'PER_CLEAN' as const,
+            clientHasPaid,
+            invoiceTally: tallyAccountInvoices(account),
+            jobs: accountJobs.map(j => ({
+              id: j.id,
+              date: j.date.toISOString(),
+              amount: j.subcontractorRate || 0,
+              paid: j.vendorPaid,
+              cancelled: false,
+              invoiced: account.invoicedJobIds.includes(j.id),
+              state: jobPayState({
+                jobId: j.id,
+                paid: j.vendorPaid,
+                account,
+                invoicesUs: true,
+                payByDay: 1,
+                period,
+                now,
+              }),
+            })),
+            _account: account,
+          }
+        })
+
+        let readyNow = 0
+        let stillOwed = 0
+        let unpaidJobs = 0
+        for (const a of accounts) {
+          for (const j of a.jobs) {
+            if (j.paid) continue
+            unpaidJobs += 1
+            if (j.state === 'ready') readyNow += j.amount
+            else stillOwed += j.amount
+          }
+        }
+
+        return {
+          id: v.id,
+          name: v.name,
+          kind: 'vendor' as const,
+          specialty: v.services[0] ?? null,
+          email: null,
+          phone: null,
+          invoicesUs: true,
+          payByDay: 1,
+          accounts: accounts.map(({ _account, ...rest }) => rest),
+          invoiceTally: tallyCleanerInvoices(accounts.map(a => a._account), true),
+          clientPaidTally: {
+            paid: accounts.filter(a => a.clientHasPaid).length,
+            total: accounts.length,
+          },
+          readyNow,
+          stillOwed,
+          unpaidJobs,
+        }
+      })
+      .filter(r => r.accounts.length > 0)
+
+    const totals = [...rows, ...vendorRows].reduce(
       (acc, r) => ({
         readyNow: acc.readyNow + r.readyNow,
         stillOwed: acc.stillOwed + r.stillOwed,
@@ -253,6 +381,7 @@ export async function GET(request: Request) {
       {
         period,
         cleaners: rows,
+        vendors: vendorRows,
         totals: { ...totals, paidSoFar },
         payments: payments.map(p => ({
           id: p.id,

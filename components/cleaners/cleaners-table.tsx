@@ -35,6 +35,9 @@ interface AccountRow {
 interface CleanerRow {
   id: string
   name: string
+  kind?: "cleaner" | "vendor"
+  /** Vendors only: "Pressure washing" etc., shown in the sub-label. */
+  specialty?: string | null
   invoicesUs: boolean
   payByDay: number
   accounts: AccountRow[]
@@ -48,6 +51,7 @@ interface CleanerRow {
 interface CleanersData {
   period: string
   cleaners: CleanerRow[]
+  vendors: CleanerRow[]
   totals: { readyNow: number; stillOwed: number; unpaidJobs: number; paidSoFar: number }
   payments: PaymentRow[]
 }
@@ -116,6 +120,17 @@ export function CleanersTable({ period, onOpenProfile }: {
     )
   }, [data, sortBy, query])
 
+  const vendorRows = useMemo(() => {
+    const all = data?.vendors ?? []
+    const q = query.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      v =>
+        v.name.toLowerCase().includes(q) ||
+        v.accounts.some(a => a.clientName.toLowerCase().includes(q)),
+    )
+  }, [data, query])
+
   /**
    * Tick or untick an account's invoice. A per-account account is marked as a
    * whole; a per-clean one carries the job id.
@@ -128,9 +143,13 @@ export function CleanersTable({ period, onOpenProfile }: {
   ) => {
     const qs = new URLSearchParams({ locationId: account.id, period })
     if (jobId) qs.set("jobId", jobId)
+    if (cleaner.kind === "vendor") qs.set("payee", "vendor")
+    const postUrl = cleaner.kind === "vendor"
+      ? `/api/cleaners/${cleaner.id}/invoice-receipts?payee=vendor`
+      : `/api/cleaners/${cleaner.id}/invoice-receipts`
     try {
       const res = on
-        ? await fetch(`/api/cleaners/${cleaner.id}/invoice-receipts`, {
+        ? await fetch(postUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ locationId: account.id, period, jobId }),
@@ -153,16 +172,17 @@ export function CleanersTable({ period, onOpenProfile }: {
   }
 
   const selection: PaySelection[] = useMemo(() => {
-    return rows
+    return [...rows, ...vendorRows]
       .filter(c => checked.has(c.id) && c.readyNow > 0)
       .map(c => ({
         cleanerId: c.id,
         cleanerName: c.name,
         jobIds: c.accounts.flatMap(a => a.jobs.filter(j => j.state === "ready").map(j => j.id)),
         amount: c.readyNow,
+        isVendor: c.kind === "vendor",
       }))
       .filter(p => p.jobIds.length > 0)
-  }, [rows, checked])
+  }, [rows, vendorRows, checked])
 
   const toggleChecked = (id: string) =>
     setChecked(prev => {
@@ -172,133 +192,7 @@ export function CleanersTable({ period, onOpenProfile }: {
       return next
     })
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-[#98a2b3]">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <>
-    {data && (
-      <CleanersSummary
-        totals={data.totals}
-        cleanerCount={data.cleaners.length}
-        payments={data.payments ?? []}
-      />
-    )}
-
-    {/* Straight to a profile without hunting the table for the row. */}
-    {rows.length > 0 && (
-      <div className="mt-[18px] flex flex-wrap items-center gap-2">
-        <span className="mr-0.5 text-[11px] font-extrabold uppercase tracking-[0.05em] text-[#9aa0a4]">
-          Profiles
-        </span>
-        {(data?.cleaners ?? []).map(c => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => onOpenProfile?.(c.id)}
-            title="Open profile"
-            className="inline-flex items-center gap-[7px] rounded-full border border-[#e2e2df] bg-white py-[5px] pl-1.5 pr-3 transition-all hover:-translate-y-px hover:border-[#c9d6cd] hover:bg-[#f1f5f0]"
-          >
-            <span
-              className="grid h-[22px] w-[22px] place-items-center rounded-full text-[9.5px] font-extrabold"
-              style={{ background: "#eef6f1", color: "#0b7a4e" }}
-            >
-              {initials(c.name)}
-            </span>
-            <span className="whitespace-nowrap text-[12px] font-bold text-[#3f4347]">
-              {c.name.split(/\s+/)[0]}
-            </span>
-          </button>
-        ))}
-      </div>
-    )}
-
-    <div className="mt-3.5 flex items-center gap-3">
-      <div className="relative w-[340px] max-w-full flex-none">
-        <Search
-          size={14}
-          strokeWidth={2.2}
-          className="pointer-events-none absolute left-[11px] top-1/2 -translate-y-1/2 text-[#9a9fa4]"
-        />
-        <input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search a client or cleaner"
-          aria-label="Search a client or cleaner"
-          className="w-full rounded-[8px] border border-[#e2e2df] bg-white py-[9px] pl-[34px] pr-8 text-[13px] font-semibold text-[#0d0d0e] outline-none focus:border-[#0b7a4e]"
-        />
-        {query.trim() && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            title="Clear search"
-            aria-label="Clear search"
-            className="absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center text-[#9a9fa4] hover:text-[#3f4347]"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-      {query.trim() && (
-        <span className="text-[12px] font-semibold text-[#8a8f93]">
-          {rows.length} cleaner{rows.length === 1 ? "" : "s"} ·{" "}
-          {rows.reduce((n, c) => n + c.accounts.length, 0)} matching accounts
-        </span>
-      )}
-    </div>
-
-    <div
-      className="mt-3 overflow-clip rounded-[12px] border border-[#ececea] bg-white"
-      style={{ boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05)" }}
-    >
-      <div
-        className={`sticky top-0 z-[5] flex items-center gap-3 border-b border-[#ececea] bg-[#fafaf8] px-5 py-[11px] ${HEAD}`}
-      >
-        <Box
-          checked={selection.length > 0 && selection.length === rows.filter(r => r.readyNow > 0).length}
-          onClick={() => {
-            const payable = rows.filter(r => r.readyNow > 0).map(r => r.id)
-            setChecked(prev => (prev.size >= payable.length ? new Set() : new Set(payable)))
-          }}
-          label="Select every cleaner with money ready"
-        />
-        <button
-          type="button"
-          onClick={() => setSortBy(s => (s === "jobs" ? "name" : "jobs"))}
-          className={`flex min-w-0 flex-1 select-none items-center gap-1 ${HEAD}`}
-          title="Sort"
-        >
-          Cleaner
-          <span className="font-semibold normal-case tracking-normal text-[#b6bbc0]">
-            {sortBy === "jobs" ? "· by jobs" : "· A–Z"}
-          </span>
-        </button>
-        <div className="w-[86px] flex-none">Client paid us?</div>
-        <div
-          className="w-[104px] flex-none"
-          title="Cleaners send an invoice for each account · open a row to check them off one by one"
-        >
-          Did they send us an invoice?
-        </div>
-        <div className="w-[70px] flex-none">Due</div>
-        <div className="w-[92px] flex-none text-right text-[#0b7a4e]">Ready now</div>
-        <div className="w-[84px] flex-none text-right">Still owed</div>
-      </div>
-
-      {rows.length === 0 && (
-        <div className="px-5 py-16 text-center text-[13px] text-[#8a8f93]">
-          {query.trim()
-            ? `Nothing matches “${query.trim()}” · check the spelling or try the cleaner’s name.`
-            : "Nothing owed for this month."}
-        </div>
-      )}
-
-      {rows.map(c => {
+  const renderPayee = (c: CleanerRow) => {
         const isOpen = open.has(c.id)
         const inv = c.invoiceTally
         return (
@@ -332,6 +226,7 @@ export function CleanersTable({ period, onOpenProfile }: {
                 <span className="flex min-w-0 flex-1 flex-col gap-px">
                   <span className="truncate text-[14px] font-extrabold">{c.name}</span>
                   <span className="whitespace-nowrap text-[11px] font-semibold text-[#9a9fa4]">
+                    {c.specialty ? `${c.specialty} · ` : ""}
                     {c.unpaidJobs > 0 ? `${c.unpaidJobs} unpaid` : "all paid ✓"}
                   </span>
                 </span>
@@ -501,12 +396,156 @@ export function CleanersTable({ period, onOpenProfile }: {
                 })}
           </div>
         )
-      })}
+  }
 
-      {data && rows.length > 0 && (
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-[#98a2b3]">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <>
+    {data && (
+      <CleanersSummary
+        totals={data.totals}
+        cleanerCount={data.cleaners.length}
+        payments={data.payments ?? []}
+      />
+    )}
+
+    {/* Straight to a profile without hunting the table for the row. */}
+    {rows.length > 0 && (
+      <div className="mt-[18px] flex flex-wrap items-center gap-2">
+        <span className="mr-0.5 text-[11px] font-extrabold uppercase tracking-[0.05em] text-[#9aa0a4]">
+          Profiles
+        </span>
+        {(data?.cleaners ?? []).map(c => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onOpenProfile?.(c.id)}
+            title="Open profile"
+            className="inline-flex items-center gap-[7px] rounded-full border border-[#e2e2df] bg-white py-[5px] pl-1.5 pr-3 transition-all hover:-translate-y-px hover:border-[#c9d6cd] hover:bg-[#f1f5f0]"
+          >
+            <span
+              className="grid h-[22px] w-[22px] place-items-center rounded-full text-[9.5px] font-extrabold"
+              style={{ background: "#eef6f1", color: "#0b7a4e" }}
+            >
+              {initials(c.name)}
+            </span>
+            <span className="whitespace-nowrap text-[12px] font-bold text-[#3f4347]">
+              {c.name.split(/\s+/)[0]}
+            </span>
+          </button>
+        ))}
+      </div>
+    )}
+
+    <div className="mt-3.5 flex items-center gap-3">
+      <div className="relative w-[340px] max-w-full flex-none">
+        <Search
+          size={14}
+          strokeWidth={2.2}
+          className="pointer-events-none absolute left-[11px] top-1/2 -translate-y-1/2 text-[#9a9fa4]"
+        />
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search a client or cleaner"
+          aria-label="Search a client or cleaner"
+          className="w-full rounded-[8px] border border-[#e2e2df] bg-white py-[9px] pl-[34px] pr-8 text-[13px] font-semibold text-[#0d0d0e] outline-none focus:border-[#0b7a4e]"
+        />
+        {query.trim() && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            title="Clear search"
+            aria-label="Clear search"
+            className="absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center text-[#9a9fa4] hover:text-[#3f4347]"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {query.trim() && (
+        <span className="text-[12px] font-semibold text-[#8a8f93]">
+          {rows.length} cleaner{rows.length === 1 ? "" : "s"} ·{" "}
+          {rows.reduce((n, c) => n + c.accounts.length, 0)} matching accounts
+        </span>
+      )}
+    </div>
+
+    <div
+      className="mt-3 overflow-clip rounded-[12px] border border-[#ececea] bg-white"
+      style={{ boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05)" }}
+    >
+      <div
+        className={`sticky top-0 z-[5] flex items-center gap-3 border-b border-[#ececea] bg-[#fafaf8] px-5 py-[11px] ${HEAD}`}
+      >
+        <Box
+          checked={selection.length > 0 && selection.length === [...rows, ...vendorRows].filter(r => r.readyNow > 0).length}
+          onClick={() => {
+            const payable = [...rows, ...vendorRows].filter(r => r.readyNow > 0).map(r => r.id)
+            setChecked(prev => (prev.size >= payable.length ? new Set() : new Set(payable)))
+          }}
+          label="Select every cleaner with money ready"
+        />
+        <button
+          type="button"
+          onClick={() => setSortBy(s => (s === "jobs" ? "name" : "jobs"))}
+          className={`flex min-w-0 flex-1 select-none items-center gap-1 ${HEAD}`}
+          title="Sort"
+        >
+          Cleaner
+          <span className="font-semibold normal-case tracking-normal text-[#b6bbc0]">
+            {sortBy === "jobs" ? "· by jobs" : "· A–Z"}
+          </span>
+        </button>
+        <div className="w-[86px] flex-none">Client paid us?</div>
+        <div
+          className="w-[104px] flex-none"
+          title="Cleaners send an invoice for each account · open a row to check them off one by one"
+        >
+          Did they send us an invoice?
+        </div>
+        <div className="w-[70px] flex-none">Due</div>
+        <div className="w-[92px] flex-none text-right text-[#0b7a4e]">Ready now</div>
+        <div className="w-[84px] flex-none text-right">Still owed</div>
+      </div>
+
+      {rows.length === 0 && vendorRows.length === 0 && (
+        <div className="px-5 py-16 text-center text-[13px] text-[#8a8f93]">
+          {query.trim()
+            ? `Nothing matches “${query.trim()}” · check the spelling or try the cleaner’s name.`
+            : "Nothing owed for this month."}
+        </div>
+      )}
+
+      {rows.map(renderPayee)}
+
+      {vendorRows.length > 0 && (
+        <>
+          <div className="flex items-baseline gap-2.5 border-b border-[#ececea] bg-[#fafaf8] px-5 pb-2 pt-2.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-[0.07em] text-[#98a2b3]">
+              Vendor subcontractors
+            </span>
+            <span className="text-[11px] font-semibold text-[#c2c5c8]">
+              Pressure washing, window washing &amp; other specialty work
+            </span>
+          </div>
+          {vendorRows.map(renderPayee)}
+        </>
+      )}
+
+      {data && (rows.length > 0 || vendorRows.length > 0) && (
         <div className="flex items-center gap-3 bg-[#fafaf8] px-5 py-3 text-[12px] font-bold">
           <div className="min-w-0 flex-1 text-[#6b6f73]">
-            Total · {rows.length} cleaner{rows.length === 1 ? "" : "s"} · {data.totals.unpaidJobs} unpaid jobs
+            Total · {rows.length} cleaner{rows.length === 1 ? "" : "s"}
+            {vendorRows.length > 0 && ` · ${vendorRows.length} vendor${vendorRows.length === 1 ? "" : "s"}`}
+            {" · "}{data.totals.unpaidJobs} unpaid jobs
           </div>
           <span className="w-[86px] flex-none" />
           <span className="w-[104px] flex-none" />
