@@ -31,6 +31,8 @@ export async function POST(
     const locationId = typeof body?.locationId === 'string' ? body.locationId : ''
     const period = typeof body?.period === 'string' ? body.period : ''
     const jobId = typeof body?.jobId === 'string' && body.jobId ? body.jobId : null
+    const addOnServiceId =
+      typeof body?.addOnServiceId === 'string' && body.addOnServiceId ? body.addOnServiceId : null
     const reference = typeof body?.reference === 'string' ? body.reference.trim() : ''
 
     if (!locationId) return NextResponse.json({ error: 'Account is required' }, { status: 400 })
@@ -39,6 +41,12 @@ export async function POST(
     }
     if (reference.length > 120) {
       return NextResponse.json({ error: 'Reference is too long' }, { status: 400 })
+    }
+    if (jobId && addOnServiceId) {
+      return NextResponse.json(
+        { error: 'A receipt covers a clean or an add-on, not both' },
+        { status: 400 },
+      )
     }
 
     // A job-scoped receipt must actually belong to the account it claims, or
@@ -54,9 +62,26 @@ export async function POST(
       }
     }
 
+    // An add-on receipt must belong to the account it claims, the same way a
+    // job one must, or the tallies count someone else's work as invoiced.
+    if (addOnServiceId) {
+      const addOn = await prisma.addOnService.findUnique({
+        where: { id: addOnServiceId },
+        select: {
+          job: { select: { locationId: true } },
+          schedule: { select: { locationId: true } },
+        },
+      })
+      if (!addOn) return NextResponse.json({ error: 'Add-on not found' }, { status: 404 })
+      const owner = addOn.job?.locationId ?? addOn.schedule?.locationId ?? null
+      if (owner !== locationId) {
+        return NextResponse.json({ error: 'That add-on is not on this account' }, { status: 400 })
+      }
+    }
+
     // Idempotent: ticking an already-ticked box is a no-op, not a 500.
     const existing = await prisma.cleanerInvoiceReceipt.findFirst({
-      where: { ...payee, locationId, period, jobId },
+      where: { ...payee, locationId, period, jobId, addOnServiceId },
       select: { id: true },
     })
     const receipt = existing
@@ -65,7 +90,7 @@ export async function POST(
           data: { reference: reference || null },
         })
       : await prisma.cleanerInvoiceReceipt.create({
-          data: { ...payee, locationId, period, jobId, reference: reference || null },
+          data: { ...payee, locationId, period, jobId, addOnServiceId, reference: reference || null },
         })
 
     return NextResponse.json({ success: true, receipt })
@@ -89,6 +114,7 @@ export async function DELETE(
     const locationId = url.searchParams.get('locationId') || ''
     const period = url.searchParams.get('period') || ''
     const jobId = url.searchParams.get('jobId') || null
+    const addOnServiceId = url.searchParams.get('addOnServiceId') || null
 
     if (!locationId) return NextResponse.json({ error: 'Account is required' }, { status: 400 })
     if (!PERIOD.test(period)) {
@@ -96,7 +122,7 @@ export async function DELETE(
     }
 
     await prisma.cleanerInvoiceReceipt.deleteMany({
-      where: { ...payee, locationId, period, jobId },
+      where: { ...payee, locationId, period, jobId, addOnServiceId },
     })
 
     return NextResponse.json({ success: true })

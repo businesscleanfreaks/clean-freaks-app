@@ -14,6 +14,10 @@ import { avatarColor, initialsOf } from "@/lib/avatar-palette"
 
 interface JobRow {
   id: string
+  /** Vendor work can be an add-on rather than a clean. */
+  kind?: "job" | "addon"
+  /** Add-ons carry their own description. */
+  label?: string | null
   date: string
   amount: number
   paid: boolean
@@ -138,11 +142,15 @@ export function CleanersTable({ period, onOpenProfile }: {
   const setInvoiced = async (
     cleaner: CleanerRow,
     account: AccountRow,
-    jobId: string | null,
+    job: JobRow | null,
     on: boolean,
   ) => {
+    const isAddOn = job?.kind === "addon"
+    const jobId = job && !isAddOn ? job.id : null
+    const addOnServiceId = job && isAddOn ? job.id : null
     const qs = new URLSearchParams({ locationId: account.id, period })
     if (jobId) qs.set("jobId", jobId)
+    if (addOnServiceId) qs.set("addOnServiceId", addOnServiceId)
     if (cleaner.kind === "vendor") qs.set("payee", "vendor")
     const postUrl = cleaner.kind === "vendor"
       ? `/api/cleaners/${cleaner.id}/invoice-receipts?payee=vendor`
@@ -152,7 +160,7 @@ export function CleanersTable({ period, onOpenProfile }: {
         ? await fetch(postUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ locationId: account.id, period, jobId }),
+            body: JSON.stringify({ locationId: account.id, period, jobId, addOnServiceId }),
           })
         : await fetch(`/api/cleaners/${cleaner.id}/invoice-receipts?${qs}`, { method: "DELETE" })
       if (!res.ok) {
@@ -162,7 +170,7 @@ export function CleanersTable({ period, onOpenProfile }: {
       showUndoToast(
         on ? `Invoice marked in · ${account.clientName}` : `Invoice unmarked · ${account.clientName}`,
         async () => {
-          await setInvoiced(cleaner, account, jobId, !on)
+          await setInvoiced(cleaner, account, job, !on)
         },
       )
       mutate()
@@ -172,7 +180,8 @@ export function CleanersTable({ period, onOpenProfile }: {
   }
 
   /** Pay a single job, without going through the batch bar. */
-  const payOneJob = async (payee: CleanerRow, jobId: string, amount: number) => {
+  const payOneJob = async (payee: CleanerRow, job: JobRow) => {
+    const isAddOn = job.kind === "addon"
     const url = payee.kind === "vendor"
       ? `/api/vendors/${payee.id}/payments`
       : `/api/subcontractors/${payee.id}/payments`
@@ -180,17 +189,24 @@ export function CleanersTable({ period, onOpenProfile }: {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobIds: [jobId], datePaid: new Date().toISOString().slice(0, 10) }),
+        body: JSON.stringify({
+          jobIds: isAddOn ? [] : [job.id],
+          addOnServiceIds: isAddOn ? [job.id] : [],
+          datePaid: new Date().toISOString().slice(0, 10),
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => null)
         throw new Error(err?.error || "Could not mark it paid")
       }
-      showUndoToast(`Paid ${formatCurrency(amount)} · ${payee.name}`, async () => {
+      showUndoToast(`Paid ${formatCurrency(job.amount)} · ${payee.name}`, async () => {
         await fetch(url, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobIds: [jobId] }),
+          body: JSON.stringify({
+            jobIds: isAddOn ? [] : [job.id],
+            addOnServiceIds: isAddOn ? [job.id] : [],
+          }),
         }).catch(() => null)
         mutate()
       })
@@ -243,11 +259,16 @@ export function CleanersTable({ period, onOpenProfile }: {
       .map(c => ({
         cleanerId: c.id,
         cleanerName: c.name,
-        jobIds: c.accounts.flatMap(a => a.jobs.filter(j => j.state === "ready").map(j => j.id)),
+        jobIds: c.accounts.flatMap(a =>
+          a.jobs.filter(j => j.state === "ready" && j.kind !== "addon").map(j => j.id),
+        ),
+        addOnServiceIds: c.accounts.flatMap(a =>
+          a.jobs.filter(j => j.state === "ready" && j.kind === "addon").map(j => j.id),
+        ),
         amount: c.readyNow,
         isVendor: c.kind === "vendor",
       }))
-      .filter(p => p.jobIds.length > 0)
+      .filter(p => p.jobIds.length + (p.addOnServiceIds?.length ?? 0) > 0)
   }, [rows, vendorRows, checked])
 
   const toggleChecked = (id: string) =>
@@ -452,6 +473,11 @@ export function CleanersTable({ period, onOpenProfile }: {
                         >
                           <div className="min-w-0 flex-1 text-[11.5px] font-semibold text-[#6b6f73]">
                             {shortDate(j.date)}
+                            {j.kind === "addon" && j.label && (
+                              <span className="ml-1.5 text-[10.5px] font-medium text-[#9a9fa4]">
+                                {j.label}
+                              </span>
+                            )}
                             {j.cancelled && (
                               <span className="ml-1.5 text-[10.5px] text-[#b45309]">cancelled · gas fee</span>
                             )}
@@ -460,7 +486,7 @@ export function CleanersTable({ period, onOpenProfile }: {
                           <div className="w-[104px] flex-none">
                             <button
                               type="button"
-                              onClick={e => { e.stopPropagation(); setInvoiced(c, a, j.id, !j.invoiced) }}
+                              onClick={e => { e.stopPropagation(); setInvoiced(c, a, j, !j.invoiced) }}
                               disabled={j.paid}
                               className="inline-flex items-center gap-2 py-0.5 text-[11.5px] font-bold disabled:opacity-40"
                               style={{ color: j.invoiced ? "#0b7a4e" : "#9a9fa4" }}
@@ -485,7 +511,7 @@ export function CleanersTable({ period, onOpenProfile }: {
                             ) : j.state === "ready" ? (
                               <button
                                 type="button"
-                                onClick={e => { e.stopPropagation(); payOneJob(c, j.id, j.amount) }}
+                                onClick={e => { e.stopPropagation(); payOneJob(c, j) }}
                                 title="Mark just this clean paid"
                                 className="rounded-full px-2.5 py-1 text-[11px] font-extrabold"
                                 style={{ color: "#0b7a4e", background: "#e9f7ef", border: "1px solid #bfe4cd" }}

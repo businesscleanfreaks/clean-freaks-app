@@ -10,6 +10,8 @@ export interface PaySelection {
   cleanerId: string
   cleanerName: string
   jobIds: string[]
+  /** Vendor add-ons are paid through the same call but a different field. */
+  addOnServiceIds?: string[]
   amount: number
   /** Vendors are a separate model with their own payments endpoint. */
   isVendor?: boolean
@@ -46,7 +48,10 @@ export function BatchPayBar({ selection, onDone, onClear, hidden }: {
   const [memo, setMemo] = useState("")
 
   const total = selection.reduce((s, p) => s + p.amount, 0)
-  const jobCount = selection.reduce((s, p) => s + p.jobIds.length, 0)
+  const jobCount = selection.reduce(
+    (s, p) => s + p.jobIds.length + (p.addOnServiceIds?.length ?? 0),
+    0,
+  )
 
   const pay = async () => {
     setBusy(true)
@@ -60,6 +65,7 @@ export function BatchPayBar({ selection, onDone, onClear, hidden }: {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               jobIds: p.jobIds,
+              addOnServiceIds: p.addOnServiceIds ?? [],
               datePaid: today(),
               notes: memo.trim() || null,
             }),
@@ -86,7 +92,10 @@ export function BatchPayBar({ selection, onDone, onClear, hidden }: {
                 fetch(payUrl(p), {
                   method: "DELETE",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ jobIds: p.jobIds }),
+                  body: JSON.stringify({
+                    jobIds: p.jobIds,
+                    addOnServiceIds: p.addOnServiceIds ?? [],
+                  }),
                 }).catch(() => null),
               ),
             )
@@ -167,7 +176,10 @@ export function BatchPayBar({ selection, onDone, onClear, hidden }: {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13.5px] font-bold">{p.cleanerName}</div>
                     <div className="text-[11.5px] text-[#9a9fa4]">
-                      {p.jobIds.length} job{p.jobIds.length === 1 ? "" : "s"}
+                      {(() => {
+                        const n = p.jobIds.length + (p.addOnServiceIds?.length ?? 0)
+                        return `${n} job${n === 1 ? "" : "s"}`
+                      })()}
                     </div>
                   </div>
                   <span className="flex-none text-[13.5px] font-extrabold tabular-nums">

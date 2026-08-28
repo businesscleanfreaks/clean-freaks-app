@@ -201,14 +201,26 @@ model CleanerInvoice {
 /// separate model but the same mechanic, and the design puts them in the same
 /// table. A CHECK constraint in the migration enforces the either/or, since
 /// Prisma cannot express it.
+/// One payee invoice we are waiting on, or have received.
+///
+/// Cleaners invoice per ACCOUNT (a company with 7 accounts sends 7 invoices at
+/// month end); residential, one-offs and vendor work invoice per ITEM.
+///
+/// The unit is whichever of these is set:
+///   both null  -> covers the whole account for the period
+///   jobId      -> one clean
+///   addOnServiceId -> one add-on (vendor specialty work, which is not a Job)
+///
+/// Exactly one of `subcontractorId` / `vendorId` is set. CHECK constraints in
+/// the migration enforce both rules, since Prisma cannot express them.
 model CleanerInvoiceReceipt {
   id              String   @id @default(uuid())
   subcontractorId String?
   vendorId        String?
   locationId      String
   period          String // "yyyy-MM"
-  /// Null = covers the whole account for the period. Set = one specific clean.
   jobId           String?
+  addOnServiceId  String?
   receivedAt      DateTime @default(now())
   reference       String?
   createdAt       DateTime @default(now())
@@ -217,10 +229,11 @@ model CleanerInvoiceReceipt {
   vendor        Vendor?        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   location      Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
   job           Job?           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  addOnService  AddOnService?  @relation(fields: [addOnServiceId], references: [id], onDelete: Cascade)
 
   // NOTE: the real guards are PARTIAL unique indexes in the migration — one per
-  // (payee kind x shape) — because Postgres treats NULLs as distinct and a
-  // plain @@unique would let the account-wide case double up.
+  // (payee kind x unit) — because Postgres treats NULLs as distinct and a plain
+  // @@unique would let the account-wide case double up.
   @@index([subcontractorId, period])
   @@index([vendorId, period])
   @@index([locationId, period])
@@ -473,6 +486,8 @@ model AddOnService {
   subcontractor          Subcontractor?          @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
   invoiceLineItems       InvoiceLineItem[]
   vendorPaymentLineItems VendorPaymentLineItem[]
+
+  invoiceReceipts        CleanerInvoiceReceipt[]
 
   @@index([jobId])
   @@index([scheduleId])

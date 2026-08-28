@@ -367,24 +367,44 @@ export async function DELETE(
   try {
     await requireAuth()
     const { id: vendorId } = await params
-    const { jobIds } = await request.json().catch(() => ({ jobIds: [] }))
+    const body = await request.json().catch(() => ({}))
+    const jobIds: string[] = Array.isArray(body?.jobIds) ? body.jobIds.filter((x: unknown) => typeof x === 'string') : []
+    const addOnServiceIds: string[] = Array.isArray(body?.addOnServiceIds)
+      ? body.addOnServiceIds.filter((x: unknown) => typeof x === 'string')
+      : []
 
-    if (!Array.isArray(jobIds) || jobIds.length === 0 || !jobIds.every(id => typeof id === 'string')) {
-      return NextResponse.json({ error: 'jobIds must be a non-empty array' }, { status: 400 })
+    if (jobIds.length === 0 && addOnServiceIds.length === 0) {
+      return NextResponse.json(
+        { error: 'Pass at least one job or add-on to undo' },
+        { status: 400 },
+      )
     }
 
-    const jobs = await prisma.job.findMany({
-      where: { id: { in: jobIds }, vendorId },
-      select: { id: true },
-    })
-    if (jobs.length === 0) {
-      return NextResponse.json({ error: 'No matching jobs for this vendor' }, { status: 404 })
+    const [jobs, addOns] = await Promise.all([
+      jobIds.length
+        ? prisma.job.findMany({ where: { id: { in: jobIds }, vendorId }, select: { id: true } })
+        : Promise.resolve([]),
+      addOnServiceIds.length
+        ? prisma.addOnService.findMany({
+            where: { id: { in: addOnServiceIds }, vendorId },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+    ])
+    if (jobs.length === 0 && addOns.length === 0) {
+      return NextResponse.json({ error: 'No matching work for this vendor' }, { status: 404 })
     }
     const validJobIds = jobs.map(j => j.id)
+    const validAddOnIds = addOns.map(a => a.id)
 
     const result = await prisma.$transaction(async (tx) => {
       const lineItems = await tx.vendorPaymentLineItem.findMany({
-        where: { jobId: { in: validJobIds } },
+        where: {
+          OR: [
+            ...(validJobIds.length ? [{ jobId: { in: validJobIds } }] : []),
+            ...(validAddOnIds.length ? [{ addOnServiceId: { in: validAddOnIds } }] : []),
+          ],
+        },
         select: { id: true, paymentId: true },
       })
       const affected = Array.from(new Set(lineItems.map(i => i.paymentId)))
@@ -410,11 +430,21 @@ export async function DELETE(
         }
       }
 
-      const updated = await tx.job.updateMany({
-        where: { id: { in: validJobIds } },
-        data: { vendorPaid: false },
-      })
-      return { unmarkedCount: updated.count, removedLineItemCount: lineItems.length }
+      const [updatedJobs, updatedAddOns] = await Promise.all([
+        validJobIds.length
+          ? tx.job.updateMany({ where: { id: { in: validJobIds } }, data: { vendorPaid: false } })
+          : Promise.resolve({ count: 0 }),
+        validAddOnIds.length
+          ? tx.addOnService.updateMany({
+              where: { id: { in: validAddOnIds } },
+              data: { vendorPaid: false },
+            })
+          : Promise.resolve({ count: 0 }),
+      ])
+      return {
+        unmarkedCount: updatedJobs.count + updatedAddOns.count,
+        removedLineItemCount: lineItems.length,
+      }
     })
 
     return NextResponse.json({ success: true, ...result })

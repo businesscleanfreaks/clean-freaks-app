@@ -99,7 +99,13 @@ export async function GET(request: Request) {
       }),
       prisma.cleanerInvoiceReceipt.findMany({
         where: { period },
-        select: { subcontractorId: true, locationId: true, jobId: true },
+        select: {
+          subcontractorId: true,
+          vendorId: true,
+          locationId: true,
+          jobId: true,
+          addOnServiceId: true,
+        },
       }),
       // What has already gone out this month, for the "Paid so far" cell and
       // the log it opens.
@@ -125,6 +131,33 @@ export async function GET(request: Request) {
           id: true,
           name: true,
           services: true,
+          // Specialty work also arrives as add-ons, which are not Jobs. Without
+          // these a vendor whose month is all add-ons shows nothing owed.
+          addOnServices: {
+            where: { vendorPaid: false },
+            select: {
+              id: true,
+              description: true,
+              subcontractorRate: true,
+              vendorPaid: true,
+              createdAt: true,
+              job: {
+                select: {
+                  id: true,
+                  date: true,
+                  locationId: true,
+                  location: { select: { id: true, name: true, client: { select: { id: true, name: true, propertyType: true } } } },
+                  invoiceLineItems: { select: { invoice: { select: { status: true } } } },
+                },
+              },
+              schedule: {
+                select: {
+                  locationId: true,
+                  location: { select: { id: true, name: true, client: { select: { id: true, name: true, propertyType: true } } } },
+                },
+              },
+            },
+          },
           jobs: {
             where: {
               vendorPaid: false,
@@ -153,9 +186,12 @@ export async function GET(request: Request) {
     // Receipts indexed for lookup: account-wide ones and per-clean ones.
     const accountWide = new Set<string>()
     const perClean = new Set<string>()
+    const perAddOn = new Set<string>()
     for (const r of receipts) {
-      if (r.jobId) perClean.add(`${r.subcontractorId}|${r.locationId}|${r.jobId}`)
-      else accountWide.add(`${r.subcontractorId}|${r.locationId}`)
+      const payee = r.subcontractorId ?? r.vendorId
+      if (r.addOnServiceId) perAddOn.add(`${payee}|${r.locationId}|${r.addOnServiceId}`)
+      else if (r.jobId) perClean.add(`${payee}|${r.locationId}|${r.jobId}`)
+      else accountWide.add(`${payee}|${r.locationId}`)
     }
 
     type JobRow = (typeof jobs)[number]
@@ -273,21 +309,76 @@ export async function GET(request: Request) {
 
     const vendorRows = vendors
       .map(v => {
-        const byAccount = new Map<string, (typeof v.jobs)[number][]>()
-        for (const j of v.jobs) {
-          const list = byAccount.get(j.locationId) ?? []
-          list.push(j)
-          byAccount.set(j.locationId, list)
+        // A vendor's month is jobs AND add-ons. Normalise both into one item
+        // shape so an account can hold a mix without the UI caring which.
+        type Item = {
+          id: string
+          kind: 'job' | 'addon'
+          date: string
+          label: string | null
+          amount: number
+          paid: boolean
+          locationId: string
+          location: { id: string; name: string; client: { id: string; name: string; propertyType: string | null } }
+          lineItems: { invoice: { status: string } }[]
         }
 
-        const accounts = Array.from(byAccount.entries()).map(([locationId, accountJobs]) => {
-          const first = accountJobs[0]
-          const unpaid = accountJobs.filter(j => !j.vendorPaid)
-          const invoicedJobIds = unpaid
-            .filter(j => perClean.has(`${v.id}|${locationId}|${j.id}`))
-            .map(j => j.id)
+        const items: Item[] = []
 
-          const lineItems = accountJobs.flatMap(j => j.invoiceLineItems)
+        for (const j of v.jobs) {
+          items.push({
+            id: j.id,
+            kind: 'job',
+            date: j.date.toISOString(),
+            label: null,
+            amount: j.subcontractorRate || 0,
+            paid: j.vendorPaid,
+            locationId: j.locationId,
+            location: j.location,
+            lineItems: j.invoiceLineItems,
+          })
+        }
+
+        for (const a of v.addOnServices) {
+          const loc = a.job?.location ?? a.schedule?.location ?? null
+          const locationId = a.job?.locationId ?? a.schedule?.locationId ?? null
+          if (!loc || !locationId) continue
+          // A schedule-linked add-on has no date of its own; fall back to when
+          // it was created so it still lands in a month.
+          const when = a.job?.date ?? a.createdAt
+          if (when < start || when > end) continue
+          items.push({
+            id: a.id,
+            kind: 'addon',
+            date: when.toISOString(),
+            label: a.description,
+            amount: a.subcontractorRate || 0,
+            paid: a.vendorPaid,
+            locationId,
+            location: loc,
+            lineItems: a.job?.invoiceLineItems ?? [],
+          })
+        }
+
+        const byAccount = new Map<string, Item[]>()
+        for (const it of items) {
+          const list = byAccount.get(it.locationId) ?? []
+          list.push(it)
+          byAccount.set(it.locationId, list)
+        }
+
+        const accounts = Array.from(byAccount.entries()).map(([locationId, accountItems]) => {
+          const first = accountItems[0]
+          const unpaid = accountItems.filter(i => !i.paid)
+          const invoicedIds = unpaid
+            .filter(i =>
+              i.kind === 'addon'
+                ? perAddOn.has(`${v.id}|${locationId}|${i.id}`)
+                : perClean.has(`${v.id}|${locationId}|${i.id}`),
+            )
+            .map(i => i.id)
+
+          const lineItems = accountItems.flatMap(i => i.lineItems)
           const clientHasPaid =
             lineItems.length > 0 && lineItems.every(li => li.invoice.status === 'PAID')
 
@@ -295,8 +386,8 @@ export async function GET(request: Request) {
             id: locationId,
             clientName: first.location.client.name,
             invoiceUnit: 'PER_CLEAN',
-            jobIds: unpaid.map(j => j.id),
-            invoicedJobIds,
+            jobIds: unpaid.map(i => i.id),
+            invoicedJobIds: invoicedIds,
             clientHasPaid,
             // Vendor work is one-off: nothing to wait a pay-by day for.
             holdsUntilPayByDay: false,
@@ -311,16 +402,18 @@ export async function GET(request: Request) {
             invoiceUnit: 'PER_CLEAN' as const,
             clientHasPaid,
             invoiceTally: tallyAccountInvoices(account),
-            jobs: accountJobs.map(j => ({
-              id: j.id,
-              date: j.date.toISOString(),
-              amount: j.subcontractorRate || 0,
-              paid: j.vendorPaid,
+            jobs: accountItems.map(i => ({
+              id: i.id,
+              kind: i.kind,
+              label: i.label,
+              date: i.date,
+              amount: i.amount,
+              paid: i.paid,
               cancelled: false,
-              invoiced: account.invoicedJobIds.includes(j.id),
+              invoiced: account.invoicedJobIds.includes(i.id),
               state: jobPayState({
-                jobId: j.id,
-                paid: j.vendorPaid,
+                jobId: i.id,
+                paid: i.paid,
                 account,
                 invoicesUs: true,
                 payByDay: 1,
