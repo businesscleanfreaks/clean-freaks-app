@@ -41,7 +41,7 @@ const primaryTabs: TabItem[] = [
 ]
 
 const moreMenuItems = [
-  { href: "/payables", label: "Cleaners", icon: <Wallet className="w-5 h-5" /> },
+  { href: "/cleaners", label: "Cleaners", icon: <Wallet className="w-5 h-5" /> },
 ]
 
 export function MobileBottomTabs() {

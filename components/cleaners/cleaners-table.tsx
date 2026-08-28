@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react"
 import useSWR from "swr"
-import { ChevronRight, Loader2 } from "lucide-react"
+import { ChevronRight, Loader2, Search, X } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showError, showUndoToast } from "@/lib/toast"
 import type { JobPayState } from "@/lib/cleaner-payables"
 import { BatchPayBar, type PaySelection } from "./batch-pay-bar"
-import { CleanersSummary } from "./cleaners-summary"
+import { CleanersSummary, type PaymentRow } from "./cleaners-summary"
 
 interface JobRow {
   id: string
@@ -48,7 +48,8 @@ interface CleanerRow {
 interface CleanersData {
   period: string
   cleaners: CleanerRow[]
-  totals: { readyNow: number; stillOwed: number; unpaidJobs: number }
+  totals: { readyNow: number; stillOwed: number; unpaidJobs: number; paidSoFar: number }
+  payments: PaymentRow[]
 }
 
 const HEAD = "text-[10px] font-extrabold uppercase tracking-[0.07em] text-[#98a2b3]"
@@ -66,7 +67,10 @@ const shortDate = (iso: string) =>
  * and has the cleaner invoiced us — because a job cannot be paid until the
  * second is in, and large ones wait on the first.
  */
-export function CleanersTable({ period }: { period: string }) {
+export function CleanersTable({ period, onOpenProfile }: {
+  period: string
+  onOpenProfile?: (cleanerId: string) => void
+}) {
   const { data, isLoading, mutate } = useSWR<CleanersData>(
     `/api/cleaners/data?period=${period}`,
     fetcher,
@@ -178,19 +182,72 @@ export function CleanersTable({ period }: { period: string }) {
 
   return (
     <>
-    {data && <CleanersSummary totals={data.totals} cleanerCount={data.cleaners.length} />}
-
-    <div className="mt-4 flex items-center gap-3">
-      <input
-        value={query}
-        onChange={e => setQuery(e.target.value)}
-        placeholder="Search a client or cleaner"
-        aria-label="Search a client or cleaner"
-        className="h-10 w-[340px] max-w-full rounded-[8px] border border-[#e2e2df] px-3 text-[13px] outline-none focus:border-[#0b7a4e]"
+    {data && (
+      <CleanersSummary
+        totals={data.totals}
+        cleanerCount={data.cleaners.length}
+        payments={data.payments ?? []}
       />
+    )}
+
+    {/* Straight to a profile without hunting the table for the row. */}
+    {rows.length > 0 && (
+      <div className="mt-[18px] flex flex-wrap items-center gap-2">
+        <span className="mr-0.5 text-[11px] font-extrabold uppercase tracking-[0.05em] text-[#9aa0a4]">
+          Profiles
+        </span>
+        {(data?.cleaners ?? []).map(c => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onOpenProfile?.(c.id)}
+            title="Open profile"
+            className="inline-flex items-center gap-[7px] rounded-full border border-[#e2e2df] bg-white py-[5px] pl-1.5 pr-3 transition-all hover:-translate-y-px hover:border-[#c9d6cd] hover:bg-[#f1f5f0]"
+          >
+            <span
+              className="grid h-[22px] w-[22px] place-items-center rounded-full text-[9.5px] font-extrabold"
+              style={{ background: "#eef6f1", color: "#0b7a4e" }}
+            >
+              {initials(c.name)}
+            </span>
+            <span className="whitespace-nowrap text-[12px] font-bold text-[#3f4347]">
+              {c.name.split(/\s+/)[0]}
+            </span>
+          </button>
+        ))}
+      </div>
+    )}
+
+    <div className="mt-3.5 flex items-center gap-3">
+      <div className="relative w-[340px] max-w-full flex-none">
+        <Search
+          size={14}
+          strokeWidth={2.2}
+          className="pointer-events-none absolute left-[11px] top-1/2 -translate-y-1/2 text-[#9a9fa4]"
+        />
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search a client or cleaner"
+          aria-label="Search a client or cleaner"
+          className="w-full rounded-[8px] border border-[#e2e2df] bg-white py-[9px] pl-[34px] pr-8 text-[13px] font-semibold text-[#0d0d0e] outline-none focus:border-[#0b7a4e]"
+        />
+        {query.trim() && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            title="Clear search"
+            aria-label="Clear search"
+            className="absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center text-[#9a9fa4] hover:text-[#3f4347]"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
       {query.trim() && (
         <span className="text-[12px] font-semibold text-[#8a8f93]">
-          {rows.length} cleaner{rows.length === 1 ? "" : "s"}
+          {rows.length} cleaner{rows.length === 1 ? "" : "s"} ·{" "}
+          {rows.reduce((n, c) => n + c.accounts.length, 0)} matching accounts
         </span>
       )}
     </div>
