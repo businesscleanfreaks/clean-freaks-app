@@ -49,7 +49,7 @@ export async function GET(request: Request) {
     const { start, end } = monthRange(period)
     const now = new Date()
 
-    const [cleaners, jobs, receipts] = await Promise.all([
+    const [cleaners, jobs, receipts, payments] = await Promise.all([
       prisma.subcontractor.findMany({
         where: { isActive: true },
         select: {
@@ -100,6 +100,20 @@ export async function GET(request: Request) {
       prisma.cleanerInvoiceReceipt.findMany({
         where: { period },
         select: { subcontractorId: true, locationId: true, jobId: true },
+      }),
+      // What has already gone out this month, for the "Paid so far" cell and
+      // the log it opens.
+      prisma.subcontractorPayment.findMany({
+        where: { datePaid: { gte: start, lte: end } },
+        select: {
+          id: true,
+          datePaid: true,
+          totalAmount: true,
+          paymentMethod: true,
+          subcontractor: { select: { name: true } },
+          _count: { select: { lineItems: true } },
+        },
+        orderBy: { datePaid: 'desc' },
       }),
     ])
 
@@ -233,8 +247,23 @@ export async function GET(request: Request) {
       { readyNow: 0, stillOwed: 0, unpaidJobs: 0 },
     )
 
+    const paidSoFar = payments.reduce((sum, p) => sum + p.totalAmount, 0)
+
     return NextResponse.json(
-      { period, cleaners: rows, totals },
+      {
+        period,
+        cleaners: rows,
+        totals: { ...totals, paidSoFar },
+        payments: payments.map(p => ({
+          id: p.id,
+          name: p.subcontractor.name,
+          amount: p.totalAmount,
+          date: p.datePaid.toISOString(),
+          detail: `${p._count.lineItems} job${p._count.lineItems === 1 ? '' : 's'} · ${
+            p.paymentMethod.charAt(0) + p.paymentMethod.slice(1).toLowerCase()
+          }`,
+        })),
+      },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {

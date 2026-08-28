@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils"
 import { showError, showUndoToast } from "@/lib/toast"
 import type { JobPayState } from "@/lib/cleaner-payables"
 import { BatchPayBar, type PaySelection } from "./batch-pay-bar"
+import { CleanersSummary } from "./cleaners-summary"
 
 interface JobRow {
   id: string
@@ -76,6 +77,7 @@ export function CleanersTable({ period }: { period: string }) {
   const [openAccounts, setOpenAccounts] = useState<Set<string>>(new Set())
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState<"jobs" | "name">("jobs")
+  const [query, setQuery] = useState("")
 
   const toggleAccount = (id: string) =>
     setOpenAccounts(prev => {
@@ -94,13 +96,21 @@ export function CleanersTable({ period }: { period: string }) {
     })
 
   const rows = useMemo(() => {
-    const list = data?.cleaners ?? []
+    const all = data?.cleaners ?? []
+    const q = query.trim().toLowerCase()
+    const list = q
+      ? all.filter(
+          c =>
+            c.name.toLowerCase().includes(q) ||
+            c.accounts.some(a => a.clientName.toLowerCase().includes(q)),
+        )
+      : all
     return [...list].sort((a, b) =>
       sortBy === "name"
         ? a.name.localeCompare(b.name)
         : b.unpaidJobs - a.unpaidJobs || a.name.localeCompare(b.name),
     )
-  }, [data, sortBy])
+  }, [data, sortBy, query])
 
   /**
    * Tick or untick an account's invoice. A per-account account is marked as a
@@ -168,6 +178,23 @@ export function CleanersTable({ period }: { period: string }) {
 
   return (
     <>
+    {data && <CleanersSummary totals={data.totals} cleanerCount={data.cleaners.length} />}
+
+    <div className="mt-4 flex items-center gap-3">
+      <input
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder="Search a client or cleaner"
+        aria-label="Search a client or cleaner"
+        className="h-10 w-[340px] max-w-full rounded-[8px] border border-[#e2e2df] px-3 text-[13px] outline-none focus:border-[#0b7a4e]"
+      />
+      {query.trim() && (
+        <span className="text-[12px] font-semibold text-[#8a8f93]">
+          {rows.length} cleaner{rows.length === 1 ? "" : "s"}
+        </span>
+      )}
+    </div>
+
     <div
       className="mt-3 overflow-clip rounded-[12px] border border-[#ececea] bg-white"
       style={{ boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05)" }}
@@ -208,7 +235,9 @@ export function CleanersTable({ period }: { period: string }) {
 
       {rows.length === 0 && (
         <div className="px-5 py-16 text-center text-[13px] text-[#8a8f93]">
-          Nothing owed for this month.
+          {query.trim()
+            ? `Nothing matches “${query.trim()}” · check the spelling or try the cleaner’s name.`
+            : "Nothing owed for this month."}
         </div>
       )}
 

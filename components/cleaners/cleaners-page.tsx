@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Settings2 } from "lucide-react"
 import { CleanersTable } from "./cleaners-table"
+import { PayScheduleModal } from "./pay-schedule-modal"
 
 const FULL_MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -29,6 +30,7 @@ const thisMonth = () => new Date().toISOString().slice(0, 7)
  */
 export function CleanersPage() {
   const [period, setPeriod] = useState(thisMonth())
+  const [scheduleOpen, setScheduleOpen] = useState(false)
   const isCurrent = period >= thisMonth()
 
   return (
@@ -39,7 +41,8 @@ export function CleanersPage() {
           <p className="mt-1 text-[13px] font-semibold text-[#7e8489]">Cleaner profiles &amp; payables</p>
         </div>
 
-        <div className="flex h-11 flex-none items-center rounded-lg border border-[#e2e2df] bg-white">
+        <div className="flex flex-none items-center gap-2">
+        <div className="flex h-11 items-center rounded-lg border border-[#e2e2df] bg-white">
           <button
             type="button"
             onClick={() => setPeriod(p => shiftPeriod(p, -1))}
@@ -61,9 +64,22 @@ export function CleanersPage() {
             <ChevronRight size={16} />
           </button>
         </div>
+
+        {/* Where pay-by day and "invoices us" get set · the two settings that
+            decide what the table calls ready. */}
+        <button
+          type="button"
+          onClick={() => setScheduleOpen(true)}
+          className="flex h-11 items-center gap-2 rounded-lg border border-[#e2e2df] bg-white px-3.5 text-[13px] font-bold hover:bg-[#f6f6f3]"
+        >
+          <Settings2 size={15} /> Pay schedule
+        </button>
+        </div>
       </header>
 
       <CleanersTable period={period} />
+
+      <PayScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
     </div>
   )
 }
