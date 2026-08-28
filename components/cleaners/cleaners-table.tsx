@@ -1,12 +1,13 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronRight, Loader2, Search, X } from "lucide-react"
+import { Check, ChevronRight, Copy, Loader2, Search, Trash2, X } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
-import { showError, showUndoToast } from "@/lib/toast"
-import type { JobPayState } from "@/lib/cleaner-payables"
+import { showError, showSuccess, showUndoToast } from "@/lib/toast"
+import { dueLabel, zelleMemo, type JobPayState } from "@/lib/cleaner-payables"
 import { BatchPayBar, type PaySelection } from "./batch-pay-bar"
 import { CleanersSummary, type PaymentRow } from "./cleaners-summary"
 import { avatarColor, initialsOf } from "@/lib/avatar-palette"
@@ -84,6 +85,7 @@ export function CleanersTable({ period, onOpenProfile }: {
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState<"jobs" | "name">("jobs")
   const [query, setQuery] = useState("")
+  const [confirmRemove, setConfirmRemove] = useState<CleanerRow | null>(null)
 
   const toggleAccount = (id: string) =>
     setOpenAccounts(prev => {
@@ -169,6 +171,72 @@ export function CleanersTable({ period, onOpenProfile }: {
     }
   }
 
+  /** Pay a single job, without going through the batch bar. */
+  const payOneJob = async (payee: CleanerRow, jobId: string, amount: number) => {
+    const url = payee.kind === "vendor"
+      ? `/api/vendors/${payee.id}/payments`
+      : `/api/subcontractors/${payee.id}/payments`
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobIds: [jobId], datePaid: new Date().toISOString().slice(0, 10) }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.error || "Could not mark it paid")
+      }
+      showUndoToast(`Paid ${formatCurrency(amount)} · ${payee.name}`, async () => {
+        await fetch(url, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobIds: [jobId] }),
+        }).catch(() => null)
+        mutate()
+      })
+      mutate()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not mark it paid")
+    }
+  }
+
+  const copyMemo = async (clientName: string) => {
+    const memo = zelleMemo(clientName, period)
+    try {
+      await navigator.clipboard.writeText(memo)
+      showSuccess(`Copied · "${memo}"`)
+    } catch {
+      showError("Could not copy · your browser blocked clipboard access")
+    }
+  }
+
+  /**
+   * Take a cleaner off the page. Soft: their profile and unpaid work go, but
+   * payments already logged stay in the records, so this is undoable.
+   */
+  const removeCleaner = async (payee: CleanerRow) => {
+    setConfirmRemove(null)
+    try {
+      const res = await fetch(`/api/subcontractors/${payee.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false }),
+      })
+      if (!res.ok) throw new Error("Could not remove them")
+      showUndoToast(`Removed · ${payee.name}`, async () => {
+        await fetch(`/api/subcontractors/${payee.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: true }),
+        }).catch(() => null)
+        mutate()
+      })
+      mutate()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not remove them")
+    }
+  }
+
   const selection: PaySelection[] = useMemo(() => {
     return [...rows, ...vendorRows]
       .filter(c => checked.has(c.id) && c.readyNow > 0)
@@ -200,7 +268,7 @@ export function CleanersTable({ period, onOpenProfile }: {
               role="button"
               tabIndex={0}
               onKeyDown={e => { if (e.key === "Enter") toggle(c.id) }}
-              className="flex cursor-pointer items-center gap-3 border-b border-[#f0f0ed] px-5 py-[13px] transition-colors hover:bg-[#f1f5f0]"
+              className="group flex cursor-pointer items-center gap-3 border-b border-[#f0f0ed] px-5 py-[13px] transition-colors hover:bg-[#f1f5f0]"
             >
               <Box
                 checked={checked.has(c.id)}
@@ -247,9 +315,17 @@ export function CleanersTable({ period, onOpenProfile }: {
                 )}
               </div>
 
-              <span className="w-[70px] flex-none text-[11.5px] font-semibold text-[#9a9fa4]">
-                {c.readyNow > 0 ? "ready" : `by the ${c.payByDay}`}
-              </span>
+              {(() => {
+                const d = dueLabel(period, c.payByDay, new Date())
+                return (
+                  <span
+                    className="w-[70px] flex-none text-[11.5px]"
+                    style={{ color: d.color, fontWeight: d.weight }}
+                  >
+                    {d.label}
+                  </span>
+                )
+              })()}
 
               <span
                 className="w-[92px] flex-none text-right text-[14px] font-extrabold tabular-nums"
@@ -259,6 +335,20 @@ export function CleanersTable({ period, onOpenProfile }: {
               </span>
               <span className="w-[84px] flex-none text-right text-[13px] font-semibold tabular-nums text-[#9a9fa4]">
                 {formatCurrency(c.stillOwed)}
+              </span>
+
+              <span className="flex w-[40px] flex-none justify-end">
+                {c.kind !== "vendor" && (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setConfirmRemove(c) }}
+                    title="Remove this cleaner · you can undo right after"
+                    aria-label={`Remove ${c.name}`}
+                    className="grid h-7 w-7 place-items-center rounded-[7px] text-[#b6bbc0] opacity-0 transition-opacity hover:text-[#d92d20] focus:opacity-100 group-hover:opacity-100"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </span>
             </div>
 
@@ -340,6 +430,18 @@ export function CleanersTable({ period, onOpenProfile }: {
                       >
                         {formatCurrency(amount)}
                       </span>
+
+                      <span className="flex w-[40px] flex-none justify-end">
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); copyMemo(a.clientName) }}
+                          title="Copy Zelle memo"
+                          aria-label={`Copy Zelle memo for ${a.clientName}`}
+                          className="grid h-[26px] w-[26px] place-items-center rounded-[7px] text-[#b6bbc0] hover:bg-white hover:text-[#3f4347]"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </span>
                     </div>
 
                     {perClean && c.invoicesUs && openAccounts.has(a.id) &&
@@ -377,9 +479,27 @@ export function CleanersTable({ period, onOpenProfile }: {
                             </button>
                           </div>
                           <span className="w-[70px] flex-none" />
-                          <span className="w-[92px] flex-none text-right text-[11px] font-bold"
-                            style={{ color: j.paid ? "#1f9d57" : j.state === "ready" ? "#0b7a4e" : "#9a9fa4" }}>
-                            {j.paid ? "✓ paid" : j.state === "ready" ? "ready" : j.state === "needs-invoice" ? "needs invoice" : "on hold"}
+                          <span className="flex w-[92px] flex-none justify-end">
+                            {j.paid ? (
+                              <span className="text-[11px] font-bold text-[#1f9d57]">✓ paid</span>
+                            ) : j.state === "ready" ? (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); payOneJob(c, j.id, j.amount) }}
+                                title="Mark just this clean paid"
+                                className="rounded-full px-2.5 py-1 text-[11px] font-extrabold"
+                                style={{ color: "#0b7a4e", background: "#e9f7ef", border: "1px solid #bfe4cd" }}
+                              >
+                                Mark paid
+                              </button>
+                            ) : (
+                              <span
+                                className="text-[11px] font-bold"
+                                style={{ color: j.state === "needs-invoice" ? "#b45309" : "#9a9fa4" }}
+                              >
+                                {j.state === "needs-invoice" ? "needs invoice" : "on hold"}
+                              </span>
+                            )}
                           </span>
                           <span
                             className="w-[84px] flex-none text-right text-[11.5px] font-bold tabular-nums"
@@ -387,6 +507,7 @@ export function CleanersTable({ period, onOpenProfile }: {
                           >
                             {formatCurrency(j.amount)}
                           </span>
+                          <span className="w-[40px] flex-none" />
                         </div>
                       ))}
                     </div>
@@ -512,13 +633,34 @@ export function CleanersTable({ period, onOpenProfile }: {
         <div className="w-[70px] flex-none">Due</div>
         <div className="w-[92px] flex-none text-right text-[#0b7a4e]">Ready now</div>
         <div className="w-[84px] flex-none text-right">Still owed</div>
+        <span className="w-[40px] flex-none" />
       </div>
 
       {rows.length === 0 && vendorRows.length === 0 && (
-        <div className="px-5 py-16 text-center text-[13px] text-[#8a8f93]">
-          {query.trim()
-            ? `Nothing matches “${query.trim()}” · check the spelling or try the cleaner’s name.`
-            : "Nothing owed for this month."}
+        <div className="px-6 py-[52px] text-center">
+          {query.trim() ? (
+            <div className="text-[13px] text-[#8a8f93]">
+              Nothing matches &ldquo;{query.trim()}&rdquo; &middot; check the spelling or try the
+              cleaner&rsquo;s name.
+            </div>
+          ) : (
+            <>
+              <div
+                className="mx-auto grid h-[46px] w-[46px] place-items-center rounded-[14px]"
+                style={{ background: "#eef6f1", color: "#0b7a4e" }}
+              >
+                <Check size={24} strokeWidth={2.4} />
+              </div>
+              <div className="mt-3.5 text-[17px] font-extrabold tracking-[-0.01em]">
+                {period < new Date().toISOString().slice(0, 7) ? "All settled" : "Nothing here yet"}
+              </div>
+              <div className="mt-1 text-[13px] text-[#7e8489]">
+                {period < new Date().toISOString().slice(0, 7)
+                  ? "Everyone was paid for this month."
+                  : "Work will show up here as it is completed."}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -554,6 +696,7 @@ export function CleanersTable({ period, onOpenProfile }: {
           <span className="w-[84px] flex-none text-right tabular-nums text-[#9a9fa4]">
             {formatCurrency(data.totals.stillOwed)}
           </span>
+          <span className="w-[40px] flex-none" />
         </div>
       )}
     </div>
@@ -562,7 +705,51 @@ export function CleanersTable({ period, onOpenProfile }: {
       selection={selection}
       onClear={() => setChecked(new Set())}
       onDone={() => mutate()}
+      hidden={!!confirmRemove}
     />
+
+    {/* Removing someone is the one destructive action here, so it confirms
+        first — and still offers undo afterwards. */}
+    {confirmRemove && typeof document !== "undefined" && createPortal(
+      <div
+        onClick={() => setConfirmRemove(null)}
+        className="fixed inset-0 z-[70] flex items-center justify-center p-8"
+        style={{ background: "rgba(16,24,40,0.34)" }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Remove cleaner"
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          className="w-[420px] max-w-full rounded-[16px] bg-white p-6"
+          style={{ boxShadow: "0 24px 64px rgba(16,24,40,.22)" }}
+        >
+          <div className="text-[16px] font-extrabold">Remove {confirmRemove.name}?</div>
+          <div className="mt-2 text-[13px] leading-[1.55] text-[#6b6f73]">
+            Their profile, pay schedule and unpaid jobs come off this page. Payments you already
+            logged stay in your records &middot; and you can undo right after.
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmRemove(null)}
+              className="rounded-[8px] border border-[#e2e2df] px-4 py-2.5 text-[13px] font-bold text-[#3f4347] hover:bg-[#f6f6f3]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => removeCleaner(confirmRemove)}
+              className="rounded-[8px] px-4 py-2.5 text-[13px] font-extrabold text-white"
+              style={{ background: "#d92d20" }}
+            >
+              Remove cleaner
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    )}
     </>
   )
 }

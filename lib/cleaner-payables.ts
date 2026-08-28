@@ -144,3 +144,45 @@ export function hasInvoiceFor(jobId: string, account: CleanerAccount): boolean {
   if (account.invoiceUnit === "PER_ACCOUNT") return account.invoicedJobIds.length > 0
   return account.invoicedJobIds.includes(jobId)
 }
+
+/** The date a cleaner is paid by: their day, in the month AFTER the work. */
+export function payByDate(period: string, payByDay: number): Date {
+  const [y, m] = period.split("-").map(Number)
+  return new Date(y, m, clampDay(payByDay), 0, 0, 0, 0)
+}
+
+export interface DueLabel {
+  label: string
+  color: string
+  /** The design bolds the urgent states so they carry across the row. */
+  weight: 600 | 800
+}
+
+/**
+ * When this cleaner is due to be paid, said the way the design says it.
+ *
+ * Past the day reads "overdue" rather than a date — once it has slipped, the
+ * date is no longer the useful fact.
+ */
+export function dueLabel(period: string, payByDay: number, now: Date): DueLabel {
+  const due = payByDate(period, payByDay)
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  if (due < today) return { label: "overdue", color: "#d92d20", weight: 800 }
+  if (due.getTime() === today.getTime()) return { label: "due today", color: "#c2410c", weight: 800 }
+  return {
+    label: due.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    color: "#9a9fa4",
+    weight: 600,
+  }
+}
+
+/**
+ * The memo that goes on the Zelle transfer, so the cleaner can tell which
+ * account a payment covers.
+ */
+export function zelleMemo(clientName: string, period: string): string {
+  const [y, m] = period.split("-").map(Number)
+  const month = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long" })
+  return `The Clean Freaks Pay - ${clientName} - ${month}`
+}

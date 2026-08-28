@@ -7,6 +7,8 @@ import {
   jobPayState,
   tallyAccountInvoices,
   tallyCleanerInvoices,
+  dueLabel,
+  zelleMemo,
   type CleanerAccount,
 } from "@/lib/cleaner-payables"
 
@@ -173,5 +175,48 @@ describe("jobPayState", () => {
     const a = acct()
     expect(jobPayState({ ...base, invoicesUs: false, account: a, now: new Date("2026-08-01") }))
       .toBe("locked")
+  })
+})
+
+describe("dueLabel", () => {
+  const period = "2026-07"
+
+  it("shows the date while it is still ahead", () => {
+    const d = dueLabel(period, 3, new Date("2026-08-01T09:00:00"))
+    expect(d.label).toBe("Aug 3")
+    expect(d.weight).toBe(600)
+  })
+
+  it("says due today on the day, in orange", () => {
+    const d = dueLabel(period, 3, new Date("2026-08-03T09:00:00"))
+    expect(d.label).toBe("due today")
+    expect(d.color).toBe("#c2410c")
+    expect(d.weight).toBe(800)
+  })
+
+  it("says overdue once it has slipped, in red", () => {
+    const d = dueLabel(period, 3, new Date("2026-08-04T09:00:00"))
+    expect(d.label).toBe("overdue")
+    expect(d.color).toBe("#d92d20")
+    expect(d.weight).toBe(800)
+  })
+
+  it("ignores the time of day · 11pm on the due date is still due today", () => {
+    expect(dueLabel(period, 3, new Date("2026-08-03T23:59:00")).label).toBe("due today")
+  })
+
+  it("rolls a December period into January", () => {
+    expect(dueLabel("2026-12", 5, new Date("2027-01-02T09:00:00")).label).toBe("Jan 5")
+  })
+})
+
+describe("zelleMemo", () => {
+  it("names the client and the month being paid for", () => {
+    expect(zelleMemo("Hillhurst Building", "2026-07"))
+      .toBe("The Clean Freaks Pay - Hillhurst Building - July")
+  })
+
+  it("uses the work's month, not today's", () => {
+    expect(zelleMemo("Acme", "2026-01")).toContain("January")
   })
 })
