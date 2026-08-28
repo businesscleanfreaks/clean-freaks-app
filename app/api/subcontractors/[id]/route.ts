@@ -293,7 +293,10 @@ export async function PATCH(
     const allowedFields = [
       'name', 'phone', 'email', 'notes', 'teamMembers',
       'paymentCadence', 'paymentCadenceNotes', 'excludeClientIds',
-      'isActive', 'fastPay'
+      'isActive', 'fastPay',
+      // Josh 2026-08-26: whether this team invoices us at all, and the day of
+      // the month we pay them by no matter what.
+      'invoicesUs', 'payByDay'
     ]
 
     const data: Record<string, unknown> = {}
@@ -301,6 +304,21 @@ export async function PATCH(
       if (field in body) {
         data[field] = body[field]
       }
+    }
+
+    // A pay-by day has to exist in every month, February included.
+    if ('payByDay' in data) {
+      const day = Number(data.payByDay)
+      if (!Number.isFinite(day) || day < 1 || day > 28) {
+        return NextResponse.json(
+          { error: 'Pay-by day must be between 1 and 28' },
+          { status: 400 },
+        )
+      }
+      data.payByDay = Math.trunc(day)
+    }
+    if ('invoicesUs' in data) {
+      data.invoicesUs = Boolean(data.invoicesUs)
     }
 
     // Validate paymentCadence value

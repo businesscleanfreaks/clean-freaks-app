@@ -111,6 +111,8 @@ model Location {
   schedules Schedule[]
   jobs      Job[]
 
+  invoiceReceipts CleanerInvoiceReceipt[]
+
   @@index([clientId])
   @@map("locations")
 }
@@ -137,6 +139,10 @@ model Subcontractor {
   excludeClientIds    String? // JSON array of client IDs whose jobs are excluded from payouts
   isActive            Boolean @default(true)
   fastPay             Boolean @default(false) // Residential — pay within 72h; ready work flips to "Pay today" once a clean has gone >72h unpaid
+  // Some teams never send us an invoice; their work is never held waiting for one.
+  invoicesUs          Boolean @default(true)
+  // Day of the month we pay this cleaner by, no matter what. Default the 3rd.
+  payByDay            Int     @default(3)
 
   schedules       Schedule[]
   jobs            Job[]
@@ -144,6 +150,7 @@ model Subcontractor {
   assignedClients Client[]
   addOnServices   AddOnService[]
   cleanerInvoices CleanerInvoice[]
+  invoiceReceipts CleanerInvoiceReceipt[]
 
   @@index([isActive])
   @@map("subcontractors")
@@ -178,6 +185,36 @@ model CleanerInvoice {
   @@map("cleaner_invoices")
 }
 
+/// One cleaner invoice we are waiting on, or have received.
+///
+/// Cleaners invoice per ACCOUNT (a company with 7 accounts sends 7 invoices at
+/// month end). Residential and one-off work is invoiced per CLEAN instead, so
+/// `jobId` is set for those and null for the account-wide case. The unique
+/// index therefore covers both shapes without letting either be recorded twice.
+model CleanerInvoiceReceipt {
+  id              String   @id @default(uuid())
+  subcontractorId String
+  locationId      String
+  period          String // "yyyy-MM"
+  // Null = covers the whole account for the period. Set = one specific clean.
+  jobId           String?
+  receivedAt      DateTime @default(now())
+  reference       String?
+  createdAt       DateTime @default(now())
+
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  location      Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  job           Job?          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // NOTE: the real guard is two PARTIAL unique indexes in the migration — one
+  // for jobId IS NOT NULL, one for IS NULL — because Postgres treats NULLs as
+  // distinct and this @@unique alone would let the account-wide case double up.
+  @@unique([subcontractorId, locationId, period, jobId])
+  @@index([subcontractorId, period])
+  @@index([locationId, period])
+  @@map("cleaner_invoice_receipts")
+}
+
 model Job {
   id                String   @id @default(uuid())
   locationId        String
@@ -210,6 +247,7 @@ model Job {
   paymentLineItems       SubcontractorPaymentLineItem[]
   vendorPaymentLineItems VendorPaymentLineItem[]
   addOnServices          AddOnService[]
+  invoiceReceipts        CleanerInvoiceReceipt[]
 
   @@unique([scheduleId, date], name: "unique_schedule_date")
   @@index([date])
@@ -262,6 +300,10 @@ model Schedule {
   pauseBilling      String? // REDUCE or FULL
   pauseCreditMode   String? // VISITS, DAYS, or CUSTOM
   pauseCreditAmount Float?
+
+  // How this account invoices us: PER_ACCOUNT (one a month, the default) or
+  // PER_CLEAN (residential / one-offs, one per visit). Null = PER_ACCOUNT.
+  cleanerInvoiceUnit String?
 
   @@index([locationId])
   @@index([isActive])
