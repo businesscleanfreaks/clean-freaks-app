@@ -9,6 +9,7 @@ import { showError, showUndoToast } from "@/lib/toast"
 import type { JobPayState } from "@/lib/cleaner-payables"
 import { BatchPayBar, type PaySelection } from "./batch-pay-bar"
 import { CleanersSummary, type PaymentRow } from "./cleaners-summary"
+import { avatarColor, initialsOf } from "@/lib/avatar-palette"
 
 interface JobRow {
   id: string
@@ -57,9 +58,6 @@ interface CleanersData {
 }
 
 const HEAD = "text-[10px] font-extrabold uppercase tracking-[0.07em] text-[#98a2b3]"
-
-const initials = (name: string) =>
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join("").toUpperCase()
 
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -219,9 +217,9 @@ export function CleanersTable({ period, onOpenProfile }: {
                 />
                 <span
                   className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-[9px] text-[11px] font-extrabold"
-                  style={{ background: "#eef6f1", color: "#0b7a4e" }}
+                  style={{ background: avatarColor(c.name).bg, color: avatarColor(c.name).fg }}
                 >
-                  {initials(c.name)}
+                  {initialsOf(c.name)}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-px">
                   <span className="truncate text-[14px] font-extrabold">{c.name}</span>
@@ -432,9 +430,9 @@ export function CleanersTable({ period, onOpenProfile }: {
           >
             <span
               className="grid h-[22px] w-[22px] place-items-center rounded-full text-[9.5px] font-extrabold"
-              style={{ background: "#eef6f1", color: "#0b7a4e" }}
+              style={{ background: avatarColor(c.name).bg, color: avatarColor(c.name).fg }}
             >
-              {initials(c.name)}
+              {initialsOf(c.name)}
             </span>
             <span className="whitespace-nowrap text-[12px] font-bold text-[#3f4347]">
               {c.name.split(/\s+/)[0]}

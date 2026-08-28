@@ -1,18 +1,37 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { Loader2, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { showError } from "@/lib/toast"
+import { avatarColor, initialsOf } from "@/lib/avatar-palette"
 
-interface Cleaner {
+interface Subcontractor {
   id: string
   name: string
   isActive: boolean
   invoicesUs: boolean
   payByDay: number
+}
+
+interface Account {
+  id: string
+  clientName: string
+  invoiceUnit: "PER_ACCOUNT" | "PER_CLEAN"
+  jobs: { id: string }[]
+}
+
+interface PayeeData {
+  id: string
+  name: string
+  accounts: Account[]
+}
+
+interface CleanersData {
+  cleaners: PayeeData[]
+  vendors: PayeeData[]
 }
 
 /** 1st, 2nd, 3rd, 4th … for the day a cleaner is paid by. */
@@ -27,36 +46,68 @@ export function ordinal(n: number): string {
   }
 }
 
-const initials = (name: string) =>
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join("").toUpperCase()
+const ONE_OFF_OPTS: [number, string][] = [
+  [0, "Same day"],
+  [2, "2 days"],
+  [5, "5 days"],
+  [7, "7 days"],
+]
+
+const segStyle = (on: boolean): React.CSSProperties => ({
+  background: on ? "#fff" : "transparent",
+  color: on ? "#1a1c1e" : "#9a9fa4",
+  boxShadow: on ? "0 1px 3px rgba(16,24,40,.12)" : undefined,
+})
 
 /**
- * Pay schedule — when each cleaner gets paid, and whether they invoice us.
+ * Pay schedule — when each cleaner and vendor gets paid, and whether they
+ * invoice us.
  *
- * These two settings decide what the table calls "ready", so they need somewhere
- * to be changed. The day grid stops at 28 on purpose: a pay-by day of the 30th
+ * These settings decide what the table calls "ready", so they need somewhere to
+ * be changed. The day grid stops at 28 on purpose: a pay-by day of the 30th
  * would go missing every February.
  */
-export function PayScheduleModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data, mutate, isLoading } = useSWR<Cleaner[]>(
+export function PayScheduleModal({ open, onClose, period }: {
+  open: boolean
+  onClose: () => void
+  period: string
+}) {
+  const { data: subs, mutate, isLoading } = useSWR<Subcontractor[]>(
     open ? "/api/subcontractors" : null,
     fetcher,
     { revalidateOnFocus: false },
   )
+  // Job counts and accounts come from the same feed the table reads.
+  const { data: work } = useSWR<CleanersData>(
+    open ? `/api/cleaners/data?period=${period}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  )
+
+  const [tab, setTab] = useState<"cleaners" | "vendors">("cleaners")
   const [dayOpenFor, setDayOpenFor] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
+  const [oneOffDays, setOneOffDays] = useState(5)
 
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return
-      // Esc closes the day picker first, then the modal.
       if (dayOpenFor) setDayOpenFor(null)
       else onClose()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [open, dayOpenFor, onClose])
+
+  const cleaners = useMemo(() => (subs ?? []).filter(c => c.isActive), [subs])
+  const vendors = work?.vendors ?? []
+
+  const accountsFor = (id: string) =>
+    work?.cleaners.find(c => c.id === id)?.accounts
+    ?? work?.vendors.find(v => v.id === id)?.accounts
+    ?? []
 
   const patch = async (id: string, body: Record<string, unknown>) => {
     setSaving(id)
@@ -80,122 +131,240 @@ export function PayScheduleModal({ open, onClose }: { open: boolean; onClose: ()
 
   if (!open || typeof document === "undefined") return null
 
-  const cleaners = (data ?? []).filter(c => c.isActive)
+  const rows: { id: string; name: string; invoicesUs: boolean; payByDay: number; editable: boolean }[] =
+    tab === "cleaners"
+      ? cleaners.map(c => ({ ...c, editable: true }))
+      // Vendors always invoice per job and are paid on the one-off rule, so
+      // there is no per-vendor day to set — shown for completeness, not editing.
+      : vendors.map(v => ({ id: v.id, name: v.name, invoicesUs: true, payByDay: oneOffDays, editable: false }))
 
   return createPortal(
     <div
       onClick={onClose}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-8"
-      style={{ background: "rgba(15,23,42,.4)" }}
+      className="fixed inset-0 z-[80] flex items-start justify-center px-4"
+      style={{ background: "rgba(16,24,40,0.34)", paddingTop: "6vh", paddingBottom: "6vh" }}
       role="dialog"
       aria-modal="true"
       aria-label="Pay schedule"
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="flex max-h-full w-[820px] max-w-full flex-col overflow-hidden rounded-[16px] bg-white"
-        style={{ boxShadow: "0 24px 64px rgba(16,24,40,.22)" }}
+        className="flex w-[820px] max-w-full flex-col rounded-[16px] bg-white"
+        style={{ maxHeight: "84vh", boxShadow: "0 24px 64px rgba(16,24,40,.22)" }}
       >
-        <div className="flex flex-none items-start gap-3 border-b border-[#ececea] px-6 py-5">
+        <div className="flex flex-none items-start gap-3 px-[26px] pb-3.5 pt-[22px]">
           <div className="min-w-0 flex-1">
-            <div className="text-[18px] font-extrabold tracking-[-0.02em]">Pay schedule</div>
-            <div className="mt-0.5 text-[12.5px] text-[#7e8489]">
-              When each cleaner gets paid. Change it here · the Cleaners page sorts itself.
+            <div className="text-[16px] font-extrabold">Pay schedule</div>
+            <div className="mt-1 text-[12.5px] leading-[1.5] text-[#7d8795]">
+              When each job pays its cleaner or vendor. Change it here · this page sorts itself.
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid h-7 w-7 flex-none place-items-center rounded-[7px] text-[#94a3b8] hover:bg-[#f6f6f3]"
+            className="flex-none px-1.5 py-0.5 text-[18px] leading-none text-[#98a2b3] hover:text-[#3f4347]"
           >
-            <X size={15} />
+            ×
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-2">
+        {/* The default that every new one-off job inherits. */}
+        <div className="mx-[26px] mb-3.5 flex flex-none items-center gap-3.5 rounded-[10px] border border-[#ececea] bg-[#fafaf8] px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-extrabold">One-offs &amp; residential</div>
+            <div className="mt-0.5 text-[11.5px] font-semibold text-[#9a9fa4]">
+              Default for every new one-off job · you can change it on a single job when you log it.
+            </div>
+          </div>
+          <div className="flex flex-none gap-0 rounded-[9px] bg-[#f2f3f1] p-[3px]">
+            {ONE_OFF_OPTS.map(([days, label]) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setOneOffDays(days)}
+                className="flex-none whitespace-nowrap rounded-[6px] px-3 py-1.5 text-[11.5px] font-bold"
+                style={segStyle(oneOffDays === days)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-[26px] pb-5">
+          <div className="flex items-center gap-3 pb-3 pt-0.5">
+            <div className="flex rounded-[9px] bg-[#f2f3f1] p-[3px]">
+              {(["cleaners", "vendors"] as const).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => { setTab(t); setExpanded(null); setDayOpenFor(null) }}
+                  className="flex-none whitespace-nowrap rounded-[6px] px-3.5 py-1.5 text-[12px] font-bold capitalize"
+                  style={segStyle(tab === t)}
+                >
+                  {t} · {t === "cleaners" ? cleaners.length : vendors.length}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {isLoading && (
             <div className="flex items-center justify-center py-16 text-[#98a2b3]">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
           )}
 
-          {cleaners.map(c => (
-            <div
-              key={c.id}
-              className="flex items-center gap-3 border-b border-[#f6f6f3] py-3.5 last:border-b-0"
-            >
-              <span
-                className="flex h-[32px] w-[32px] flex-none items-center justify-center rounded-[9px] text-[11px] font-extrabold"
-                style={{ background: "#eef6f1", color: "#0b7a4e" }}
-              >
-                {initials(c.name)}
-              </span>
-              <div className="min-w-0 flex-1 truncate text-[13.5px] font-bold">{c.name}</div>
-
-              <div className="relative flex-none">
-                <button
-                  type="button"
-                  onClick={() => setDayOpenFor(v => (v === c.id ? null : c.id))}
-                  title="We pay this cleaner by this day of the month, no matter what · earlier if the client already paid"
-                  className="rounded-[8px] border border-[#e2e2df] px-3 py-1.5 text-[12.5px] font-semibold hover:bg-[#f6f6f3]"
+          {rows.map(r => {
+            const color = avatarColor(r.name)
+            const accounts = accountsFor(r.id)
+            const isOpen = expanded === r.id
+            return (
+              <div key={r.id}>
+                <div
+                  onClick={() => setExpanded(v => (v === r.id ? null : r.id))}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === "Enter") setExpanded(v => (v === r.id ? null : r.id)) }}
+                  className="flex cursor-pointer items-center gap-[11px] border-t border-[#ececea] px-0.5 py-[13px]"
                 >
-                  Pay by the <strong className="font-extrabold">{ordinal(c.payByDay)}</strong> ▾
-                </button>
-
-                {dayOpenFor === c.id && (
-                  <div
-                    className="absolute right-0 top-[calc(100%+6px)] z-10 rounded-[10px] border border-[#e2e2df] bg-white p-2"
-                    style={{ boxShadow: "0 4px 10px rgba(16,24,40,.06), 0 16px 40px rgba(16,24,40,.14)" }}
+                  <ChevronRight
+                    size={14}
+                    strokeWidth={2.6}
+                    className="flex-none text-[#8a8f93] transition-transform"
+                    style={{ transform: isOpen ? "rotate(90deg)" : "none" }}
+                  />
+                  <span
+                    className="flex h-[28px] w-[28px] flex-none items-center justify-center rounded-[8px] text-[10.5px] font-extrabold"
+                    style={{ background: color.bg, color: color.fg }}
                   >
-                    <div className="grid grid-cols-7 gap-1">
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => { patch(c.id, { payByDay: d }); setDayOpenFor(null) }}
-                          className="h-7 w-7 rounded-[6px] text-[12px] font-semibold tabular-nums hover:bg-[#eef6f1]"
-                          style={d === c.payByDay ? { background: "#0b7a4e", color: "#fff" } : undefined}
-                        >
-                          {d}
-                        </button>
-                      ))}
+                    {initialsOf(r.name)}
+                  </span>
+                  <span className="text-[14px] font-extrabold">{r.name}</span>
+                  <span className="text-[12px] font-semibold text-[#9a9fa4]">
+                    {accounts.length} job{accounts.length === 1 ? "" : "s"}
+                  </span>
+
+                  <span
+                    onClick={e => e.stopPropagation()}
+                    className="ml-auto flex flex-none items-center gap-2"
+                  >
+                    <span
+                      className="text-[11px] font-semibold text-[#9a9fa4]"
+                      title="We pay this cleaner by this day of the month, no matter what · earlier if the client already paid"
+                    >
+                      Pay by the
+                    </span>
+                    <span className="relative inline-flex">
+                      <button
+                        type="button"
+                        disabled={!r.editable}
+                        onClick={() => setDayOpenFor(v => (v === r.id ? null : r.id))}
+                        className="inline-flex items-center gap-1.5 rounded-[7px] border border-[#e2e2df] bg-white px-2.5 py-[5px] text-[12px] font-extrabold text-[#1a1c1e] hover:bg-[#f6f6f3] disabled:opacity-40"
+                      >
+                        <span className="tabular-nums">{ordinal(r.payByDay)}</span>
+                        <ChevronDown size={10} strokeWidth={2.8} className="text-[#8a8f93]" />
+                      </button>
+
+                      {dayOpenFor === r.id && (
+                        <>
+                          <div className="fixed inset-0 z-[89]" onClick={() => setDayOpenFor(null)} />
+                          <div
+                            className="absolute right-0 top-[calc(100%+6px)] z-[90] w-[238px] rounded-[12px] border border-[#e2e2df] bg-white p-2.5"
+                            style={{ boxShadow: "0 4px 10px rgba(16,24,40,.06), 0 16px 40px rgba(16,24,40,.14)" }}
+                          >
+                            <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#9aa0a4]">
+                              Day of the month we pay by
+                            </div>
+                            <div className="grid grid-cols-7 gap-[3px]">
+                              {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                                <button
+                                  key={d}
+                                  type="button"
+                                  onClick={() => { patch(r.id, { payByDay: d }); setDayOpenFor(null) }}
+                                  className="rounded-[6px] py-1.5 text-[11.5px] font-bold tabular-nums"
+                                  style={
+                                    d === r.payByDay
+                                      ? { background: "#15793f", color: "#fff" }
+                                      : { color: "#6b6f73" }
+                                  }
+                                >
+                                  {d}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </span>
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={!r.editable || saving === r.id}
+                    onClick={e => { e.stopPropagation(); patch(r.id, { invoicesUs: !r.invoicesUs }) }}
+                    title="Off means this cleaner doesn't send invoices · their jobs never wait on one"
+                    className="ml-4 flex flex-none items-center gap-2 disabled:opacity-40"
+                  >
+                    <span className="whitespace-nowrap text-[11px] font-semibold text-[#9a9fa4]">
+                      Invoices us?
+                    </span>
+                    <span
+                      className="relative h-[20px] w-[34px] flex-none rounded-full transition-colors"
+                      style={{ background: r.invoicesUs ? "#15793f" : "#e2e2df" }}
+                    >
+                      <span
+                        className="absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white"
+                        style={{
+                          boxShadow: "0 1px 2px rgba(0,0,0,.25)",
+                          transform: `translateX(${r.invoicesUs ? 14 : 0}px)`,
+                          transition: "transform .18s cubic-bezier(.2,.7,.3,1)",
+                        }}
+                      />
+                    </span>
+                  </button>
+                </div>
+
+                {isOpen && (
+                  <>
+                    <div className="flex items-center gap-3.5 py-2 pl-[41px] pr-0.5 text-[10px] font-extrabold uppercase tracking-[0.07em] text-[#c2c5c8]">
+                      <div className="flex-1">Job</div>
+                      <div className="w-[288px] flex-none">Invoiced</div>
                     </div>
-                    <div className="mt-1.5 px-1 text-[10.5px] text-[#9a9fa4]">
-                      Stops at 28 so the day exists in every month.
-                    </div>
-                  </div>
+                    {accounts.map(a => (
+                      <div
+                        key={a.id}
+                        className="flex items-center gap-3.5 border-b border-[#f6f6f3] py-2.5 pl-[41px] pr-0.5"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[13px] font-bold">{a.clientName}</div>
+                          <div className="mt-px text-[11px] text-[#9a9fa4]">
+                            {a.jobs.length} clean{a.jobs.length === 1 ? "" : "s"} this month
+                          </div>
+                        </div>
+                        <div className="w-[288px] flex-none text-[11.5px] font-semibold text-[#6b6f73]">
+                          {a.invoiceUnit === "PER_CLEAN"
+                            ? "Invoiced per clean"
+                            : "One invoice a month"}
+                        </div>
+                      </div>
+                    ))}
+                    {accounts.length === 0 && (
+                      <div className="py-3 pl-[41px] text-[12px] text-[#9a9fa4]">
+                        No work this month.
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
+            )
+          })}
 
-              <label className="flex flex-none cursor-pointer items-center gap-2 text-[12px] font-semibold text-[#6b6f73]">
-                Invoices us?
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={c.invoicesUs}
-                  aria-label={`${c.name} invoices us`}
-                  disabled={saving === c.id}
-                  onClick={() => patch(c.id, { invoicesUs: !c.invoicesUs })}
-                  className="relative h-[20px] w-[34px] flex-none rounded-full transition-colors disabled:opacity-50"
-                  style={{ background: c.invoicesUs ? "#0b7a4e" : "#d5d8dc" }}
-                >
-                  <span
-                    className="absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white transition-[left] duration-[180ms]"
-                    style={{ left: c.invoicesUs ? 16 : 2 }}
-                  />
-                </button>
-              </label>
+          {!isLoading && rows.length === 0 && (
+            <div className="py-16 text-center text-[13px] text-[#8a8f93]">
+              No active {tab}.
             </div>
-          ))}
-
-          {!isLoading && cleaners.length === 0 && (
-            <div className="py-16 text-center text-[13px] text-[#8a8f93]">No active cleaners.</div>
           )}
-        </div>
-
-        <div className="flex-none border-t border-[#ececea] px-6 py-3 text-[11.5px] text-[#9a9fa4]">
-          Turning &ldquo;invoices us&rdquo; off means that cleaner&rsquo;s work is never held waiting for one.
         </div>
       </div>
     </div>,

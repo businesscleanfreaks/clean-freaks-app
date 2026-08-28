@@ -155,7 +155,7 @@ export function CleanersPage() {
 
       <CleanersTable period={period} />
 
-      <PayScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+      <PayScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} period={period} />
     </div>
   )
 }
