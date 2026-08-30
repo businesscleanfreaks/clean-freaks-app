@@ -86,6 +86,9 @@ export function PayScheduleModal({ open, onClose, period }: {
 
   const [tab, setTab] = useState<"cleaners" | "vendors">("cleaners")
   const [dayOpenFor, setDayOpenFor] = useState<string | null>(null)
+  // The picker is portalled to the body: inside the scrolling list it was
+  // clipped, hiding days 22-28 for rows near the bottom.
+  const [dayAt, setDayAt] = useState<{ top: number; right: number } | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
   const [oneOffDays, setOneOffDays] = useState(5)
@@ -259,19 +262,33 @@ export function PayScheduleModal({ open, onClose, period }: {
                       <button
                         type="button"
                         disabled={!r.editable}
-                        onClick={() => setDayOpenFor(v => (v === r.id ? null : r.id))}
+                        onClick={e => {
+                          if (dayOpenFor === r.id) { setDayOpenFor(null); return }
+                          const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                          const PICKER_H = 200
+                          const below = window.innerHeight - b.bottom
+                          setDayAt({
+                            top: below < PICKER_H ? Math.max(8, b.top - PICKER_H - 6) : b.bottom + 6,
+                            right: Math.max(8, window.innerWidth - b.right),
+                          })
+                          setDayOpenFor(r.id)
+                        }}
                         className="inline-flex items-center gap-1.5 rounded-[7px] border border-[#e2e2df] bg-white px-2.5 py-[5px] text-[12px] font-extrabold text-[#1a1c1e] hover:bg-[#f6f6f3] disabled:opacity-40"
                       >
                         <span className="tabular-nums">{ordinal(r.payByDay)}</span>
                         <ChevronDown size={10} strokeWidth={2.8} className="text-[#8a8f93]" />
                       </button>
 
-                      {dayOpenFor === r.id && (
+                      {dayOpenFor === r.id && dayAt && createPortal(
                         <>
                           <div className="fixed inset-0 z-[89]" onClick={() => setDayOpenFor(null)} />
                           <div
-                            className="absolute right-0 top-[calc(100%+6px)] z-[90] w-[238px] rounded-[12px] border border-[#e2e2df] bg-white p-2.5"
-                            style={{ boxShadow: "0 4px 10px rgba(16,24,40,.06), 0 16px 40px rgba(16,24,40,.14)" }}
+                            className="fixed z-[90] w-[238px] rounded-[12px] border border-[#e2e2df] bg-white p-2.5"
+                            style={{
+                              top: dayAt.top,
+                              right: dayAt.right,
+                              boxShadow: "0 4px 10px rgba(16,24,40,.06), 0 16px 40px rgba(16,24,40,.14)",
+                            }}
                           >
                             <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#9aa0a4]">
                               Day of the month we pay by
@@ -294,7 +311,8 @@ export function PayScheduleModal({ open, onClose, period }: {
                               ))}
                             </div>
                           </div>
-                        </>
+                        </>,
+                        document.body,
                       )}
                     </span>
                   </span>

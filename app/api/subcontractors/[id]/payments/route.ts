@@ -107,15 +107,28 @@ export async function POST(
       ...assignedAddOns.map(a => format(new Date(a.job?.date || a.createdAt), 'yyyy-MM')),
     ]))
     if (periodsBeingPaid.length > 0 && body.confirmNoInvoice !== true) {
-      const matching = await prisma.cleanerInvoice.findMany({
-        where: {
-          subcontractorId: resolvedParams.id,
-          period: { in: periodsBeingPaid },
-          status: { in: ['MATCHED', 'RESOLVED'] },
-        },
-        select: { period: true },
-      })
-      const covered = new Set(matching.map(m => m.period))
+      // Two shapes of evidence count, because cleaners invoice per ACCOUNT
+      // (Josh 2026-08-26) and the Cleaners page records those receipts, while
+      // the older intake recorded one invoice per cleaner per month. Either
+      // proves they billed us, so either releases the payment.
+      const [matching, receipts] = await Promise.all([
+        prisma.cleanerInvoice.findMany({
+          where: {
+            subcontractorId: resolvedParams.id,
+            period: { in: periodsBeingPaid },
+            status: { in: ['MATCHED', 'RESOLVED'] },
+          },
+          select: { period: true },
+        }),
+        prisma.cleanerInvoiceReceipt.findMany({
+          where: { subcontractorId: resolvedParams.id, period: { in: periodsBeingPaid } },
+          select: { period: true },
+        }),
+      ])
+      const covered = new Set([
+        ...matching.map(m => m.period),
+        ...receipts.map(r => r.period),
+      ])
       const uncovered = periodsBeingPaid.filter(p => !covered.has(p))
       if (uncovered.length > 0) {
         return NextResponse.json(
