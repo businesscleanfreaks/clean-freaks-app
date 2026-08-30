@@ -27,6 +27,7 @@ import { buildServiceSummary } from "@/lib/invoice-service-summary"
 import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
 import { TERMS, TERM_LABELS } from "@/lib/billing-schedule"
 import type { ComposeMode } from "@/lib/invoice-compose"
+import Link from "next/link"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
@@ -165,7 +166,17 @@ export function InvoicingWorkspace({
       {/* ── Top bar: title · month nav · status totals ── */}
       <header className="flex items-center justify-between gap-6 border-b border-stone-200 bg-white px-6 py-3">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-semibold tracking-tight text-stone-900">Invoices</h1>
+          <div className="min-w-0">
+            {/* The way back to the full list. The workspace shows one invoice at
+                a time, so without this the only route out is the browser. */}
+            <Link
+              href="/invoices"
+              className="mb-0.5 inline-flex items-center gap-[5px] text-[12.5px] font-bold text-[#6b7480] transition-colors hover:text-stone-800"
+            >
+              <ChevronLeft size={15} strokeWidth={2.2} /> All invoices
+            </Link>
+            <h1 className="text-[23px] font-bold leading-[1.1] tracking-[-0.025em] text-stone-900">Invoices</h1>
+          </div>
 
           {/* Opens the list. The only way back to the queue when the two-pane
               layout is showing, so it stays available whatever the invoice. */}

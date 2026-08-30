@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getErrorMessage } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
 import {
+  accountOwed,
   clampDay,
   jobPayState,
   tallyAccountInvoices,
@@ -85,15 +86,26 @@ export async function GET(request: Request) {
           subcontractorPaid: true,
           cancellationFee: true,
           scheduleId: true,
-          schedule: { select: { paymentCadenceOverride: true, cleanerInvoiceUnit: true } },
+          schedule: {
+            select: {
+              paymentCadenceOverride: true,
+              cleanerInvoiceUnit: true,
+              subcontractorPayType: true,
+              defaultSubcontractorRate: true,
+            },
+          },
           location: {
             select: {
               id: true,
               name: true,
-              client: { select: { id: true, name: true, propertyType: true } },
+              client: { select: { id: true, name: true, propertyType: true, cleanerPayType: true } },
             },
           },
           invoiceLineItems: { select: { invoice: { select: { status: true } } } },
+          // Add-ons this cleaner performed are paid on top of the clean.
+          addOnServices: {
+            select: { vendorId: true, subcontractorId: true, subcontractorRate: true },
+          },
         },
         orderBy: { date: 'asc' },
       }),
@@ -244,6 +256,37 @@ export async function GET(request: Request) {
           const amountOf = (j: JobRow) =>
             j.status === 'CANCELLED' ? j.cancellationFee ?? 0 : j.subcontractorRate || 0
 
+          // A FLAT_RATE recurring account owes its monthly rate ONCE, however
+          // many cleans it had. Summing per clean inflated this by the visit
+          // count — 12x on the real data.
+          const payType: 'FLAT_RATE' | 'PER_CLEAN' =
+            (first.schedule?.subcontractorPayType ?? first.location.client.cleanerPayType) === 'FLAT_RATE'
+              ? 'FLAT_RATE'
+              : 'PER_CLEAN'
+          const monthlyRate =
+            first.schedule?.defaultSubcontractorRate ?? first.subcontractorRate ?? 0
+          const owed = accountOwed(
+            accountJobs.map(j => ({
+              id: j.id,
+              paid: j.subcontractorPaid,
+              rate: j.subcontractorRate || 0,
+              cancelled: j.status === 'CANCELLED',
+              cancellationFee: j.cancellationFee,
+              scheduleId: j.scheduleId,
+              // Work done by an outside vendor, or by a different in-house
+              // cleaner, is paid through them rather than this cleaner.
+              addOnRate: (j.addOnServices ?? []).reduce(
+                (sum, a) =>
+                  !a.vendorId && (!a.subcontractorId || a.subcontractorId === c.id)
+                    ? sum + (a.subcontractorRate || 0)
+                    : sum,
+                0,
+              ),
+            })),
+            payType,
+            monthlyRate,
+          )
+
           return {
             id: locationId,
             clientId: first.location.client.id,
@@ -253,6 +296,8 @@ export async function GET(request: Request) {
             invoiceUnit: unit,
             clientHasPaid,
             invoiceTally: tallyAccountInvoices(account),
+            payType,
+            owed,
             jobs: accountJobs.map(j => ({
               id: j.id,
               date: j.date.toISOString(),
@@ -274,16 +319,17 @@ export async function GET(request: Request) {
           }
         })
 
+        // An account is ready as a whole: its money moves together, so the
+        // account's owed figure lands in one bucket or the other.
         let readyNow = 0
         let stillOwed = 0
         let unpaidJobs = 0
         for (const a of accounts) {
-          for (const j of a.jobs) {
-            if (j.paid) continue
-            unpaidJobs += 1
-            if (j.state === 'ready') readyNow += j.amount
-            else stillOwed += j.amount
-          }
+          const unpaid = a.jobs.filter(j => !j.paid)
+          unpaidJobs += unpaid.length
+          if (unpaid.length === 0) continue
+          if (unpaid.every(j => j.state === 'ready')) readyNow += a.owed
+          else stillOwed += a.owed
         }
 
         return {

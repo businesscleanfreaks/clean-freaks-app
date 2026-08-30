@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal, Play, Chec
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError, showUndoToast } from "@/lib/toast"
 import { LedgerHeader } from "./ledger-header"
+import { isPendingRow, mergeCandidates, type CandidateSource } from "@/lib/ledger-candidates"
 import {
   DEFAULT_COL_ORDER,
   gridTemplate,
@@ -24,6 +25,7 @@ import { NewInvoicePanel } from "./new-invoice-panel"
 import {
   LEDGER_TABS,
   filterByTab,
+  tabCounts,
   type LedgerRow,
   type LedgerStatus,
   type LedgerTab,
@@ -110,6 +112,18 @@ export function InvoicesOverview() {
     { revalidateOnFocus: false },
   )
 
+  // Most of a month's billing has no invoice row yet, so the queue is fetched
+  // alongside and folded in — otherwise this page lists a handful while the
+  // workspace says thirty-odd.
+  const [pyear, pmonth] = period.split("-").map(Number)
+  const monthStart = `${period}-01`
+  const monthEnd = `${period}-${String(new Date(pyear, pmonth, 0).getDate()).padStart(2, "0")}`
+  const { data: candidateData } = useSWR<{ candidates: CandidateSource[] }>(
+    `/api/invoices/candidates?start=${monthStart}&end=${monthEnd}`,
+    fetcher,
+    { revalidateOnFocus: false },
+  )
+
   // Unmatched Zelle payments drive the banner above the tabs.
   const { data: inbox, mutate: mutateInbox } = useSWR<{ count: number }>(
     "/api/payments/inbox",
@@ -166,13 +180,13 @@ export function InvoicesOverview() {
     }
   }
   const rows = useMemo(() => {
-    const all = data?.rows ?? []
+    const all = mergeCandidates(data?.rows ?? [], candidateData?.candidates ?? [])
     const q = query.trim().toLowerCase()
     if (!q) return all
     return all.filter(r =>
       r.clientName.toLowerCase().includes(q) || r.invoiceNumber.toLowerCase().includes(q),
     )
-  }, [data, query])
+  }, [data, candidateData, query])
   // Grid slot per column, so a reordered header carries the cells with it.
   const slot = useMemo(() => {
     const m = {} as Record<ColumnKey, number>
@@ -184,7 +198,9 @@ export function InvoicesOverview() {
     [rows, tab, sort],
   )
   const stats = data?.stats
-  const counts = data?.counts
+  // Recomputed from the merged rows: the server's counts only know about
+  // stored invoices, so they read "To send 0" while the table shows thirty.
+  const counts = useMemo(() => tabCounts(rows), [rows])
   const toSendCount = counts?.["To send"] ?? 0
 
   // One implementation for the row button and the overflow menu.
@@ -241,13 +257,21 @@ export function InvoicesOverview() {
   // action offered is REVIEW, never send — sending always goes through the
   // workspace one invoice at a time.
   const [checked, setChecked] = useState<Set<string>>(new Set())
+  /** A stored invoice has its own page; a pending one is reviewed in the workspace. */
+  const openRow = (row: LedgerRow) => {
+    if (isPendingRow(row)) router.push("/invoices/workspace")
+    else router.push(`/invoices/${row.id}`)
+  }
+
   const toggleRow = (id: string) =>
     setChecked(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
       return next
     })
-  const visibleIds = rows.map(r => r.id)
+  // Only stored invoices can be bulk-actioned: a pending candidate has no
+  // invoice to mark paid, so selecting one would fire at an id that is not one.
+  const visibleIds = rows.filter(r => !isPendingRow(r)).map(r => r.id)
   const allChecked = visibleIds.length > 0 && visibleIds.every(id => checked.has(id))
   const toggleAll = () =>
     setChecked(prev => (allChecked ? new Set() : new Set([...prev, ...visibleIds])))
@@ -476,8 +500,8 @@ export function InvoicesOverview() {
                 key={row.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => router.push(`/invoices/${row.id}`)}
-                onKeyDown={e => { if (e.key === "Enter") router.push(`/invoices/${row.id}`) }}
+                onClick={() => openRow(row)}
+                onKeyDown={e => { if (e.key === "Enter") openRow(row) }}
                 className="irow grid cursor-pointer items-center gap-3 border-b border-[#f4f5f7] px-5 py-3 transition-colors last:border-b-0"
                 // Inline rather than an arbitrary Tailwind class: the value is
                 // one the JIT has no other reason to emit. The tracks follow
@@ -491,7 +515,9 @@ export function InvoicesOverview() {
                   type="button"
                   onClick={e => { e.stopPropagation(); toggleRow(row.id) }}
                   aria-label={`Select ${row.clientName}`}
-                  className="flex"
+                  disabled={isPendingRow(row)}
+                  title={isPendingRow(row) ? "Not invoiced yet · review it first" : undefined}
+                  className="flex disabled:cursor-not-allowed disabled:opacity-30"
                   style={{ order: 0 }}
                 >
                   <CheckBox checked={checked.has(row.id)} />
@@ -542,7 +568,7 @@ export function InvoicesOverview() {
                 <div className="flex items-center justify-end gap-1" style={{ order: 99 }} onClick={e => e.stopPropagation()}>
                   <RowAction
                     row={row}
-                    onOpen={() => router.push(`/invoices/${row.id}`)}
+                    onOpen={() => openRow(row)}
                     onToggleClearing={() => toggleClearing(row)}
                   />
 

@@ -12,6 +12,8 @@
  * Pure: no Prisma, no React, so the money rules are testable on their own.
  */
 
+import { cleanerOwedForCancellation } from "./cancellation-fee"
+
 /** How an account bills us for a month's work. */
 export type InvoiceUnit = "PER_ACCOUNT" | "PER_CLEAN"
 
@@ -185,4 +187,56 @@ export function zelleMemo(clientName: string, period: string): string {
   const [y, m] = period.split("-").map(Number)
   const month = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long" })
   return `The Clean Freaks Pay - ${clientName} - ${month}`
+}
+
+export interface OwedItem {
+  id: string
+  paid: boolean
+  /** The cleaner's rate for this clean. Ignored for flat-rate months. */
+  rate: number
+  cancelled?: boolean
+  cancellationFee?: number | null
+  /** Null for one-off work. */
+  scheduleId?: string | null
+  /**
+   * Add-ons on this clean that this cleaner performed. Paid on top of both
+   * rules — an extra job is extra money even in a flat-rate month.
+   */
+  addOnRate?: number
+}
+
+/**
+ * What a cleaner is owed for one account in one month.
+ *
+ * The rule that matters: a FLAT_RATE recurring account owes its monthly rate
+ * ONCE, however many cleans happened. Summing the rate per clean inflates it by
+ * the visit count — on this data that turned $13,140 into $163,240.
+ *
+ * Cancelled cleans never earn the rate but do pass their gas fee through, so
+ * they are added on top of whichever rule applies.
+ */
+export function accountOwed(
+  items: OwedItem[],
+  payType: "FLAT_RATE" | "PER_CLEAN",
+  monthlyRate: number,
+): number {
+  const unpaid = items.filter(i => !i.paid)
+  const fees = unpaid
+    .filter(i => i.cancelled)
+    .reduce((sum, i) => sum + cleanerOwedForCancellation(i.cancellationFee), 0)
+
+  const addOns = unpaid
+    .filter(i => !i.cancelled)
+    .reduce((sum, i) => sum + (i.addOnRate || 0), 0)
+
+  if (payType === "FLAT_RATE") {
+    // Earned by cleans that actually happened; a month of pure cancellations
+    // owes the fees and nothing more.
+    const hasRealClean = unpaid.some(i => !i.cancelled && i.scheduleId)
+    return (hasRealClean ? monthlyRate : 0) + addOns + fees
+  }
+
+  return (
+    unpaid.filter(i => !i.cancelled).reduce((sum, i) => sum + (i.rate || 0), 0) + addOns + fees
+  )
 }

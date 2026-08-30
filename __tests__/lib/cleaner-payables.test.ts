@@ -9,6 +9,7 @@ import {
   tallyCleanerInvoices,
   dueLabel,
   zelleMemo,
+  accountOwed,
   type CleanerAccount,
 } from "@/lib/cleaner-payables"
 
@@ -218,5 +219,77 @@ describe("zelleMemo", () => {
 
   it("uses the work's month, not today's", () => {
     expect(zelleMemo("Acme", "2026-01")).toContain("January")
+  })
+})
+
+describe("accountOwed", () => {
+  const clean = (id: string, over: Partial<import("@/lib/cleaner-payables").OwedItem> = {}) => ({
+    id, paid: false, rate: 75, scheduleId: "s1", ...over,
+  })
+
+  it("owes a flat-rate month its rate ONCE, not per clean", () => {
+    const items = [clean("a"), clean("b"), clean("c"), clean("d")]
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(1000)
+  })
+
+  it("owes a per-clean month the sum of its cleans", () => {
+    expect(accountOwed([clean("a"), clean("b")], "PER_CLEAN", 1000)).toBe(150)
+  })
+
+  it("owes nothing once a flat-rate month is paid", () => {
+    const items = [clean("a", { paid: true }), clean("b", { paid: true })]
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(0)
+  })
+
+  it("still owes the full flat rate while any clean is unpaid", () => {
+    const items = [clean("a", { paid: true }), clean("b")]
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(1000)
+  })
+
+  it("adds gas fees on top of the flat rate", () => {
+    const items = [clean("a"), clean("b", { cancelled: true, cancellationFee: 20 })]
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(1020)
+  })
+
+  it("a flat-rate month of nothing but cancellations owes only the fees", () => {
+    const items = [
+      clean("a", { cancelled: true, cancellationFee: 20 }),
+      clean("b", { cancelled: true, cancellationFee: 20 }),
+    ]
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(40)
+  })
+
+  it("does not pay the rate for a cancelled clean in a per-clean month", () => {
+    const items = [clean("a"), clean("b", { cancelled: true, cancellationFee: 20 })]
+    expect(accountOwed(items, "PER_CLEAN", 0)).toBe(95)
+  })
+
+  it("does not treat one-off work as earning a flat monthly rate", () => {
+    const items = [clean("a", { scheduleId: null })]
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(0)
+  })
+})
+
+describe("accountOwed · add-ons", () => {
+  const clean = (id: string, over: Record<string, unknown> = {}) => ({
+    id, paid: false, rate: 75, scheduleId: "s1", ...over,
+  })
+
+  it("pays add-ons on top of a flat monthly rate", () => {
+    const items = [clean("a", { addOnRate: 50 }), clean("b")]
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(1050)
+  })
+
+  it("pays add-ons on top of per-clean rates", () => {
+    expect(accountOwed([clean("a", { addOnRate: 50 })], "PER_CLEAN", 0)).toBe(125)
+  })
+
+  it("does not pay add-ons on a cancelled clean · it did not happen", () => {
+    const items = [clean("a", { cancelled: true, cancellationFee: 20, addOnRate: 50 })]
+    expect(accountOwed(items, "PER_CLEAN", 0)).toBe(20)
+  })
+
+  it("does not pay add-ons on an already-paid clean", () => {
+    expect(accountOwed([clean("a", { paid: true, addOnRate: 50 })], "PER_CLEAN", 0)).toBe(0)
   })
 })
