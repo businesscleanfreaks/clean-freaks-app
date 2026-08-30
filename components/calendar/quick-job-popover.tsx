@@ -13,6 +13,7 @@ import { showApiError, showError, showSuccess, showUndoToast } from "@/lib/toast
 import { refreshCalendarData } from "./calendar-client"
 import type { AddOnService, JobWithFullRelations, Subcontractor } from "@/types"
 import { parseFeeInput, suggestedCancellationFee } from "@/lib/cancellation-fee"
+import { VisitConsumables } from "./visit-consumables"
 
 type QuickJob = JobWithFullRelations & {
   notes?: string | null
@@ -980,6 +981,14 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
             </div>
             {!cleanerChanged && ratesChanged && changeScopeSelector}
           </section>
+
+          {/* Supplies bought on this visit · billed to the client and/or
+              reimbursed to whoever worked it. */}
+          <VisitConsumables
+            jobId={job.id}
+            cleanerName={job.vendor?.name ?? job.subcontractor?.name ?? null}
+            locked={locked}
+          />
 
           <section>
             <p className="mb-2 text-[10px] font-bold tracking-[0.4px] text-[#7f8ea3]">ADD-ON SERVICE</p>

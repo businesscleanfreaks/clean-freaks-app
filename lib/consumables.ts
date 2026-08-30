@@ -169,3 +169,18 @@ export function mirroredPayback(bill: number, paybackTouched: boolean, payback: 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
+
+/**
+ * The plain-language line under the two amount fields, which is the only place
+ * the operator is told what a charge-only or payback-only entry actually does.
+ */
+export function consumableSummary(bill: number, payback: number, cleanerFirstName: string): string {
+  const first = cleanerFirstName || "the cleaner"
+  const money = (n: number) => `$${n % 1 === 0 ? n : n.toFixed(2)}`
+  if (bill > 0 && payback > 0) {
+    return `Client billed ${money(bill)} · ${first} gets ${money(payback)} with the next payout`
+  }
+  if (bill > 0) return `Client billed ${money(bill)} · no reimbursement`
+  if (payback > 0) return `${first} gets ${money(payback)} back · the client isn't billed`
+  return "Enter at least one amount"
+}

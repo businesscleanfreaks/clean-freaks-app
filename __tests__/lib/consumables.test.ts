@@ -3,6 +3,7 @@ import {
   adhocPaybackTotal,
   cleanerAllowance,
   consumableLinesFor,
+  consumableSummary,
   mirroredPayback,
   RECURRING_LABEL,
   validateConsumable,
@@ -171,5 +172,33 @@ describe("mirroredPayback", () => {
   it("stops following once touched, including down to zero", () => {
     expect(mirroredPayback(20, true, 5)).toBe(5)
     expect(mirroredPayback(20, true, 0)).toBe(0)
+  })
+})
+
+describe("consumableSummary", () => {
+  it("names both sides when both are set", () => {
+    expect(consumableSummary(20, 20, "Marcia"))
+      .toBe("Client billed $20 · Marcia gets $20 with the next payout")
+  })
+
+  it("says explicitly that nothing is reimbursed", () => {
+    expect(consumableSummary(20, 0, "Marcia")).toBe("Client billed $20 · no reimbursement")
+  })
+
+  it("says explicitly that the client is not billed", () => {
+    expect(consumableSummary(0, 15, "Marcia"))
+      .toBe("Marcia gets $15 back · the client isn't billed")
+  })
+
+  it("prompts when neither is set", () => {
+    expect(consumableSummary(0, 0, "Marcia")).toBe("Enter at least one amount")
+  })
+
+  it("falls back when no cleaner is on the visit", () => {
+    expect(consumableSummary(0, 15, "")).toContain("the cleaner gets $15 back")
+  })
+
+  it("keeps cents when they matter", () => {
+    expect(consumableSummary(12.5, 0, "Marcia")).toBe("Client billed $12.50 · no reimbursement")
   })
 })

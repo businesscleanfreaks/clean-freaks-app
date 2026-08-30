@@ -49,6 +49,8 @@ interface CleanerRow {
   accounts: AccountRow[]
   invoiceTally: { expected: number; received: number; complete: boolean; notApplicable: boolean }
   clientPaidTally: { paid: number; total: number }
+  /** Supplies money: the monthly allowance plus anything bought on a visit. */
+  supplies?: { total: number; allowance: number; adhoc: number }
   readyNow: number
   stillOwed: number
   unpaidJobs: number
@@ -372,6 +374,32 @@ export function CleanersTable({ period, onOpenProfile }: {
                 )}
               </span>
             </div>
+
+            {isOpen && (c.supplies?.total ?? 0) > 0 && (
+              <div className="flex items-center gap-3 border-b border-[#f6f6f3] bg-[#fdfdfb] py-[9px] pl-[66px] pr-5">
+                <div className="min-w-0 flex-1 truncate text-[12.5px] font-bold">
+                  Consumables allowance{" "}
+                  <span className="text-[10.5px] font-semibold text-[#b6bbc0]">
+                    {c.supplies?.adhoc
+                      ? `${formatCurrency(c.supplies.allowance)}/mo · ${formatCurrency(c.supplies.adhoc)} bought on visits`
+                      : "supplies · not invoiced"}
+                  </span>
+                </div>
+                {/* Deliberately blank: supplies are not gated on the client
+                    paying or the cleaner invoicing, so those columns say
+                    nothing here rather than reading as incomplete. */}
+                <span className="w-[86px] flex-none" />
+                <span className="w-[104px] flex-none text-[11px] text-[#c2c5c8]">n/a</span>
+                <span className="w-[70px] flex-none" />
+                <span className="w-[92px] flex-none text-right text-[11px] font-extrabold text-[#0b7a4e]">
+                  ready
+                </span>
+                <span className="w-[84px] flex-none text-right text-[12.5px] font-bold tabular-nums text-[#3f4347]">
+                  {formatCurrency(c.supplies?.total ?? 0)}
+                </span>
+                <span className="w-[40px] flex-none" />
+              </div>
+            )}
 
             {isOpen &&
               [...c.accounts]

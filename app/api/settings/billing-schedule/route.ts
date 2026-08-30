@@ -21,6 +21,16 @@ export async function GET() {
         payMethod: true,
         billingDelivery: true,
         separateLocationInvoices: true,
+        // Who the consumables payback would go to.
+        locations: {
+          select: {
+            schedules: {
+              where: { isActive: true, subcontractorId: { not: null } },
+              take: 1,
+              select: { subcontractor: { select: { name: true } } },
+            },
+          },
+        },
         _count: { select: { locations: true } },
       },
       orderBy: { name: 'asc' },
@@ -36,6 +46,8 @@ export async function GET() {
       delivery: c.billingDelivery ?? 'EMAIL',
       locationCount: c._count.locations,
       separateLocationInvoices: c.separateLocationInvoices,
+      cleanerName:
+        c.locations.flatMap(l => l.schedules).map(s => s.subcontractor?.name).find(Boolean) ?? null,
     }))
 
     return NextResponse.json({ rows })

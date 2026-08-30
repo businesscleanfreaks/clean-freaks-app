@@ -7,6 +7,8 @@ import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { showError } from "@/lib/toast"
 import { avatarColor, initialsOf } from "@/lib/avatar-palette"
+import { formatCurrency } from "@/lib/utils"
+import { parseAmount } from "@/lib/new-invoice"
 
 interface Subcontractor {
   id: string
@@ -23,10 +25,18 @@ interface Account {
   jobs: { id: string }[]
 }
 
+interface AllowanceSlice {
+  clientId: string | null
+  clientName: string | null
+  amount: number
+  editableHere: boolean
+}
+
 interface PayeeData {
   id: string
   name: string
   accounts: Account[]
+  supplies?: { total: number; allowance: number; adhoc: number; slices: AllowanceSlice[] }
 }
 
 interface CleanersData {
@@ -78,7 +88,7 @@ export function PayScheduleModal({ open, onClose, period }: {
     { revalidateOnFocus: false },
   )
   // Job counts and accounts come from the same feed the table reads.
-  const { data: work } = useSWR<CleanersData>(
+  const { data: work, mutate: mutateWork } = useSWR<CleanersData>(
     open ? `/api/cleaners/data?period=${period}` : null,
     fetcher,
     { revalidateOnFocus: false },
@@ -92,6 +102,8 @@ export function PayScheduleModal({ open, onClose, period }: {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
   const [oneOffDays, setOneOffDays] = useState(5)
+  const [allowanceFor, setAllowanceFor] = useState<string | null>(null)
+  const [allowanceDraft, setAllowanceDraft] = useState("")
 
   useEffect(() => {
     if (!open) return
@@ -106,6 +118,27 @@ export function PayScheduleModal({ open, onClose, period }: {
 
   const cleaners = useMemo(() => (subs ?? []).filter(c => c.isActive), [subs])
   const vendors = work?.vendors ?? []
+
+  const suppliesFor = (id: string) => work?.cleaners.find(c => c.id === id)?.supplies ?? null
+
+  /** Save a cleaner's standalone allowance · the only slice editable here. */
+  const saveAllowance = async (id: string, amount: number) => {
+    setSaving(id)
+    try {
+      const res = await fetch("/api/consumables", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "ALLOWANCE", subcontractorId: id, paybackAmount: amount }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Could not save")
+      mutateWork()
+      setAllowanceFor(null)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not save")
+    } finally {
+      setSaving(null)
+    }
+  }
 
   const accountsFor = (id: string) =>
     work?.cleaners.find(c => c.id === id)?.accounts
@@ -342,6 +375,79 @@ export function PayScheduleModal({ open, onClose, period }: {
                     </span>
                   </button>
                 </div>
+
+                {isOpen && r.editable && (() => {
+                  const sup = suppliesFor(r.id)
+                  const standalone = sup?.slices.find(x => x.editableHere)?.amount ?? 0
+                  const editing = allowanceFor === r.id
+                  return (
+                    <div className="border-b border-[#f6f6f3] py-2.5 pl-[41px] pr-0.5">
+                      <div className="flex items-center gap-3.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[12.5px] font-bold">Monthly consumables allowance</div>
+                          <div className="mt-px text-[11px] text-[#9a9fa4]">
+                            {sup?.total
+                              ? `${formatCurrency(sup.allowance)}/mo across ${sup.slices.length} slice${sup.slices.length === 1 ? "" : "s"}`
+                              : "Nothing set"}
+                          </div>
+                        </div>
+                        {editing ? (
+                          <span className="flex flex-none items-center gap-2">
+                            <input
+                              value={allowanceDraft}
+                              onChange={e => setAllowanceDraft(e.target.value)}
+                              inputMode="decimal"
+                              placeholder="0.00"
+                              autoFocus
+                              className="h-8 w-[90px] rounded-[7px] border border-[#e2e2df] px-2 text-[12.5px] outline-none focus:border-[#0b7a4e]"
+                            />
+                            <button
+                              type="button"
+                              disabled={saving === r.id}
+                              onClick={() => saveAllowance(r.id, parseAmount(allowanceDraft))}
+                              className="rounded-[7px] px-3 py-1.5 text-[12px] font-extrabold text-white disabled:opacity-60"
+                              style={{ background: "#0b7a4e" }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAllowanceFor(null)}
+                              className="text-[12px] font-semibold text-[#6b6f73]"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { setAllowanceDraft(standalone ? String(standalone) : ""); setAllowanceFor(r.id) }}
+                            className="flex-none rounded-[7px] border border-[#e2e2df] px-2.5 py-[5px] text-[12px] font-extrabold hover:bg-[#f6f6f3]"
+                          >
+                            {standalone ? formatCurrency(standalone) : "＋ Set"}
+                          </button>
+                        )}
+                      </div>
+
+                      {(sup?.slices.length ?? 0) > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {sup?.slices.map((sl, i) => (
+                            <span
+                              key={`${sl.clientId ?? "standalone"}-${i}`}
+                              title={sl.editableHere ? "Set here" : "Set in the Billing schedule, so the two views cannot drift"}
+                              className="rounded-full border border-[#ececea] bg-[#fafaf8] px-2.5 py-1 text-[11px] font-semibold text-[#6b6f73]"
+                            >
+                              {sl.clientName ?? "Standalone"} · {formatCurrency(sl.amount)}
+                              {!sl.editableHere && (
+                                <span className="ml-1 text-[10px] text-[#b6bbc0]">Billing schedule</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {isOpen && (
                   <>

@@ -12,6 +12,12 @@ import {
   type InvoiceUnit,
 } from '@/lib/cleaner-payables'
 import { getEffectiveCadence } from '@/lib/payment-cadence'
+import {
+  adhocPaybackTotal,
+  cleanerAllowance,
+  type ConsumableKind,
+  type ConsumableRecord,
+} from '@/lib/consumables'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +35,8 @@ const HOLDING_CADENCES = new Set([
   'END_OF_MONTH',
   'COMMERCIAL_CLIENT_PAID_OR_7TH',
 ])
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 function monthRange(period: string) {
   const [y, m] = period.split('-').map(Number)
@@ -50,7 +58,7 @@ export async function GET(request: Request) {
     const { start, end } = monthRange(period)
     const now = new Date()
 
-    const [cleaners, jobs, receipts, payments, vendors] = await Promise.all([
+    const [cleaners, jobs, receipts, payments, vendors, consumables] = await Promise.all([
       prisma.subcontractor.findMany({
         where: { isActive: true },
         select: {
@@ -193,6 +201,24 @@ export async function GET(request: Request) {
           },
         },
       }),
+      // What we owe cleaners for supplies: their standing monthly allowance
+      // plus anything bought on a visit this month.
+      prisma.consumable.findMany({
+        where: {
+          isActive: true,
+          subcontractorId: { not: null },
+          paybackAmount: { gt: 0 },
+          OR: [
+            { kind: { in: ['RECURRING', 'ALLOWANCE'] } },
+            { kind: 'ADHOC', date: { gte: start, lte: end } },
+          ],
+        },
+        select: {
+          id: true, kind: true, clientId: true, subcontractorId: true,
+          billAmount: true, paybackAmount: true, isActive: true,
+          client: { select: { name: true } },
+        },
+      }),
     ])
 
     // Receipts indexed for lookup: account-wide ones and per-clean ones.
@@ -204,6 +230,18 @@ export async function GET(request: Request) {
       if (r.addOnServiceId) perAddOn.add(`${payee}|${r.locationId}|${r.addOnServiceId}`)
       else if (r.jobId) perClean.add(`${payee}|${r.locationId}|${r.jobId}`)
       else accountWide.add(`${payee}|${r.locationId}`)
+    }
+
+    const consumablesByCleaner = new Map<string, ConsumableRecord[]>()
+    const clientNames: Record<string, string> = {}
+    for (const row of consumables) {
+      if (!row.subcontractorId) continue
+      if (row.clientId && row.client) clientNames[row.clientId] = row.client.name
+      const rec: ConsumableRecord = { ...row, kind: row.kind as ConsumableKind }
+      consumablesByCleaner.set(row.subcontractorId, [
+        ...(consumablesByCleaner.get(row.subcontractorId) ?? []),
+        rec,
+      ])
     }
 
     type JobRow = (typeof jobs)[number]
@@ -332,6 +370,15 @@ export async function GET(request: Request) {
           else stillOwed += a.owed
         }
 
+        // Supplies money rides alongside the work. It is deliberately NOT part
+        // of the invoice or client-paid tallies: nobody invoices us for their
+        // own allowance, and counting it there would make the "N of N" columns
+        // read as incomplete forever.
+        const supplyRecords = consumablesByCleaner.get(c.id) ?? []
+        const allowance = cleanerAllowance(supplyRecords, clientNames)
+        const adhocSupplies = adhocPaybackTotal(supplyRecords)
+        const suppliesTotal = round2(allowance.total + adhocSupplies)
+
         return {
           id: c.id,
           name: c.name,
@@ -346,12 +393,21 @@ export async function GET(request: Request) {
             paid: accounts.filter(a => a.clientHasPaid).length,
             total: accounts.length,
           },
-          readyNow,
+          // Supplies are owed whether or not a clean has been invoiced, so they
+          // land in "ready" rather than waiting on anything.
+          readyNow: round2(readyNow + suppliesTotal),
           stillOwed,
           unpaidJobs,
+          supplies: {
+            total: suppliesTotal,
+            allowance: allowance.total,
+            adhoc: adhocSupplies,
+            slices: allowance.slices,
+          },
         }
       })
-      .filter(r => r.accounts.length > 0)
+      // A cleaner owed only supplies still belongs on the page.
+      .filter(r => r.accounts.length > 0 || r.supplies.total > 0)
 
     const vendorRows = vendors
       .map(v => {

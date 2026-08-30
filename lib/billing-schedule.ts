@@ -42,6 +42,8 @@ export interface BillingScheduleRow {
   delivery: string
   locationCount: number
   separateLocationInvoices: boolean
+  /** Who cleans for this client · who a consumables payback would go to. */
+  cleanerName?: string | null
 }
 
 /** Fields the sheet may change. Anything else on the client is untouched. */

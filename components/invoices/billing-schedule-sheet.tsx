@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import useSWR from "swr"
 import { X, Loader2 } from "lucide-react"
 import { showError } from "@/lib/toast"
+import { ConsumablesCell, type ConsumableRow } from "./consumables-cell"
 import { BillingSections } from "./billing-sections"
 import {
   CADENCES, CADENCE_LABELS,
@@ -53,6 +54,19 @@ function Segmented({ options, value, onChange }: {
  * there is no page-level save button because every row is independent.
  */
 export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data: consData, mutate: mutateCons } = useSWR<{ consumables: ConsumableRow[] }>(
+    open ? "/api/consumables?kind=RECURRING" : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  )
+  const consByClient = useMemo(() => {
+    const m = new Map<string, ConsumableRow>()
+    for (const c of consData?.consumables ?? []) {
+      if (c.clientId) m.set(c.clientId, c)
+    }
+    return m
+  }, [consData])
+
   const { data, isLoading, mutate } = useSWR<{ rows: BillingScheduleRow[] }>(
     open ? "/api/settings/billing-schedule" : null,
     fetcher,
@@ -130,7 +144,7 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
             <div className="px-5 py-20 text-center text-[13px] text-[#7d8795]">No active clients.</div>
           ) : (
             <div className="min-w-[840px]">
-              <div className="sticky top-0 z-10 grid grid-cols-[minmax(180px,1fr)_150px_130px_100px_120px_130px] items-center gap-3 border-b border-[#eef0f3] bg-[#fbfcfd] px-5 py-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#7d8795]">
+              <div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1fr)_150px_130px_100px_120px_130px_120px] items-center gap-3 border-b border-[#eef0f3] bg-[#fbfcfd] px-5 py-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#7d8795]">
                 <span>Client</span>
                 <span>Client type</span>
                 {/* The design requires this exact header wording. */}
@@ -138,6 +152,9 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
                 <span>Terms</span>
                 <span>How they pay</span>
                 <span>How we bill</span>
+                <span title="A flat consumables charge on every invoice · on/off anytime · applies to invoices not sent yet, sent ones never change">
+                  Consumables
+                </span>
               </div>
 
               {rows.map(row => {
@@ -145,7 +162,7 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
                 return (
                   <div
                     key={row.id}
-                    className="grid grid-cols-[minmax(180px,1fr)_150px_130px_100px_120px_130px] items-center gap-3 border-b border-[#f4f5f7] px-5 py-3 last:border-b-0"
+                    className="grid grid-cols-[minmax(150px,1fr)_150px_130px_100px_120px_130px_120px] items-center gap-3 border-b border-[#f4f5f7] px-5 py-3 last:border-b-0"
                   >
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-bold text-[#101828]">
@@ -220,6 +237,14 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
                         <option key={d} value={d}>{DELIVERY_LABELS[d]}</option>
                       ))}
                     </select>
+
+                    <ConsumablesCell
+                      clientId={row.id}
+                      clientName={row.name}
+                      cleanerName={row.cleanerName ?? null}
+                      current={consByClient.get(row.id) ?? null}
+                      onSaved={() => { mutateCons(); mutate() }}
+                    />
                   </div>
                 )
               })}

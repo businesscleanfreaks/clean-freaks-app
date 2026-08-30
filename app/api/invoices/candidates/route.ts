@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger"
 import { calculateScheduleDates } from "@/lib/regenerate-schedule-jobs"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 import { computePauseInvoiceAdjustment } from "@/lib/pause-billing"
+import { consumableLinesFor, type ConsumableKind } from '@/lib/consumables'
 
 export const dynamic = 'force-dynamic'
 
@@ -232,7 +233,7 @@ export async function GET(request: Request) {
       description: string
       quantity: number
       price: number
-      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION' | 'PAUSE_ADJUSTMENT' | 'CANCELLATION_FEE'
+      sourceType: 'JOB' | 'ADD_ON' | 'FLAT_RATE' | 'RECURRING_ADD_ON' | 'PRORATION' | 'PAUSE_ADJUSTMENT' | 'CANCELLATION_FEE' | 'CONSUMABLE'
       sourceId?: string
       jobId?: string
       scheduleId?: string
@@ -274,6 +275,32 @@ export async function GET(request: Request) {
       periodStart,
       periodEnd,
     )
+
+    // Consumables: a recurring charge rides on every invoice not yet sent, plus
+    // any supplies bought on a visit this period. Read once for all clients.
+    const consumableRows = await prisma.consumable.findMany({
+      where: {
+        isActive: true,
+        clientId: { in: [...jobsByClient.keys()] },
+        OR: [
+          { kind: 'RECURRING' },
+          { kind: 'ADHOC', date: { gte: periodStart, lte: periodEnd } },
+        ],
+      },
+      select: {
+        id: true, kind: true, clientId: true, description: true,
+        billAmount: true, paybackAmount: true, isActive: true,
+      },
+    })
+    type ConsumableRow = (typeof consumableRows)[number]
+    const asRecord = (r: ConsumableRow) => ({ ...r, kind: r.kind as ConsumableKind })
+    const recurringByClient = new Map<string, ReturnType<typeof asRecord>>()
+    const adhocByClient = new Map<string, ReturnType<typeof asRecord>[]>()
+    for (const row of consumableRows) {
+      if (!row.clientId) continue
+      if (row.kind === 'RECURRING') recurringByClient.set(row.clientId, asRecord(row))
+      else adhocByClient.set(row.clientId, [...(adhocByClient.get(row.clientId) ?? []), asRecord(row)])
+    }
 
     const candidates: Candidate[] = []
     const representedInvoiceIds = new Set<string>()
@@ -745,6 +772,27 @@ export async function GET(request: Request) {
         })
         total += fee
       })
+
+      // Consumables. `consumableLinesFor` returns null for an invoice already
+      // sent or paid, which means "leave it exactly as it is" — the amount in
+      // force when it went out stays stamped on it.
+      const consumableLines = consumableLinesFor(
+        existingPaid ? 'PAID' : existingSent ? 'SENT' : 'DRAFT',
+        recurringByClient.get(clientId) ?? null,
+        adhocByClient.get(clientId) ?? [],
+      )
+      if (consumableLines) {
+        for (const line of consumableLines) {
+          lineItems.push({
+            description: line.label,
+            quantity: 1,
+            price: line.amount,
+            sourceType: 'CONSUMABLE',
+            sourceId: line.consumableId,
+          })
+          total += line.amount
+        }
+      }
 
       // Build schedule summary
       const schedules = clientWithSchedules?.locations.flatMap(l => l.schedules) || []
