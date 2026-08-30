@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import {
   LEDGER_COLUMNS,
   moveColumn,
@@ -26,9 +26,6 @@ export function LedgerHeader({ order, sort, onSort, onReorder, children }: {
 }) {
   const rowRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<{ key: ColumnKey; x: number; y: number; insertIdx: number } | null>(null)
-  // Flipped on pointer-down purely to render, so the effect below can bind the
-  // window listeners — a ref change alone would never wake it.
-  const [gestureOn, setGestureOn] = useState(false)
 
   // Held in a ref, not state: the move handler reads them every frame and must
   // not be re-bound mid-gesture.
@@ -42,42 +39,26 @@ export function LedgerHeader({ order, sort, onSort, onReorder, children }: {
     insertIdx: number
   } | null>(null)
 
-  useEffect(() => {
-    if (!gestureOn || !gesture.current) return
-    const onMove = (e: PointerEvent) => {
-      const g = gesture.current
-      if (!g) return
-      if (!g.moved && Math.abs(e.clientX - g.startX) < 4) return
-      g.moved = true
-      e.preventDefault()
-      g.insertIdx = g.centers.filter(c => c < e.clientX).length
-      setDrag({
-        key: g.key,
-        x: e.clientX,
-        y: e.clientY,
-        insertIdx: g.insertIdx,
-      })
-    }
-    const onUp = () => {
-      const g = gesture.current
-      gesture.current = null
-      document.body.style.userSelect = ""
-      document.body.style.cursor = ""
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
-      if (!g) return
-      if (!g.moved) onSort(nextSort(sort, g.key))
-      else onReorder(moveColumn(order, g.key, g.insertIdx))
-      setDrag(null)
-      setGestureOn(false)
-    }
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
-    return () => {
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
-    }
-  })
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const g = gesture.current
+    if (!g) return
+    if (!g.moved && Math.abs(e.clientX - g.startX) < 4) return
+    g.moved = true
+    g.insertIdx = g.centers.filter(c => c < e.clientX).length
+    setDrag({ key: g.key, x: e.clientX, y: e.clientY, insertIdx: g.insertIdx })
+  }
+
+  const onPointerUp = () => {
+    const g = gesture.current
+    gesture.current = null
+    document.body.style.userSelect = ""
+    document.body.style.cursor = ""
+    setDrag(null)
+    if (!g) return
+    if (!g.moved) onSort(nextSort(sort, g.key))
+    else onReorder(moveColumn(order, g.key, g.insertIdx))
+  }
 
   const start = (e: React.PointerEvent, key: ColumnKey) => {
     // Measure once at the start: the columns do not move under the cursor
@@ -100,7 +81,10 @@ export function LedgerHeader({ order, sort, onSort, onReorder, children }: {
     }
     document.body.style.userSelect = "none"
     document.body.style.cursor = "grabbing"
-    setGestureOn(true)
+    // Capture on the element itself: binding window listeners from an effect
+    // missed a pointerup that arrived before React had re-rendered, so the
+    // first click after mount never sorted.
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* unsupported */ }
   }
 
   const ord: Record<string, number> = { check: 0, action: 99 }
@@ -123,6 +107,9 @@ export function LedgerHeader({ order, sort, onSort, onReorder, children }: {
             type="button"
             data-col={key}
             onPointerDown={e => start(e, key)}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onLostPointerCapture={onPointerUp}
             aria-label={`Sort by ${meta.label.toLowerCase()}`}
             className="flex touch-none select-none items-center gap-1 uppercase transition-opacity"
             style={{
