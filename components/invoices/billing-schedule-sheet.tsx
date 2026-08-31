@@ -143,7 +143,7 @@ export function BillingScheduleSheet({ open, onClose }: { open: boolean; onClose
           ) : rows.length === 0 ? (
             <div className="px-5 py-20 text-center text-[13px] text-[#7d8795]">No active clients.</div>
           ) : (
-            <div className="min-w-[840px]">
+            <div className="min-w-[960px]">
               <div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1fr)_150px_130px_100px_120px_130px_120px] items-center gap-3 border-b border-[#eef0f3] bg-[#fbfcfd] px-5 py-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em] text-[#7d8795]">
                 <span>Client</span>
                 <span>Client type</span>

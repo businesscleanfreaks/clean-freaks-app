@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Plus, Loader2, SlidersHorizontal, Play, Check, Zap, Search } from "lucide-react"
@@ -72,22 +73,45 @@ const KIND_STYLE: Record<string, { bg: string; color: string }> = {
   "One-off": { bg: "#fdf6ea", color: "#8a5e12" },
 }
 
-/** Instant dark tooltip — the design explicitly rejects slow native `title`. */
+/**
+ * Instant dark tooltip — the design explicitly rejects slow native `title`.
+ *
+ * Portalled to the body rather than positioned inside the row: the sticky table
+ * header creates its own stacking context, so an in-row tooltip slid underneath
+ * it however high its z-index went.
+ */
 function Tip({ text, style, children }: {
   text: string
   /** Lets a caller place the tip in a grid slot. */
   style?: React.CSSProperties
   children: React.ReactNode
 }) {
-  const [show, setShow] = useState(false)
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null)
+  const ref = useRef<HTMLSpanElement>(null)
+
+  const show = () => {
+    const b = ref.current?.getBoundingClientRect()
+    if (b) setAt({ top: b.top - 7, left: b.left + b.width / 2 })
+  }
+
   return (
-    <span className="relative inline-flex" style={style} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <span
+      ref={ref}
+      className="relative inline-flex"
+      style={style}
+      onMouseEnter={show}
+      onMouseLeave={() => setAt(null)}
+    >
       {children}
-      {show && (
-        <span className="pointer-events-none absolute bottom-[calc(100%+7px)] left-1/2 z-30 w-max max-w-[230px] -translate-x-1/2 rounded-lg bg-[#101828] px-2.5 py-1.5 text-[11.5px] font-semibold leading-snug text-white shadow-lg">
+      {at && typeof document !== "undefined" && createPortal(
+        <span
+          className="pointer-events-none fixed z-[200] w-max max-w-[230px] -translate-x-1/2 -translate-y-full rounded-lg bg-[#101828] px-2.5 py-1.5 text-[11.5px] font-semibold leading-snug text-white shadow-lg"
+          style={{ top: at.top, left: at.left }}
+        >
           {text}
           <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-[#101828]" />
-        </span>
+        </span>,
+        document.body,
       )}
     </span>
   )

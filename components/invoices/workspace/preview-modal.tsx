@@ -14,7 +14,7 @@ type Tab = "email" | "pdf"
  * Read-only by design: this is the last look before sending, so nothing here
  * is editable. Corrections go back to the review pane or the compose window.
  */
-export function PreviewModal({ open, initialTab = "email", onClose, from, to, subject, clientName, message, children }: {
+export function PreviewModal({ open, initialTab = "email", onClose, from, to, subject, clientName, payMethodLabel, message, children }: {
   open: boolean
   initialTab?: Tab
   onClose: () => void
@@ -22,6 +22,8 @@ export function PreviewModal({ open, initialTab = "email", onClose, from, to, su
   to: string
   subject: string
   clientName: string
+  /** How this client pays · read-only here, it is set on their billing profile. */
+  payMethodLabel?: string | null
   /** The covering note, shown above the invoice on the email tab. */
   message: string
   /** The invoice document, shared with the right-hand pane. */
@@ -55,8 +57,11 @@ export function PreviewModal({ open, initialTab = "email", onClose, from, to, su
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="flex max-h-full w-[600px] max-w-full flex-col overflow-hidden rounded-[14px] bg-white"
-        style={{ boxShadow: "0 20px 60px rgba(15,23,42,.3)" }}
+        className="flex w-[600px] max-w-full flex-col overflow-hidden rounded-[14px] bg-white"
+        // Fixed height: the two tabs hold different amounts of content, and a
+        // dialog that resizes as you switch moves the tabs out from under the
+        // cursor.
+        style={{ height: "min(78vh, 760px)", boxShadow: "0 20px 60px rgba(15,23,42,.3)" }}
       >
         <div className="flex flex-none items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid #eef0f3" }}>
           <div className="flex gap-0.5 rounded-[9px] p-[3px]" style={{ background: "#f1f3f6" }}>
@@ -69,7 +74,18 @@ export function PreviewModal({ open, initialTab = "email", onClose, from, to, su
               Invoice PDF
             </button>
           </div>
-          <span className="ml-auto text-[11.5px]" style={{ color: "#98a2b3" }}>Preview only</span>
+          {payMethodLabel && (
+            <span
+              className="ml-auto rounded-full px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.04em]"
+              style={{ background: "#eaf0fa", color: "#3a66b0" }}
+              title="Set in the client's billing profile, not from a preview"
+            >
+              {payMethodLabel}
+            </span>
+          )}
+          <span className={`${payMethodLabel ? "" : "ml-auto"} text-[11.5px]`} style={{ color: "#98a2b3" }}>
+            Preview only
+          </span>
           <button type="button" onClick={onClose} aria-label="Close preview"
             className="flex h-7 w-7 flex-none items-center justify-center rounded-[7px] transition-colors hover:bg-stone-100"
             style={{ color: "#94a3b8" }}>
@@ -106,7 +122,13 @@ export function PreviewModal({ open, initialTab = "email", onClose, from, to, su
               </div>
             </>
           ) : (
-            <div className="px-5 pb-[30px] pt-6">{children}</div>
+            // Scaled to fit so the whole document is visible at once, which is
+            // the point of a preview.
+            <div className="flex h-full items-start justify-center overflow-hidden px-5 py-4">
+              <div style={{ transform: "scale(0.82)", transformOrigin: "top center", width: "100%" }}>
+                {children}
+              </div>
+            </div>
           )}
         </div>
       </div>

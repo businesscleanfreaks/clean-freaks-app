@@ -28,6 +28,7 @@ import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
 import { TERMS, TERM_LABELS } from "@/lib/billing-schedule"
 import type { ComposeMode } from "@/lib/invoice-compose"
 import Link from "next/link"
+import { PAY_METHOD_LABELS } from "@/lib/billing-schedule"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
@@ -1049,6 +1050,11 @@ function DetailPanel({ inv, month, onCompose }: {
           || `Invoice from The Clean Freaks · ${formatMonthLabel(month)}`
         }
         clientName={inv.clientName}
+        payMethodLabel={
+          client?.payMethod || client?.preferredPaymentMethod
+            ? PAY_METHOD_LABELS[(client.payMethod || client.preferredPaymentMethod).toUpperCase()] ?? null
+            : null
+        }
         message={previewMessage(inv.candidateId, "")}
       >
         <InvoicePreview inv={inv} month={month} bare />

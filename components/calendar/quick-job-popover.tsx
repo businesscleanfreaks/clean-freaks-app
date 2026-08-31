@@ -977,7 +977,17 @@ export function QuickJobPopover({ job, open, onOpenChange, onChangeSchedule, sub
             <div className="grid grid-cols-3 gap-2">
               <label className="text-[9px] font-bold text-[#7f8ea3]">Client charged<input type="number" min="0" step="0.01" value={clientRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setClientRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
               <label className="text-[9px] font-bold text-[#7f8ea3]">{job.vendor ? "Vendor is paid" : "Cleaner is paid"}<input type="number" min="0" step="0.01" value={providerRate} onFocus={event => /^0(?:\.0+)?$/.test(event.currentTarget.value) && event.currentTarget.select()} onChange={event => setProviderRate(event.target.value)} disabled={locked} className="mt-1 w-full rounded-lg border border-[#dfe5ec] px-2.5 py-2 text-[14px] font-bold text-[#1f2937] outline-none focus:border-[#0d9488] disabled:bg-[#f4f6f8]" /></label>
-              <div className="rounded-lg bg-[#e7f2ee] px-2.5 py-2"><span className="block text-[8px] font-extrabold text-[#4b9b82]">MARGIN</span><span className={`text-[15px] font-extrabold ${margin < 0 ? "text-[#b42318]" : "text-[#066846]"}`}>${margin.toFixed(2)}</span></div>
+              {/* Same anatomy as the two inputs beside it — label above, box
+                  below — so the three read as one row rather than two fields
+                  and a tile. */}
+              <div className="text-[9px] font-bold text-[#7f8ea3]">
+                Margin
+                <div className="mt-1 rounded-lg bg-[#e7f2ee] px-2.5 py-2">
+                  <span className={`text-[14px] font-extrabold ${margin < 0 ? "text-[#b42318]" : "text-[#066846]"}`}>
+                    ${margin.toFixed(2)}
+                  </span>
+                </div>
+              </div>
             </div>
             {!cleanerChanged && ratesChanged && changeScopeSelector}
           </section>
