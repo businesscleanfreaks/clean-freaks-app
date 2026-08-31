@@ -296,7 +296,10 @@ export async function PATCH(
       'isActive', 'fastPay',
       // Josh 2026-08-26: whether this team invoices us at all, and the day of
       // the month we pay them by no matter what.
-      'invoicesUs', 'payByDay'
+      'invoicesUs', 'payByDay',
+      // Profile fields. `taxIdLast4` is deliberately the ONLY part of a tax ID
+      // this app stores — see the migration for why.
+      'legalName', 'taxIdType', 'taxIdLast4', 'profileNotes', 'w9OnFile'
     ]
 
     const data: Record<string, unknown> = {}
@@ -319,6 +322,23 @@ export async function PATCH(
     }
     if ('invoicesUs' in data) {
       data.invoicesUs = Boolean(data.invoicesUs)
+    }
+
+    // Only the last four digits, and only the two kinds the IRS asks about.
+    if ('taxIdLast4' in data && data.taxIdLast4 != null) {
+      const last4 = String(data.taxIdLast4).trim()
+      if (!/^\d{4}$/.test(last4)) {
+        return NextResponse.json(
+          { error: 'Enter only the last four digits of the tax ID.' },
+          { status: 400 },
+        )
+      }
+      data.taxIdLast4 = last4
+    }
+    if ('taxIdType' in data && data.taxIdType != null && data.taxIdType !== '') {
+      if (!['SSN', 'EIN'].includes(String(data.taxIdType))) {
+        return NextResponse.json({ error: 'Tax ID type must be SSN or EIN.' }, { status: 400 })
+      }
     }
 
     // Validate paymentCadence value

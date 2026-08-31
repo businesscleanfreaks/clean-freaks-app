@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronLeft, ChevronRight, Settings } from "lucide-react"
 import { CleanersTable } from "./cleaners-table"
 import { PayScheduleModal } from "./pay-schedule-modal"
@@ -34,6 +35,7 @@ const STEP =
  * money.
  */
 export function CleanersPage() {
+  const router = useRouter()
   const [period, setPeriod] = useState(thisMonth())
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [pickOpen, setPickOpen] = useState(false)
@@ -153,7 +155,7 @@ export function CleanersPage() {
         </button>
       </div>
 
-      <CleanersTable period={period} />
+      <CleanersTable period={period} onOpenProfile={id => router.push(`/cleaners/${id}`)} />
 
       <PayScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} period={period} />
     </div>

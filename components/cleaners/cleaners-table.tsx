@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { Check, ChevronRight, Copy, Loader2, Search, Trash2, X } from "lucide-react"
+import { Check, ChevronRight, Copy, Loader2, Plus, Search, Trash2, X } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showError, showSuccess, showUndoToast } from "@/lib/toast"
@@ -11,6 +11,7 @@ import { dueLabel, zelleMemo, type JobPayState } from "@/lib/cleaner-payables"
 import { BatchPayBar, type PaySelection } from "./batch-pay-bar"
 import { CleanersSummary, type PaymentRow } from "./cleaners-summary"
 import { avatarColor, initialsOf } from "@/lib/avatar-palette"
+import { AddPayeeModal } from "./add-payee-modal"
 
 interface JobRow {
   id: string
@@ -92,6 +93,7 @@ export function CleanersTable({ period, onOpenProfile }: {
   const [sortBy, setSortBy] = useState<"jobs" | "name">("jobs")
   const [query, setQuery] = useState("")
   const [confirmRemove, setConfirmRemove] = useState<CleanerRow | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
 
   const toggleAccount = (id: string) =>
     setOpenAccounts(prev => {
@@ -313,7 +315,12 @@ export function CleanersTable({ period, onOpenProfile }: {
                   {initialsOf(c.name)}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-px">
-                  <span className="truncate text-[14px] font-extrabold">{c.name}</span>
+                  <span
+                    className="truncate text-[14px] font-extrabold hover:text-[#0b7a4e] hover:underline"
+                    onClick={e => { if (onOpenProfile) { e.stopPropagation(); onOpenProfile(c.id) } }}
+                  >
+                    {c.name}
+                  </span>
                   <span className="whitespace-nowrap text-[11px] font-semibold text-[#9a9fa4]">
                     {c.specialty ? `${c.specialty} · ` : ""}
                     {c.unpaidJobs > 0 ? `${c.unpaidJobs} unpaid` : "all paid ✓"}
@@ -649,6 +656,15 @@ export function CleanersTable({ period, onOpenProfile }: {
           {rows.reduce((n, c) => n + c.accounts.length, 0)} matching accounts
         </span>
       )}
+
+      <button
+        type="button"
+        onClick={() => setAddOpen(true)}
+        title="Add someone new to your roster"
+        className="ml-auto inline-flex flex-none items-center gap-[7px] rounded-[8px] border border-[#e2e2df] bg-white py-2 pl-[11px] pr-3.5 text-[12.5px] font-extrabold text-[#0b7a4e] hover:bg-[#f6f6f3]"
+      >
+        <Plus size={14} strokeWidth={2.6} /> Add a cleaner or vendor
+      </button>
     </div>
 
     <div
@@ -755,11 +771,17 @@ export function CleanersTable({ period, onOpenProfile }: {
       )}
     </div>
 
+    <AddPayeeModal
+      open={addOpen}
+      onClose={() => setAddOpen(false)}
+      onAdded={() => mutate()}
+    />
+
     <BatchPayBar
       selection={selection}
       onClear={() => setChecked(new Set())}
       onDone={() => mutate()}
-      hidden={!!confirmRemove}
+      hidden={!!confirmRemove || addOpen}
     />
 
     {/* Removing someone is the one destructive action here, so it confirms

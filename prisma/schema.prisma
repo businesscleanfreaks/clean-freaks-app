@@ -146,6 +146,27 @@ model Subcontractor {
   // Day of the month we pay this cleaner by, no matter what. Default the 3rd.
   payByDay            Int     @default(3)
 
+  /// Profile photo, stored inline like the invoice attachments.
+  photoData     Bytes?
+  photoMimeType String?
+
+  /// W-9 on file. The document itself is kept so a 1099 can be issued later.
+  w9OnFile     Boolean   @default(false)
+  w9FileName   String?
+  w9MimeType   String?
+  w9Data       Bytes?
+  w9UploadedAt DateTime?
+
+  /// Tax details. Only the LAST FOUR digits of the tax ID are ever stored —
+  /// the full number is not needed to issue a 1099 from this app, and holding
+  /// it would make this table a target for no operational benefit.
+  legalName    String?
+  taxIdType    String? // SSN | EIN
+  taxIdLast4   String?
+
+  /// Free-text notes shown on the profile.
+  profileNotes String?
+
   schedules       Schedule[]
   jobs            Job[]
   payments        SubcontractorPayment[]
@@ -153,6 +174,7 @@ model Subcontractor {
   addOnServices   AddOnService[]
   cleanerInvoices CleanerInvoice[]
   invoiceReceipts CleanerInvoiceReceipt[]
+  contacts        CleanerContact[]
 
   consumables Consumable[]
 
@@ -164,6 +186,30 @@ model Subcontractor {
 // enforce Josh's rule: never pay a cleaner until they've invoiced us AND it
 // matches what we compute we owe. `computedOwed` is snapshotted at intake; a
 // MISMATCH blocks payout until a human RESOLVES it.
+/// A person to contact about a cleaner or vendor's work.
+///
+/// Separate from the payee record because a cleaning company has several — an
+/// owner, someone who does billing, a team lead — and the office needs to know
+/// which one to call about what.
+model CleanerContact {
+  id              String   @id @default(uuid())
+  subcontractorId String
+  name            String
+  /// Owner, Billing, Scheduling, Team lead … free text; the list is a shortcut.
+  role            String?
+  phone           String?
+  email           String?
+  /// Keeps the order the operator arranged them in.
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@index([subcontractorId, sortOrder])
+  @@map("cleaner_contacts")
+}
+
 model CleanerInvoice {
   id                 String    @id @default(uuid())
   subcontractorId    String
