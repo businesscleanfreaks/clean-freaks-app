@@ -3,8 +3,9 @@
 import { useState } from "react"
 import Link from "next/link"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Loader2 } from "lucide-react"
+import { Camera, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Loader2 } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
+import { showError, showSuccess } from "@/lib/toast"
 import { formatCurrency } from "@/lib/utils"
 import { avatarColor, initialsOf } from "@/lib/avatar-palette"
 import { ProfileAccounts, type ProfileAccount } from "./profile-accounts"
@@ -36,6 +37,7 @@ interface ProfileData {
     isActive: boolean
     since: string
     payByDay: number
+    hasPhoto: boolean
     notes: string | null
   }
   accounts: ProfileAccount[]
@@ -71,6 +73,7 @@ const LABEL = "text-[10px] font-extrabold uppercase tracking-[0.06em] text-[#7e8
 /** One cleaner: what they work, what they are owed, and who they are. */
 export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
   const [period, setPeriod] = useState(thisMonth())
+  const [uploading, setUploading] = useState(false)
   const { data, isLoading, mutate } = useSWR<ProfileData>(
     `/api/cleaners/${cleanerId}/profile?period=${period}`,
     fetcher,
@@ -132,12 +135,50 @@ export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
       </Link>
 
       <div className="mt-2 flex items-start gap-4">
-        <span
-          className="grid h-16 w-16 flex-none place-items-center rounded-[18px] text-[20px] font-extrabold"
+        {/* Click the avatar to set a photo · the camera badge says so. */}
+        <label
+          className="group relative grid h-16 w-16 flex-none cursor-pointer place-items-center overflow-hidden rounded-[18px] text-[20px] font-extrabold"
           style={{ background: color.bg, color: color.fg }}
+          title="Upload a photo"
         >
-          {initialsOf(cleaner.name)}
-        </span>
+          {cleaner.hasPhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/cleaners/${cleanerId}/files?kind=photo&v=${cleaner.since}`}
+              alt={cleaner.name}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            initialsOf(cleaner.name)
+          )}
+          <span className="absolute bottom-0 right-0 grid h-[19px] w-[19px] place-items-center rounded-tl-[8px] bg-white/90 text-[#6b6f73]">
+            {uploading ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async e => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              setUploading(true)
+              try {
+                const fd = new FormData()
+                fd.append("kind", "photo")
+                fd.append("file", file)
+                const res = await fetch(`/api/cleaners/${cleanerId}/files`, { method: "POST", body: fd })
+                if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Could not upload")
+                showSuccess("Photo updated")
+                mutate()
+              } catch (err) {
+                showError(err instanceof Error ? err.message : "Could not upload")
+              } finally {
+                setUploading(false)
+                e.target.value = ""
+              }
+            }}
+          />
+        </label>
 
         <div className="min-w-0 flex-1">
           <h1 className="m-0 text-[27px] font-extrabold leading-tight tracking-[-0.02em]">{cleaner.name}</h1>

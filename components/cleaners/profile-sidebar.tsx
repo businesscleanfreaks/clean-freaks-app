@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, Check, Mail, Phone, Plus, X } from "lucide-react"
+import { AlertTriangle, Check, FileText, Mail, Phone, Plus, Upload, X } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { showError, showSuccess } from "@/lib/toast"
 import { CONTACT_ROLES } from "@/lib/combobox"
@@ -50,6 +50,25 @@ export function ProfileSidebar({ cleanerId, contacts, tax, notes, email, phone, 
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [taxEditing, setTaxEditing] = useState(false)
   const [taxDraft, setTaxDraft] = useState<Partial<ProfileTax>>({})
+  const [uploadingW9, setUploadingW9] = useState(false)
+
+  const uploadW9 = async (file?: File) => {
+    if (!file) return
+    setUploadingW9(true)
+    try {
+      const fd = new FormData()
+      fd.append("kind", "w9")
+      fd.append("file", file)
+      const res = await fetch(`/api/cleaners/${cleanerId}/files`, { method: "POST", body: fd })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Could not upload")
+      showSuccess("W-9 uploaded")
+      onChanged()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not upload")
+    } finally {
+      setUploadingW9(false)
+    }
+  }
 
   const call = async (url: string, init: RequestInit, ok: string) => {
     try {
@@ -196,6 +215,47 @@ export function ProfileSidebar({ cleanerId, contacts, tax, notes, email, phone, 
         </div>
 
         <div className="px-4 py-3">
+          {/* The document itself. Uploading it IS the confirmation that a W-9
+              is on file, so there is no separate checkbox to forget. */}
+          {tax.w9OnFile && tax.w9FileName ? (
+            <div className="mb-3 flex items-center gap-2 rounded-[8px] border border-[#ececea] bg-[#fafaf8] px-2.5 py-2">
+              <FileText size={13} className="flex-none text-[#0b7a4e]" />
+              <span className="min-w-0 flex-1">
+                <a
+                  href={`/api/cleaners/${cleanerId}/files?kind=w9`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block truncate text-[12px] font-bold text-[#3f4347] hover:underline"
+                >
+                  {tax.w9FileName}
+                </a>
+                {tax.w9UploadedAt && (
+                  <span className="block text-[10.5px] text-[#9a9fa4]">
+                    Uploaded {new Date(tax.w9UploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </span>
+                )}
+              </span>
+              <label className="flex-none cursor-pointer text-[11px] font-bold text-[#0b7a4e] hover:underline">
+                Replace
+                <input type="file" accept="application/pdf,image/*" className="hidden"
+                  onChange={e => uploadW9(e.target.files?.[0])} />
+              </label>
+            </div>
+          ) : (
+            <label
+              className="mb-3 flex cursor-pointer flex-col items-center gap-1 rounded-[9px] border border-dashed px-3 py-4 text-center"
+              style={{ borderColor: "#e6cfa5", background: "#fdf9f1" }}
+            >
+              <Upload size={15} className="text-[#b45309]" />
+              <span className="text-[12px] font-bold text-[#8a5e12]">
+                {uploadingW9 ? "Uploading…" : "Upload W-9"}
+              </span>
+              <span className="text-[10.5px] text-[#9a9fa4]">Needed to issue a 1099</span>
+              <input type="file" accept="application/pdf,image/*" className="hidden"
+                onChange={e => uploadW9(e.target.files?.[0])} />
+            </label>
+          )}
+
           {taxEditing ? (
             <div className="flex flex-col gap-2">
               <input
