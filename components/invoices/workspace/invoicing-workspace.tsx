@@ -775,12 +775,12 @@ function DetailPanel({ inv, month, onCompose }: {
       </div>
 
       {/* Scrollable detail (Ticket 2): schedule · changes · headline · calendar */}
-      <ScrollWithMoreBelow className="h-full space-y-5 overflow-y-auto px-5 py-4" resetKey={inv.candidateId}>
+      <ScrollWithMoreBelow className="h-full space-y-3.5 overflow-y-auto px-5 py-3" resetKey={inv.candidateId}>
         {/* Service summary — what this invoice is actually for, in plain
             English. Replaces a key-value block that printed schedule enums
             ("EVERY_4_WEEKS") straight at the reviewer. */}
-        <div style={{ border: "1px solid #eef0f3", borderRadius: 14, padding: "12px 15px" }}>
-          <div className="mb-3 text-[15.5px] font-bold tracking-[-0.01em] text-stone-900">Service summary</div>
+        <div style={{ border: "1px solid #eef0f3", borderRadius: 14, padding: "10px 14px" }}>
+          <div className="mb-2 text-[14px] font-bold tracking-[-0.01em] text-stone-900">Service summary</div>
           <div className="flex items-center gap-[11px]">
             <span
               className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg"
@@ -797,7 +797,7 @@ function DetailPanel({ inv, month, onCompose }: {
             </span>
           </div>
 
-          <div className="mt-3 flex items-center gap-1.5 border-t border-[#f1f3f6] pt-[11px] text-[11.5px] text-[#9aa3af]">
+          <div className="mt-2 flex items-center gap-1.5 border-t border-[#f1f3f6] pt-2 text-[11.5px] text-[#9aa3af]">
             <span>{billingModel}</span>
             <span className="text-stone-300">·</span>
             <span className="truncate">{cleaner || "No cleaner assigned"}</span>
@@ -822,11 +822,10 @@ function DetailPanel({ inv, month, onCompose }: {
           </div>
         )}
 
-        {/* One quiet headline above the calendar, then the calendar */}
+        {/* Straight to the calendar. The headline that used to sit here said
+            the same thing as the schedule-check card below it, and the height
+            it cost pushed the calendar under the fold. */}
         <div>
-          <div className="mb-2 text-[12px] text-stone-500">
-            <span className="font-semibold text-stone-700">{monthCleans.length} clean{monthCleans.length === 1 ? "" : "s"}</span> this month · {flaggedRows.length === 0 ? "no changes" : `${flaggedRows.length} change${flaggedRows.length === 1 ? "" : "s"}`}
-          </div>
           {/* Per-clean only: a flat-rate client bills the same regardless of the
               visit count, so the day grid says nothing about their total. */}
           {inv.billingType !== "FLAT_RATE" ? (

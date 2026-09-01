@@ -123,6 +123,6 @@ describe("sortRows", () => {
 describe("gridTemplate", () => {
   it("brackets the ordered columns with the checkbox and the action", () => {
     expect(gridTemplate(["amount", "client", "type", "status", "due"]))
-      .toBe("18px 110px minmax(200px,1fr) 104px 136px 120px 132px")
+      .toBe("18px 126px minmax(200px,1fr) 104px 136px 120px 132px")
   })
 })

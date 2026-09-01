@@ -87,6 +87,21 @@ export function CleanersTable({ period, onOpenProfile }: {
     { revalidateOnFocus: false },
   )
 
+  /**
+   * The profile chips come from the WHOLE roster, not this month's work.
+   * Josh 2026-08-31: they should stay put when the month changes, so a profile
+   * is always one click away even in a month someone did nothing.
+   */
+  const { data: roster } = useSWR<{ id: string; name: string; isActive: boolean }[]>(
+    "/api/subcontractors",
+    fetcher,
+    { revalidateOnFocus: false },
+  )
+  const profileChips = useMemo(
+    () => (roster ?? []).filter(r => r.isActive).sort((a, b) => a.name.localeCompare(b.name)),
+    [roster],
+  )
+
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [openAccounts, setOpenAccounts] = useState<Set<string>>(new Set())
   const [checked, setChecked] = useState<Set<string>>(new Set())
@@ -578,14 +593,6 @@ export function CleanersTable({ period, onOpenProfile }: {
         )
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-[#98a2b3]">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-    )
-  }
-
   return (
     <>
     {data && (
@@ -597,12 +604,12 @@ export function CleanersTable({ period, onOpenProfile }: {
     )}
 
     {/* Straight to a profile without hunting the table for the row. */}
-    {rows.length > 0 && (
+    {profileChips.length > 0 && (
       <div className="mt-[18px] flex flex-wrap items-center gap-2">
         <span className="mr-0.5 text-[11px] font-extrabold uppercase tracking-[0.05em] text-[#9aa0a4]">
           Profiles
         </span>
-        {(data?.cleaners ?? []).map(c => (
+        {profileChips.map(c => (
           <button
             key={c.id}
             type="button"
@@ -706,7 +713,13 @@ export function CleanersTable({ period, onOpenProfile }: {
         <span className="w-[40px] flex-none" />
       </div>
 
-      {rows.length === 0 && vendorRows.length === 0 && (
+      {isLoading && (
+        <div className="flex items-center justify-center py-16 text-[#98a2b3]">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      )}
+
+      {!isLoading && rows.length === 0 && vendorRows.length === 0 && (
         <div className="px-6 py-[52px] text-center">
           {query.trim() ? (
             <div className="text-[13px] text-[#8a8f93]">
@@ -734,9 +747,9 @@ export function CleanersTable({ period, onOpenProfile }: {
         </div>
       )}
 
-      {rows.map(renderPayee)}
+      {!isLoading && rows.map(renderPayee)}
 
-      {vendorRows.length > 0 && (
+      {!isLoading && vendorRows.length > 0 && (
         <>
           <div className="flex items-baseline gap-2.5 border-b border-[#ececea] bg-[#fafaf8] px-5 pb-2 pt-2.5">
             <span className="text-[10px] font-extrabold uppercase tracking-[0.07em] text-[#98a2b3]">

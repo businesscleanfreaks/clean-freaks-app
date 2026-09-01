@@ -71,7 +71,8 @@ export function candidateToRow(c: CandidateSource): PendingLedgerRow {
     clearing: false,
     kind: c.billingType === "FLAT_RATE" ? "Flat rate" : "Per clean",
     daysLate: 0,
-    subtext: c.jobCount ? `${c.jobCount} clean${c.jobCount === 1 ? "" : "s"} this month` : null,
+    // Deliberately no subtext: Josh does not want the clean count here.
+    subtext: null,
   } as PendingLedgerRow
 }
 

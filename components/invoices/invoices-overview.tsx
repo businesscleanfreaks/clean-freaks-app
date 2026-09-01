@@ -549,9 +549,13 @@ export function InvoicesOverview() {
 
                 <div className="min-w-0" style={{ order: slot.client }}>
                   <div className="truncate text-[13.5px] font-bold tracking-[-0.01em] text-[#101828]">{row.clientName}</div>
-                  <div className="mt-px truncate text-[11.5px] text-[#7d8795]">
-                    {row.subtext ?? row.invoiceNumber}
-                  </div>
+                  {/* A pending row has no invoice number yet, and "Draft" only
+                      repeats the status pill — so it gets no second line. */}
+                  {(row.subtext || !isPendingRow(row)) && (
+                    <div className="mt-px truncate text-[11.5px] text-[#7d8795]">
+                      {row.subtext ?? row.invoiceNumber}
+                    </div>
+                  )}
                 </div>
 
                 <span
@@ -561,7 +565,10 @@ export function InvoicesOverview() {
                   {row.kind}
                 </span>
 
-                <span className="text-right text-[13.5px] font-bold tabular-nums text-[#101828]" style={{ order: slot.amount }}>
+                <span
+                  className="pr-4 text-right text-[13.5px] font-bold tabular-nums text-[#101828]"
+                  style={{ order: slot.amount }}
+                >
                   {formatCurrency(row.totalAmount)}
                 </span>
 

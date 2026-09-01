@@ -116,6 +116,8 @@ export function LedgerHeader({ order, sort, onSort, onReorder, children }: {
               order: ord[key],
               cursor: "grab",
               justifyContent: meta.align === "right" ? "flex-end" : meta.align === "center" ? "center" : "flex-start",
+              // Matches the cell's padding so the label stays over its numbers.
+              paddingRight: meta.align === "right" ? 16 : undefined,
               opacity: drag?.key === key ? 0.25 : 1,
               color: active ? "#475467" : undefined,
             }}

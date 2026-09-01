@@ -122,8 +122,10 @@ function ActualCell({ label, value, tone }: { label: string; value: string; tone
 export function DashboardClient() {
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
   const [activeView, setActiveView] = useState<"dashboard" | "todo">("dashboard")
-  const [sortBy, setSortBy] = useState<SortKey>("periodRevenue")
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  // Josh 2026-08-31: opens alphabetically, so a client can be found by name
+  // without hunting. Any column still sorts on click.
+  const [sortBy, setSortBy] = useState<SortKey>("name")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
   const [projectedOpen, setProjectedOpen] = useState(false)
   const [expensesOpen, setExpensesOpen] = useState(false)
   const [doneTasks, setDoneTasks] = useState<DashboardCompletionState>({})

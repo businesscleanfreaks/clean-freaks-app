@@ -24,7 +24,7 @@ export interface ColumnMeta {
 export const LEDGER_COLUMNS: Record<ColumnKey, ColumnMeta> = {
   client: { label: "Client", align: "left", width: "minmax(200px,1fr)" },
   type: { label: "Type", align: "left", width: "104px" },
-  amount: { label: "Amount", align: "right", width: "110px" },
+  amount: { label: "Amount", align: "right", width: "126px" },
   status: { label: "Status", align: "left", width: "136px" },
   due: { label: "Payment due", align: "left", width: "120px" },
 }

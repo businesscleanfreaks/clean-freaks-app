@@ -66,9 +66,9 @@ describe("candidateToRow", () => {
     expect(candidateToRow(cand({ billingType: "PER_CLEAN" })).kind).toBe("Per clean")
   })
 
-  it("says how many cleans it covers", () => {
-    expect(candidateToRow(cand({ jobCount: 9 })).subtext).toBe("9 cleans this month")
-    expect(candidateToRow(cand({ jobCount: 1 })).subtext).toBe("1 clean this month")
+  it("carries no subtext · Josh does not want the clean count on this row", () => {
+    expect(candidateToRow(cand({ jobCount: 9 })).subtext).toBeNull()
+    expect(candidateToRow(cand({ jobCount: 1 })).subtext).toBeNull()
   })
 })
 

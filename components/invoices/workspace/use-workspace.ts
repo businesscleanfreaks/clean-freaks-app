@@ -275,10 +275,27 @@ export function useWorkspace(options: UseWorkspaceOptions = {}) {
    */
   const focusMissing = !!focusInvoiceId && !isLoading && !focusRow
 
-  const selected = useMemo(
-    () => filtered.find((i) => i.candidateId === selectedId) || filtered[0] || null,
-    [filtered, selectedId],
+  // Review queue: the unsent invoices in the order the VA should work them
+  // (flat rate first, needs-attention first within each). Drives the top pill,
+  // the up/down arrows and the keyboard shortcuts.
+  const reviewQueue = useMemo(
+    () => orderQueue(invoices.filter(i => i.uiStatus === "Not sent")),
+    [invoices],
   )
+
+  /**
+   * Nothing chosen yet opens the FIRST row of the review queue, not the first
+   * row of the raw list. Josh 2026-08-31: flat-rate invoices are the quick
+   * checks, so the queue starts there and the opening screen should match.
+   */
+  const selected = useMemo(() => {
+    if (selectedId) {
+      const picked = filtered.find((i) => i.candidateId === selectedId)
+      if (picked) return picked
+    }
+    const firstInQueue = reviewQueue.find((q) => filtered.some((f) => f.candidateId === q.candidateId))
+    return firstInQueue ?? filtered[0] ?? null
+  }, [filtered, selectedId, reviewQueue])
 
   // Manually checked invoices (only not-sent ones are sendable).
   const checkedList = useMemo(
@@ -289,10 +306,7 @@ export function useWorkspace(options: UseWorkspaceOptions = {}) {
   // Review queue: the unsent invoices in the order the VA should work them
   // (flat rate first, needs-attention first within each). Drives the top pill,
   // the up/down arrows and the keyboard shortcuts.
-  const reviewQueue = useMemo(
-    () => orderQueue(invoices.filter(i => i.uiStatus === "Not sent")),
-    [invoices],
-  )
+
   const queuePositionLabel = useMemo(
     () => queueLabel(reviewQueue, selected?.candidateId ?? null),
     [reviewQueue, selected],
