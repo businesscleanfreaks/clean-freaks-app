@@ -15,6 +15,8 @@
  * Options:
  *   --apply            write to the database
  *   --name <label>     what to call this sheet (default: the file name)
+ *   --year 2026        import only that calendar year
+ *   --from / --to      an explicit yyyy-MM-dd window instead of --year
  *   --update-changed   also apply category changes to rows already imported
  *   --allow-credits    import refunds as negative amounts
  *   --json             machine-readable output instead of the report
@@ -49,6 +51,15 @@ const AS_JSON = has("--json")
 
 const filePath = args.find(a => !a.startsWith("--") && /\.(csv|json)$/i.test(a))
 
+/**
+ * Josh, 2026-09-01: import this year only. A window is applied rather than the
+ * sheet being trimmed, so the same file can be re-run for a wider range later
+ * without re-importing what is already in.
+ */
+const YEAR = valueOf("--year")
+const FROM = valueOf("--from") ?? (YEAR ? `${YEAR}-01-01` : undefined)
+const TO = valueOf("--to") ?? (YEAR ? `${YEAR}-12-31` : undefined)
+
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" })
 
@@ -77,6 +88,7 @@ function report(plan: ImportPlan, sourceName: string, columns: Record<string, st
 
   line()
   line(`${APPLY ? "APPLYING" : "DRY RUN"} · ${sourceName}`)
+  if (FROM || TO) line(`Date window: ${FROM ?? "anything"} to ${TO ?? "anything"}`)
   line("=".repeat(60))
 
   line()
@@ -92,7 +104,13 @@ function report(plan: ImportPlan, sourceName: string, columns: Record<string, st
   line(`  recategorised in sheet   ${plan.changed.length}`)
   line(`  could not be read        ${plan.problems.length}`)
   line()
-  line(`Sheet total (readable rows)  ${money(plan.totals.sheet)}`)
+  line(`Sheet total (in the window)  ${money(plan.totals.sheet)}`)
+  if (plan.outsideRange.count) {
+    line(`Outside the date window      ${money(plan.outsideRange.total)}  (${plan.outsideRange.count} rows)`)
+    // The two add up to the sheet's own total, which is how you check the
+    // import read the whole file rather than stopping partway.
+    line(`  the two together           ${money(plan.totals.sheet + plan.outsideRange.total)}`)
+  }
   line(`Already in the app           ${money(plan.totals.existing)}`)
 
   if (plan.problems.length) {
@@ -180,6 +198,8 @@ async function main() {
     columns,
     cleanerNames,
     allowCredits: ALLOW_CREDITS,
+    from: FROM,
+    to: TO,
   })
 
   const existingRows = await prisma.expense.findMany({

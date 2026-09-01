@@ -347,3 +347,62 @@ describe("planExpenseImport", () => {
     expect(plan.totals).toEqual({ sheet: 150, toCreate: 50, existing: 100 })
   })
 })
+
+describe("date window", () => {
+  const rows = [
+    { Date: "12/15/2025", Amount: "500", Description: "Last year insurance", Vendor: "Geico", Category: "Insurance" },
+    { Date: "3/4/2026", Amount: "100", Description: "Mops", Vendor: "Depot", Category: "Cleaning supplies" },
+    { Date: "8/1/2026", Amount: "50", Description: "Ads", Vendor: "Meta", Category: "Marketing" },
+    { Date: "1/9/2027", Amount: "70", Description: "Next year", Vendor: "Depot", Category: "" },
+  ]
+  const thisYear = { from: "2026-01-01", to: "2026-12-31" }
+
+  it("imports only what falls inside the window", () => {
+    const { expenses } = parseExpenseSheet(rows, [2, 3, 4, 5], opts(thisYear))
+    expect(expenses.map(e => e.description)).toEqual(["Mops", "Ads"])
+  })
+
+  it("keeps out-of-window rows apart from unreadable ones", () => {
+    // They read perfectly; they are just out of scope.
+    const result = parseExpenseSheet(rows, [2, 3, 4, 5], opts(thisYear))
+    expect(result.problems).toHaveLength(0)
+    expect(result.outsideRange.map(e => e.description)).toEqual(["Last year insurance", "Next year"])
+  })
+
+  it("totals in and out so they add up to the sheet's own total", () => {
+    const plan = planExpenseImport(parseExpenseSheet(rows, [2, 3, 4, 5], opts(thisYear)), [])
+    expect(plan.totals.sheet).toBe(150)
+    expect(plan.outsideRange).toEqual({ count: 2, total: 570 })
+    // 150 + 570 = 720, which is what the sheet adds up to.
+    expect(plan.totals.sheet + plan.outsideRange.total).toBe(720)
+  })
+
+  it("gives a row the same key whatever the window is", () => {
+    // The trap: filtering before numbering would renumber the survivors, so
+    // widening the window later would re-import everything as duplicates.
+    const narrow = parseExpenseSheet(rows, [2, 3, 4, 5], opts(thisYear))
+    const wide = parseExpenseSheet(rows, [2, 3, 4, 5], opts())
+    const keyFor = (r: ReturnType<typeof parseExpenseSheet>, d: string) =>
+      [...r.expenses, ...r.outsideRange].find(e => e.description === d)?.sourceKey
+    for (const d of ["Last year insurance", "Mops", "Ads", "Next year"]) {
+      expect(keyFor(narrow, d)).toBe(keyFor(wide, d))
+    }
+  })
+
+  it("keeps occurrence numbering stable when the window hides an earlier repeat", () => {
+    const repeats = [
+      { Date: "12/1/2025", Amount: "14", Description: "Parking", Vendor: "", Category: "" },
+      { Date: "12/1/2025", Amount: "14", Description: "Parking", Vendor: "", Category: "" },
+      { Date: "3/1/2026", Amount: "14", Description: "Parking", Vendor: "", Category: "" },
+    ]
+    const narrow = parseExpenseSheet(repeats, [2, 3, 4], opts(thisYear))
+    const wide = parseExpenseSheet(repeats, [2, 3, 4], opts())
+    expect(narrow.expenses[0].sourceKey).toBe(wide.expenses[2].sourceKey)
+  })
+
+  it("imports everything when no window is given", () => {
+    const { expenses, outsideRange } = parseExpenseSheet(rows, [2, 3, 4, 5], opts())
+    expect(expenses).toHaveLength(4)
+    expect(outsideRange).toHaveLength(0)
+  })
+})

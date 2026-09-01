@@ -8,6 +8,7 @@ import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { ScheduleCheck, type ScheduleCheckClean } from "./schedule-check"
+import { billableCleanCount, countCleans } from "@/lib/schedule-check"
 import { TemplatesModal } from "./templates-modal"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
@@ -23,7 +24,6 @@ import { SentTracking } from "./sent-tracking"
 import { runBatchSend, ensureInvoiceId } from "./invoice-send"
 import { type Adjustment } from "@/lib/invoice-adjustments"
 import { confirmBlockedReason, confirmationText, needsConfirmation } from "@/lib/invoice-confirmation"
-import { buildServiceSummary } from "@/lib/invoice-service-summary"
 import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
 import { TERMS, TERM_LABELS } from "@/lib/billing-schedule"
 import type { ComposeMode } from "@/lib/invoice-compose"
@@ -246,7 +246,11 @@ export function InvoicingWorkspace({
         </div>
       </header>
 
-      {/* ── Filter bar: tabs + search ── */}
+      {/* ── Filter bar: tabs + search ──
+          Only while the list is open. In review mode these are the controls of
+          the invoice INDEX, and sitting them between the review queue and the
+          client being reviewed made a focused screen read like a list page. */}
+      {!listCollapsed && (
       <div className="flex items-center gap-3 border-b border-stone-200 bg-white px-6 py-2.5">
         <div className="flex items-center gap-0.5 rounded-md bg-stone-100 p-0.5">
           {TABS.map((t) => (
@@ -269,9 +273,18 @@ export function InvoicingWorkspace({
           <Settings size={13} /> Template
         </button>
       </div>
+      )}
 
-      {/* ── Three columns ── */}
-      <div className="flex min-h-0 flex-1">
+      {/* ── The panes ──
+          In review mode this is two equal halves on a common ground with a
+          real gutter between them, rather than columns divided by a rule. */}
+      <div
+        className={
+          listCollapsed
+            ? "flex min-h-0 flex-1 gap-4 bg-[#f6f6f3] p-4"
+            : "flex min-h-0 flex-1"
+        }
+      >
         {/* Left: invoice list */}
         {!listCollapsed && (
         <div className="flex shrink-0 flex-col border-r border-stone-200 bg-white" style={{ width: listWidth }}>
@@ -383,8 +396,16 @@ export function InvoicingWorkspace({
             client's view rather than staying at its three-column size — the
             review is the point of the two-pane layout, not a sidebar. */}
         <div
-          className={`flex flex-col border-r border-stone-200 bg-white ${listCollapsed ? "min-w-0 flex-1" : "shrink-0"}`}
-          style={listCollapsed ? { maxWidth: 720 } : { width: detailWidth }}
+          className={
+            listCollapsed
+              ? "flex min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded-2xl border border-[#e7e7e2] bg-white"
+              : "flex shrink-0 flex-col border-r border-stone-200 bg-white"
+          }
+          style={
+            listCollapsed
+              ? { boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05)" }
+              : { width: detailWidth }
+          }
         >
           {ws.selected ? (
             <DetailPanel
@@ -404,8 +425,15 @@ export function InvoicingWorkspace({
             title="Drag to resize · Double-click to reset" />
         )}
 
-        {/* PDF preview column */}
-        <div className="flex min-w-0 flex-1 flex-col bg-stone-100">
+        {/* PDF preview · a distinct container beside the review card, sharing
+            the width with it rather than taking the larger half. */}
+        <div
+          className={
+            listCollapsed
+              ? "flex min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded-2xl border border-[#eceae4] bg-[#f0efea]"
+              : "flex min-w-0 flex-1 flex-col bg-stone-100"
+          }
+        >
           {ws.selected ? <InvoicePreview inv={ws.selected} month={ws.month} /> : (
             <div className="m-auto text-sm text-stone-400">Select an invoice to preview.</div>
           )}
@@ -713,26 +741,19 @@ function DetailPanel({ inv, month, onCompose }: {
 
   const billingModel = inv.billingType === "FLAT_RATE" ? "Flat monthly" : inv.billingType === "ONE_TIME" ? "One-time" : "Per clean"
 
-  // Cancelled cleans are counted so the summary can explain a light total
-  // ("4 of 5 scheduled cleans found in August").
-  const cancelledThisMonth = (Array.isArray(inv.exceptions) ? inv.exceptions : []).filter(
-    e => e.type === "SKIPPED",
-  ).length
-  const serviceSummary = buildServiceSummary({
-    billingType: inv.billingType,
-    cleanCount: inv.completedCount || inv.jobCount || 0,
-    cancelledCount: cancelledThisMonth,
-    monthLabel: formatMonthLabel(month).split(" ")[0],
-    scheduleSummary: inv.scheduleSummary,
-    firstLineDescription: (inv.lineItems || [])[0]?.description,
-  })
+  // One answer to "how many cleans this month", shared with the schedule card.
+  // This screen used to carry two: the card counted the live cleans and said
+  // "9 cleans done" while the summary above it read the candidate's own
+  // counters and said "0 cleans", because a sent invoice carries none.
+  const cleanCounts = useMemo(() => countCleans(month, cleans), [month, cleans])
+  const cleanCount = billableCleanCount(cleanCounts, inv)
 
 
   return (
     <div className="flex h-full flex-col">
       {/* Header — client, where the work is and when it is due on one line,
           with the total labelled and right-aligned, per the design. */}
-      <div className="border-b border-stone-200 bg-white px-5 py-4">
+      <div className="border-b border-stone-200 bg-white px-7 py-4">
         <div className="flex items-start gap-[13px]">
           <span
             className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full text-white"
@@ -752,6 +773,14 @@ function DetailPanel({ inv, month, onCompose }: {
               <span className="inline-flex items-center gap-1">
                 <CalendarDays size={13} />
                 Due {dueDate}
+              </span>
+              {/* Carried down from the removed service-summary card: it is the
+                  only place the billing model and the cleaner appear, and on
+                  this line it costs no height. */}
+              <span className="text-[#d2d8de]">·</span>
+              <span className="truncate">
+                {billingModel}
+                {cleaner ? ` · ${cleaner}` : ""}
               </span>
             </div>
           </div>
@@ -775,35 +804,7 @@ function DetailPanel({ inv, month, onCompose }: {
       </div>
 
       {/* Scrollable detail (Ticket 2): schedule · changes · headline · calendar */}
-      <ScrollWithMoreBelow className="h-full space-y-3.5 overflow-y-auto px-5 py-3" resetKey={inv.candidateId}>
-        {/* Service summary — what this invoice is actually for, in plain
-            English. Replaces a key-value block that printed schedule enums
-            ("EVERY_4_WEEKS") straight at the reviewer. */}
-        <div style={{ border: "1px solid #eef0f3", borderRadius: 14, padding: "10px 14px" }}>
-          <div className="mb-2 text-[14px] font-bold tracking-[-0.01em] text-stone-900">Service summary</div>
-          <div className="flex items-center gap-[11px]">
-            <span
-              className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg"
-              style={{ background: "#eaf5ee", color: "#15793f" }}
-            >
-              <CalendarDays size={15} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold text-[#374151]">{serviceSummary.title}</div>
-              <div className="mt-px text-[11.5px] text-[#9aa3af]">{serviceSummary.sub}</div>
-            </div>
-            <span className="flex-none text-[13.5px] font-bold tabular-nums text-stone-900">
-              {formatCurrency(inv.total)}
-            </span>
-          </div>
-
-          <div className="mt-2 flex items-center gap-1.5 border-t border-[#f1f3f6] pt-2 text-[11.5px] text-[#9aa3af]">
-            <span>{billingModel}</span>
-            <span className="text-stone-300">·</span>
-            <span className="truncate">{cleaner || "No cleaner assigned"}</span>
-          </div>
-        </div>
-
+      <ScrollWithMoreBelow className="h-full space-y-3.5 overflow-y-auto px-7 py-4" resetKey={inv.candidateId}>
         {/* Changes this month — shown only when there are changes */}
         {flaggedRows.length > 0 && (
           <div>
@@ -910,7 +911,7 @@ function DetailPanel({ inv, month, onCompose }: {
               period={month}
               baseTotal={inv.total}
               billingType={inv.billingType}
-              cleanCount={inv.completedCount || inv.jobCount || 0}
+              cleanCount={cleanCount}
             />
 
             {/* What prints at the bottom of the invoice. */}
@@ -926,7 +927,7 @@ function DetailPanel({ inv, month, onCompose }: {
       {/* Primary action. Pinned rather than in the scroller: this is the one
           thing the reviewer is here to do, and it used to sit below the fold. */}
       {!tracked && (
-        <div className="flex-none border-t border-stone-200 bg-white px-5 py-3">
+        <div className="flex-none border-t border-stone-200 bg-white px-7 py-3">
           {blockedReason && (
             <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-amber-800">
               {blockedReason}

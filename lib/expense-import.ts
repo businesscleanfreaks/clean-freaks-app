@@ -350,6 +350,10 @@ export interface ParseOptions {
    * row nobody can edit.
    */
   allowCredits?: boolean
+  /** Earliest date to import, inclusive, as yyyy-MM-dd. */
+  from?: string
+  /** Latest date to import, inclusive, as yyyy-MM-dd. */
+  to?: string
 }
 
 type RowResult =
@@ -428,6 +432,13 @@ export function parseExpenseRow(row: RawRow, sourceRow: number | null, options: 
 export interface SheetResult {
   expenses: ParsedExpense[]
   problems: RowProblem[]
+  /**
+   * Rows that read perfectly but fall outside the date window. Kept apart from
+   * `problems` because there is nothing wrong with them, and reported with a
+   * total so that in-window plus out-of-window adds up to the sheet's own
+   * grand total · which is how you check the import read the whole file.
+   */
+  outsideRange: ParsedExpense[]
 }
 
 /**
@@ -450,6 +461,7 @@ export function parseExpenseSheet(
 ): SheetResult {
   const expenses: ParsedExpense[] = []
   const problems: RowProblem[] = []
+  const outsideRange: ParsedExpense[] = []
   const seen = new Map<string, number>()
 
   rows.forEach((row, index) => {
@@ -470,13 +482,18 @@ export function parseExpenseSheet(
     const occurrence = (seen.get(identity) ?? 0) + 1
     seen.set(identity, occurrence)
 
-    expenses.push({
-      ...result.expense,
-      sourceKey: expenseSourceKey({ ...base, occurrence }),
-    })
+    const expense = { ...result.expense, sourceKey: expenseSourceKey({ ...base, occurrence }) }
+
+    // The window is applied AFTER the occurrence number is assigned. Filtering
+    // first would renumber the rows that remain, so narrowing or widening the
+    // window would change their keys and re-import everything as duplicates.
+    const before = options.from && expense.date < options.from
+    const after = options.to && expense.date > options.to
+    if (before || after) outsideRange.push(expense)
+    else expenses.push(expense)
   })
 
-  return { expenses, problems }
+  return { expenses, problems, outsideRange }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -506,6 +523,8 @@ export interface ImportPlan {
    */
   missingFromSheet: ExistingExpense[]
   problems: RowProblem[]
+  /** Readable rows the date window excluded, with their total. */
+  outsideRange: { count: number; total: number }
   totals: { sheet: number; toCreate: number; existing: number }
 }
 
@@ -549,6 +568,10 @@ export function planExpenseImport(
     unchanged,
     missingFromSheet: existing.filter(e => !seenKeys.has(e.sourceKey)),
     problems: parsed.problems,
+    outsideRange: {
+      count: parsed.outsideRange.length,
+      total: round(parsed.outsideRange.reduce((sum, e) => sum + e.amount, 0)),
+    },
     totals: {
       sheet: round(parsed.expenses.reduce((sum, e) => sum + e.amount, 0)),
       toCreate: round(create.reduce((sum, e) => sum + e.amount, 0)),

@@ -134,6 +134,13 @@ export interface UseWorkspaceOptions {
 export function useWorkspace(options: UseWorkspaceOptions = {}) {
   const { initialMonth, focusInvoiceId } = options
   const [month, setMonth] = useState(() => initialMonth || format(new Date(), "yyyy-MM"))
+
+  // The initialiser above runs once. Moving between invoices client-side keeps
+  // the same component mounted, so without this the second invoice inherits
+  // the first one's month and its row is nowhere in the list.
+  useEffect(() => {
+    if (initialMonth) setMonth(initialMonth)
+  }, [initialMonth])
   const [tab, setTab] = useState<WorkspaceTab>("All")
   const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)

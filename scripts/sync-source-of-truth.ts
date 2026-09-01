@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { PrismaClient, type Prisma } from '@prisma/client'
 import { regenerateJobsForSchedule } from '../lib/regenerate-schedule-jobs'
+import { parseRowRange, splitSections, withinRange } from '../lib/source-sheet-sections'
 
 type SourceRow = Record<string, string | number | null | undefined> & { row: number }
 type ClientWithSourceDetails = Prisma.ClientGetPayload<{
@@ -21,6 +22,17 @@ type ClientWithSourceDetails = Prisma.ClientGetPayload<{
 
 const prisma = new PrismaClient()
 const APPLY = process.argv.includes('--apply')
+const argValue = (flag: string) => {
+  const at = process.argv.indexOf(flag)
+  return at >= 0 ? process.argv[at + 1] : undefined
+}
+/**
+ * Escape hatches. Sections are detected from the sheet's own labels; these
+ * exist only for the case where detection gets it wrong and the sync still
+ * has to run today.
+ */
+const ACTIVE_ROWS_OVERRIDE = parseRowRange(argValue('--active-rows'))
+const NON_RECURRING_ROWS_OVERRIDE = parseRowRange(argValue('--non-recurring-rows'))
 const REGENERATE = process.argv.includes('--regenerate')
 const REPAIR_JOBS = process.argv.includes('--repair-jobs') || REGENERATE
 const sourcePath =
@@ -771,12 +783,40 @@ async function main() {
   }
 
   const rows = JSON.parse(fs.readFileSync(sourcePath, 'utf8').replace(/^\uFEFF/, '')) as SourceRow[]
-  const activeRows = rows.filter((row) => row.row >= 2 && row.row <= 31)
-  const nonRecurringRows = rows.filter((row) => row.row >= 34 && row.row <= 46)
+
+  // Sections come from the sheet's own labels, not from fixed row numbers.
+  // The old windows (rows 2-31 and 34-46) silently dropped every client added
+  // below row 31, and shifted onto the wrong records whenever a row was
+  // inserted near the top.
+  const detected = splitSections(rows)
+  const activeRows = ACTIVE_ROWS_OVERRIDE ? withinRange(rows, ACTIVE_ROWS_OVERRIDE) : detected.active
+  const nonRecurringRows = NON_RECURRING_ROWS_OVERRIDE
+    ? withinRange(rows, NON_RECURRING_ROWS_OVERRIDE)
+    : detected.nonRecurring
+
+  // Reading zero clients from a sheet that has rows means the shape changed.
+  // Carrying on would report every client as missing and, with --apply, could
+  // deactivate schedules wholesale.
+  if (activeRows.length === 0 && rows.length > 0) {
+    throw new Error(
+      'No active client rows found. The sheet layout may have changed · check the ' +
+        'Client column, or pass --active-rows 2-31 to force the old behaviour.',
+    )
+  }
   const usedScheduleIds = new Set<string>()
   const results = []
 
   console.log(`${APPLY ? 'Applying' : 'Dry run'} source-of-truth sync from ${sourcePath}`)
+  console.log(
+    `Sheet: ${rows.length} rows · ${activeRows.length} active · ` +
+      `${nonRecurringRows.length} non-recurring · ${detected.skipped} blank/header`,
+  )
+  for (const section of detected.sections) {
+    console.log(`  section label at row ${section.sourceRow ?? '?'}: "${section.label}"`)
+  }
+  if (ACTIVE_ROWS_OVERRIDE || NON_RECURRING_ROWS_OVERRIDE) {
+    console.log('  (row ranges overridden on the command line)')
+  }
   for (const row of activeRows) {
     results.push(await syncRow(row, usedScheduleIds))
   }
@@ -791,6 +831,9 @@ async function main() {
         regenerated: APPLY && REGENERATE,
         repairedJobs: APPLY && REPAIR_JOBS,
         activeRows: activeRows.length,
+        nonRecurringRows: nonRecurringRows.length,
+        sectionsFound: detected.sections,
+        skippedRows: detected.skipped,
         results,
         asNeededSchedules: deactivated,
         historicalRowsNeedingConfirmation,
