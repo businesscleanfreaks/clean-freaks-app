@@ -203,6 +203,11 @@ export interface OwedItem {
    * rules — an extra job is extra money even in a flat-rate month.
    */
   addOnRate?: number
+  /**
+   * "YYYY-MM" of the clean. Only read by `accountOwedOverMonths`, which needs
+   * to know where one flat-rate month ends and the next begins.
+   */
+  month?: string
 }
 
 /**
@@ -239,4 +244,32 @@ export function accountOwed(
   return (
     unpaid.filter(i => !i.cancelled).reduce((sum, i) => sum + (i.rate || 0), 0) + addOns + fees
   )
+}
+
+/**
+ * The same rule applied over a span of months.
+ *
+ * A flat-rate account owes its monthly rate once PER MONTH, so a quarter of
+ * unpaid work owes it three times. `accountOwed` deliberately answers for a
+ * single month; handing it a quarter's jobs returns one month's rate for three
+ * months' work and understates the bill. Grouping by `month` first keeps the
+ * "once, however many cleans" rule intact inside each month.
+ *
+ * For PER_CLEAN this is the same number either way — it is a plain sum.
+ */
+export function accountOwedOverMonths(
+  items: OwedItem[],
+  payType: "FLAT_RATE" | "PER_CLEAN",
+  monthlyRate: number,
+): number {
+  const byMonth = new Map<string, OwedItem[]>()
+  for (const item of items) {
+    const key = item.month ?? ""
+    byMonth.set(key, [...(byMonth.get(key) ?? []), item])
+  }
+  let total = 0
+  for (const group of byMonth.values()) {
+    total += accountOwed(group, payType, monthlyRate)
+  }
+  return total
 }

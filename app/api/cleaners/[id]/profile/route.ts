@@ -4,9 +4,14 @@ import { requireAuth } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { handleApiError } from '@/lib/api-error-handler'
 import { THRESHOLD_1099 } from '@/lib/payouts-1099'
-import { accountOwed } from '@/lib/cleaner-payables'
+import { accountOwedOverMonths } from '@/lib/cleaner-payables'
+import { rangeBounds, type RangeKind } from '@/lib/profile-range'
 
 export const dynamic = 'force-dynamic'
+
+/** "YYYY-MM" in local time, matching how the range bounds are built. */
+const monthKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
 /**
  * Everything the cleaner profile shows: who they are, their accounts, the
@@ -27,10 +32,18 @@ export async function GET(
     if (!/^\d{4}-\d{2}$/.test(period)) {
       return NextResponse.json({ error: 'Period must look like 2026-08' }, { status: 400 })
     }
+    // Month, quarter, or everything. The anchor month drives all three.
+    const kindParam = url.searchParams.get('range')
+    const kind: RangeKind =
+      kindParam === 'quarter' || kindParam === 'all' ? kindParam : 'month'
+    const bounds = rangeBounds(period, kind)
+
     const [y, m] = period.split('-').map(Number)
-    const start = new Date(y, m - 1, 1)
-    const end = new Date(y, m, 0, 23, 59, 59, 999)
+    const start = bounds.start ? new Date(`${bounds.start}T00:00:00`) : null
+    const end = bounds.end ? new Date(`${bounds.end}T23:59:59.999`) : null
+    // The $600 rule is a calendar year regardless of the range being viewed.
     const yearStart = new Date(y, 0, 1)
+    const inRange = start && end ? { gte: start, lte: end } : undefined
 
     const cleaner = await prisma.subcontractor.findUnique({
       where: { id },
@@ -49,7 +62,7 @@ export async function GET(
       prisma.job.findMany({
         where: {
           subcontractorId: id,
-          date: { gte: start, lte: end },
+          ...(inRange ? { date: inRange } : {}),
           // Same filter the Cleaners table uses, so the two never disagree:
           // work that happened, work due by now, and cancellations with a fee.
           OR: [
@@ -125,10 +138,12 @@ export async function GET(
         allPaid: list.every(j => j.subcontractorPaid),
         // Must use the shared rule: a FLAT_RATE month owes its rate ONCE, not
         // once per clean. Summing per job here inflated Maggie to $171,290
-        // against a true $13,140.
-        owed: accountOwed(
+        // against a true $13,140. Over a quarter or all time that "once" is
+        // once per month, which is what the month key below is for.
+        owed: accountOwedOverMonths(
           list.map(j => ({
             id: j.id,
+            month: monthKey(j.date),
             paid: j.subcontractorPaid,
             rate: j.subcontractorRate || 0,
             cancelled: j.status === 'CANCELLED',
@@ -184,6 +199,7 @@ export async function GET(
           hasPhoto: !!cleaner.photoMimeType,
           notes: cleaner.profileNotes ?? cleaner.notes,
         },
+        range: { kind, start: bounds.start, end: bounds.end },
         accounts,
         oneOffs,
         payments: payments.map(p => ({

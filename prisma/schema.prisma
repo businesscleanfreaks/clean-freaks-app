@@ -774,6 +774,14 @@ model Expense {
   qbAccountType String? // QuickBooks account type
   isCleanerPay  Boolean   @default(false) // Flag for cleaner pay expenses
 
+  /// Stable identity of the spreadsheet row this came from, so re-importing
+  /// the same sheet updates rather than duplicates. Null for expenses added
+  /// by hand in the app; Postgres treats those NULLs as distinct, so the
+  /// unique index below only ever constrains imported rows.
+  sourceKey  String? @unique
+  /// Which sheet or export the row came from.
+  sourceName String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -8,6 +8,15 @@ import { fetcher } from "@/lib/fetcher"
 import { showError, showSuccess } from "@/lib/toast"
 import { formatCurrency } from "@/lib/utils"
 import { avatarColor, initialsOf } from "@/lib/avatar-palette"
+import {
+  inRangePhrase,
+  isAtPresent,
+  RANGE_LABELS,
+  rangeLabel,
+  showsSteppers,
+  stepRange,
+  type RangeKind,
+} from "@/lib/profile-range"
 import { ProfileAccounts, type ProfileAccount } from "./profile-accounts"
 import { ProfileSidebar, type ProfileContact, type ProfileTax } from "./profile-sidebar"
 
@@ -73,14 +82,23 @@ const LABEL = "text-[10px] font-extrabold uppercase tracking-[0.06em] text-[#7e8
 /** One cleaner: what they work, what they are owed, and who they are. */
 export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
   const [period, setPeriod] = useState(thisMonth())
+  const [rangeKind, setRangeKind] = useState<RangeKind>("month")
   const [uploading, setUploading] = useState(false)
-  const { data, isLoading, mutate } = useSWR<ProfileData>(
-    `/api/cleaners/${cleanerId}/profile?period=${period}`,
+  const { data, isValidating, mutate } = useSWR<ProfileData>(
+    `/api/cleaners/${cleanerId}/profile?period=${period}&range=${rangeKind}`,
     fetcher,
-    { revalidateOnFocus: false },
+    {
+      revalidateOnFocus: false,
+      // Changing the month or the range changes the SWR key, which would drop
+      // `data` and blank the whole page — name, chips and all — for the length
+      // of the fetch. Josh asked for the header to hold still, so the last
+      // result stays on screen until the new one lands.
+      keepPreviousData: true,
+    },
   )
 
-  if (isLoading || !data) {
+  // Only the genuine first load has nothing to show.
+  if (!data) {
     return (
       <div className="flex items-center justify-center py-24 text-[#98a2b3]">
         <Loader2 className="h-5 w-5 animate-spin" />
@@ -99,6 +117,10 @@ export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
    */
   const downloadCsv = () => {
     const rows = [
+      // Named up top so the file still says what it covers once it has been
+      // renamed, mailed on, or opened next to five others.
+      [cleaner.name, rangeLabel(period, rangeKind), "", ""],
+      [],
       ["Account", "Detail", "Amount", "Status"],
       ...accounts.map(a => [
         a.clientName,
@@ -120,7 +142,7 @@ export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
     const a = document.createElement("a")
     a.href = url
-    a.download = `${cleaner.name.replace(/[^\w-]+/g, "-")}-${monthLabel(period).replace(" ", "-")}.csv`
+    a.download = `${cleaner.name.replace(/[^\w-]+/g, "-")}-${rangeLabel(period, rangeKind).replace(/\s+/g, "-")}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -200,31 +222,53 @@ export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setPeriod(p => shift(p, -1))}
-            aria-label="Previous month"
-            className="grid h-6 w-6 place-items-center rounded-[7px] border border-[#e2e2df] bg-white text-[#6b6f73] hover:bg-[#f6f6f3]"
-          >
-            <ChevronLeft size={12} strokeWidth={2.6} />
-          </button>
-          <span className="min-w-[112px] text-center text-[13.5px] font-bold text-[#3f4347]">
-            {monthLabel(period)}
-          </span>
-          <button
-            type="button"
-            onClick={() => setPeriod(p => shift(p, 1))}
-            disabled={period >= thisMonth()}
-            aria-label="Next month"
-            className="grid h-6 w-6 place-items-center rounded-[7px] border border-[#e2e2df] bg-white text-[#6b6f73] hover:bg-[#f6f6f3] disabled:opacity-30"
-          >
-            <ChevronRight size={12} strokeWidth={2.6} />
-          </button>
+        {/* Steppers come off for All time — there is nothing to step through. */}
+        {showsSteppers(rangeKind) && (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPeriod(p => stepRange(p, rangeKind, -1))}
+              aria-label={`Previous ${rangeKind}`}
+              className="grid h-6 w-6 place-items-center rounded-[7px] border border-[#e2e2df] bg-white text-[#6b6f73] hover:bg-[#f6f6f3]"
+            >
+              <ChevronLeft size={12} strokeWidth={2.6} />
+            </button>
+            <span className="min-w-[112px] text-center text-[13.5px] font-bold text-[#3f4347]">
+              {rangeLabel(period, rangeKind)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPeriod(p => stepRange(p, rangeKind, 1))}
+              disabled={isAtPresent(period, rangeKind)}
+              aria-label={`Next ${rangeKind}`}
+              className="grid h-6 w-6 place-items-center rounded-[7px] border border-[#e2e2df] bg-white text-[#6b6f73] hover:bg-[#f6f6f3] disabled:opacity-30"
+            >
+              <ChevronRight size={12} strokeWidth={2.6} />
+            </button>
+          </div>
+        )}
+
+        <div className="flex gap-0.5 rounded-[9px] bg-[#f2f3f1] p-[3px]">
+          {(["month", "quarter", "all"] as RangeKind[]).map(k => {
+            const on = rangeKind === k
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setRangeKind(k)}
+                className="whitespace-nowrap rounded-[6px] px-3 py-1.5 text-[12px] font-bold"
+                style={on
+                  ? { background: "#fff", color: "#1a1c1e", boxShadow: "0 1px 3px rgba(16,24,40,.12)" }
+                  : { background: "transparent", color: "#9a9fa4" }}
+              >
+                {RANGE_LABELS[k]}
+              </button>
+            )
+          })}
         </div>
 
         <span className="ml-auto text-[12px] font-semibold text-[#7e8489]">
-          Download {first}&rsquo;s payment list for {monthLabel(period)}:
+          Download {first}&rsquo;s payment list for {rangeLabel(period, rangeKind)}:
         </span>
         <button
           type="button"
@@ -244,9 +288,19 @@ export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
         </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/* The previous range stays readable but visibly stale while the next
+          one loads, rather than the page emptying out under the cursor. */}
+      <div
+        className="mt-4 grid grid-cols-1 gap-4 transition-opacity lg:grid-cols-[minmax(0,1fr)_340px]"
+        style={{ opacity: isValidating ? 0.5 : 1 }}
+      >
         <div className="flex flex-col gap-4">
-          <ProfileAccounts accounts={accounts} period={period} />
+          <ProfileAccounts
+            accounts={accounts}
+            period={period}
+            singleMonth={rangeKind === "month"}
+            emptyPhrase={inRangePhrase(period, rangeKind)}
+          />
 
           <div className={CARD} style={SHADOW}>
             <div className="border-b border-[#f0f0ed] px-5 py-3">
@@ -254,7 +308,7 @@ export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
             </div>
             {oneOffs.length === 0 ? (
               <div className="px-5 py-8 text-center text-[12.5px] text-[#8a8f93]">
-                No one-off jobs in {monthLabel(period)}.
+                No one-off jobs {inRangePhrase(period, rangeKind)}.
               </div>
             ) : (
               oneOffs.map(o => (

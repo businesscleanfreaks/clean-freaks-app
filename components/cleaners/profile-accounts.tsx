@@ -50,9 +50,17 @@ const dayLabel = (iso: string) =>
  * against how many were scheduled, a calendar of the month, and the visit log.
  * The point is to answer "did this actually happen?" before paying for it.
  */
-export function ProfileAccounts({ accounts, period }: {
+export function ProfileAccounts({ accounts, period, singleMonth = true, emptyPhrase = "this month" }: {
   accounts: ProfileAccount[]
   period: string
+  /** How the empty state names the range: "in August 2026", "on record". */
+  emptyPhrase?: string
+  /**
+   * The day grid only means something for one month. Over a quarter or all
+   * time the visit log still reads fine, but a calendar of "August" would be
+   * showing a fraction of what is listed beneath it.
+   */
+  singleMonth?: boolean
 }) {
   const [open, setOpen] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(false)
@@ -85,7 +93,7 @@ export function ProfileAccounts({ accounts, period }: {
 
       {!collapsed && accounts.length === 0 && (
         <div className="px-5 py-10 text-center text-[13px] text-[#8a8f93]">
-          No recurring accounts this month.
+          No recurring accounts {emptyPhrase}.
         </div>
       )}
 
@@ -160,6 +168,7 @@ export function ProfileAccounts({ accounts, period }: {
                 </div>
 
                 {/* Which days were serviced, at a glance. */}
+                {singleMonth && (
                 <div className="mt-3 max-w-[280px]">
                   <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-[#b6bbc0]">
                     {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <span key={i}>{d}</span>)}
@@ -198,6 +207,7 @@ export function ProfileAccounts({ accounts, period }: {
                     </span>
                   </div>
                 </div>
+                )}
 
                 <div className="mt-3.5 max-h-[300px] overflow-y-auto">
                   {a.visits.map(v => (

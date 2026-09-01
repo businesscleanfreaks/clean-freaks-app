@@ -10,8 +10,11 @@ import {
   dueLabel,
   zelleMemo,
   accountOwed,
+  accountOwedOverMonths,
   type CleanerAccount,
+  type OwedItem,
 } from "@/lib/cleaner-payables"
+import { cleanerOwedForCancellation } from "@/lib/cancellation-fee"
 
 const acct = (over: Partial<CleanerAccount> = {}): CleanerAccount => ({
   id: "L1",
@@ -291,5 +294,56 @@ describe("accountOwed · add-ons", () => {
 
   it("does not pay add-ons on an already-paid clean", () => {
     expect(accountOwed([clean("a", { paid: true, addOnRate: 50 })], "PER_CLEAN", 0)).toBe(0)
+  })
+})
+
+describe("accountOwedOverMonths", () => {
+  const clean = (id: string, month: string, extra: Partial<OwedItem> = {}): OwedItem => ({
+    id, month, paid: false, rate: 100, scheduleId: "s1", ...extra,
+  })
+
+  it("charges a flat rate once per month, not once per range", () => {
+    // Three months of a $1,000 flat account, several cleans each.
+    const items = [
+      clean("a", "2026-07"), clean("b", "2026-07"), clean("c", "2026-07"),
+      clean("d", "2026-08"), clean("e", "2026-08"),
+      clean("f", "2026-09"),
+    ]
+    expect(accountOwedOverMonths(items, "FLAT_RATE", 1000)).toBe(3000)
+    // The single-month rule would have answered for one month only.
+    expect(accountOwed(items, "FLAT_RATE", 1000)).toBe(1000)
+  })
+
+  it("skips a month that has no unpaid clean", () => {
+    const items = [
+      clean("a", "2026-07", { paid: true }),
+      clean("b", "2026-08"),
+    ]
+    expect(accountOwedOverMonths(items, "FLAT_RATE", 1000)).toBe(1000)
+  })
+
+  it("matches the plain sum for per-clean work", () => {
+    const items = [clean("a", "2026-07"), clean("b", "2026-08"), clean("c", "2026-08")]
+    expect(accountOwedOverMonths(items, "PER_CLEAN", 0)).toBe(300)
+    expect(accountOwedOverMonths(items, "PER_CLEAN", 0)).toBe(accountOwed(items, "PER_CLEAN", 0))
+  })
+
+  it("adds add-ons and cancellation fees in every month they fall in", () => {
+    const items = [
+      clean("a", "2026-07", { addOnRate: 50 }),
+      clean("b", "2026-08"),
+      clean("c", "2026-08", { cancelled: true, cancellationFee: 30, rate: 0 }),
+    ]
+    // 1000 + 50 for July, 1000 + the fee's cleaner share for August.
+    expect(accountOwedOverMonths(items, "FLAT_RATE", 1000))
+      .toBe(1050 + 1000 + cleanerOwedForCancellation(30))
+  })
+
+  it("treats items with no month as one bucket", () => {
+    const items = [
+      { id: "a", paid: false, rate: 100, scheduleId: "s1" },
+      { id: "b", paid: false, rate: 100, scheduleId: "s1" },
+    ]
+    expect(accountOwedOverMonths(items, "FLAT_RATE", 1000)).toBe(1000)
   })
 })
