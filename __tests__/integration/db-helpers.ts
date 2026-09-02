@@ -1,9 +1,18 @@
 import { prisma } from '@/lib/db'
+import { invalidateReconciliationCache } from '@/lib/operational-reconciliation'
 
 const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
 
 /** Wipe all business data between tests (FK-safe order). */
 export async function resetDb() {
+  // Reads memoise the reconciliation pass per date range in PROCESS memory for
+  // a minute, so deleting every row does not reset it. Tests share one process
+  // and one date range: without this the first test warms the memo and every
+  // later one skips reconciliation, so no jobs are generated and the endpoint
+  // returns an empty list. In the app the schedule write routes clear it, but
+  // these tests write schedules straight through Prisma and never hit those.
+  invalidateReconciliationCache()
+
   await prisma.cleanerInvoice.deleteMany()
   await prisma.vendorInvoice.deleteMany()
   await prisma.paymentMatch.deleteMany()
