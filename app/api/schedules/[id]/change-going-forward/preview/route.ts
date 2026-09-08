@@ -86,6 +86,8 @@ export async function POST(
     // Per-date diff (added / removed / modified / kept) for the modal preview.
     const dateDiff = await diffScheduleChange(existingSchedule.id, {
       frequency: newScheduleData.frequency,
+      // From the ORIGINAL series: the split must keep the client's rhythm.
+      cadenceAnchor: existingSchedule.cadenceAnchor ?? existingSchedule.startDate,
       daysOfWeek: newScheduleData.daysOfWeek ?? null,
       monthlyPattern: newScheduleData.monthlyPattern ?? null,
       startDate: newScheduleData.startDate,
@@ -114,6 +116,8 @@ export async function POST(
 
       const candidateDates = calculateScheduleDates({
         frequency: newScheduleData.frequency,
+        // From the ORIGINAL series: the split must keep the client's rhythm.
+      cadenceAnchor: existingSchedule.cadenceAnchor ?? existingSchedule.startDate,
         startDate: newStartDate,
         endDate: persistedEndDate ?? existingSchedule.endDate,
         daysOfWeek: newScheduleData.daysOfWeek ?? null,
@@ -199,6 +203,8 @@ export async function POST(
 
     const candidateDates = calculateScheduleDates({
       frequency: newScheduleData.frequency,
+      // From the ORIGINAL series: the split must keep the client's rhythm.
+      cadenceAnchor: existingSchedule.cadenceAnchor ?? existingSchedule.startDate,
       startDate: newStartDate,
       endDate: persistedEndDate ?? null,
       daysOfWeek: newScheduleData.daysOfWeek ?? null,

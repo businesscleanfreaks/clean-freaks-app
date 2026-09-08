@@ -223,16 +223,20 @@ async function getOrRenderInvoicePdf(
   // templates), falling back to the one generic note. It stays the same
   // variable so the PDF cache fingerprint below already covers it: change the
   // template or the client's method and the cached PDF is invalidated.
+  const payMethod = invoice.client?.payMethod ?? invoice.client?.preferredPaymentMethod ?? null
   const footerNote = resolveInvoiceFooter(
     sections.invoiceFooterTemplates,
-    invoice.client?.payMethod ?? invoice.client?.preferredPaymentMethod ?? null,
+    payMethod,
     invoiceDefaults.invoiceFooterNote,
   )
   const fingerprint = computePdfFingerprint(
     invoice as unknown as PdfFingerprintSource,
     logoSettings,
     business,
-    footerNote,
+    // The method is part of what prints now, so it has to be part of what
+    // invalidates the cache · otherwise switching a client from Zelle to a
+    // portal would keep serving the old PDF with our bank details on it.
+    `${footerNote ?? ''}|${payMethod ?? ''}`,
     uploadedLogoIdentity,
   )
 
@@ -254,6 +258,9 @@ async function getOrRenderInvoicePdf(
       logoSettings,
       business,
       footerNote,
+      // Without this the payment section printed Zelle for every client.
+      payMethod,
+      footerTemplates: sections.invoiceFooterTemplates,
       uploadedLogo,
     })
     const buffer = await renderToBuffer(element as React.ReactElement)

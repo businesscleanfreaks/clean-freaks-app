@@ -5,6 +5,8 @@ import path from 'path'
 import { existsSync } from 'fs'
 import { logger } from '@/lib/logger'
 import { groupInvoiceLineItems } from '@/lib/invoice-grouping'
+import { buildPaymentBlock, printsNoPaymentSection } from '@/lib/invoice-payment-block'
+import type { InvoiceFooterTemplates } from '@/lib/billing-sections'
 
 // Colors matching the provided Clean Freaks invoice template
 const COLORS = {
@@ -206,11 +208,15 @@ const styles = StyleSheet.create({
     color: COLORS.navyBlue,
     marginBottom: 6,
   },
-  thankYouText: {
-    fontFamily: 'Helvetica-Oblique',
-    fontSize: 13,
-    color: COLORS.navyBlue,
-    marginTop: 4,
+  // Payment instructions print as a plain full-width line above the footer,
+  // not as a headline in the "Paid to" column.
+  instructionsRow: {
+    marginTop: 12,
+  },
+  instructionsText: {
+    fontSize: 9,
+    color: COLORS.textMuted,
+    lineHeight: 1.4,
   },
   // ─── Fee Notice ───
   feeNotice: {
@@ -307,16 +313,23 @@ interface InvoicePDFProps {
   logoSettings?: LogoSettings
   business?: InvoiceBusinessInfo
   footerNote?: string | null
+  /**
+   * How THIS client pays us: ZELLE | ACH | PORTAL | CHECK. Drives the payment
+   * section · without it the invoice used to tell everyone to pay by Zelle.
+   */
+  payMethod?: string | null
+  /** Per-method note templates, so the block resolves the note for its method. */
+  footerTemplates?: InvoiceFooterTemplates | null
   /** Uploaded logo as a data URI; takes precedence over the bundled logo file. */
   uploadedLogo?: string | null
 }
 
-export function InvoicePDF({ invoice, logoSettings, business, footerNote, uploadedLogo }: InvoicePDFProps) {
+export function InvoicePDF({ invoice, logoSettings, business, footerNote, payMethod, footerTemplates, uploadedLogo }: InvoicePDFProps) {
   const settings = logoSettings || DEFAULT_LOGO_SETTINGS
 
   // Resolve the business identity, falling back to the previously hardcoded values.
   const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null)
-  const bizFooterNote = clean(footerNote) || 'Thank you for your business!'
+  const bizFooterNote = clean(footerNote)
   const bizName = clean(business?.businessName) || BUSINESS_FALLBACK.businessName
   const bizLegal = clean(business?.legalName) || BUSINESS_FALLBACK.legalName
   const bizEmail = clean(business?.email) || BUSINESS_FALLBACK.email
@@ -325,6 +338,22 @@ export function InvoicePDF({ invoice, logoSettings, business, footerNote, upload
   // The legal entity is the payment "Full Name"; show the DBA line only when the
   // display name genuinely differs from the legal name.
   const bizDba = bizLegal !== bizName ? `(DBA ${bizName})` : null
+
+  // Everything the payment section prints, decided in one tested place so the
+  // PDF and the on-screen preview cannot disagree.
+  const paymentBlock = buildPaymentBlock({
+    payMethod,
+    // No client has a pay method recorded yet, so this keeps the business's
+    // usual method printing until they are set. A client's own method always
+    // wins, so setting one to the portal takes effect immediately.
+    fallbackMethod: 'ZELLE',
+    paymentEmail: bizPaymentEmail,
+    legalName: bizLegal,
+    dba: bizDba,
+    mailingAddress: null,
+    templates: footerTemplates ?? null,
+    genericNote: bizFooterNote,
+  })
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -496,33 +525,51 @@ export function InvoicePDF({ invoice, logoSettings, business, footerNote, upload
             </View>
           </View>
 
-          {/* Payment Section — Two columns */}
-          <View style={styles.paymentSection}>
-            <View style={styles.paymentLeft}>
-              <Text style={styles.paymentTitle}>Preferred Payment Option:</Text>
-              <View style={{ marginBottom: 6 }}>
-                <Text style={styles.paymentLabel}>Zelle</Text>
-                <Text style={styles.paymentValue}>{bizPaymentEmail}</Text>
+          {/* Payment Section — this client's method only.
+              A portal client prints none of this: they pay through their own
+              AP system, so our details would invite a second payment. */}
+          {!printsNoPaymentSection(paymentBlock) && (
+            <View style={styles.paymentSection}>
+              <View style={styles.paymentLeft}>
+                {paymentBlock.title && (
+                  <Text style={styles.paymentTitle}>{paymentBlock.title}</Text>
+                )}
+                {paymentBlock.details.map((detail, index) => (
+                  <View
+                    key={detail.label}
+                    style={index < paymentBlock.details.length - 1 ? { marginBottom: 6 } : undefined}
+                  >
+                    <Text style={styles.paymentLabel}>{detail.label}</Text>
+                    <Text style={styles.paymentValue}>{detail.value}</Text>
+                    {detail.sub && <Text style={styles.paymentDba}>{detail.sub}</Text>}
+                  </View>
+                ))}
               </View>
-              <View>
-                <Text style={styles.paymentLabel}>Full Name</Text>
-                <Text style={styles.paymentValue}>{bizLegal}</Text>
-                {bizDba && <Text style={styles.paymentDba}>{bizDba}</Text>}
+              <View style={styles.paymentRight}>
+                <Text style={styles.paidToLabel}>Paid to {bizName}</Text>
               </View>
             </View>
-            <View style={styles.paymentRight}>
-              <Text style={styles.paidToLabel}>Paid to {bizName}</Text>
-              <Text style={styles.thankYouText}>{bizFooterNote}</Text>
+          )}
+
+          {/* Payment instructions · plain text across the page, above the
+              footer. They used to render as a large italic line inside the
+              "Paid to" column, which read as a signature rather than as the
+              instruction the client is meant to act on. */}
+          {paymentBlock.instructions && (
+            <View style={styles.instructionsRow}>
+              <Text style={styles.instructionsText}>{paymentBlock.instructions}</Text>
             </View>
-          </View>
+          )}
 
           {/* Fee Notice */}
-          <View style={styles.feeNotice}>
-            <Text style={styles.feeText}>Please request another method if needed</Text>
-            <Text style={styles.feeTextItalic}>
-              (Debit (3.5% fee), Credit (3.5% fee), PayPal (~3% fee), or Bank Transfer.
-            </Text>
-          </View>
+          {paymentBlock.showFeeNotice && (
+            <View style={styles.feeNotice}>
+              <Text style={styles.feeText}>Please request another method if needed</Text>
+              <Text style={styles.feeTextItalic}>
+                (Debit (3.5% fee), Credit (3.5% fee), PayPal (~3% fee), or Bank Transfer.
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* ─── Footer ─── */}

@@ -130,6 +130,7 @@ function prorationForLocations(
     const expectedDates = calculateScheduleDates(
       {
         frequency: cadenceSchedule.frequency,
+        cadenceAnchor: cadenceSchedule.cadenceAnchor ?? null,
         startDate: cadenceSchedule.startDate,
         endDate: spanEnd,
         daysOfWeek: cadenceSchedule.daysOfWeek,

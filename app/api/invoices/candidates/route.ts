@@ -402,6 +402,7 @@ export async function GET(request: Request) {
 
         const expectedDates = calculateScheduleDates({
           frequency: schedule.frequency,
+          cadenceAnchor: schedule.cadenceAnchor ?? null,
           startDate: schedule.startDate,
           daysOfWeek: schedule.daysOfWeek,
           monthlyPattern: schedule.monthlyPattern,

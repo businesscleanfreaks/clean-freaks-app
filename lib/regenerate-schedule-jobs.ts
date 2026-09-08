@@ -15,6 +15,19 @@ export interface RegenerationSummary {
 export interface ScheduleDateParams {
   frequency: string
   startDate: Date
+  /**
+   * The first clean of the ORIGINAL series, for every-N-weeks cadences.
+   *
+   * Week parity used to be counted from `startDate`. Splitting a bi-weekly
+   * schedule ("change going forward") gives the new half a start date that is
+   * usually not one of the client's clean days, and counting from there
+   * re-phases the whole future series by a week · every later clean lands on
+   * the wrong date, and calendar, cleaner pay and invoices all follow it.
+   *
+   * Null for schedules created before this was recorded, which fall back to
+   * `startDate` and so behave exactly as they did.
+   */
+  cadenceAnchor?: Date | string | null
   endDate?: Date | string | null
   daysOfWeek: string | null
   monthlyPattern: string | null
@@ -39,6 +52,24 @@ const WEEK_INTERVALS: Record<string, number> = {
 
 function utcDateOnly(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12, 0, 0))
+}
+
+/** Sunday of the week containing `date`, matching the old Sat→Sun rollover. */
+function startOfUtcWeek(date: Date): Date {
+  const day = utcDateOnly(date)
+  return new Date(day.getTime() - day.getUTCDay() * 86400000)
+}
+
+/** Whole weeks from `anchor` to `date`; negative when `date` is earlier. */
+export function weeksBetweenUtc(anchor: Date, date: Date): number {
+  const from = startOfUtcWeek(anchor).getTime()
+  const to = startOfUtcWeek(date).getTime()
+  return Math.round((to - from) / (7 * 86400000))
+}
+
+/** Modulo that stays non-negative, so an anchor after the start still works. */
+function mod(value: number, by: number): number {
+  return ((value % by) + by) % by
 }
 
 function addUtcDays(date: Date, days: number): Date {
@@ -125,16 +156,17 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
   if (weekInterval) {
     const parsedDaysOfWeek = params.daysOfWeek ? JSON.parse(params.daysOfWeek) : []
     const daysOfWeek = parsedDaysOfWeek.length > 0 ? parsedDaysOfWeek : [startDate.getUTCDay()]
+    // Parity comes from the original series, so a split keeps the client's
+    // existing rhythm instead of restarting it on the effective date.
+    const anchor = params.cadenceAnchor ? parseUtcDateOnly(params.cadenceAnchor) : startDate
     let currentDate = new Date(startDate)
-    let weekCount = 0
 
     while (currentDate <= endDate) {
-      if (weekCount % weekInterval === 0 && daysOfWeek.includes(currentDate.getUTCDay())) {
+      const week = weeksBetweenUtc(anchor, currentDate)
+      if (mod(week, weekInterval) === 0 && daysOfWeek.includes(currentDate.getUTCDay())) {
         dates.push(new Date(currentDate))
       }
-      const nextDay = addUtcDays(currentDate, 1)
-      if (nextDay.getUTCDay() === 0 && currentDate.getUTCDay() === 6) weekCount++
-      currentDate = nextDay
+      currentDate = addUtcDays(currentDate, 1)
     }
   } else if (params.frequency === 'MONTHLY' && params.monthlyPattern) {
     // MONTHLY with NTH_WEEKDAY pattern (e.g., "1st Tuesday" or "1st & 3rd Tuesday")
@@ -317,6 +349,8 @@ function getEarliestScheduleStartByLocation(schedules: Array<{ locationId: strin
 
 export interface ReconciliationSchedule {
   id: string
+  /** Original series anchor for every-N-weeks parity; null means startDate. */
+  cadenceAnchor?: Date | string | null
   locationId: string
   subcontractorId: string | null
   frequency: string
@@ -401,6 +435,7 @@ export function planScheduleJobReconciliation(
 
     const candidateDates = calculateScheduleDates({
       frequency: schedule.frequency,
+      cadenceAnchor: schedule.cadenceAnchor ?? null,
       startDate: effectiveStartDate,
       daysOfWeek: schedule.daysOfWeek,
       monthlyPattern: schedule.monthlyPattern,
@@ -698,6 +733,28 @@ export async function previewScheduleChanges(
   }
 }
 
+/**
+ * The earliest date a schedule edit is allowed to rewrite.
+ *
+ * An ordinary edit · changing the time, the cleaner, a rate · must affect today
+ * forward and leave history alone. The schedule route used to pass the
+ * schedule's own `startDate` here, which made `now` months in the past and let
+ * the rebuild below delete and recreate every unbilled clean since the account
+ * opened, losing rescheduled dates, per-job overrides, notes and add-ons.
+ *
+ * A schedule that has not started yet still begins at its start date; there is
+ * no history in front of it to protect.
+ */
+export function regenerationStartDate(
+  scheduleStartDate: Date,
+  today: Date = new Date(),
+  explicitEffectiveDate?: Date,
+): Date {
+  const start = utcDateOnly(scheduleStartDate)
+  const from = utcDateOnly(explicitEffectiveDate ?? today)
+  return from > start ? from : start
+}
+
 export async function regenerateJobsForSchedule(
   scheduleId: string,
   options?: { effectiveDate?: Date; rebuildDraftInvoicedJobs?: boolean }
@@ -722,7 +779,8 @@ export async function regenerateJobsForSchedule(
     return emptySummary
   }
 
-  const now = utcDateOnly(options?.effectiveDate ?? new Date())
+  // Never earlier than today: an edit rewrites the future, not the books.
+  const now = regenerationStartDate(new Date(schedule.startDate), new Date(), options?.effectiveDate)
   const startDate = utcDateOnly(new Date(schedule.startDate))
   // On an explicit schedule change, this month's cleans must rebuild even if a
   // DRAFT invoice was auto-generated for them (which marks them `invoiced`). The
@@ -742,9 +800,12 @@ export async function regenerateJobsForSchedule(
       // DRAFT invoices for this schedule are regenerable (the candidate recomputes
       // them live from the rebuilt cleans), so delete them and un-invoice their
       // cleans — letting the rebuild below replace them to match the new schedule.
+      // Only drafts covering the range being rebuilt. Scoped to the whole
+      // schedule, an edit deleted draft invoices for past months it is not
+      // allowed to touch and un-invoiced their cleans.
       const draftInvoiceIds = Array.from(new Set(
         (await tx.invoiceLineItem.findMany({
-          where: { job: { scheduleId }, invoice: { status: 'DRAFT' } },
+          where: { job: { scheduleId, date: { gte: now } }, invoice: { status: 'DRAFT' } },
           select: { invoiceId: true },
         })).map((li) => li.invoiceId)
       ))
@@ -754,6 +815,7 @@ export async function regenerateJobsForSchedule(
       await tx.job.updateMany({
         where: {
           scheduleId,
+          date: { gte: now },
           invoiced: true,
           subcontractorPaid: false,
           ...(sentPaidJobIds.length > 0 ? { id: { notIn: sentPaidJobIds } } : {}),
@@ -836,6 +898,7 @@ export async function regenerateJobsForSchedule(
     // Calculate candidate dates using the shared helper
     const candidateDates = calculateScheduleDates({
       frequency: schedule.frequency,
+      cadenceAnchor: schedule.cadenceAnchor ?? null,
       startDate: new Date(schedule.startDate),
       daysOfWeek: schedule.daysOfWeek,
       monthlyPattern: schedule.monthlyPattern,
@@ -944,6 +1007,8 @@ export interface ScheduleChangeDiffResult {
 
 export interface ScheduleChangeUpdates {
   frequency?: string
+  /** Original series anchor, so a diff previews the real dates after a split. */
+  cadenceAnchor?: Date | string | null
   daysOfWeek?: string | null
   monthlyPattern?: string | null
   startDate?: Date | string // the change's effectiveFrom (new interval start)
@@ -992,6 +1057,7 @@ export async function diffScheduleChange(
 
   const oldDates = calculateScheduleDates({
     frequency: schedule.frequency,
+    cadenceAnchor: schedule.cadenceAnchor ?? null,
     startDate: schedule.startDate,
     endDate: schedule.endDate,
     daysOfWeek: schedule.daysOfWeek,

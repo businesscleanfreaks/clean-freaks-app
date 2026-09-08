@@ -9,6 +9,8 @@ import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { ScheduleCheck, type ScheduleCheckClean } from "./schedule-check"
 import { billableCleanCount, countCleans } from "@/lib/schedule-check"
+import { resolveInvoiceFooter, type InvoiceFooterTemplates } from "@/lib/billing-sections"
+import { buildPaymentBlock } from "@/lib/invoice-payment-block"
 import { TemplatesModal } from "./templates-modal"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
@@ -1077,7 +1079,33 @@ function InvoicePreview({ inv, month, bare = false }: {
   const [pdfOpen, setPdfOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const { data: client } = useSWR(`/api/clients/${inv.clientId}`, fetcher)
+  // The same templates the editor card edits, so the preview shows what will
+  // actually print rather than a fixed example.
+  const { data: sections } = useSWR<{ invoiceFooterTemplates: InvoiceFooterTemplates }>(
+    "/api/settings/billing-sections",
+    fetcher,
+  )
   useEffect(() => setMounted(true), [])
+
+  // What the payment section says for THIS client. The preview used to hardcode
+  // a Zelle box, so a cheque or portal client was shown instructions to pay
+  // somewhere they do not pay us.
+  const paymentBlock = useMemo(() => {
+    // The RAW value, not `resolvePayMethod`: that collapses "TBD" to null, and
+    // the block then cannot tell "nobody filled this in" (take the house
+    // default) from "someone recorded that it is undecided" (do not guess).
+    const payMethod = client?.payMethod ?? client?.preferredPaymentMethod ?? null
+    return buildPaymentBlock({
+      payMethod,
+      // No client has a pay method recorded yet, so this keeps the business's
+      // usual method printing until Josh sets them. A client's own method
+      // always wins, so setting one to the portal takes effect immediately.
+      fallbackMethod: "ZELLE",
+      paymentEmail: "admin@thecleanfreaks.co",
+      legalName: "Shiloh Pro Cleaning Services",
+      templates: sections?.invoiceFooterTemplates ?? null,
+    })
+  }, [client?.payMethod, client?.preferredPaymentMethod, sections])
   useEffect(() => { setPdfId(inv.existingInvoiceId || null); setPdfOpen(false) }, [inv.candidateId, inv.existingInvoiceId])
 
   // Open the exact PDF (what the client receives) in a popup. Generates it first
@@ -1173,10 +1201,13 @@ function InvoicePreview({ inv, month, bare = false }: {
           <span className="text-[20px] font-bold tabular-nums text-stone-900">{formatCurrency(inv.total)}</span>
         </div>
 
-        <div className="mt-5 rounded-lg border p-3 text-[10.5px] leading-relaxed text-stone-600" style={{ background: "#F0FDFA", borderColor: "#99F6E4" }}>
-          Please send payment via Zelle to <span className="font-semibold text-stone-900">admin@thecleanfreaks.co</span>{" "}
-          <span className="rounded px-1 font-semibold" style={{ background: "#FEF3C7", color: "#92400E" }}>&ldquo;co&rdquo; not &ldquo;com&rdquo;</span>.
-        </div>
+        {/* Payment instructions, as plain text and only for this client's own
+            method. A portal client prints nothing here. */}
+        {paymentBlock.instructions && (
+          <div className="mt-5 border-t border-stone-200 pt-3 text-[10.5px] leading-relaxed text-stone-500">
+            {paymentBlock.instructions}
+          </div>
+        )}
 
         </div>
       </div>

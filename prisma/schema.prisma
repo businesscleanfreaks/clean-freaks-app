@@ -344,6 +344,14 @@ model Schedule {
   subcontractorId          String?
   frequency                String // WEEKLY, BI_WEEKLY, MONTHLY, 2X_MONTHLY, CUSTOM
   daysOfWeek               String? // JSON array of integers [0-6]
+  /// First clean of the ORIGINAL series, for every-N-weeks cadences.
+  ///
+  /// Week parity is counted from here rather than from `startDate`. Splitting a
+  /// bi-weekly schedule gives the new half a start date that is usually not one
+  /// of the client's clean days, and counting parity from that re-phased the
+  /// whole future series by a week. Null means "same as startDate", which is
+  /// how every schedule behaved before this column existed.
+  cadenceAnchor            DateTime?
   customDates              String? // JSON array of dates
   monthlyPattern           String? // JSON: {"type": "FIXED_DATES"|"NTH_WEEKDAY", "dates": [1,15]} or {"weekday": 6, "weeks": [2,4]}
   timeType                 String // SPECIFIC or WINDOW

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
+import { getEmailConfig } from '@/lib/email-settings'
+import { classifySendResult, marksInvoiceSent, realSendingEnabled } from '@/lib/email-send-outcome'
 import { generateInvoiceEmail } from '@/lib/email-templates'
 import { formatCurrency } from '@/lib/utils'
 import { format } from 'date-fns'
@@ -40,9 +42,15 @@ async function processDueInvoices() {
     take: 50,
   })
 
-  const allowRealEmails = process.env.ALLOW_REAL_CLIENT_EMAILS === 'true'
-  const enableSending = process.env.ENABLE_EMAIL_SENDING === 'true'
-  const hasCredentials = !!process.env.GMAIL_USER && !!process.env.GMAIL_APP_PASSWORD
+  // From the same config Settings → Email writes, not the environment. Reading
+  // env here while `sendEmail` reads the row meant a paused send could still
+  // stamp an invoice SENT with nothing delivered.
+  const emailConfig = await getEmailConfig()
+  const realSendingOn = realSendingEnabled(emailConfig)
+  const hasCredentials =
+    emailConfig.provider === 'resend'
+      ? !!emailConfig.resendApiKey
+      : !!emailConfig.gmailUser && !!emailConfig.gmailAppPassword
 
   const results: Array<{ id: string; status: string; error?: string }> = []
   let sent = 0
@@ -64,7 +72,7 @@ async function processDueInvoices() {
     }
 
     // Safety gates — leave it scheduled to retry once sending is enabled.
-    if (!allowRealEmails || !enableSending) {
+    if (!realSendingOn) {
       skipped++
       results.push({ id: invoice.id, status: 'skipped:sending-disabled' })
       continue
@@ -111,6 +119,15 @@ async function processDueInvoices() {
       if (!result.success) {
         failed++
         results.push({ id: invoice.id, status: 'failed', error: result.error })
+        continue
+      }
+
+      // Held rather than delivered: leave it scheduled so it goes out for real
+      // once sending is switched back on. Counting it as sent here would drop
+      // it from the queue having emailed nobody.
+      if (!marksInvoiceSent(classifySendResult(result))) {
+        skipped++
+        results.push({ id: invoice.id, status: 'skipped:held-not-delivered' })
         continue
       }
 

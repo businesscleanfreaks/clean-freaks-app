@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendEmail, sendTestEmail } from '@/lib/email'
+import { getEmailConfig } from '@/lib/email-settings'
+import {
+  classifySendResult,
+  heldReason,
+  marksInvoiceSent,
+  realSendingEnabled,
+  threadableMessageId,
+} from '@/lib/email-send-outcome'
 import { generateInvoiceEmail } from '@/lib/email-templates'
 import { formatCurrency } from '@/lib/utils'
 import { format } from 'date-fns'
@@ -58,15 +66,20 @@ export async function POST(
       )
     }
 
-    // CRITICAL SAFETY CHECK: Force test mode if safety flags not set
-    const allowRealEmails = process.env.ALLOW_REAL_CLIENT_EMAILS === 'true'
-    const enableSending = process.env.ENABLE_EMAIL_SENDING === 'true'
-    
-    // Force test mode if safety flags not set
+    // CRITICAL SAFETY CHECK: force test mode when real sending is off.
+    //
+    // Read from getEmailConfig(), NOT the environment. The env flags and the
+    // EmailSettings row that Settings → Email writes are two different answers
+    // to the same question: with the env flags on and sending paused in the
+    // UI, this route used to take the real path, `sendEmail` quietly held the
+    // message, and the invoice was stamped SENT with nothing delivered.
+    const emailConfig = await getEmailConfig()
+    const realSendingOn = realSendingEnabled(emailConfig)
+
     let isActuallyTest = isTest
-    if (!allowRealEmails || !enableSending) {
+    if (!realSendingOn) {
       isActuallyTest = true
-      logger.warn('[SAFETY] Real client emails disabled - forcing test mode. Set ALLOW_REAL_CLIENT_EMAILS=true and ENABLE_EMAIL_SENDING=true to enable real emails.')
+      logger.warn('[SAFETY] Real client emails are off - forcing test mode. Turn them on in Settings → Email.')
     }
 
     // Get invoice with all necessary data
@@ -150,13 +163,18 @@ export async function POST(
         result = { success: true, messageId: 'simulated-' + Date.now(), warning: 'SENDING_DISABLED' }
       }
     } else {
-      if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-        logger.error('[EMAIL] Missing Gmail credentials for real invoice send', {
-          hasGmailUser: Boolean(process.env.GMAIL_USER),
-          hasGmailAppPassword: Boolean(process.env.GMAIL_APP_PASSWORD),
+      // Credentials come from the same config, so a Resend setup is not asked
+      // for Gmail environment variables it will never use.
+      const missingCredentials =
+        emailConfig.provider === 'resend'
+          ? !emailConfig.resendApiKey
+          : !emailConfig.gmailUser || !emailConfig.gmailAppPassword
+      if (missingCredentials) {
+        logger.error('[EMAIL] Missing credentials for real invoice send', {
+          provider: emailConfig.provider,
         })
         return NextResponse.json(
-          { error: 'Email was not sent because Gmail/SMTP credentials are not configured. Invoice remains a draft.' },
+          { error: `Email was not sent because ${emailConfig.provider === 'resend' ? 'the Resend API key is' : 'Gmail/SMTP credentials are'} not configured. Invoice remains a draft.` },
           { status: 500 }
         )
       }
@@ -175,9 +193,13 @@ export async function POST(
       )
     }
 
-    // Only mark invoice as SENT if this is a real (non-test) send AND it succeeded
-    // For test sends, keep invoice in DRAFT state to avoid confusion
-    if (!isActuallyTest) {
+    // Only mark the invoice SENT when a message really went out.
+    //
+    // `result.success` is not that question: a held send reports success so the
+    // workflow can be exercised in test mode. Asking the outcome instead is
+    // what stops an invoice leaving the queue without the client being emailed.
+    const outcome = classifySendResult(result)
+    if (!isActuallyTest && marksInvoiceSent(outcome)) {
       await prisma.invoice.update({
         where: { id: resolvedParams.id },
         data: {
@@ -186,12 +208,10 @@ export async function POST(
           emailSubject: subject,
           emailBody: message,
           status: 'SENT',
-          // Kept so a later reminder can reply into this same thread. Simulated
-          // sends carry a placeholder id, which would thread onto nothing.
-          emailMessageId:
-            result.messageId && !result.messageId.startsWith('simulated-')
-              ? result.messageId
-              : null,
+          // Kept so a later reminder can reply into this same thread. Every
+          // "not really sending" path has its own placeholder id and only one
+          // of them used to be stripped here.
+          emailMessageId: threadableMessageId(result.messageId),
         },
       })
     }
@@ -200,7 +220,11 @@ export async function POST(
       success: true,
       messageId: result.messageId,
       isTest: isActuallyTest,
-      safetyMode: !allowRealEmails || !enableSending ? 'FORCED_TEST' : 'NORMAL',
+      // So the compose window can say the invoice is still a draft and why,
+      // rather than reporting a send that did not happen.
+      outcome,
+      heldReason: outcome === 'HELD' ? heldReason(emailConfig) : undefined,
+      safetyMode: !realSendingOn ? 'FORCED_TEST' : 'NORMAL',
       warning: result.warning || undefined,
       testEmail: isActuallyTest ? process.env.TEST_EMAIL : undefined,
     })

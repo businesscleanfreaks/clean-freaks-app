@@ -72,7 +72,11 @@ export async function sendInvoiceEmail(
     return { ok: false, mismatch: true, findings: data.findings ?? [], error: data?.error }
   }
   if (!res.ok) return { ok: false, error: data?.error || "Send failed" }
-  return { ok: true, warning: data?.warning || data?.safetyMode }
+  // A held send reports ok, so the outcome decides what the UI says. Without
+  // this a send that never left could still be announced as delivered, which
+  // is the same lie the SENT stamp used to tell.
+  const heldWarning = data?.outcome === "HELD" ? "SENDING_DISABLED" : undefined
+  return { ok: true, warning: data?.warning || heldWarning || data?.safetyMode }
 }
 
 export interface BatchResult { sent: number; skipped: number; failed: number; needsReview: number }

@@ -4,6 +4,8 @@ import { calculateDayPauseCredit, roundCurrency } from '@/lib/pause-credit'
 export interface PauseBillingSchedule {
   id: string
   frequency: string
+  /** Original series anchor for every-N-weeks parity; null means startDate. */
+  cadenceAnchor?: Date | string | null
   startDate: Date
   daysOfWeek: string | null
   monthlyPattern: string | null
@@ -70,6 +72,7 @@ export function pauseDatesInPeriod(
 
   return calculateScheduleDates({
     frequency: schedule.frequency,
+    cadenceAnchor: schedule.cadenceAnchor ?? null,
     startDate: schedule.startDate,
     endDate: end,
     daysOfWeek: schedule.daysOfWeek,

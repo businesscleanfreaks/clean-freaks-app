@@ -192,10 +192,15 @@ export async function PUT(
       })
     })
 
-    // Regenerate all jobs with updated settings (an explicit edit rebuilds this
-    // month's cleans even when a DRAFT invoice was auto-generated for them).
+    // Regenerate from TODAY forward. An explicit edit still rebuilds cleans a
+    // DRAFT invoice was auto-generated for, but only ahead of today.
+    //
+    // This used to pass `schedule.startDate`, which made the rebuild reach back
+    // to the day the account opened: every unbilled clean since then was
+    // deleted and recreated from the pattern, losing rescheduled dates, job
+    // notes, per-job rate and cleaner overrides, one-off add-ons and the draft
+    // invoices covering them. Saving the form at all was destructive.
     const summary = await regenerateJobsForSchedule(schedule.id, {
-      effectiveDate: schedule.startDate,
       rebuildDraftInvoicedJobs: true,
     })
 

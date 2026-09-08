@@ -190,6 +190,10 @@ export async function POST(
           monthlyPattern: newScheduleData.monthlyPattern ?? null,
           customDates: newScheduleData.customDates ?? null,
           startDate: persistedStartDate,
+          // Inherit the original series' cadence anchor. Without it, week
+          // parity for a bi-weekly client would restart on the effective date
+          // and shift every future clean by a week.
+          cadenceAnchor: existingSchedule.cadenceAnchor ?? existingSchedule.startDate,
           endDate: persistedEndDate ?? null,
           defaultClientRate: newScheduleData.defaultClientRate,
           defaultSubcontractorRate: newScheduleData.defaultSubcontractorRate,

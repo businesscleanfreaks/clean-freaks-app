@@ -101,6 +101,9 @@ export async function POST(request: Request) {
     const scheduleData = {
       ...validationResult.data,
       startDate: parseDateOnlyForStorage(validationResult.data.startDate)!,
+      // A new series anchors on its own first day. Recorded now so a later
+      // "change going forward" split can keep this rhythm.
+      cadenceAnchor: parseDateOnlyForStorage(validationResult.data.startDate)!,
       endDate: parseDateOnlyForStorage(validationResult.data.endDate),
     }
     const cadenceOverrideProvided = Object.prototype.hasOwnProperty.call(
