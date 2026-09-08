@@ -28,10 +28,13 @@ describe("regenerationStartDate", () => {
       .toBe("2026-10-01")
   })
 
-  it("refuses an explicit effective date that would rewrite history", () => {
-    // Even asked directly, it will not go back past the schedule's start.
+  it("refuses an explicit effective date in the past", () => {
+    // The floor is enforced here rather than trusted to every call site: a
+    // caller passing a past date is exactly how history got rewritten.
     expect(iso(regenerationStartDate(utc(2026, 6, 1), utc(2026, 9, 8), utc(2026, 2, 1))))
-      .toBe("2026-06-01")
+      .toBe("2026-09-08")
+    expect(iso(regenerationStartDate(utc(2026, 1, 5), utc(2026, 9, 8), utc(2026, 8, 1))))
+      .toBe("2026-09-08")
   })
 
   it("normalises to the codebase's UTC-noon day marker", () => {

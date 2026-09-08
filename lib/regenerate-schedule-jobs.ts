@@ -751,8 +751,14 @@ export function regenerationStartDate(
   explicitEffectiveDate?: Date,
 ): Date {
   const start = utcDateOnly(scheduleStartDate)
-  const from = utcDateOnly(explicitEffectiveDate ?? today)
-  return from > start ? from : start
+  const now = utcDateOnly(today)
+  // Never before today, whoever asks. A caller passing a past effective date
+  // is how this went wrong in the first place, so the floor is enforced here
+  // rather than trusted to every call site.
+  const floor = now > start ? now : start
+  if (!explicitEffectiveDate) return floor
+  const explicit = utcDateOnly(explicitEffectiveDate)
+  return explicit > floor ? explicit : floor
 }
 
 export async function regenerateJobsForSchedule(
