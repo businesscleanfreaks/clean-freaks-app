@@ -68,8 +68,10 @@ export function cadenceLabel({ cleanDays, cancelledDays = [], year, month }: Cad
   })
   if (everyOther) return `Every other week · ${joined}`
 
-  const monthName = new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "long" })
-  return `${days.length} visit${days.length === 1 ? "" : "s"} in ${monthName} · ${joined}`
+  // Josh, 2026-09-08: an irregular month reads as a rate, not as a sentence
+  // about one month. "4 visits in September" invited the question "and in
+  // October?"; "4 visits/month" answers it.
+  return `${days.length} visit${days.length === 1 ? "" : "s"}/month · ${joined}`
 }
 
 /** Header count: "9 cleans done", or "7 of 9 cleans done" when some fell out. */

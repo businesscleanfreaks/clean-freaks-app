@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { allocateInvoiceNumber } from '@/lib/allocate-invoice-number'
 import { revalidateInvoicePages } from '@/lib/revalidate'
 import { createInvoiceSchema } from '@/lib/validations'
 import { logger } from '@/lib/logger'
@@ -14,30 +15,6 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // Generate invoice number (format: INV-YYYYMMDD-XXXX)
-async function generateInvoiceNumber(): Promise<string> {
-  const now = new Date()
-  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '')
-
-  // Find the latest invoice number for today
-  const latestInvoice = await prisma.invoice.findFirst({
-    where: {
-      invoiceNumber: {
-        startsWith: `INV-${dateStr}-`,
-      },
-    },
-    orderBy: {
-      invoiceNumber: 'desc',
-    },
-  })
-
-  let sequence = 1
-  if (latestInvoice) {
-    const lastSequence = parseInt(latestInvoice.invoiceNumber.split('-')[2])
-    sequence = lastSequence + 1
-  }
-
-  return `INV-${dateStr}-${sequence.toString().padStart(4, '0')}`
-}
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
@@ -321,8 +298,9 @@ export async function POST(request: Request) {
       }
     }
 
-    // Generate invoice number
-    const invoiceNumber = await generateInvoiceNumber()
+    // INV-YYYY-NNN, sequential for the year. The old INV-YYYYMMDD-NNNN
+    // restarted at 0001 every day, so the number said nothing about order.
+    const invoiceNumber = await allocateInvoiceNumber()
 
     // Resolve the due date: an explicit one wins, then the client's own agreed
     // terms, and only then the configured default for their property type.

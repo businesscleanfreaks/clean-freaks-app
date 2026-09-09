@@ -15,9 +15,11 @@ describe("cadenceLabel", () => {
       .toBe("Every other week · Tue & Fri")
   })
 
-  it("falls back to a visit count when the pattern is irregular", () => {
+  it("falls back to a visit rate when the pattern is irregular", () => {
+    // Josh, 2026-09-08: a rate, not a sentence about one month. "3 visits in
+    // June" invited the question "and in July?".
     expect(cadenceLabel({ ...JUNE, cleanDays: [2, 5, 19] }))
-      .toBe("3 visits in June · Tue & Fri")
+      .toBe("3 visits/month · Tue & Fri")
   })
 
   it("names a single day without an ampersand", () => {

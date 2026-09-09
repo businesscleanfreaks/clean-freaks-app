@@ -4,7 +4,7 @@ import { InvoiceWithRelations } from '@/types'
 import path from 'path'
 import { existsSync } from 'fs'
 import { logger } from '@/lib/logger'
-import { groupInvoiceLineItems } from '@/lib/invoice-grouping'
+import { buildInvoiceDocument } from '@/lib/invoice-document'
 import { buildPaymentBlock, printsNoPaymentSection } from '@/lib/invoice-payment-block'
 import type { InvoiceFooterTemplates } from '@/lib/billing-sections'
 
@@ -70,7 +70,9 @@ const styles = StyleSheet.create({
   },
   billToRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     gap: 40,
+    marginBottom: 20,
   },
   billToColumn: {
     flex: 1,
@@ -121,7 +123,74 @@ const styles = StyleSheet.create({
   },
   colDescription: { flex: 3 },
   colQuantity: { flex: 1, textAlign: 'center' },
-  colPrice: { flex: 1, textAlign: 'right' },
+  colRate: { flex: 1, textAlign: 'right' },
+  colAmount: { flex: 1, textAlign: 'right' },
+  // ─── Document header (design, 2026-09-08) ───
+  docHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 26,
+  },
+  wordmark: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    letterSpacing: 1.1,
+    color: COLORS.textDark,
+  },
+  docTitle: {
+    fontSize: 26,
+    letterSpacing: 3.4,
+    color: COLORS.borderLight,
+  },
+  metaColumn: {
+    alignItems: 'flex-end',
+  },
+  metaPair: {
+    alignItems: 'flex-end',
+    marginBottom: 7,
+  },
+  // The amount due sits above the table as well as below it.
+  totalDueBlock: {
+    alignItems: 'flex-end',
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.borderLight,
+    paddingTop: 12,
+    marginBottom: 18,
+  },
+  totalDueLabel: {
+    fontSize: 8,
+    letterSpacing: 0.9,
+    color: COLORS.textMuted,
+    marginBottom: 3,
+  },
+  totalDueValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.textDark,
+  },
+  grandTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  grandTotalLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: COLORS.textDark,
+  },
+  grandTotalValue: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: COLORS.textDark,
+  },
+  footerNoteText: {
+    fontSize: 8.5,
+    color: COLORS.textMuted,
+  },
   tableText: {
     fontSize: 9,
     color: COLORS.textDark,
@@ -380,7 +449,25 @@ export function InvoicePDF({ invoice, logoSettings, business, footerNote, payMet
   }
 
   // Group per-clean visits into summary lines (flat-rate left unchanged).
-  const groupedRows = groupInvoiceLineItems(invoice.lineItems, { billingType: invoice.client.billingType })
+  // The same model the on-screen preview renders, so "What your client
+  // receives" is literally what they receive.
+  const doc = buildInvoiceDocument({
+    businessName: bizName,
+    businessPhone: bizPhone,
+    clientName: invoice.client.name,
+    clientAddress: [clientAddress.address, clientAddress.city].filter(Boolean).join(', '),
+    invoiceNumber: invoice.invoiceNumber,
+    issuedDate: invoice.dateCreated,
+    dueDate: invoice.dateDue,
+    billingType: invoice.client.billingType,
+    lineItems: invoice.lineItems,
+    total: invoice.totalAmount,
+    monthLabel: formatDate(invoice.dateCreated),
+    locations: (invoice.lineItems ?? [])
+      .map((li) => (li as { locationName?: string | null }).locationName)
+      .filter((name, index, all): name is string => !!name && all.indexOf(name) === index)
+      .map((name) => ({ name })),
+  })
 
   // Point of contact
   const contactName = invoice.client.communicationContactName || invoice.client.name
@@ -442,89 +529,59 @@ export function InvoicePDF({ invoice, logoSettings, business, footerNote, payMet
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* ─── Header: logo (left) · INVOICE (center) · meta (right) ─── */}
-        <View style={styles.header} break={false} minPresenceAhead={150}>
-          <View style={{ flex: 1 }}>
-            {logoElement}
+        {/* ─── Header: wordmark left, INVOICE right ─── */}
+        <View style={styles.docHeader} break={false} minPresenceAhead={150}>
+          <Text style={styles.wordmark}>{doc.wordmark}</Text>
+          <Text style={styles.docTitle}>{doc.title}</Text>
+        </View>
+
+        {/* ─── Bill to (left) · invoice facts (right) ─── */}
+        <View style={styles.billToRow} break={false}>
+          <View style={styles.billToColumn}>
+            <Text style={styles.sectionLabel}>BILL TO</Text>
+            <Text style={styles.billToName}>{doc.billTo.name}</Text>
+            {doc.billTo.address && <Text style={styles.billToText}>{doc.billTo.address}</Text>}
           </View>
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={styles.invoiceTitle}>INVOICE</Text>
-          </View>
-          <View style={{ flex: 1, alignItems: 'flex-end' }}>
-            <Text style={styles.metaLabel}>Invoice #:</Text>
-            <Text style={styles.metaValue}>{invoice.invoiceNumber}</Text>
-            <Text style={styles.metaLabel}>Invoice Date:</Text>
-            <Text style={styles.metaValue}>{formatDate(invoice.dateCreated)}</Text>
-            {invoice.dateDue && <Text style={styles.metaLabel}>Due Date:</Text>}
-            {invoice.dateDue && <Text style={styles.metaValue}>{formatDate(invoice.dateDue)}</Text>}
+          <View style={styles.metaColumn}>
+            {doc.meta.map((pair) => (
+              <View key={pair.label} style={styles.metaPair}>
+                <Text style={styles.metaLabel}>{pair.label}</Text>
+                <Text style={styles.metaValue}>{pair.value}</Text>
+              </View>
+            ))}
           </View>
         </View>
 
-        {/* ─── Bill To, then Point of Contact stacked beneath it (matches reference) ─── */}
-        <View style={styles.billToSection} break={false}>
-          <Text style={styles.sectionLabel}>Bill to:</Text>
-          <Text style={styles.billToName}>{invoice.client.name}</Text>
-          {clientAddress.address && (
-            <Text style={styles.billToText}>{clientAddress.address}</Text>
-          )}
-          {clientAddress.city && (
-            <Text style={styles.billToText}>
-              {clientAddress.city}, {clientAddress.state || 'CA'} {clientAddress.zipCode || ''}
-            </Text>
-          )}
-
-          <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Point of Contact:</Text>
-          <Text style={styles.billToText}>{contactName}</Text>
-          {contactEmail && (
-            <Text style={styles.billToText}>{contactEmail}</Text>
-          )}
-          {contactPhone && (
-            <Text style={styles.billToText}>{contactPhone}</Text>
-          )}
+        {/* ─── Amount due, before the detail ─── */}
+        <View style={styles.totalDueBlock} break={false}>
+          <Text style={styles.totalDueLabel}>{doc.totalDueLabel}</Text>
+          <Text style={styles.totalDueValue}>{doc.totalDue}</Text>
         </View>
 
-        {/* ─── Line Items Table ─── */}
+        {/* ─── Line items: description · qty · rate · amount ─── */}
         <View style={styles.table}>
           <View style={styles.tableHeader} break={false}>
-            <Text style={[styles.colDescription, styles.tableHeaderText]}>Description</Text>
-            <Text style={[styles.colQuantity, styles.tableHeaderText]}>Quantity</Text>
-            <Text style={[styles.colPrice, styles.tableHeaderText]}>Price</Text>
+            <Text style={[styles.colDescription, styles.tableHeaderText]}>{doc.columns.description}</Text>
+            <Text style={[styles.colQuantity, styles.tableHeaderText]}>{doc.columns.quantity}</Text>
+            <Text style={[styles.colRate, styles.tableHeaderText]}>{doc.columns.rate}</Text>
+            <Text style={[styles.colAmount, styles.tableHeaderText]}>{doc.columns.amount}</Text>
           </View>
-          {groupedRows.map((row, index: number) => (
-            <View
-              key={row.key}
-              style={[styles.tableRow, ...(index % 2 === 1 ? [styles.tableRowAlt] : [])]}
-              wrap={false}
-            >
-              <Text style={[styles.colDescription, styles.tableText]}>
-                {row.description}
-              </Text>
-              <Text style={[styles.colQuantity, styles.tableText]}>{row.quantity}</Text>
-              <Text style={[styles.colPrice, styles.tableText]}>
-                {formatCurrency(row.amount)}
-              </Text>
+          {doc.rows.map((row, index: number) => (
+            <View key={index} style={styles.tableRow} wrap={false}>
+              <Text style={[styles.colDescription, styles.tableText]}>{row.description}</Text>
+              <Text style={[styles.colQuantity, styles.tableText]}>{row.quantity ?? ''}</Text>
+              <Text style={[styles.colRate, styles.tableText]}>{row.rate ?? ''}</Text>
+              <Text style={[styles.colAmount, styles.tableText]}>{row.amount ?? ''}</Text>
             </View>
           ))}
+          <View style={styles.grandTotalRow} wrap={false}>
+            <Text style={styles.grandTotalLabel}>{doc.totalLabel}</Text>
+            <Text style={styles.grandTotalValue}>{doc.total}</Text>
+          </View>
         </View>
 
-        {/* ─── Totals + Payment — Keep together ─── */}
+        {/* ─── Payment ─── */}
         <View break={false}>
-          {/* Totals */}
-          <View style={styles.totalsSection}>
-            <View style={styles.totalRow} wrap={false}>
-              <Text style={styles.totalLabel}>Sub Total</Text>
-              <Text style={styles.totalValue}>{formatCurrency(invoice.totalAmount)}</Text>
-            </View>
-            <View style={styles.totalRow} wrap={false}>
-              <Text style={styles.totalLabel}>Tax</Text>
-              <Text style={styles.totalValue}>n/a</Text>
-            </View>
-            <View style={[styles.totalRow, styles.totalRowFinal]} wrap={false}>
-              <Text style={styles.totalLabelFinal}>Total</Text>
-              <Text style={styles.totalValueFinal}>{formatCurrency(invoice.totalAmount)}</Text>
-            </View>
-          </View>
-
           {/* Payment Section — this client's method only.
               A portal client prints none of this: they pay through their own
               AP system, so our details would invite a second payment. */}
@@ -573,26 +630,13 @@ export function InvoicePDF({ invoice, logoSettings, business, footerNote, payMet
         </View>
 
         {/* ─── Footer ─── */}
+        {/* Footer: a plain row, thank-you left and phone right. The icon
+            panel it replaces repeated the business name three times and put
+            emoji on a document a client files with their accounts. */}
         <View style={styles.footer} fixed>
           <View style={styles.footerContent}>
-            <View style={styles.footerItem}>
-              <View style={styles.footerIconBox}>
-                <Text style={styles.footerIconText}>📞</Text>
-              </View>
-              <View style={styles.footerTextGroup}>
-                <Text style={styles.footerBold}>{bizPhone}</Text>
-                <Text style={styles.footerSub}>{bizName}</Text>
-              </View>
-            </View>
-            <View style={styles.footerItem}>
-              <View style={styles.footerIconBox}>
-                <Text style={styles.footerIconText}>🌐</Text>
-              </View>
-              <View style={styles.footerTextGroup}>
-                <Text style={styles.footerBold}>{bizEmail}</Text>
-                <Text style={styles.footerSub}>{bizName}</Text>
-              </View>
-            </View>
+            <Text style={styles.footerNoteText}>{doc.footer.left}</Text>
+            {doc.footer.right && <Text style={styles.footerNoteText}>{doc.footer.right}</Text>}
           </View>
         </View>
       </Page>

@@ -108,10 +108,10 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
 
   return (
     <div>
-      <div style={{ background: "#fafbfc", border: "1px solid #f1f3f6", borderRadius: 14, overflow: "hidden" }}>
+      <div style={{ background: "#f4f6f8", border: "1px solid #e9edf1", borderRadius: 14, overflow: "hidden" }}>
         <div style={{ padding: "12px 15px 13px" }}>
           <div className="mb-2 flex items-baseline justify-between gap-2.5">
-            <div className="text-[12.5px] font-bold text-[#5b6470]">
+            <div className="text-[15px] font-bold text-[#5b6470]">
               Client Payment Instructions{" "}
               <span className="font-medium text-[#9aa3af]">· printed at the bottom of the invoice</span>
             </div>
@@ -119,7 +119,7 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
               <button
                 type="button"
                 onClick={() => setEditing(footerText ?? "")}
-                className="flex-none text-[11.5px] font-bold text-[#15793f]"
+                className="flex-none text-[12.5px] font-bold text-[#15793f]"
               >
                 Edit
               </button>
@@ -132,12 +132,12 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
               style={{ background: "#fff", border: "1px solid #eef0f3", borderRadius: 10, padding: "10px 12px" }}
             >
               <span
-                className="mt-px flex-none rounded-[5px] px-2 py-[3px] text-[10px] font-extrabold uppercase tracking-[0.04em]"
+                className="mt-px flex-none rounded-[5px] px-2 py-[3px] text-[12px] font-extrabold uppercase tracking-[0.04em]"
                 style={{ background: "#eaf0fa", color: "#3a66b0" }}
               >
                 {methodLabel}
               </span>
-              <div className="min-w-0 text-[12px] leading-[1.5] text-[#475467]">
+              <div className="min-w-0 text-[15px] leading-[1.5] text-[#475467]">
                 {footerText || "No payment instructions for this method yet."}
               </div>
             </div>
@@ -147,7 +147,7 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
                 value={editing}
                 onChange={e => setEditing(e.target.value)}
                 aria-label="Payment instructions"
-                className="w-full resize-y rounded-[9px] px-2.5 py-2 text-[12.5px] leading-[1.5] text-[#111827] outline-none"
+                className="w-full resize-y rounded-[9px] px-2.5 py-2 text-[15px] leading-[1.5] text-[#111827] outline-none"
                 style={{ minHeight: 64, border: "1.5px solid #15793f" }}
               />
               <div className="mt-2 flex items-center gap-2.5">
@@ -155,7 +155,7 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
                   type="button"
                   onClick={saveFooter}
                   disabled={savingFooter}
-                  className="rounded-[8px] px-3.5 py-[7px] text-[12px] font-bold text-white disabled:opacity-60"
+                  className="rounded-[8px] px-3.5 py-[7px] text-[15px] font-bold text-white disabled:opacity-60"
                   style={{ background: "#15793f" }}
                 >
                   {savingFooter ? "Saving…" : "Save"}
@@ -163,12 +163,12 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
                 <button
                   type="button"
                   onClick={() => setEditing(null)}
-                  className="text-[12px] font-semibold text-[#64748b]"
+                  className="text-[15px] font-semibold text-[#64748b]"
                 >
                   Cancel
                 </button>
                 {/* Says the blast radius before you commit to it. */}
-                <span className="ml-auto text-[11px] text-[#9aa3af]">
+                <span className="ml-auto text-[12.5px] text-[#9aa3af]">
                   Applies to every client who pays by {methodLabel}
                 </span>
               </div>
@@ -183,15 +183,15 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
           onClick={() => setNoteOpen(true)}
           className="mt-2.5 flex items-center gap-[7px] px-0.5 pt-0.5"
         >
-          <span className="text-[12.5px] font-bold text-[#5b6470]">+ Add a note</span>
-          <span className="text-[11.5px] text-[#9aa3af]">optional · shows on the invoice</span>
+          <span className="text-[15px] font-bold text-[#5b6470]">+ Add a note</span>
+          <span className="text-[12.5px] text-[#9aa3af]">optional · shows on the invoice</span>
         </button>
       ) : (
         <div
           className="mt-2.5"
           style={{ background: "#fafbfc", border: "1px solid #f1f3f6", borderRadius: 14, padding: "12px 15px 13px" }}
         >
-          <div className="mb-[7px] text-[12.5px] font-bold text-[#5b6470]">
+          <div className="mb-[7px] text-[15px] font-bold text-[#5b6470]">
             Note on this invoice <span className="font-medium text-[#9aa3af]">(optional)</span>
           </div>
           <textarea
@@ -200,10 +200,10 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
             onBlur={saveNote}
             placeholder="e.g. Includes the carpet deep clean we discussed"
             aria-label="Note on this invoice"
-            className="w-full resize-y rounded-[9px] bg-white px-2.5 py-2 text-[12.5px] leading-[1.5] text-[#111827] outline-none"
+            className="w-full resize-y rounded-[9px] bg-white px-2.5 py-2 text-[15px] leading-[1.5] text-[#111827] outline-none"
             style={{ minHeight: 56, border: "1px solid #e2e5e9" }}
           />
-          <div className="mt-1.5 text-[11px] text-[#9aa3af]">
+          <div className="mt-1.5 text-[12.5px] text-[#9aa3af]">
             {savingNote
               ? "Saving…"
               : invoiceId

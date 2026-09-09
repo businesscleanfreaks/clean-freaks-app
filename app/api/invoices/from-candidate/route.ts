@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { createWithInvoiceNumber } from '@/lib/allocate-invoice-number'
 import { revalidateInvoicePages } from '@/lib/revalidate'
 import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
@@ -90,19 +91,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // 3. Generate invoice number
-    const now = new Date()
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '')
-    const latestInvoice = await prisma.invoice.findFirst({
-      where: { invoiceNumber: { startsWith: `INV-${dateStr}-` } },
-      orderBy: { invoiceNumber: 'desc' },
-    })
-    let sequence = 1
-    if (latestInvoice) {
-      const lastSeq = parseInt(latestInvoice.invoiceNumber.split('-')[2])
-      sequence = lastSeq + 1
-    }
-    const invoiceNumber = `INV-${dateStr}-${sequence.toString().padStart(4, '0')}`
+    // 3. The invoice number is allocated inside the retry below, so a clash
+    //    with a simultaneous create takes the next number instead of failing.
 
     // 4. Calculate total from line items
     const totalAmount = lineItems.reduce(
@@ -111,7 +101,7 @@ export async function POST(request: Request) {
     )
 
     // 5. Create invoice in a transaction
-    const invoice = await prisma.$transaction(async (tx) => {
+    const invoice = await createWithInvoiceNumber((invoiceNumber) => prisma.$transaction(async (tx) => {
       // Double-check no source jobs have been invoiced in the meantime
       if (sourceJobIds && sourceJobIds.length > 0) {
         const alreadyInvoiced = await tx.job.findMany({
@@ -166,7 +156,7 @@ export async function POST(request: Request) {
       }
 
       return newInvoice
-    })
+    }))
 
     revalidateInvoicePages(clientId)
 

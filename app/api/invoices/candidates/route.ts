@@ -962,7 +962,18 @@ export async function GET(request: Request) {
         billingType: inv.client.billingType || 'PER_CLEAN',
         status,
         scheduleSummary: '',
-        lineItems: [],
+        // The invoice's own lines, not an empty list. They are already loaded
+        // (the `jobIds` below reads them). Left empty, the review preview fell
+        // back to a single "Cleaning services" row while the PDF showed the
+        // real breakdown · the pane titled "What your client receives" showing
+        // something the client does not receive.
+        lineItems: inv.lineItems.map((item): CandidateLineItem => ({
+          description: item.description,
+          quantity: 1,
+          price: item.amount,
+          sourceType: item.addOnServiceId ? 'ADD_ON' : item.jobId ? 'JOB' : 'FLAT_RATE',
+          ...(item.jobId ? { jobId: item.jobId } : {}),
+        })),
         exceptions: [],
         total: inv.totalAmount,
         existingInvoiceId: inv.id,

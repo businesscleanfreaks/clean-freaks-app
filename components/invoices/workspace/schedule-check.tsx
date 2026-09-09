@@ -131,6 +131,16 @@ export function ScheduleCheck({
     return cadenceLabel({ cleanDays, cancelledDays, year: y, month: m })
   }, [cleans, y, m])
 
+  // Which weekdays this client is serviced on, and whether anything is still
+  // ahead · both read off the month being reviewed rather than the schedule
+  // rule, matching how the cadence line is built.
+  const serviceWeekdays = new Set<number>()
+  for (const clean of cleans) {
+    const d = clean.date instanceof Date ? clean.date : new Date(clean.date)
+    if (!isNaN(d.getTime()) && markFor(clean) !== "cancelled") serviceWeekdays.add(d.getUTCDay())
+  }
+  const hasScheduled = counts.scheduled > 0
+
   const ranAsScheduled = counts.cancelled === 0 && counts.oneoff === 0
   const monthTitle = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
 
@@ -188,16 +198,16 @@ export function ScheduleCheck({
     // and reads as its own surface rather than another white panel.
     <div style={{ border: "1px solid #eee7db", background: "#faf9f6", borderRadius: 14, padding: "11px 16px" }}>
       <div className="mb-[5px] flex items-baseline justify-between gap-2.5">
-        <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#9aa3af]">Schedule check</span>
+        <span className="text-[12.5px] font-bold uppercase tracking-[0.05em] text-[#9aa3af]">Schedule check</span>
         <span className="inline-flex items-center gap-2.5">
-          <span className="text-[11.5px] font-semibold text-[#8b95a1]">
+          <span className="text-[12.5px] font-semibold text-[#8b95a1]">
             {scheduleSummaryLabel(counts.completed, counts.cancelled)}
           </span>
           <button
             type="button"
             onClick={() => router.push(`/calendar?clientId=${clientId}`)}
             title={`Something wrong? Fix the schedule on the calendar · this invoice recomputes from it`}
-            className="whitespace-nowrap text-[11.5px] font-bold text-[#15793f] transition-opacity hover:opacity-80"
+            className="whitespace-nowrap text-[12.5px] font-bold text-[#15793f] transition-opacity hover:opacity-80"
           >
             Open in Calendar →
           </button>
@@ -205,32 +215,52 @@ export function ScheduleCheck({
       </div>
 
       {/* What the month's pattern actually was, in words. */}
-      <div className="text-[17px] font-bold leading-tight tracking-[-0.015em] text-[#111827]">{cadence}</div>
+      <div className="text-[19px] font-bold leading-tight tracking-[-0.015em] text-[#111827]">{cadence}</div>
 
       {ranAsScheduled && (
         <div className="mt-1.5 flex items-center gap-[7px]">
           <CircleCheck className="h-[15px] w-[15px] flex-none text-[#15793f]" strokeWidth={2.2} />
-          <span className="text-[13px] font-bold text-[#15793f]">Ran as scheduled</span>
+          <span className="text-[15px] font-bold text-[#15793f]">Ran as scheduled</span>
         </div>
       )}
 
       <div className="mt-[9px] border-t border-[#eee7db] pt-2">
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[13px] font-bold text-[#111827]">{monthTitle}</span>
-          <span className="flex items-center gap-[11px] text-[10.5px] text-[#9aa3af]">
+          <span className="text-[15px] font-bold text-[#111827]">{monthTitle}</span>
+          <span className="flex items-center gap-[11px] text-[12px] text-[#9aa3af]">
             <span className="flex items-center gap-1">
               <span className="h-2 w-2 rounded-full" style={{ background: "#15793f" }} />Clean
             </span>
             <span className="flex items-center gap-1">
               <span className="h-2 w-2 rounded-full" style={{ background: "#f59e0b" }} />Add-on
             </span>
+            {hasScheduled && (
+              <span className="flex items-center gap-1">
+                <span
+                  className="h-2 w-2 rounded-full border"
+                  style={{ borderColor: "#15793f", background: "transparent" }}
+                />
+                Scheduled
+              </span>
+            )}
           </span>
         </div>
 
         <div className="grid grid-cols-7 gap-[3px]" style={{ maxWidth: 206 }}>
-          {DOW.map((d, i) => (
-            <span key={`dow-${i}`} className="pb-px text-center text-[10px] text-[#9aa3af]">{d}</span>
-          ))}
+          {DOW.map((d, i) => {
+            const serviced = serviceWeekdays.has(i)
+            return (
+              <span
+                key={`dow-${i}`}
+                className="pb-px text-center text-[12px]"
+                style={serviced
+                  ? { color: "#374151", fontWeight: 700 }
+                  : { color: "#9aa3af" }}
+              >
+                {d}
+              </span>
+            )
+          })}
           {cells.map((day, i) => {
             if (day === null) return <div key={i} style={{ aspectRatio: "1" }} />
             const entry = byDay.get(day)
@@ -250,7 +280,7 @@ export function ScheduleCheck({
                 onClick={entry ? () => openDay(entry.jobId) : undefined}
                 title={label}
                 aria-label={label}
-                className="flex items-center justify-center rounded-full text-[10.5px] tabular-nums"
+                className="flex items-center justify-center rounded-full text-[12px] tabular-nums"
                 style={{
                   aspectRatio: "1",
                   background: st.background,
@@ -273,7 +303,7 @@ export function ScheduleCheck({
             the cleaner's pay and this invoice all move together. */}
         {rows.length > 0 && (
           <div className="mt-2 border-t border-stone-100 pt-2">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+            <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wider text-stone-400">
               Cancelled this month
             </div>
             <div className="space-y-1">
@@ -287,14 +317,14 @@ export function ScheduleCheck({
                       style={{ background: row.billed ? "#15793f" : "#c0c7cf" }}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[11.5px] font-semibold text-stone-700">{row.dateLabel}</div>
-                      <div className="truncate text-[10.5px]" style={{ color: row.billed ? "#15793f" : "#8b95a1" }}>
+                      <div className="text-[12.5px] font-semibold text-stone-700">{row.dateLabel}</div>
+                      <div className="truncate text-[12px]" style={{ color: row.billed ? "#15793f" : "#8b95a1" }}>
                         {row.description}
                       </div>
                     </div>
                     {row.effect && (
                       <span
-                        className="flex-none text-[11px] font-semibold tabular-nums"
+                        className="flex-none text-[12.5px] font-semibold tabular-nums"
                         style={{ color: row.billed ? "#15793f" : "#8b95a1" }}
                       >
                         {row.effect}
@@ -309,7 +339,7 @@ export function ScheduleCheck({
                           ? "Put this clean back to cancelled"
                           : "This clean did happen · bill it and credit the cleaner"
                       }
-                      className="inline-flex flex-none items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-semibold transition-colors disabled:opacity-50"
+                      className="inline-flex flex-none items-center gap-1 rounded-md border px-2 py-1 text-[12px] font-semibold transition-colors disabled:opacity-50"
                       style={
                         row.billed
                           ? { borderColor: "#d7dbe0", color: "#64748b", background: "#fff" }
@@ -323,7 +353,7 @@ export function ScheduleCheck({
                 )
               })}
             </div>
-            <p className="mt-1.5 text-[10px] text-stone-400">
+            <p className="mt-1.5 text-[12px] text-stone-400">
               Correcting a clean updates the calendar and the cleaner&apos;s pay too.
             </p>
           </div>

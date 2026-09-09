@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import useSWR from "swr"
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin, Lock, Check, PanelLeftClose, Eye } from "lucide-react"
+import { Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, CheckCircle2, AlertTriangle, ExternalLink, FileText, Loader2, Settings, Send, CalendarDays, Building2, MapPin, Lock, Check, PanelLeftClose, Eye } from "lucide-react"
 import { fetcher } from "@/lib/fetcher"
 import { formatCurrency } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { ScheduleCheck, type ScheduleCheckClean } from "./schedule-check"
+import { NewInvoicePanel } from "../new-invoice-panel"
 import { billableCleanCount, countCleans } from "@/lib/schedule-check"
 import { resolveInvoiceFooter, type InvoiceFooterTemplates } from "@/lib/billing-sections"
 import { buildPaymentBlock } from "@/lib/invoice-payment-block"
+import { buildInvoiceDocument } from "@/lib/invoice-document"
 import { TemplatesModal } from "./templates-modal"
 import {
   useWorkspace, formatMonthLabel, shiftMonth, shortReason,
@@ -28,17 +30,13 @@ import { type Adjustment } from "@/lib/invoice-adjustments"
 import { confirmBlockedReason, confirmationText, needsConfirmation } from "@/lib/invoice-confirmation"
 import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
 import { TERMS, TERM_LABELS } from "@/lib/billing-schedule"
+import { CUSTOM_TERM, resolveDueDate, selectedTerm } from "@/lib/payment-terms"
 import type { ComposeMode } from "@/lib/invoice-compose"
 import Link from "next/link"
 import { PAY_METHOD_LABELS } from "@/lib/billing-schedule"
 
 const TABS: WorkspaceTab[] = ["All", "Not sent", "Sent", "Overdue", "Paid"]
 const STATUS_DOT: Record<string, string> = { "Not sent": "#F59E0B", Sent: "#0EA5E9", Paid: "#10B981" }
-const STATUS_BADGE: Record<string, React.CSSProperties> = {
-  "Not sent": { background: "#FFFBEB", borderColor: "#FDE68A", color: "#B45309" },
-  Sent: { background: "#EFF6FF", borderColor: "#BFDBFE", color: "#1D4ED8" },
-  Paid: { background: "#ECFDF5", borderColor: "#A7F3D0", color: "#047857" },
-}
 
 export function InvoicingWorkspace({
   initialMonth,
@@ -69,6 +67,7 @@ export function InvoicingWorkspace({
   // "N to send in the queue" pill. The list is a way back to the queue, not
   // something that competes with the invoice you are reviewing.
   const [listCollapsed, setListCollapsed] = useState(true)
+  const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   useEffect(() => setMounted(true), [])
 
   // Keyboard queue navigation. Ignored while typing in a field or with a modal
@@ -166,86 +165,31 @@ export function InvoicingWorkspace({
 
   return (
     <div className="flex flex-col bg-stone-50" style={{ height: "100dvh" }}>
-      {/* ── Top bar: title · month nav · status totals ── */}
+      {/* ── Top bar: title · new invoice ──
+          The status totals moved to the All invoices list, and the reviewer
+          control moved down to sit above the card it applies to. A review
+          screen's header should say where you are, not summarise the ledger. */}
       <header className="flex items-center justify-between gap-6 border-b border-stone-200 bg-white px-6 py-3">
-        <div className="flex items-center gap-4">
-          <div className="min-w-0">
-            {/* The way back to the full list. The workspace shows one invoice at
-                a time, so without this the only route out is the browser. */}
-            <Link
-              href="/invoices"
-              className="mb-0.5 inline-flex items-center gap-[5px] text-[12.5px] font-bold text-[#6b7480] transition-colors hover:text-stone-800"
-            >
-              <ChevronLeft size={15} strokeWidth={2.2} /> All invoices
-            </Link>
-            <h1 className="text-[23px] font-bold leading-[1.1] tracking-[-0.025em] text-stone-900">Invoices</h1>
-          </div>
-
-          {/* Opens the list. The only way back to the queue when the two-pane
-              layout is showing, so it stays available whatever the invoice. */}
-          {listCollapsed && ws.queueTotal > 0 && (
-            <button
-              onClick={() => setListCollapsed(false)}
-              title="See the full list"
-              className="whitespace-nowrap rounded-full border border-stone-200 bg-white px-3 py-1 text-[12.5px] font-semibold text-[#8b95a1] transition-colors hover:text-stone-700"
-            >
-              {ws.queueTotal} to send in the queue
-            </button>
-          )}
-
-          {/* Review queue position. Fixed-width label so the arrows never shift. */}
-          {ws.queuePositionLabel && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-1">
-                {/* Only the digits sit in fixed-width slots — that is what
-                    keeps the arrows still as you walk the queue. Truncating
-                    the whole sentence (as this used to) just clipped it. */}
-                <span className="flex-none whitespace-nowrap text-[12.5px] font-semibold text-stone-700">
-                  Reviewing{" "}
-                  <span className="inline-block w-[2ch] text-right tabular-nums">{ws.queuePos > 0 ? ws.queuePos : "-"}</span>
-                  {" of "}
-                  <span className="inline-block w-[2ch] text-right tabular-nums">{ws.queueTotal}</span>
-                  {" to send"}
-                </span>
-                {ws.queueGroup && (
-                  <span className="hidden flex-none whitespace-nowrap text-[12px] text-stone-400 xl:inline">
-                    · {ws.queueGroup}
-                  </span>
-                )}
-                <div className="h-1 w-16 flex-none overflow-hidden rounded-full bg-stone-100">
-                  <div className="h-full rounded-full bg-[#15793f] transition-all" style={{ width: `${ws.queueProgress}%` }} />
-                </div>
-                <div className="flex flex-none items-center gap-0.5">
-                  <button
-                    onClick={() => ws.stepReview(-1)}
-                    aria-label="Previous invoice to review"
-                    title="Previous (Up arrow)"
-                    className="rounded p-0.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
-                  >
-                    <ChevronUp size={14} />
-                  </button>
-                  <button
-                    onClick={() => ws.stepReview(1)}
-                    aria-label="Next invoice to review"
-                    title="Next (Down arrow)"
-                    className="rounded p-0.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="min-w-0">
+          {/* The way back to the full list. The workspace shows one invoice at
+              a time, so without this the only route out is the browser. */}
+          <Link
+            href="/invoices"
+            className="mb-0.5 inline-flex items-center gap-[5px] text-[12.5px] font-bold text-[#6b7480] transition-colors hover:text-stone-800"
+          >
+            <ChevronLeft size={15} strokeWidth={2.2} /> All invoices
+          </Link>
+          <h1 className="text-[23px] font-bold leading-[1.1] tracking-[-0.025em] text-stone-900">Invoices</h1>
         </div>
-        <div className="flex items-center gap-5 text-sm tabular-nums">
-          {([["Not sent", ws.totals.notSent], ["Sent", ws.totals.sent], ["Paid", ws.totals.paid]] as const).map(([label, amt]) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full" style={{ background: STATUS_DOT[label] }} />
-              <span className="text-stone-600">{label}</span>
-              <span className="font-semibold text-stone-900">{formatCurrency(amt)}</span>
-            </div>
-          ))}
-        </div>
+
+        <button
+          type="button"
+          onClick={() => setNewInvoiceOpen(true)}
+          title="For charges that don't come from a scheduled clean · fees, supplies, or work done off-calendar."
+          className="inline-flex flex-none items-center gap-1.5 rounded-[9px] border border-[#e4e7ec] bg-white px-3.5 py-[9px] text-[12.5px] font-bold text-[#475467] transition-colors hover:bg-[#f7f8fa]"
+        >
+          <Plus className="h-[15px] w-[15px]" /> New Invoice
+        </button>
       </header>
 
       {/* ── Filter bar: tabs + search ──
@@ -394,19 +338,82 @@ export function InvoicingWorkspace({
           title="Drag to resize · Double-click to reset" />
         )}
 
-        {/* Detail column. With the list hidden this shares the width with the
-            client's view rather than staying at its three-column size — the
-            review is the point of the two-pane layout, not a sidebar. */}
+        {/* Review column: the queue control sits directly above the card it
+            applies to, aligned to it, rather than up in the page header where
+            it read as a property of the whole screen. */}
         <div
           className={
             listCollapsed
-              ? "flex min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded-2xl border border-[#e7e7e2] bg-white"
-              : "flex shrink-0 flex-col border-r border-stone-200 bg-white"
+              ? "flex min-w-0 flex-1 basis-0 flex-col gap-2.5"
+              : "flex shrink-0 flex-col"
+          }
+          style={listCollapsed ? undefined : { width: detailWidth }}
+        >
+        {listCollapsed && ws.queuePositionLabel && (
+          <div
+            className="relative flex flex-none items-center gap-2.5 self-start overflow-hidden rounded-full border border-[#e7e7e2] bg-white px-3.5 py-1.5"
+            style={{ boxShadow: "0 1px 2px rgba(16,24,40,.05)" }}
+          >
+            {/* Clicking the count opens the full list. The design drops the
+                separate "N to send in the queue" pill, and this is the only
+                remaining way back to the list from a two-pane review. */}
+            <button
+              type="button"
+              onClick={() => setListCollapsed(false)}
+              title="See the full list"
+              className="flex-none whitespace-nowrap text-[12.5px] font-bold text-stone-800"
+            >
+              Reviewing{" "}
+              <span className="inline-block w-[2ch] text-right tabular-nums">{ws.queuePos > 0 ? ws.queuePos : "-"}</span>
+              {" of "}
+              <span className="inline-block w-[2ch] text-right tabular-nums">{ws.queueTotal}</span>
+              {" to send"}
+            </button>
+            {ws.queueGroup && (
+              <>
+                <span className="flex-none text-[#d2d8de]">·</span>
+                <span className="flex-none whitespace-nowrap text-[12px] font-semibold text-[#15793f]">
+                  {ws.queueGroup}
+                </span>
+              </>
+            )}
+            <div className="flex flex-none items-center gap-1">
+              <button
+                onClick={() => ws.stepReview(-1)}
+                aria-label="Previous invoice to review"
+                title="Previous (Up arrow)"
+                className="grid h-[22px] w-[22px] place-items-center rounded-full border border-[#e2e2df] text-stone-500 transition-colors hover:bg-stone-50 hover:text-stone-900"
+              >
+                <ChevronUp size={13} strokeWidth={2.4} />
+              </button>
+              <button
+                onClick={() => ws.stepReview(1)}
+                aria-label="Next invoice to review"
+                title="Next (Down arrow)"
+                className="grid h-[22px] w-[22px] place-items-center rounded-full text-white transition-opacity hover:opacity-90"
+                style={{ background: "#15793f" }}
+              >
+                <ChevronDown size={13} strokeWidth={2.4} />
+              </button>
+            </div>
+            {/* Progress along the bottom edge of the pill, as the design has it. */}
+            <span
+              className="absolute bottom-0 left-0 h-[2px] rounded-full transition-all"
+              style={{ width: `${ws.queueProgress}%`, background: "#15793f" }}
+            />
+          </div>
+        )}
+
+        <div
+          className={
+            listCollapsed
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white"
+              : "flex h-full flex-col border-r border-stone-200 bg-white"
           }
           style={
             listCollapsed
-              ? { boxShadow: "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05)" }
-              : { width: detailWidth }
+              ? { boxShadow: "0 1px 3px rgba(16,24,40,.05), 0 12px 32px rgba(16,24,40,.07)" }
+              : undefined
           }
         >
           {ws.selected ? (
@@ -418,6 +425,7 @@ export function InvoicingWorkspace({
           ) : (
             <div className="m-auto p-6 text-center text-sm text-stone-400">Select an invoice.</div>
           )}
+        </div>
         </div>
 
         {/* Resize handle (detail ↔ preview) */}
@@ -432,7 +440,7 @@ export function InvoicingWorkspace({
         <div
           className={
             listCollapsed
-              ? "flex min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded-2xl border border-[#eceae4] bg-[#f0efea]"
+              ? "flex min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded-2xl bg-[#f0efea]"
               : "flex min-w-0 flex-1 flex-col bg-stone-100"
           }
         >
@@ -442,6 +450,13 @@ export function InvoicingWorkspace({
         </div>
 
       </div>
+
+      {/* Off-calendar charges: fees, supplies, work with no scheduled clean. */}
+      <NewInvoicePanel
+        open={newInvoiceOpen}
+        onClose={() => setNewInvoiceOpen(false)}
+        onCreated={() => { setNewInvoiceOpen(false); ws.mutate() }}
+      />
 
       {/* Compose window · every send path goes through it, so nothing leaves
           without the reviewer seeing the actual email. */}
@@ -653,25 +668,20 @@ function DetailPanel({ inv, month, onCompose }: {
   )
   const cleans = useMemo(() => cleansData?.cleans ?? [], [cleansData])
 
-  const cleaner = useMemo(() => {
-    for (const l of client?.locations || []) {
-      const s = (l.schedules || []).find((sc: { isActive?: boolean; subcontractor?: { name?: string } }) => sc.isActive && sc.subcontractor?.name)
-      if (s?.subcontractor?.name) return s.subcontractor.name as string
-    }
-    return null
-  }, [client])
 
   const dueDate = useMemo(() => {
     // Prefer the real due date once one exists; the month-based guess is only
     // for candidates that have not been invoiced yet.
+    const short: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
     const real = tracked?.dateDue ? new Date(tracked.dateDue) : null
-    if (real && !isNaN(real.getTime())) {
-      return real.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    }
+    if (real && !isNaN(real.getTime())) return real.toLocaleDateString("en-US", short)
     const [y, m] = month.split("-").map(Number)
-    return new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-  }, [month, tracked])
-  const badge = STATUS_BADGE[inv.uiStatus] || STATUS_BADGE["Not sent"]
+    // Derived from the client's terms · it used to be a fixed 10th of the
+    // month, which matched none of the Net 7 / 15 / 30 options beside it.
+    return resolveDueDate(client?.paymentTerms, new Date(y, m - 1, 1), new Date(y, m - 1, 10))
+      .toLocaleDateString("en-US", short)
+    // Terms included: changing them has to move the date shown beside them.
+  }, [month, tracked, client?.paymentTerms])
 
   // Structured "what changed this month" rows — with the $ impact pulled from the
   // real line items (proration credit for cancellations, add-on totals).
@@ -716,6 +726,12 @@ function DetailPanel({ inv, month, onCompose }: {
   const monthCleans = cleans
   // "Single location" / "3 locations" — the design puts this next to the name
   // so a combined invoice is obvious before you read the line items.
+  const locationNames = useMemo(
+    () => ((client?.locations || []) as Array<{ name?: string }>)
+      .map(l => (l.name || "").trim())
+      .filter(Boolean),
+    [client?.locations],
+  )
   const locationCount = (client?.locations || []).length
   const locationLabel = locationCount > 1 ? `${locationCount} locations` : "Single location"
 
@@ -741,7 +757,16 @@ function DetailPanel({ inv, month, onCompose }: {
 
   const termsLabel = client?.paymentTerms ? TERM_LABELS[client.paymentTerms] ?? null : null
 
-  const billingModel = inv.billingType === "FLAT_RATE" ? "Flat monthly" : inv.billingType === "ONE_TIME" ? "One-time" : "Per clean"
+  // Which term chip is lit. With no term on file it reads the gap between the
+  // issue and due dates, so the control reflects the invoice instead of
+  // sitting blank as though nothing had been chosen.
+  const [termY, termM] = month.split("-").map(Number)
+  const activeTerm = selectedTerm(
+    client?.paymentTerms,
+    new Date(termY, termM - 1, 1),
+    tracked?.dateDue ? new Date(tracked.dateDue) : new Date(termY, termM - 1, 10),
+  )
+
 
   // One answer to "how many cleans this month", shared with the schedule card.
   // This screen used to carry two: the card counted the live cleans and said
@@ -755,7 +780,7 @@ function DetailPanel({ inv, month, onCompose }: {
     <div className="flex h-full flex-col">
       {/* Header — client, where the work is and when it is due on one line,
           with the total labelled and right-aligned, per the design. */}
-      <div className="border-b border-stone-200 bg-white px-7 py-4">
+      <div className="border-b border-stone-200 bg-white px-8 py-5">
         <div className="flex items-start gap-[13px]">
           <span
             className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full text-white"
@@ -765,8 +790,8 @@ function DetailPanel({ inv, month, onCompose }: {
           </span>
 
           <div className="min-w-0 flex-1">
-            <div className="text-[18px] font-bold leading-[1.2] tracking-[-0.02em] text-stone-900">{inv.clientName}</div>
-            <div className="mt-[3px] flex flex-wrap items-center gap-2 text-[12px] text-[#8b95a1]">
+            <div className="text-[22px] font-bold leading-[1.2] tracking-[-0.02em] text-stone-900">{inv.clientName}</div>
+            <div className="mt-[3px] flex flex-wrap items-center gap-2 text-[15px] text-[#8b95a1]">
               <span className="inline-flex items-center gap-1">
                 <MapPin size={13} />
                 {locationLabel}
@@ -776,44 +801,31 @@ function DetailPanel({ inv, month, onCompose }: {
                 <CalendarDays size={13} />
                 Due {dueDate}
               </span>
-              {/* Carried down from the removed service-summary card: it is the
-                  only place the billing model and the cleaner appear, and on
-                  this line it costs no height. */}
-              <span className="text-[#d2d8de]">·</span>
-              <span className="truncate">
-                {billingModel}
-                {cleaner ? ` · ${cleaner}` : ""}
-              </span>
             </div>
           </div>
 
           <div className="flex-none text-right">
-            <div className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9aa3af]">Invoice total</div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.05em] text-[#9aa3af]">Invoice total</div>
             <div
               className="mt-px tabular-nums"
               style={{ fontSize: 20, fontWeight: 740, letterSpacing: "-0.025em", color: "#10131a" }}
             >
               {formatCurrency(inv.total)}
             </div>
-            <span
-              className="mt-1 inline-block rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-              style={badge}
-            >
-              {inv.uiStatus}
-            </span>
+
           </div>
         </div>
       </div>
 
       {/* Scrollable detail (Ticket 2): schedule · changes · headline · calendar */}
-      <ScrollWithMoreBelow className="h-full space-y-3.5 overflow-y-auto px-7 py-4" resetKey={inv.candidateId}>
+      <ScrollWithMoreBelow className="h-full space-y-4 overflow-y-auto px-8 py-5" resetKey={inv.candidateId}>
         {/* Changes this month — shown only when there are changes */}
         {flaggedRows.length > 0 && (
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Changes this month</div>
+            <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-stone-400">Changes this month</div>
             <div className="mt-2 space-y-1.5 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
               {flaggedRows.map((r) => (
-                <div key={r.label} className="flex items-start justify-between gap-3 text-[12px]">
+                <div key={r.label} className="flex items-start justify-between gap-3 text-[15px]">
                   <span className="flex items-center gap-1.5 text-stone-600">
                     <AlertTriangle size={12} className="flex-shrink-0 text-amber-500" />
                     {r.label}
@@ -840,9 +852,56 @@ function DetailPanel({ inv, month, onCompose }: {
               onCorrected={refreshCleans}
             />
           ) : (
-            <p className="rounded-lg border border-stone-200 bg-white p-2.5 text-[11.5px] text-stone-500">
-              Flat monthly rate · the total does not change with the visit count.
-            </p>
+            /* Flat rate has no calendar to check, so the service summary is
+               the review: what the monthly price covers. Deliberately NOT on
+               per-clean, where it duplicated the schedule card. */
+            <div className="rounded-[12px] border border-[#eef0f3] bg-white px-4 py-3.5">
+              {locationNames.length > 1 && (
+                <div className="mb-3 flex items-center gap-2 text-[12.5px]">
+                  <span className="min-w-0 flex-1 truncate text-[#6b7480]">
+                    One itemized invoice covers all {locationNames.length} locations
+                  </span>
+                  <Link
+                    href={`/clients/${inv.clientId}`}
+                    className="flex-none font-bold text-[#2F7A5E] hover:underline"
+                  >
+                    Change →
+                  </Link>
+                </div>
+              )}
+
+              <div className="mb-2 text-[16px] font-bold tracking-[-0.01em] text-stone-900">Service summary</div>
+
+              <div className="flex items-center gap-[11px]">
+                <span
+                  className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg"
+                  style={{ background: "#eaf5ee", color: "#15793f" }}
+                >
+                  <CalendarDays size={15} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-semibold text-[#374151]">Flat monthly service</div>
+                  <div className="mt-px text-[12.5px] text-[#9aa3af]">Same price every month</div>
+                </div>
+                <span className="flex-none text-[15.5px] font-bold tabular-nums text-stone-900">
+                  {formatCurrency(inv.total)}
+                </span>
+              </div>
+
+              {locationNames.length > 0 && (
+                <div className="mt-3 space-y-1.5 border-t border-[#f1f3f6] pt-2.5">
+                  {locationNames.map(name => (
+                    <div key={name} className="flex items-center gap-2 text-[15px]">
+                      <span className="min-w-0 flex-1 truncate text-[#6b7480]">· {name}</span>
+                      {/* No per-location price: the rate is a monthly one and
+                          splitting it invites an argument about a number the
+                          business never quoted. */}
+                      <span className="flex-none text-[#c2c7cd]">—</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -868,23 +927,23 @@ function DetailPanel({ inv, month, onCompose }: {
                   {payout.state === "locked" ? <Lock size={14} /> : <Check size={14} strokeWidth={2.6} />}
                 </span>
                 <span
-                  className="flex-none text-[12px] font-bold"
+                  className="flex-none text-[15px] font-bold"
                   style={{ color: payout.state === "locked" ? "#475569" : "#15803d" }}
                 >
                   {payout.title}
                 </span>
-                <span className="min-w-0 truncate text-[11.5px] text-[#9aa3af]">· {payout.sub}</span>
+                <span className="min-w-0 truncate text-[12.5px] text-[#9aa3af]">· {payout.sub}</span>
                 {payout.actionable ? (
                   <a
                     href="/payables"
-                    className="ml-auto flex-none rounded-lg px-3 py-1.5 text-[12px] font-bold text-white"
+                    className="ml-auto flex-none rounded-lg px-3 py-1.5 text-[15px] font-bold text-white"
                     style={{ background: "#16a34a" }}
                     title="Open Cleaners to settle this · paying happens there, not here"
                   >
                     Pay {formatCurrency(payout.amount)}
                   </a>
                 ) : payout.state === "paid" ? (
-                  <span className="ml-auto flex-none text-[11.5px] font-bold text-[#16a34a]">✓ Paid</span>
+                  <span className="ml-auto flex-none text-[12.5px] font-bold text-[#16a34a]">✓ Paid</span>
                 ) : null}
               </div>
             )}
@@ -892,12 +951,12 @@ function DetailPanel({ inv, month, onCompose }: {
             {/* When it was sent, when it is due, and the terms it went out on. */}
             <div className="flex items-center justify-between gap-3 pt-1">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="text-[13.5px] font-bold text-[#374151]">{sentWhenLabel}</span>
+                <span className="text-[15.5px] font-bold text-[#374151]">{sentWhenLabel}</span>
                 <span className="text-[#d2d8de]">·</span>
-                <span className="truncate text-[12.5px] text-stone-500">Due {dueDate}</span>
+                <span className="truncate text-[15px] text-stone-500">Due {dueDate}</span>
               </div>
               {termsLabel && (
-                <span className="flex flex-none items-center gap-1.5 text-[11.5px] font-bold text-[#aab2bd]">
+                <span className="flex flex-none items-center gap-1.5 text-[12.5px] font-bold text-[#aab2bd]">
                   <Lock size={12} /> {termsLabel}
                 </span>
               )}
@@ -929,9 +988,9 @@ function DetailPanel({ inv, month, onCompose }: {
       {/* Primary action. Pinned rather than in the scroller: this is the one
           thing the reviewer is here to do, and it used to sit below the fold. */}
       {!tracked && (
-        <div className="flex-none border-t border-stone-200 bg-white px-7 py-3">
+        <div className="flex-none border-t border-stone-200 bg-white px-8 py-4">
           {blockedReason && (
-            <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-amber-800">
+            <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12.5px] font-semibold text-amber-800">
               {blockedReason}
             </div>
           )}
@@ -961,7 +1020,7 @@ function DetailPanel({ inv, month, onCompose }: {
                   </svg>
                 )}
               </span>
-              <span className="text-[12.5px] font-semibold text-[#5b6470]">
+              <span className="text-[15px] font-semibold text-[#5b6470]">
                 {confirmationText(adjustments)}
               </span>
             </button>
@@ -969,18 +1028,18 @@ function DetailPanel({ inv, month, onCompose }: {
           {/* Payment terms sit with the send action, because they decide the
               due date the client is about to be given. */}
           <div className="mb-2.5 flex items-center gap-3">
-            <span className="flex-none text-[13px] font-bold text-[#111827]">Payment terms</span>
-            <span className="min-w-0 flex-1 truncate text-[12.5px] text-[#9aa3af]">Due {dueDate}</span>
+            <span className="flex-none text-[15px] font-bold text-[#111827]">Payment terms</span>
+            <span className="min-w-0 flex-1 truncate text-[15px] text-[#9aa3af]">Due {dueDate}</span>
             <div className="flex flex-none gap-0.5 rounded-[9px] bg-[#f1f3f5] p-0.5">
               {TERMS.map(t => {
-                const active = (client?.paymentTerms ?? null) === t
+                const active = activeTerm === t
                 return (
                   <button
                     key={t}
                     type="button"
                     onClick={() => setTerms(t)}
                     disabled={savingTerms}
-                    className="rounded-[6px] px-2.5 py-1.5 text-[12px] transition-colors disabled:opacity-60"
+                    className="rounded-[6px] px-2.5 py-1.5 text-[15px] transition-colors disabled:opacity-60"
                     style={
                       active
                         ? { background: "#fff", color: "#111827", fontWeight: 700, boxShadow: "0 1px 2px rgba(16,24,40,.08)" }
@@ -991,6 +1050,19 @@ function DetailPanel({ inv, month, onCompose }: {
                   </button>
                 )
               })}
+              {/* Only when the invoice's due date fits none of the three. It
+                  is not selectable · it reports the date the invoice already
+                  carries, rather than leaving all three chips dark as though
+                  nothing had been set. */}
+              {activeTerm === CUSTOM_TERM && (
+                <span
+                  title="This invoice's due date does not match Net 7, 15 or 30. Pick one to change it."
+                  className="cursor-default rounded-[6px] px-2.5 py-1.5 text-[15px]"
+                  style={{ background: "#fff", color: "#111827", fontWeight: 700, boxShadow: "0 1px 2px rgba(16,24,40,.08)" }}
+                >
+                  Custom
+                </span>
+              )}
             </div>
           </div>
 
@@ -999,11 +1071,11 @@ function DetailPanel({ inv, month, onCompose }: {
               onClick={() => onCompose("send")}
               disabled={!!blockedReason}
               title={blockedReason || undefined}
-              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold transition-opacity hover:opacity-95"
+              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[15px] font-bold transition-opacity hover:opacity-95"
               style={
                 blockedReason
                   ? { background: "#cfd9d3", color: "#7c8a82", cursor: "not-allowed" }
-                  : { background: "#0f5a36", color: "#fff", boxShadow: "0 2px 6px rgba(15,90,54,.26)" }
+                  : { background: "#2F7A5E", color: "#fff", boxShadow: "0 2px 6px rgba(47,122,94,.26)" }
               }
             >
               <Send size={15} />
@@ -1015,23 +1087,26 @@ function DetailPanel({ inv, month, onCompose }: {
               type="button"
               onClick={() => setPreviewOpen(true)}
               title="See the email and the invoice exactly as the client gets them"
-              className="inline-flex flex-none items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2.5 text-[13px] font-semibold text-stone-600 transition-colors hover:bg-stone-50"
+              className="inline-flex flex-none items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2.5 text-[15px] font-semibold text-stone-600 transition-colors hover:bg-stone-50"
             >
               <Eye size={15} /> Preview full invoice
             </button>
           </div>
 
-          <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-stone-400">
+          {/* One line, per the design. Saving a draft stays available as a
+              link rather than a second status row · it is an action, and it
+              read as another thing the app was telling you. */}
+          <div className="mt-2 flex items-center justify-center gap-1.5 text-[12.5px] text-stone-400">
             <Lock size={11} /> Invoice will be emailed as a PDF attachment
+            <span className="text-stone-300">·</span>
+            <button
+              onClick={saveDraft}
+              disabled={savingDraft}
+              className="font-semibold underline-offset-2 transition-colors hover:text-stone-700 hover:underline disabled:opacity-50"
+            >
+              {savingDraft ? "Saving…" : "Save as draft"}
+            </button>
           </div>
-
-          <button
-            onClick={saveDraft}
-            disabled={savingDraft}
-            className="mt-1.5 w-full text-[11.5px] font-semibold text-stone-400 transition-colors hover:text-stone-700 disabled:opacity-50"
-          >
-            {savingDraft ? "Saving…" : "Save as draft · nothing is emailed"}
-          </button>
         </div>
       )}
 
@@ -1128,15 +1203,36 @@ function InvoicePreview({ inv, month, bare = false }: {
   }
 
   const [y, m] = month.split("-").map(Number)
-  const issued = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-  const dueDate = new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-  const invNumber = inv.existingInvoiceNumber || "Draft"
-  const loc = (client?.locations || [])[0] as { address?: string; name?: string } | undefined
-  const address = loc?.address || loc?.name || ""
-  const lineItems = Array.isArray(inv.lineItems) ? inv.lineItems : []
-  const items = lineItems.length > 0
-    ? lineItems
-    : [{ description: `Cleaning services · ${formatMonthLabel(month)}`, quantity: 1, price: inv.total, sourceType: "FLAT_RATE", locationName: undefined }]
+  // Memoised: a fresh `[]` on every render would re-run the document build
+  // below each time, since it is one of its dependencies.
+  const clientLocations = useMemo(
+    () => (client?.locations || []) as Array<{ name?: string; address?: string }>,
+    [client?.locations],
+  )
+  const address = clientLocations[0]?.address || clientLocations[0]?.name || ""
+
+  // The same model the PDF renders. This pane is titled "What your client
+  // receives", which is only true while the two say the same thing.
+  const doc = useMemo(() => buildInvoiceDocument({
+    businessName: "The Clean Freaks",
+    businessPhone: "(323) 746-0324",
+    clientName: inv.clientName,
+    clientAddress: address,
+    invoiceNumber: inv.existingInvoiceNumber ?? null,
+    issuedDate: new Date(y, m - 1, 1),
+    dueDate: new Date(y, m - 1, 10),
+    billingType: inv.billingType,
+    lineItems: (Array.isArray(inv.lineItems) ? inv.lineItems : []).map((li, i) => ({
+      id: String(i),
+      description: li.description,
+      amount: li.price * li.quantity,
+      jobId: li.sourceType === "JOB" ? String(i) : null,
+      addOnServiceId: li.sourceType === "ADD_ON" || li.sourceType === "RECURRING_ADD_ON" ? String(i) : null,
+    })),
+    total: inv.total,
+    monthLabel: formatMonthLabel(month),
+    locations: clientLocations.map(l => ({ name: l.name ?? "", address: l.address ?? null })),
+  }), [inv, address, clientLocations, month, y, m])
 
   return (
     // Scroll (both axes) rather than crush the invoice: the card keeps a minimum
@@ -1158,56 +1254,82 @@ function InvoicePreview({ inv, month, bare = false }: {
         <div className={bare
           ? "overflow-hidden rounded-[14px] border border-[#e7ebef] bg-white p-8 shadow-[0_1px_2px_rgba(16,24,40,.05)]"
           : "rounded-md bg-white p-10 shadow-lg"}>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md text-[13px] font-bold text-white" style={{ background: "#0D9488" }}>C</div>
-              <span className="text-[17px] font-bold tracking-tight text-stone-900">Clean Freaks</span>
-            </div>
-            <div className="mt-2 text-[10.5px] leading-relaxed text-stone-400">Commercial cleaning · Los Angeles<br />admin@thecleanfreaks.co</div>
+        {/* Header · wordmark left, the word INVOICE large and light on the
+            right. No logo mark, no strapline, no status: the client is not
+            sent a draft, so nothing here says one. */}
+        <div className="flex items-start justify-between gap-6">
+          <span className="text-[15px] font-extrabold uppercase tracking-[0.06em] text-stone-900">
+            {doc.wordmark}
+          </span>
+          <span className="text-[26px] font-semibold uppercase leading-none tracking-[0.14em] text-stone-300">
+            {doc.title}
+          </span>
+        </div>
+
+        {/* Bill to on the left, the invoice's own facts stacked on the right. */}
+        <div className="mt-7 flex items-start justify-between gap-8">
+          <div className="min-w-0">
+            <div className="text-[9.5px] font-semibold tracking-[0.08em] text-stone-400">BILL TO</div>
+            <div className="mt-1 text-[13px] font-bold text-stone-900">{doc.billTo.name}</div>
+            {doc.billTo.address && (
+              <div className="mt-0.5 text-[11px] leading-relaxed text-stone-500">{doc.billTo.address}</div>
+            )}
           </div>
-          <div className="text-right">
-            <div className="text-[13px] font-semibold text-stone-700">Invoice</div>
-            <div className="mt-1.5 text-[10.5px] leading-relaxed tabular-nums text-stone-400">{invNumber}<br />Issued {issued} · Due {dueDate}</div>
+          <div className="flex-none space-y-2 text-right">
+            {doc.meta.map(pair => (
+              <div key={pair.label}>
+                <div className="text-[9px] font-semibold tracking-[0.08em] text-stone-400">{pair.label}</div>
+                <div className="text-[11.5px] font-bold tabular-nums text-stone-900">{pair.value}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="mt-7">
-          <div className="text-[10px] font-semibold tracking-wide text-stone-400">BILL TO</div>
-          <div className="mt-1 text-[13px] font-semibold text-stone-900">{inv.clientName}</div>
-          {address && <div className="mt-0.5 text-[11px] text-stone-500">{address}</div>}
+        {/* The amount due, before the detail rather than after it. */}
+        <div className="mt-7 border-t border-black/10 pt-4 text-right">
+          <div className="text-[9.5px] font-semibold tracking-[0.08em] text-stone-400">{doc.totalDueLabel}</div>
+          <div className="mt-0.5 text-[27px] font-bold leading-none tabular-nums text-stone-900">{doc.totalDue}</div>
         </div>
 
         <div className="mt-6">
-          <div className="flex justify-between border-b border-black/10 pb-2 text-[10px] font-semibold tracking-wide text-stone-400">
-            <span>DESCRIPTION</span><span>AMOUNT</span>
+          <div className="flex items-end gap-3 border-b border-black/10 pb-2 text-[9.5px] font-semibold tracking-[0.08em] text-stone-400">
+            <span className="min-w-0 flex-1">{doc.columns.description}</span>
+            <span className="w-[46px] flex-none text-right">{doc.columns.quantity}</span>
+            <span className="w-[74px] flex-none text-right">{doc.columns.rate}</span>
+            <span className="w-[86px] flex-none text-right">{doc.columns.amount}</span>
           </div>
-          {items.map((li, i) => {
-            const amt = li.quantity * li.price
-            return (
-              <div key={i} className="flex justify-between gap-3 border-b border-black/5 py-2.5">
-                <div className="min-w-0">
-                  <div className="text-[12.5px] text-stone-800">{li.description}</div>
-                  {li.locationName && <div className="mt-0.5 text-[11px] text-stone-400">{li.locationName}</div>}
-                </div>
-                <div className="flex-shrink-0 text-[12.5px] tabular-nums" style={{ color: amt < 0 ? "#047857" : "#1C1917" }}>{formatCurrency(amt)}</div>
-              </div>
-            )
-          })}
+          {doc.rows.map((row, i) => (
+            <div key={i} className="flex items-start gap-3 border-b border-black/5 py-2.5 text-[12px]">
+              <span className="min-w-0 flex-1 text-stone-800">{row.description}</span>
+              <span className="w-[46px] flex-none text-right tabular-nums text-stone-600">{row.quantity ?? ""}</span>
+              <span className="w-[74px] flex-none text-right tabular-nums text-stone-600">{row.rate ?? ""}</span>
+              <span
+                className="w-[86px] flex-none text-right tabular-nums"
+                style={{ color: row.negative ? "#047857" : "#1C1917" }}
+              >
+                {row.amount ?? ""}
+              </span>
+            </div>
+          ))}
         </div>
 
-        <div className="mt-5 flex items-baseline justify-between">
-          <span className="text-[13px] font-semibold text-stone-700">Total due</span>
-          <span className="text-[20px] font-bold tabular-nums text-stone-900">{formatCurrency(inv.total)}</span>
+        <div className="mt-3 flex items-baseline justify-between border-b border-black/10 pb-3">
+          <span className="text-[13px] font-bold text-stone-900">{doc.totalLabel}</span>
+          <span className="text-[15px] font-bold tabular-nums text-stone-900">{doc.total}</span>
         </div>
 
         {/* Payment instructions, as plain text and only for this client's own
             method. A portal client prints nothing here. */}
         {paymentBlock.instructions && (
-          <div className="mt-5 border-t border-stone-200 pt-3 text-[10.5px] leading-relaxed text-stone-500">
+          <div className="mt-5 text-[10.5px] leading-relaxed text-stone-500">
             {paymentBlock.instructions}
           </div>
         )}
+
+        <div className="mt-5 flex items-center justify-between border-t border-black/10 pt-3 text-[10.5px] text-stone-400">
+          <span>{doc.footer.left}</span>
+          {doc.footer.right && <span className="tabular-nums">{doc.footer.right}</span>}
+        </div>
 
         </div>
       </div>
