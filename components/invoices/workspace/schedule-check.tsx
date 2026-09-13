@@ -205,7 +205,7 @@ export function ScheduleCheck({
           </span>
           <button
             type="button"
-            onClick={() => router.push(`/calendar?clientId=${clientId}`)}
+            onClick={() => router.push(`/calendar?clientId=${clientId}&view=month&month=${month}`)}
             title={`Something wrong? Fix the schedule on the calendar · this invoice recomputes from it`}
             className="whitespace-nowrap text-[12.5px] font-bold text-[#15793f] transition-opacity hover:opacity-80"
           >

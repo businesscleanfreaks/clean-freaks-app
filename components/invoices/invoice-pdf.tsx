@@ -6,7 +6,7 @@ import { existsSync } from 'fs'
 import { logger } from '@/lib/logger'
 import { buildInvoiceDocument } from '@/lib/invoice-document'
 import { buildPaymentBlock, printsNoPaymentSection } from '@/lib/invoice-payment-block'
-import type { InvoiceFooterTemplates } from '@/lib/billing-sections'
+import { DEFAULT_CLIENT_PAY_METHOD, type InvoiceFooterTemplates } from '@/lib/billing-sections'
 
 // Colors matching the provided Clean Freaks invoice template
 const COLORS = {
@@ -415,7 +415,7 @@ export function InvoicePDF({ invoice, logoSettings, business, footerNote, payMet
     // No client has a pay method recorded yet, so this keeps the business's
     // usual method printing until they are set. A client's own method always
     // wins, so setting one to the portal takes effect immediately.
-    fallbackMethod: 'ZELLE',
+    fallbackMethod: DEFAULT_CLIENT_PAY_METHOD,
     paymentEmail: bizPaymentEmail,
     legalName: bizLegal,
     dba: bizDba,

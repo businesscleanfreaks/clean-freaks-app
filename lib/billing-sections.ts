@@ -82,6 +82,18 @@ export const DEFAULT_FOOTER_TEMPLATES: InvoiceFooterTemplates = {
   CHECK: "Mail checks to The Clean Freaks · 1240 Abbot Kinney Blvd, Venice, CA 90291. Thank you!",
 }
 
+/**
+ * How clients pay when none is recorded against them.
+ *
+ * Confirmed by Josh, 2026-09-12: Zelle. Named here rather than repeated as a
+ * literal in the PDF and the preview, because it decides what a client is told
+ * to do with their money and the two must never disagree about it.
+ *
+ * A client's own method always wins, and an explicit "TBD" blocks this
+ * entirely rather than taking the default · see `lib/invoice-payment-block.ts`.
+ */
+export const DEFAULT_CLIENT_PAY_METHOD: FooterMethod = "ZELLE"
+
 export function normalizeFooterTemplates(raw: unknown): InvoiceFooterTemplates {
   const source = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>
   const out = {} as InvoiceFooterTemplates

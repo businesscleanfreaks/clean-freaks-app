@@ -75,6 +75,22 @@ export function stepQueue<T extends QueueItem>(
  * them actually requires — a flat rate is a quick check, a per-clean invoice
  * means checking the schedule.
  */
+export const QUEUE_GROUP_PHRASES = {
+  FLAT_RATE: "Flat rate · quick check",
+  PER_CLEAN: "Per-clean · check the schedule",
+} as const
+
 export function queueGroupPhrase(billingType: string | null | undefined): string {
-  return billingType === "FLAT_RATE" ? "Flat rate · quick check" : "Per-clean · check the schedule"
+  return billingType === "FLAT_RATE" ? QUEUE_GROUP_PHRASES.FLAT_RATE : QUEUE_GROUP_PHRASES.PER_CLEAN
+}
+
+/**
+ * The longest phrase, used to reserve a fixed slot for it in the review pill.
+ *
+ * The two phrases are different lengths, so the pill grew and shrank as you
+ * stepped the queue and the arrows moved under the cursor. Derived rather than
+ * hardcoded so adding a third phrase cannot silently reintroduce the jump.
+ */
+export function longestQueueGroupPhrase(): string {
+  return Object.values(QUEUE_GROUP_PHRASES).reduce((a, b) => (b.length > a.length ? b : a))
 }

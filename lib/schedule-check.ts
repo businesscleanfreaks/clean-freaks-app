@@ -187,9 +187,13 @@ export function countCleans(month: string, cleans: CountableClean[]): CleanCount
  *
  * Every day the month holds except the cancelled ones. Not the same question
  * as "how many are done", which is what the schedule card's "9 cleans done"
- * answers: an invoice sent at the start of the month bills visits that have
- * not happened yet, and counting only completed ones would value a clean at
- * nothing and offer a $0 credit for a missed visit.
+ * answers.
+ *
+ * CONFIRMED BY JOSH, 2026-09-12: the business invoices AHEAD. September's
+ * invoice goes out in the last week of September, so some of the cleans being
+ * paid for have not happened yet and that is intended. Do not "fix" this to
+ * count only completed cleans · it would undercharge every invoice and value a
+ * clean at nothing, so a credit for a missed visit would come out at $0.
  *
  * Falls back to the candidate's own figures only while the live cleans are
  * still loading, so the number never flashes zero.

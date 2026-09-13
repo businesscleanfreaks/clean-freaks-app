@@ -10,7 +10,7 @@ import { showSuccess, showError } from "@/lib/toast"
 import { ScheduleCheck, type ScheduleCheckClean } from "./schedule-check"
 import { NewInvoicePanel } from "../new-invoice-panel"
 import { billableCleanCount, countCleans } from "@/lib/schedule-check"
-import { resolveInvoiceFooter, type InvoiceFooterTemplates } from "@/lib/billing-sections"
+import { DEFAULT_CLIENT_PAY_METHOD, type InvoiceFooterTemplates } from "@/lib/billing-sections"
 import { buildPaymentBlock } from "@/lib/invoice-payment-block"
 import { buildInvoiceDocument } from "@/lib/invoice-document"
 import { TemplatesModal } from "./templates-modal"
@@ -30,6 +30,7 @@ import { type Adjustment } from "@/lib/invoice-adjustments"
 import { confirmBlockedReason, confirmationText, needsConfirmation } from "@/lib/invoice-confirmation"
 import { buildPayoutSummary, shouldShowPayout } from "@/lib/invoice-payout"
 import { TERMS, TERM_LABELS } from "@/lib/billing-schedule"
+import { longestQueueGroupPhrase } from "@/lib/review-queue"
 import { CUSTOM_TERM, resolveDueDate, selectedTerm } from "@/lib/payment-terms"
 import type { ComposeMode } from "@/lib/invoice-compose"
 import Link from "next/link"
@@ -372,8 +373,12 @@ export function InvoicingWorkspace({
             {ws.queueGroup && (
               <>
                 <span className="flex-none text-[#d2d8de]">·</span>
-                <span className="flex-none whitespace-nowrap text-[12px] font-semibold text-[#15793f]">
-                  {ws.queueGroup}
+                {/* A fixed slot the width of the longest phrase. Without it the
+                    pill resized as you stepped between a flat-rate and a
+                    per-clean invoice, and the arrows moved under the cursor. */}
+                <span className="relative flex-none whitespace-nowrap text-[12px] font-semibold text-[#15793f]">
+                  <span className="invisible" aria-hidden="true">{longestQueueGroupPhrase()}</span>
+                  <span className="absolute inset-y-0 left-0">{ws.queueGroup}</span>
                 </span>
               </>
             )}
@@ -1175,7 +1180,7 @@ function InvoicePreview({ inv, month, bare = false }: {
       // No client has a pay method recorded yet, so this keeps the business's
       // usual method printing until Josh sets them. A client's own method
       // always wins, so setting one to the portal takes effect immediately.
-      fallbackMethod: "ZELLE",
+      fallbackMethod: DEFAULT_CLIENT_PAY_METHOD,
       paymentEmail: "admin@thecleanfreaks.co",
       legalName: "Shiloh Pro Cleaning Services",
       templates: sections?.invoiceFooterTemplates ?? null,

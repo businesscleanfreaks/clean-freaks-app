@@ -941,6 +941,23 @@ export function CalendarView({ jobs: initialJobs, clients, subcontractors }: Cal
   useEffect(() => {
     const clientId = searchParams?.get('clientId')
     if (clientId) setSelectedClientId(clientId)
+
+    // The review screen asks for the month, because the question being checked
+    // there is "did this month run as scheduled" · a week view answers a
+    // different question and makes you navigate to get to the one asked.
+    const view = searchParams?.get('view')
+    if (view && (['day', 'week', 'month', 'list'] as const).includes(view as ViewMode)) {
+      setViewMode(view as ViewMode)
+    }
+    if (view === 'month') setMobileView('month')
+
+    // And the month itself: reviewing August in September must not land the
+    // calendar on September.
+    const month = searchParams?.get('month')
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [y, m] = month.split('-').map(Number)
+      setCurrentDate(new Date(y, m - 1, 1))
+    }
   }, [searchParams])
 
   // Handle jobId from URL query parameter

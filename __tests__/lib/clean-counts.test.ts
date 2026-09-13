@@ -58,9 +58,9 @@ describe("billableCleanCount", () => {
   })
 
   it("bills visits that have not happened yet", () => {
-    // An invoice sent at the start of the month bills the whole month. Counting
-    // only completed visits values a clean at $0, so crediting a missed one
-    // would offer nothing.
+    // Josh, 2026-09-12: the business invoices ahead · September's invoice goes
+    // out in the last week of September, before every clean has happened.
+    // Counting only completed visits would undercharge every invoice.
     const upcoming = countCleans("2026-08", [
       clean(3, { status: "SCHEDULED" }), clean(6, { status: "SCHEDULED" }),
     ])
