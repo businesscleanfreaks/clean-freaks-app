@@ -109,9 +109,9 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
   return (
     <div>
       <div style={{ background: "#f4f6f8", border: "1px solid #e9edf1", borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ padding: "12px 15px 13px" }}>
-          <div className="mb-2 flex items-baseline justify-between gap-2.5">
-            <div className="text-[15px] font-bold text-[#5b6470]">
+        <div style={{ padding: "9px 13px 10px" }}>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2.5">
+            <div className="text-[12.5px] font-bold text-[#5b6470]">
               Client Payment Instructions{" "}
               <span className="font-medium text-[#9aa3af]">· printed at the bottom of the invoice</span>
             </div>
@@ -129,7 +129,7 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
           {editing === null ? (
             <div
               className="flex items-start gap-2.5"
-              style={{ background: "#fff", border: "1px solid #eef0f3", borderRadius: 10, padding: "10px 12px" }}
+              style={{ background: "#fff", border: "1px solid #eef0f3", borderRadius: 10, padding: "8px 11px" }}
             >
               <span
                 className="mt-px flex-none rounded-[5px] px-2 py-[3px] text-[12px] font-extrabold uppercase tracking-[0.04em]"
@@ -181,9 +181,9 @@ export function InvoiceFooterAndNote({ clientId, invoiceId, initialNote }: {
         <button
           type="button"
           onClick={() => setNoteOpen(true)}
-          className="mt-2.5 flex items-center gap-[7px] px-0.5 pt-0.5"
+          className="mt-2 flex items-center gap-[7px] px-0.5"
         >
-          <span className="text-[15px] font-bold text-[#5b6470]">+ Add a note</span>
+          <span className="text-[12.5px] font-bold text-[#5b6470]">+ Add a note</span>
           <span className="text-[12.5px] text-[#9aa3af]">optional · shows on the invoice</span>
         </button>
       ) : (

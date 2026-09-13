@@ -823,7 +823,7 @@ function DetailPanel({ inv, month, onCompose }: {
       </div>
 
       {/* Scrollable detail (Ticket 2): schedule · changes · headline · calendar */}
-      <ScrollWithMoreBelow className="h-full space-y-4 overflow-y-auto px-8 py-5" resetKey={inv.candidateId}>
+      <ScrollWithMoreBelow className="h-full space-y-3 overflow-y-auto px-8 py-4" resetKey={inv.candidateId}>
         {/* Changes this month — shown only when there are changes */}
         {flaggedRows.length > 0 && (
           <div>
