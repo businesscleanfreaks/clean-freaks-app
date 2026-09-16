@@ -4,12 +4,16 @@ import { useState } from "react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { Download, Shield, Lock, CheckCircle, ChevronDown, ChevronUp, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { InvoiceWithRelations } from "@/types"
+import type { PublicInvoice } from "@/lib/public-invoice"
 import { InvoicePaymentSection } from "./invoice-payment-section"
 import { groupInvoiceLineItems } from "@/lib/invoice-grouping"
 
 interface PublicInvoiceViewProps {
-  invoice: InvoiceWithRelations
+  /**
+   * The narrow public shape, not the full record. Widening this type is how
+   * internal fields would start reaching clients again.
+   */
+  invoice: PublicInvoice
   token: string
 }
 

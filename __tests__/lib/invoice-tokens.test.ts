@@ -49,4 +49,39 @@ describe('invoice tokens', () => {
     expect(decodeInvoiceToken(malformed)).toBeNull()
     expect(decodeInvoiceToken(future)).toBeNull()
   })
+
+  /**
+   * How long a client's invoice link stays usable.
+   *
+   * Untested until now, and it is the only limit on a link's life: there is no
+   * revocation, nothing is stored, and the sole kill switch is rotating
+   * INVOICE_TOKEN_SECRET, which breaks every client's link at once. A silent
+   * change here either makes links permanent or kills them early, and nobody
+   * would notice until a client complained.
+   */
+  describe('the one-year lifetime', () => {
+    const DAY = 86_400_000
+    const at = (ageMs: number) =>
+      decodeInvoiceToken(legacyToken('inv_123', Date.now() - ageMs, 'invoice-token-test-secret'))
+
+    it('accepts a link for a year', () => {
+      expect(at(0)).toBe('inv_123')
+      expect(at(180 * DAY)).toBe('inv_123')
+      expect(at(364 * DAY)).toBe('inv_123')
+    })
+
+    it('stops accepting it after a year', () => {
+      expect(at(366 * DAY)).toBeNull()
+      expect(at(730 * DAY)).toBeNull()
+    })
+
+    it('rejects a link whose invoice id was swapped for another', () => {
+      // The signature covers the id, so a valid link for one invoice cannot be
+      // pointed at a different one.
+      const token = generateInvoiceToken('inv_123')
+      const [, issuedAt, hash] = Buffer.from(token, 'base64url').toString('utf-8').split(':')
+      const swapped = Buffer.from(`inv_other:${issuedAt}:${hash}`).toString('base64url')
+      expect(decodeInvoiceToken(swapped)).toBeNull()
+    })
+  })
 })

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { isPublicInvoicePdfRequest } from '@/lib/public-routes'
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7 // 7 days in seconds
 
@@ -109,6 +110,20 @@ export async function middleware(request: NextRequest) {
 
   // Allow public invoice viewing
   if (pathname.startsWith('/view-invoice/')) {
+    return NextResponse.next()
+  }
+
+  // ...and the download button on that page, which points at the PDF API.
+  // Without this a client clicking "Download PDF" on their own invoice was
+  // redirected to our staff login. The route re-verifies the token itself and
+  // that it names this invoice; this only lets the request reach it.
+  if (
+    isPublicInvoicePdfRequest({
+      method: request.method,
+      pathname,
+      hasToken: !!request.nextUrl.searchParams.get('token'),
+    })
+  ) {
     return NextResponse.next()
   }
 

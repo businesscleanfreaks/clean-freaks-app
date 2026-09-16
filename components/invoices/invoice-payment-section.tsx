@@ -1,10 +1,11 @@
 "use client"
 
 import { CheckCircle, Clock } from "lucide-react"
-import { InvoiceWithRelations } from "@/types"
+
 
 interface InvoicePaymentSectionProps {
-  invoice: InvoiceWithRelations
+  /** Only the status is read. Kept narrow so this stays safe to render publicly. */
+  invoice: { status: string }
   onPaymentSuccess: () => void
   compact?: boolean
 }
