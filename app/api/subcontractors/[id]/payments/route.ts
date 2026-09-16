@@ -7,6 +7,16 @@ import { getBillingStartDate } from '@/lib/billing-settings'
 import { format } from 'date-fns'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
+import { isUniqueViolation } from '@/lib/invoice-number'
+import {
+  buildObligations,
+  coveredJobIds,
+  lineBelongsToObligation,
+  obligationKeysForJobs,
+  obligationLines,
+  obligationsTotal,
+  type PayableJob,
+} from '@/lib/payment-obligations'
 
 export async function POST(
   request: Request,
@@ -142,129 +152,144 @@ export async function POST(
       }
     }
 
-    // Calculate total amount based on billing type
-    // Group jobs by client, schedule, and month to handle FLAT_RATE vs PER_CLEAN
-    const jobsByClientSchedule = new Map<string, typeof jobs>()
-    jobs.forEach(job => {
-      const monthKey = format(new Date(job.date), 'yyyy-MM')
-      const key = `${job.location.client.id}-${job.scheduleId || 'one-off'}-${monthKey}`
-      if (!jobsByClientSchedule.has(key)) {
-        jobsByClientSchedule.set(key, [])
-      }
-      jobsByClientSchedule.get(key)!.push(job)
-    })
+    // What this payment settles. A flat-rate schedule owes one amount for one
+    // month however many cleans happened; per-clean and one-off work owes per
+    // visit. The grouping and the money live in lib/payment-obligations.ts ·
+    // this route only shapes Prisma rows for it and writes the answer down.
+    const payableJobs: PayableJob[] = jobs.map(job => ({
+      id: job.id,
+      date: job.date,
+      scheduleId: job.scheduleId,
+      subcontractorRate: job.subcontractorRate,
+      clientId: job.location.client.id,
+      subcontractorPayType: job.schedule?.subcontractorPayType ?? null,
+      addOnTotal: job.addOnServices
+        .filter(creditsThisCleaner)
+        .reduce((sum, addOn) => sum + addOn.subcontractorRate, 0),
+    }))
 
-    let totalAmount = 0
-    const paymentLineItems: Array<{ jobId: string; amount: number }> = []
-
-    jobsByClientSchedule.forEach((jobsGroup) => {
-      if (jobsGroup.length === 0) return
-      
-      const isRecurring = jobsGroup[0].scheduleId !== null
-      const subPayType = jobsGroup[0].schedule?.subcontractorPayType || 'PER_CLEAN'
-
-      if (subPayType === 'FLAT_RATE' && isRecurring) {
-        // For FLAT_RATE recurring jobs, only count the monthly rate once
-        const firstJob = jobsGroup[0]
-        const monthlyRate = firstJob.subcontractorRate
-        let jobTotal = monthlyRate
-        
-        // Add add-on subcontractor rates from every selected job in this month
-        // (skip add-ons performed by a vendor or a different in-house cleaner).
-        jobsGroup.forEach(job => {
-          job.addOnServices.forEach(addOn => {
-            if (creditsThisCleaner(addOn)) jobTotal += addOn.subcontractorRate
-          })
-        })
-
-        totalAmount += jobTotal
-        // Create one line item for the first job representing the monthly rate + add-ons
-        paymentLineItems.push({
-          jobId: firstJob.id,
-          amount: jobTotal,
-        })
-      } else {
-        // For PER_CLEAN or one-off jobs, sum all rates and create line items for each
-        jobsGroup.forEach(job => {
-          let jobTotal = job.subcontractorRate
-
-          // Add add-on subcontractor rates for this job (skip add-ons performed by
-          // a vendor or a different in-house cleaner).
-          job.addOnServices.forEach(addOn => {
-            if (creditsThisCleaner(addOn)) jobTotal += addOn.subcontractorRate
-          })
-
-          totalAmount += jobTotal
-          paymentLineItems.push({
-            jobId: job.id,
-            amount: jobTotal,
-          })
-        })
-      }
-    })
+    const obligations = buildObligations(payableJobs)
 
     // Add-ons this cleaner performed on someone else's schedule/job: paid via the
     // subcontractorPaid flag (no job line item), folded into the payment total.
     const assignedAddOnTotal = assignedAddOns.reduce((sum, a) => sum + a.subcontractorRate, 0)
-    totalAmount += assignedAddOnTotal
+    const totalAmount = Math.round((obligationsTotal(obligations) + assignedAddOnTotal) * 100) / 100
 
-    // Use transaction to ensure payment and job updates happen atomically
-    const payment = await prisma.$transaction(async (tx) => {
-      // Create the payment record with line items
-      const newPayment = await tx.subcontractorPayment.create({
-        data: {
-          subcontractorId: resolvedParams.id,
-          datePaid: datePaid ? new Date(datePaid + 'T12:00:00') : new Date(),
-          totalAmount,
-          notes: notes || null,
-          lineItems: {
-            create: paymentLineItems,
+    // Plain-English names for the 409 below, built while the jobs are in hand.
+    const obligationLabels = new Map(
+      obligations.map(obligation => {
+        const job = jobs.find(j => j.id === obligation.jobIds[0])
+        const client = job?.location.client.name ?? 'this account'
+        const when = job
+          ? format(new Date(job.date), obligation.kind === 'SCHEDULE_MONTH' ? 'MMMM yyyy' : 'MMM d, yyyy')
+          : obligation.period
+        return [obligation.key, `${client} · ${when}`]
+      })
+    )
+
+    try {
+      // Use transaction to ensure payment and job updates happen atomically
+      const payment = await prisma.$transaction(async (tx) => {
+        // Create the payment record with line items · one per covered clean, so
+        // the payment lists the work it paid for. A flat month used to write a
+        // single line item on the first job, which is why the payment history
+        // reported "1 job" for a fifteen-visit month and why undoing through
+        // any other clean found nothing to undo.
+        const newPayment = await tx.subcontractorPayment.create({
+          data: {
+            subcontractorId: resolvedParams.id,
+            datePaid: datePaid ? new Date(datePaid + 'T12:00:00') : new Date(),
+            totalAmount,
+            notes: notes || null,
+            lineItems: {
+              create: obligationLines(obligations),
+            },
           },
-        },
-        include: {
-          lineItems: {
-            include: {
-              job: {
-                include: {
-                  location: {
-                    include: {
-                      client: true,
+          include: {
+            lineItems: {
+              include: {
+                job: {
+                  include: {
+                    location: {
+                      include: {
+                        client: true,
+                      },
                     },
                   },
                 },
               },
             },
           },
-        },
+        })
+
+        // Claim each obligation. obligationKey is UNIQUE in the database, so a
+        // second payment for the same schedule-month or the same clean fails
+        // here rather than being written · including when two requests arrive
+        // at once, which the "unpaid jobs only" read above cannot catch by
+        // itself because both requests read the jobs before either writes.
+        if (obligations.length > 0) {
+          await tx.subcontractorPaymentCoverage.createMany({
+            data: obligations.map(obligation => ({
+              paymentId: newPayment.id,
+              obligationKey: obligation.key,
+              kind: obligation.kind,
+              amount: obligation.amount,
+              period: obligation.period,
+              scheduleId: obligation.scheduleId,
+            })),
+          })
+        }
+
+        // Mark every covered job paid · all the cleans of a flat month, not
+        // only the one carrying the rate.
+        const jobIdsToMark = coveredJobIds(obligations)
+        if (jobIdsToMark.length > 0) {
+          await tx.job.updateMany({
+            where: {
+              id: { in: jobIdsToMark },
+            },
+            data: {
+              subcontractorPaid: true,
+            },
+          })
+        }
+
+        // Mark this cleaner's performed add-ons paid
+        if (assignedAddOns.length > 0) {
+          await tx.addOnService.updateMany({
+            where: { id: { in: assignedAddOns.map(a => a.id) } },
+            data: { subcontractorPaid: true },
+          })
+        }
+
+        return newPayment
       })
 
-      // Mark all jobs as paid
-      if (jobs.length > 0) {
-        await tx.job.updateMany({
-          where: {
-            id: { in: jobs.map(job => job.id) },
-          },
-          data: {
-            subcontractorPaid: true,
-          },
-        })
-      }
+      // Revalidate all subcontractor-related pages
+      revalidateSubcontractorPages(resolvedParams.id)
 
-      // Mark this cleaner's performed add-ons paid
-      if (assignedAddOns.length > 0) {
-        await tx.addOnService.updateMany({
-          where: { id: { in: assignedAddOns.map(a => a.id) } },
-          data: { subcontractorPaid: true },
-        })
-      }
+      return NextResponse.json(payment, { status: 201 })
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error
 
-      return newPayment
-    })
-
-    // Revalidate all subcontractor-related pages
-    revalidateSubcontractorPages(resolvedParams.id)
-
-    return NextResponse.json(payment, { status: 201 })
+      // Something in this selection is already settled. Name it, because the
+      // operator's next move is to undo that payment, not to try again.
+      const claimed = await prisma.subcontractorPaymentCoverage.findMany({
+        where: { obligationKey: { in: obligations.map(o => o.key) } },
+        select: { obligationKey: true },
+      })
+      const already = claimed.map(c => obligationLabels.get(c.obligationKey) ?? c.obligationKey)
+      return NextResponse.json(
+        {
+          code: 'OBLIGATION_ALREADY_PAID',
+          error: already.length > 0
+            ? `Already paid: ${already.join(', ')}. Undo that payment first if it needs to change.`
+            : 'Part of this selection has already been paid. Refresh and try again.',
+          obligationKeys: claimed.map(c => c.obligationKey),
+        },
+        { status: 409 }
+      )
+    }
   } catch (error) {
     logger.error('Error creating payment:', error)
     return handleApiError(error, 'Failed to create payment')
@@ -293,7 +318,14 @@ export async function DELETE(
         id: { in: jobIds },
         subcontractorId: resolvedParams.id,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        date: true,
+        scheduleId: true,
+        subcontractorRate: true,
+        location: { select: { clientId: true } },
+        schedule: { select: { subcontractorPayType: true } },
+      },
     })
 
     if (jobs.length === 0) {
@@ -305,21 +337,96 @@ export async function DELETE(
 
     const validJobIds = jobs.map(job => job.id)
 
+    // Undo reverses OBLIGATIONS, not the cleans the operator happened to tick.
+    // A flat month is one obligation covering every clean in it, paid as one
+    // amount, so unticking any one of them reverses the month. Reversing by
+    // clicked job is what made undo asymmetric: unticking the first clean took
+    // the money back while the other cleans stayed marked paid, and unticking
+    // any other clean marked it unpaid while the payment still claimed to cover
+    // it · a clean that was paid and unpaid at the same time.
+    const obligationKeys = obligationKeysForJobs(
+      jobs.map(job => ({
+        id: job.id,
+        date: job.date,
+        scheduleId: job.scheduleId,
+        subcontractorRate: job.subcontractorRate,
+        clientId: job.location.clientId,
+        subcontractorPayType: job.schedule?.subcontractorPayType ?? null,
+        addOnTotal: 0,
+      }))
+    )
+
     const result = await prisma.$transaction(async (tx) => {
-      const lineItems = await tx.subcontractorPaymentLineItem.findMany({
-        where: { jobId: { in: validJobIds } },
+      const coverage = await tx.subcontractorPaymentCoverage.findMany({
+        where: {
+          obligationKey: { in: obligationKeys },
+          payment: { subcontractorId: resolvedParams.id },
+        },
         select: {
           id: true,
-          jobId: true,
+          obligationKey: true,
+          kind: true,
+          period: true,
+          scheduleId: true,
           paymentId: true,
         },
       })
 
-      const affectedPaymentIds = Array.from(new Set(lineItems.map(item => item.paymentId)))
+      const affectedPaymentIds = new Set(coverage.map(row => row.paymentId))
 
-      if (lineItems.length > 0) {
+      // Every line item of the affected payments, with enough of the job to say
+      // which obligation each one belongs to.
+      const items = affectedPaymentIds.size > 0
+        ? await tx.subcontractorPaymentLineItem.findMany({
+            where: { paymentId: { in: Array.from(affectedPaymentIds) } },
+            select: {
+              id: true,
+              jobId: true,
+              paymentId: true,
+              job: { select: { date: true, scheduleId: true } },
+            },
+          })
+        : []
+
+      const lineItemIdsToRemove = new Set<string>()
+      const jobIdsToUnmark = new Set<string>()
+
+      for (const row of coverage) {
+        for (const item of items) {
+          if (item.paymentId !== row.paymentId) continue
+          if (!lineBelongsToObligation(row, item)) continue
+          lineItemIdsToRemove.add(item.id)
+          jobIdsToUnmark.add(item.jobId)
+        }
+        // The clean itself, even if its line item has since gone.
+        if (row.kind === 'JOB') jobIdsToUnmark.add(row.obligationKey.slice('job:'.length))
+      }
+
+      // Payments written before obligations were recorded have no coverage rows.
+      // Reverse those the old way, by line item, so their undo keeps working.
+      const legacyJobIds = validJobIds.filter(id => !jobIdsToUnmark.has(id))
+      if (legacyJobIds.length > 0) {
+        const legacyItems = await tx.subcontractorPaymentLineItem.findMany({
+          where: { jobId: { in: legacyJobIds } },
+          select: { id: true, paymentId: true },
+        })
+        for (const item of legacyItems) {
+          lineItemIdsToRemove.add(item.id)
+          affectedPaymentIds.add(item.paymentId)
+        }
+        for (const id of legacyJobIds) jobIdsToUnmark.add(id)
+      }
+
+      if (coverage.length > 0) {
+        // Releasing the obligation is what lets the month be paid again.
+        await tx.subcontractorPaymentCoverage.deleteMany({
+          where: { id: { in: coverage.map(row => row.id) } },
+        })
+      }
+
+      if (lineItemIdsToRemove.size > 0) {
         await tx.subcontractorPaymentLineItem.deleteMany({
-          where: { id: { in: lineItems.map(item => item.id) } },
+          where: { id: { in: Array.from(lineItemIdsToRemove) } },
         })
       }
 
@@ -330,6 +437,8 @@ export async function DELETE(
         })
 
         if (remaining.length === 0) {
+          // Deleting the payment cascades any coverage it still held, so every
+          // obligation it settled is released together with the money.
           await tx.subcontractorPayment.delete({ where: { id: paymentId } })
         } else {
           const totalAmount = remaining.reduce((sum, item) => sum + item.amount, 0)
@@ -341,14 +450,15 @@ export async function DELETE(
       }
 
       const updatedJobs = await tx.job.updateMany({
-        where: { id: { in: validJobIds } },
+        where: { id: { in: Array.from(jobIdsToUnmark) } },
         data: { subcontractorPaid: false },
       })
 
       return {
         unmarkedCount: updatedJobs.count,
-        removedLineItemCount: lineItems.length,
-        affectedPaymentCount: affectedPaymentIds.length,
+        removedLineItemCount: lineItemIdsToRemove.size,
+        affectedPaymentCount: affectedPaymentIds.size,
+        reversedObligationKeys: coverage.map(row => row.obligationKey),
       }
     })
 

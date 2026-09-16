@@ -69,18 +69,39 @@ export function BatchPayBar({ selection, onDone, onClear, hidden }: {
               datePaid: today(),
               notes: memo.trim() || null,
             }),
-          }).then(r => (r.ok ? p : null)).catch(() => null),
+          })
+            .then(async r =>
+              r.ok
+                ? { ok: true as const, p }
+                : {
+                    ok: false as const,
+                    p,
+                    // The server explains a refusal · "already paid: Bigco
+                    // Offices, September 2026". Dropping it left the operator
+                    // with "could not log those payments" and nothing to act on.
+                    reason: await r
+                      .json()
+                      .then((b: { error?: string }) => b?.error)
+                      .catch(() => undefined),
+                  },
+            )
+            .catch(() => ({ ok: false as const, p, reason: undefined })),
         ),
       )
-      const done = results.filter((p): p is PaySelection => p !== null)
-      const failed = selection.length - done.length
+      const done = results.filter(r => r.ok).map(r => r.p)
+      const refused = results.filter(r => !r.ok)
+      const firstReason = refused.map(r => ('reason' in r ? r.reason : undefined)).find(Boolean)
 
       if (done.length === 0) {
-        showError("Could not log those payments")
+        showError(firstReason ?? "Could not log those payments")
         return
       }
-      if (failed > 0) {
-        showError(`${done.length} of ${selection.length} logged · the rest failed`)
+      if (refused.length > 0) {
+        showError(
+          firstReason
+            ? `${done.length} of ${selection.length} logged · ${firstReason}`
+            : `${done.length} of ${selection.length} logged · the rest failed`,
+        )
       } else {
         showUndoToast(
           `Logged · ${done.length} payment${done.length === 1 ? "" : "s"} · ${formatCurrency(

@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { markInvoicePaid } from '@/lib/mark-invoice-paid'
+import { applyPaymentToInvoice, mayApplyPayment, mismatchNote } from '@/lib/payment-application'
 import { normalizeSenderName } from '@/lib/payment-matching'
 import { paymentMethodFromSnippet, paymentSourceLabelFromSnippet } from '@/lib/payment-email-parse'
 
@@ -24,7 +25,7 @@ export async function POST(
     await requireAuth()
 
     const { id } = await Promise.resolve(params)
-    const { invoiceId } = await request.json()
+    const { invoiceId, confirmMismatch } = await request.json()
     if (!invoiceId) {
       return NextResponse.json({ error: 'invoiceId is required' }, { status: 400 })
     }
@@ -37,9 +38,29 @@ export async function POST(
 
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
-      select: { id: true, clientId: true },
+      // totalAmount included: this route used to mark an invoice PAID without
+      // ever loading it, so a $100 notification settled a $1,000 invoice.
+      select: { id: true, clientId: true, totalAmount: true },
     })
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+
+    // Does this money actually settle that invoice? A mismatch is refused and
+    // explained rather than guessed at · marking it paid also releases any
+    // cleaner whose payout waits on the client paying.
+    const application = applyPaymentToInvoice(match.amount, invoice.totalAmount)
+    if (!mayApplyPayment(application, confirmMismatch === true)) {
+      return NextResponse.json(
+        {
+          error: application.reason,
+          code: 'PAYMENT_AMOUNT_MISMATCH',
+          fit: application.fit,
+          paymentAmount: match.amount,
+          invoiceTotal: invoice.totalAmount,
+          difference: application.difference,
+        },
+        { status: 409 },
+      )
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const sourceLabel = paymentSourceLabelFromSnippet(match.rawSnippet)
@@ -47,7 +68,9 @@ export async function POST(
         method: paymentMethodFromSnippet(match.rawSnippet),
         confirmationNumber: match.confirmationNumber,
         receivedAt: match.receivedAt,
-        notes: `${sourceLabel} payment from ${match.senderName}`,
+        notes: [`${sourceLabel} payment from ${match.senderName}`, mismatchNote(application)]
+          .filter(Boolean)
+          .join(' · '),
       })
       if (paid.status === 'ALREADY_PAID') return { conflict: true as const }
       if (paid.status === 'NOT_FOUND') return { notFound: true as const }

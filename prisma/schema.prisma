@@ -501,11 +501,47 @@ model SubcontractorPayment {
 
   subcontractor Subcontractor                  @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
   lineItems     SubcontractorPaymentLineItem[]
+  coverage      SubcontractorPaymentCoverage[]
 
   @@index([datePaid])
   @@index([subcontractorId])
   @@index([datePaid, subcontractorId])
   @@map("subcontractor_payments")
+}
+
+/// What a cleaner payment actually settles.
+///
+/// Cleaner pay was recorded as a boolean per job plus a line item on one
+/// arbitrary job, and what a payment covered was re-derived by inference. That
+/// let a flat monthly rate be paid twice from two selections, let two
+/// simultaneous requests both succeed, and made undo asymmetric.
+///
+/// One row per obligation settled. `obligationKey` is UNIQUE, so the database
+/// refuses a second payment for the same schedule-month or the same clean ·
+/// which is what makes double-paying and racing impossible rather than
+/// unlikely. Deleting the payment releases the obligation to be paid again.
+///
+/// Key shapes, from lib/payment-obligations.ts:
+///   schedule:<scheduleId>:<yyyy-MM>   · a flat-rate month, paid once
+///   job:<jobId>                        · one clean, per-clean or one-off
+model SubcontractorPaymentCoverage {
+  id            String   @id @default(uuid())
+  paymentId     String
+  /// The obligation this settles. Unique across all payments.
+  obligationKey String   @unique
+  /// SCHEDULE_MONTH | JOB
+  kind          String
+  amount        Float
+  /// "yyyy-MM" of the work, for reporting.
+  period        String
+  scheduleId    String?
+  createdAt     DateTime @default(now())
+
+  payment SubcontractorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([period])
+  @@map("subcontractor_payment_coverage")
 }
 
 model SubcontractorPaymentLineItem {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { ChevronLeft, Loader2, Check, X, Inbox } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { useConfirm } from "@/hooks/use-confirm"
 
 interface InvoiceLite {
   id: string
@@ -37,6 +38,7 @@ export function PaymentInbox() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const { confirm: askToConfirm, ConfirmDialog } = useConfirm()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -72,6 +74,11 @@ export function PaymentInbox() {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
+        // A mismatch is a question for the reviewer, not a failure. The caller
+        // handles it; anything else is a genuine error.
+        if (res.status === 409 && json.code === "PAYMENT_AMOUNT_MISMATCH") {
+          return { mismatch: true as const, message: String(json.error ?? "") }
+        }
         setError(json.error || "Action failed.")
         return false
       }
@@ -88,10 +95,29 @@ export function PaymentInbox() {
     const invoiceId = picked[m.id]
     if (!invoiceId) { setError("Choose an invoice to apply this payment to."); return }
     const inv = openInvoices.find((i) => i.id === invoiceId)
-    if (await act(m.id, "confirm", { invoiceId })) {
+
+    const done = async () => {
       setToast(`Marked ${inv?.invoiceNumber || "invoice"} paid — any cleaner waiting on ${inv?.clientName || "this client"} is now ready to pay.`)
       await load()
     }
+
+    const result = await act(m.id, "confirm", { invoiceId })
+    if (result === true) { await done(); return }
+    if (result === false) return
+
+    // The amount does not settle the invoice. Say so in the reviewer's terms
+    // and let them decide, rather than recording it as paid in full quietly.
+    const proceed = await askToConfirm({
+      title: "This amount does not match the invoice",
+      description: `${result.message}
+
+Apply it anyway and mark ${inv?.invoiceNumber || "the invoice"} paid in full?`,
+      confirmText: "Apply anyway",
+      cancelText: "Go back",
+      variant: "destructive",
+    })
+    if (!proceed) return
+    if (await act(m.id, "confirm", { invoiceId, confirmMismatch: true }) === true) await done()
   }
 
   async function dismiss(m: Match) {
@@ -99,6 +125,8 @@ export function PaymentInbox() {
   }
 
   return (
+    <>
+    <ConfirmDialog />
     <div className="min-h-screen bg-stone-50" style={{ fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');`}</style>
 
@@ -195,5 +223,6 @@ export function PaymentInbox() {
         )}
       </div>
     </div>
+    </>
   )
 }
