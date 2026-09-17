@@ -8,10 +8,15 @@ import { format } from 'date-fns'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { isUniqueViolation } from '@/lib/invoice-number'
+import { paymentLineDescription } from '@/lib/payment-line'
+import { checkInvoiceGate, describeGaps, type PayableUnit } from '@/lib/cleaner-invoice-gate'
 import {
+  buildAddOnObligations,
   buildObligations,
+  coveredAddOnIds,
   coveredJobIds,
   lineBelongsToObligation,
+  obligationKeysForAddOns,
   obligationKeysForJobs,
   obligationLines,
   obligationsTotal,
@@ -78,9 +83,22 @@ export async function POST(
       },
       select: {
         id: true,
+        description: true,
         subcontractorRate: true,
         createdAt: true,
-        job: { select: { date: true } },
+        job: {
+          select: {
+            date: true,
+            locationId: true,
+            location: { select: { client: { select: { name: true } } } },
+          },
+        },
+        schedule: {
+          select: {
+            locationId: true,
+            location: { select: { client: { select: { name: true } } } },
+          },
+        },
       },
     })
 
@@ -109,18 +127,36 @@ export async function POST(
       )
     }
 
-    // Pay-gate (Josh's rule): don't pay a cleaner for a month unless they've sent
-    // us an invoice that matches what we owe (MATCHED) or a human has RESOLVED a
-    // mismatch. Grace can still pay by passing confirmNoInvoice after reviewing.
-    const periodsBeingPaid = Array.from(new Set([
-      ...jobs.map(j => format(new Date(j.date), 'yyyy-MM')),
-      ...assignedAddOns.map(a => format(new Date(a.job?.date || a.createdAt), 'yyyy-MM')),
-    ]))
-    if (periodsBeingPaid.length > 0 && body.confirmNoInvoice !== true) {
-      // Two shapes of evidence count, because cleaners invoice per ACCOUNT
-      // (Josh 2026-08-26) and the Cleaners page records those receipts, while
-      // the older intake recorded one invoice per cleaner per month. Either
-      // proves they billed us, so either releases the payment.
+    // Pay-gate (Josh's rule): don't pay a cleaner for work unless they've sent us
+    // an invoice for it · either a MATCHED/RESOLVED CleanerInvoice for the month,
+    // or a receipt recorded on the Cleaners page. Grace can still pay by passing
+    // confirmNoInvoice after reviewing.
+    //
+    // The unit of the check is the WORK, not the month. Receipts are recorded
+    // per account, and optionally per clean or add-on, but this only asked
+    // whether any receipt existed for the cleaner in the month · so one
+    // account's invoice released payment for every account that cleaner worked
+    // that month. The rule lives in lib/cleaner-invoice-gate.ts.
+    const payableUnits: PayableUnit[] = [
+      ...jobs.map(job => ({
+        kind: 'JOB' as const,
+        id: job.id,
+        locationId: job.locationId,
+        locationName: job.location.client.name,
+        period: format(new Date(job.date), 'yyyy-MM'),
+      })),
+      ...assignedAddOns.map(addOn => ({
+        kind: 'ADDON' as const,
+        id: addOn.id,
+        locationId: addOn.job?.locationId ?? addOn.schedule?.locationId ?? '',
+        locationName:
+          addOn.job?.location?.client.name ?? addOn.schedule?.location?.client.name ?? 'an account',
+        period: format(new Date(addOn.job?.date || addOn.createdAt), 'yyyy-MM'),
+      })),
+    ]
+    const periodsBeingPaid = Array.from(new Set(payableUnits.map(u => u.period)))
+
+    if (payableUnits.length > 0 && body.confirmNoInvoice !== true) {
       const [matching, receipts] = await Promise.all([
         prisma.cleanerInvoice.findMany({
           where: {
@@ -132,20 +168,22 @@ export async function POST(
         }),
         prisma.cleanerInvoiceReceipt.findMany({
           where: { subcontractorId: resolvedParams.id, period: { in: periodsBeingPaid } },
-          select: { period: true },
+          select: { locationId: true, period: true, jobId: true, addOnServiceId: true },
         }),
       ])
-      const covered = new Set([
-        ...matching.map(m => m.period),
-        ...receipts.map(r => r.period),
-      ])
-      const uncovered = periodsBeingPaid.filter(p => !covered.has(p))
-      if (uncovered.length > 0) {
+
+      const gate = checkInvoiceGate(
+        payableUnits,
+        receipts,
+        new Set(matching.map(m => m.period)),
+      )
+      if (!gate.satisfied) {
         return NextResponse.json(
           {
             code: 'NO_MATCHING_CLEANER_INVOICE',
-            error: `No matching cleaner invoice on file for ${uncovered.join(', ')}. Record or resolve it first, or pay anyway.`,
-            periods: uncovered,
+            error: `No cleaner invoice on file for ${describeGaps(gate.gaps)}. Record or resolve it first, or pay anyway.`,
+            periods: gate.periods,
+            gaps: gate.gaps,
           },
           { status: 409 }
         )
@@ -168,16 +206,53 @@ export async function POST(
         .reduce((sum, addOn) => sum + addOn.subcontractorRate, 0),
     }))
 
-    const obligations = buildObligations(payableJobs)
+    // Add-ons this cleaner performed on someone else's schedule settle on their
+    // own. They used to be added straight to the payment total with no line and
+    // no obligation, so nothing recorded them: the payment history could not
+    // count them, undoing a clean on the same payment took their money with it,
+    // and nothing ever unmarked one.
+    const obligations = [
+      ...buildObligations(payableJobs),
+      ...buildAddOnObligations(assignedAddOns.map(addOn => ({
+        id: addOn.id,
+        description: addOn.description,
+        subcontractorRate: addOn.subcontractorRate,
+        date: addOn.job?.date ?? addOn.createdAt,
+      }))),
+    ]
 
-    // Add-ons this cleaner performed on someone else's schedule/job: paid via the
-    // subcontractorPaid flag (no job line item), folded into the payment total.
-    const assignedAddOnTotal = assignedAddOns.reduce((sum, a) => sum + a.subcontractorRate, 0)
-    const totalAmount = Math.round((obligationsTotal(obligations) + assignedAddOnTotal) * 100) / 100
+    // Each line carries its own description and date. Deleting a clean used to
+    // cascade the line away, leaving a payment with money and no record of what
+    // it bought; the line now outlives the clean.
+    const jobById = new Map(jobs.map(job => [job.id, job]))
+    const addOnById = new Map(assignedAddOns.map(addOn => [addOn.id, addOn]))
+    const paymentLineItems = obligationLines(obligations).map(line => {
+      const job = line.jobId ? jobById.get(line.jobId) : undefined
+      const addOn = line.addOnServiceId ? addOnById.get(line.addOnServiceId) : undefined
+      const date = job?.date ?? addOn?.job?.date ?? addOn?.createdAt ?? null
+      return {
+        jobId: line.jobId,
+        addOnServiceId: line.addOnServiceId,
+        amount: line.amount,
+        description: job
+          ? paymentLineDescription({ name: job.location.client.name, date: job.date })
+          : addOn
+            ? paymentLineDescription({ name: addOn.description, date })
+            : '',
+        serviceDate: date,
+        scheduleId: job?.scheduleId ?? null,
+      }
+    })
+
+    const totalAmount = obligationsTotal(obligations)
 
     // Plain-English names for the 409 below, built while the jobs are in hand.
     const obligationLabels = new Map(
       obligations.map(obligation => {
+        if (obligation.kind === 'ADDON') {
+          const addOn = assignedAddOns.find(a => a.id === obligation.addOnServiceIds[0])
+          return [obligation.key, addOn?.description ?? 'an add-on']
+        }
         const job = jobs.find(j => j.id === obligation.jobIds[0])
         const client = job?.location.client.name ?? 'this account'
         const when = job
@@ -202,7 +277,7 @@ export async function POST(
             totalAmount,
             notes: notes || null,
             lineItems: {
-              create: obligationLines(obligations),
+              create: paymentLineItems,
             },
           },
           include: {
@@ -255,9 +330,10 @@ export async function POST(
         }
 
         // Mark this cleaner's performed add-ons paid
-        if (assignedAddOns.length > 0) {
+        const addOnIdsToMark = coveredAddOnIds(obligations)
+        if (addOnIdsToMark.length > 0) {
           await tx.addOnService.updateMany({
-            where: { id: { in: assignedAddOns.map(a => a.id) } },
+            where: { id: { in: addOnIdsToMark } },
             data: { subcontractorPaid: true },
           })
         }
@@ -304,11 +380,23 @@ export async function DELETE(
     await requireAuth()
 
     const resolvedParams = await Promise.resolve(params)
-    const { jobIds } = await request.json().catch(() => ({ jobIds: [] }))
+    const body = await request.json().catch(() => ({}))
+    const strings = (value: unknown) =>
+      Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 
-    if (!Array.isArray(jobIds) || jobIds.length === 0 || !jobIds.every(id => typeof id === 'string')) {
+    const jobIds = strings(body?.jobIds)
+    // Both spellings, for the same reason the POST accepts both: the Cleaners
+    // page names this addOnServiceIds and the Payables page names it addOnIds.
+    // Undo ignored add-ons entirely, so a performed add-on stayed marked paid
+    // for good once it had been paid once.
+    const requestedAddOnIds = Array.from(new Set([
+      ...strings(body?.addOnIds),
+      ...strings(body?.addOnServiceIds),
+    ]))
+
+    if (jobIds.length === 0 && requestedAddOnIds.length === 0) {
       return NextResponse.json(
-        { error: 'jobIds must be a non-empty array' },
+        { error: 'jobIds or addOnIds must be a non-empty array' },
         { status: 400 }
       )
     }
@@ -323,19 +411,26 @@ export async function DELETE(
         date: true,
         scheduleId: true,
         subcontractorRate: true,
-        location: { select: { clientId: true } },
         schedule: { select: { subcontractorPayType: true } },
       },
     })
 
-    if (jobs.length === 0) {
+    const addOns = requestedAddOnIds.length > 0
+      ? await prisma.addOnService.findMany({
+          where: { id: { in: requestedAddOnIds }, subcontractorId: resolvedParams.id },
+          select: { id: true },
+        })
+      : []
+
+    if (jobs.length === 0 && addOns.length === 0) {
       return NextResponse.json(
-        { error: 'No matching jobs found for this subcontractor' },
+        { error: 'No matching jobs or add-ons found for this subcontractor' },
         { status: 404 }
       )
     }
 
     const validJobIds = jobs.map(job => job.id)
+    const validAddOnIds = addOns.map(addOn => addOn.id)
 
     // Undo reverses OBLIGATIONS, not the cleans the operator happened to tick.
     // A flat month is one obligation covering every clean in it, paid as one
@@ -344,17 +439,19 @@ export async function DELETE(
     // the money back while the other cleans stayed marked paid, and unticking
     // any other clean marked it unpaid while the payment still claimed to cover
     // it · a clean that was paid and unpaid at the same time.
-    const obligationKeys = obligationKeysForJobs(
-      jobs.map(job => ({
-        id: job.id,
-        date: job.date,
-        scheduleId: job.scheduleId,
-        subcontractorRate: job.subcontractorRate,
-        clientId: job.location.clientId,
-        subcontractorPayType: job.schedule?.subcontractorPayType ?? null,
-        addOnTotal: 0,
-      }))
-    )
+    const obligationKeys = [
+      ...obligationKeysForJobs(
+        jobs.map(job => ({
+          id: job.id,
+          date: job.date,
+          scheduleId: job.scheduleId,
+          subcontractorRate: job.subcontractorRate,
+          subcontractorPayType: job.schedule?.subcontractorPayType ?? null,
+          addOnTotal: 0,
+        }))
+      ),
+      ...obligationKeysForAddOns(validAddOnIds),
+    ]
 
     const result = await prisma.$transaction(async (tx) => {
       const coverage = await tx.subcontractorPaymentCoverage.findMany({
@@ -382,7 +479,10 @@ export async function DELETE(
             select: {
               id: true,
               jobId: true,
+              addOnServiceId: true,
               paymentId: true,
+              serviceDate: true,
+              scheduleId: true,
               job: { select: { date: true, scheduleId: true } },
             },
           })
@@ -390,24 +490,42 @@ export async function DELETE(
 
       const lineItemIdsToRemove = new Set<string>()
       const jobIdsToUnmark = new Set<string>()
+      const addOnIdsToUnmark = new Set<string>()
 
       for (const row of coverage) {
         for (const item of items) {
           if (item.paymentId !== row.paymentId) continue
-          if (!lineBelongsToObligation(row, item)) continue
+          // The line's own snapshot first, so this still matches after the
+          // clean has been deleted. The job is the fallback for rows written
+          // before the snapshot existed.
+          const asCoverageLine = {
+            jobId: item.jobId,
+            addOnServiceId: item.addOnServiceId,
+            serviceDate: item.serviceDate ?? item.job?.date ?? null,
+            scheduleId: item.scheduleId ?? item.job?.scheduleId ?? null,
+          }
+          if (!lineBelongsToObligation(row, asCoverageLine)) continue
           lineItemIdsToRemove.add(item.id)
-          jobIdsToUnmark.add(item.jobId)
+          if (item.jobId) jobIdsToUnmark.add(item.jobId)
+          if (item.addOnServiceId) addOnIdsToUnmark.add(item.addOnServiceId)
         }
-        // The clean itself, even if its line item has since gone.
+        // The work itself, even if its line item has since gone.
         if (row.kind === 'JOB') jobIdsToUnmark.add(row.obligationKey.slice('job:'.length))
+        if (row.kind === 'ADDON') addOnIdsToUnmark.add(row.obligationKey.slice('addon:'.length))
       }
 
       // Payments written before obligations were recorded have no coverage rows.
       // Reverse those the old way, by line item, so their undo keeps working.
       const legacyJobIds = validJobIds.filter(id => !jobIdsToUnmark.has(id))
-      if (legacyJobIds.length > 0) {
+      const legacyAddOnIds = validAddOnIds.filter(id => !addOnIdsToUnmark.has(id))
+      if (legacyJobIds.length > 0 || legacyAddOnIds.length > 0) {
         const legacyItems = await tx.subcontractorPaymentLineItem.findMany({
-          where: { jobId: { in: legacyJobIds } },
+          where: {
+            OR: [
+              ...(legacyJobIds.length > 0 ? [{ jobId: { in: legacyJobIds } }] : []),
+              ...(legacyAddOnIds.length > 0 ? [{ addOnServiceId: { in: legacyAddOnIds } }] : []),
+            ],
+          },
           select: { id: true, paymentId: true },
         })
         for (const item of legacyItems) {
@@ -415,6 +533,7 @@ export async function DELETE(
           affectedPaymentIds.add(item.paymentId)
         }
         for (const id of legacyJobIds) jobIdsToUnmark.add(id)
+        for (const id of legacyAddOnIds) addOnIdsToUnmark.add(id)
       }
 
       if (coverage.length > 0) {
@@ -449,13 +568,24 @@ export async function DELETE(
         }
       }
 
-      const updatedJobs = await tx.job.updateMany({
-        where: { id: { in: Array.from(jobIdsToUnmark) } },
-        data: { subcontractorPaid: false },
-      })
+      const updatedJobs = jobIdsToUnmark.size > 0
+        ? await tx.job.updateMany({
+            where: { id: { in: Array.from(jobIdsToUnmark) } },
+            data: { subcontractorPaid: false },
+          })
+        : { count: 0 }
+
+      // Undo never touched these, so a performed add-on stayed marked paid even
+      // after the payment that paid for it had been reversed.
+      const updatedAddOns = addOnIdsToUnmark.size > 0
+        ? await tx.addOnService.updateMany({
+            where: { id: { in: Array.from(addOnIdsToUnmark) } },
+            data: { subcontractorPaid: false },
+          })
+        : { count: 0 }
 
       return {
-        unmarkedCount: updatedJobs.count,
+        unmarkedCount: updatedJobs.count + updatedAddOns.count,
         removedLineItemCount: lineItemIdsToRemove.size,
         affectedPaymentCount: affectedPaymentIds.size,
         reversedObligationKeys: coverage.map(row => row.obligationKey),
@@ -466,7 +596,7 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: `Unchecked ${result.unmarkedCount} job(s).`,
+      message: `Unchecked ${result.unmarkedCount} item(s).`,
       ...result,
     })
   } catch (error) {

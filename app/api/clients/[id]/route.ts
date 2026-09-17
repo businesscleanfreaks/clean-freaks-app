@@ -271,10 +271,12 @@ export async function PUT(
         if (jobsToClean.length > 0) {
           const jobIds = jobsToClean.map(j => j.id)
 
-          // Delete related payment line items first (FK constraint)
-          await prisma.subcontractorPaymentLineItem.deleteMany({
-            where: { jobId: { in: jobIds } },
-          })
+          // Payment line items are deliberately NOT deleted here. This used to
+          // remove them to satisfy a NOT NULL foreign key; the key is now SET
+          // NULL, so a line keeps its money and its own description even if the
+          // clean goes. These jobs are filtered to unpaid ones anyway, so there
+          // should be none · and if there is one, destroying it is the last
+          // thing we want.
 
           // Delete related add-on services linked to these jobs
           await prisma.addOnService.deleteMany({

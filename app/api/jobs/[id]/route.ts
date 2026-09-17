@@ -490,6 +490,9 @@ export async function DELETE(
         vendorPaymentLineItems: {
           select: { id: true },
         },
+        paymentLineItems: {
+          select: { id: true },
+        },
       },
     })
 
@@ -508,6 +511,17 @@ export async function DELETE(
     if (jobToDelete.vendorPaymentLineItems.length > 0) {
       return createErrorResponse(
         'Cannot delete a job that has been paid to a vendor. Void or remove the vendor payment first.',
+        400,
+        'CONSTRAINT_ERROR'
+      )
+    }
+
+    // Vendor payments were guarded here and cleaner payments were not, so
+    // deleting a clean the cleaner had been paid for went through silently and
+    // took the payment's record of it along. The guard now matches.
+    if (jobToDelete.paymentLineItems.length > 0) {
+      return createErrorResponse(
+        'Cannot delete a job that has been paid to a cleaner. Undo the payment first.',
         400,
         'CONSTRAINT_ERROR'
       )

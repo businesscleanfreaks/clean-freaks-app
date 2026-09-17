@@ -32,16 +32,32 @@ export interface PayableJob {
   date: Date | string
   scheduleId: string | null
   subcontractorRate: number
-  clientId: string
   /** How the CLEANER is paid for this work. */
   subcontractorPayType: string | null
   /** Add-ons on this job that this cleaner should be credited for. */
   addOnTotal: number
 }
 
-/** The money owed for one covered clean. Line items are one per clean. */
+/**
+ * An add-on this cleaner performed on someone else's schedule or clean.
+ *
+ * It is owed to them per add-on, whoever owns the schedule, so it settles on
+ * its own rather than riding on a clean. It used to ride on nothing at all ·
+ * folded into the payment total with no line of its own.
+ */
+export interface PayableAddOn {
+  id: string
+  /** The add-on's own words, e.g. "Carpet shampoo". */
+  description: string
+  subcontractorRate: number
+  /** The clean it was performed on, or when it was recorded. */
+  date: Date | string
+}
+
+/** The money owed for one covered piece of work. One line per clean or add-on. */
 export interface ObligationLine {
-  jobId: string
+  jobId: string | null
+  addOnServiceId: string | null
   amount: number
 }
 
@@ -51,10 +67,12 @@ export interface PaymentObligation {
    * same obligation cannot be paid twice however the request is shaped.
    */
   key: string
-  kind: "SCHEDULE_MONTH" | "JOB"
+  kind: "SCHEDULE_MONTH" | "JOB" | "ADDON"
   amount: number
   /** Every job this obligation covers · all of them get marked paid together. */
   jobIds: string[]
+  /** Every performed add-on it covers. Empty unless this is an ADDON. */
+  addOnServiceIds: string[]
   /**
    * The amount attributed to each covered clean, summing to `amount`.
    *
@@ -69,7 +87,6 @@ export interface PaymentObligation {
   /** "yyyy-MM", for reporting and the invoice gate. */
   period: string
   scheduleId: string | null
-  clientId: string
 }
 
 /** "yyyy-MM" in UTC, matching how job dates are stored (noon UTC). */
@@ -86,6 +103,11 @@ export function scheduleMonthKey(scheduleId: string, period: string): string {
 /** The obligation key for a single clean. */
 export function jobKey(jobId: string): string {
   return `job:${jobId}`
+}
+
+/** The obligation key for one performed add-on. */
+export function addOnKey(addOnServiceId: string): string {
+  return `addon:${addOnServiceId}`
 }
 
 const round = (n: number) => Math.round(n * 100) / 100
@@ -118,31 +140,36 @@ export function buildObligations(jobs: readonly PayableJob[]): PaymentObligation
     // first clean. Add-ons are extra work and are paid on top, per clean.
     const lines = group.map((job, index) => ({
       jobId: job.id,
+      addOnServiceId: null,
       amount: round((index === 0 ? first.subcontractorRate : 0) + job.addOnTotal),
     }))
     obligations.push({
       key,
       kind: "SCHEDULE_MONTH",
       amount: totalOf(lines),
-      jobIds: lines.map(l => l.jobId),
+      jobIds: group.map(j => j.id),
+      addOnServiceIds: [],
       lines,
       period: periodOf(first.date),
       scheduleId: first.scheduleId,
-      clientId: first.clientId,
     })
   }
 
   for (const job of perJob) {
-    const lines = [{ jobId: job.id, amount: round(job.subcontractorRate + job.addOnTotal) }]
+    const lines = [{
+      jobId: job.id,
+      addOnServiceId: null,
+      amount: round(job.subcontractorRate + job.addOnTotal),
+    }]
     obligations.push({
       key: jobKey(job.id),
       kind: "JOB",
       amount: totalOf(lines),
       jobIds: [job.id],
+      addOnServiceIds: [],
       lines,
       period: periodOf(job.date),
       scheduleId: job.scheduleId,
-      clientId: job.clientId,
     })
   }
 
@@ -152,6 +179,34 @@ export function buildObligations(jobs: readonly PayableJob[]): PaymentObligation
 const totalOf = (lines: readonly ObligationLine[]) =>
   round(lines.reduce((sum, l) => sum + l.amount, 0))
 
+/**
+ * One obligation per performed add-on.
+ *
+ * An add-on the cleaner performed on someone else's schedule is owed to them on
+ * its own, so it gets its own key. Before this it was folded into the payment
+ * total with no line and no obligation: nothing recorded it, undoing a clean on
+ * the same payment took its money with it, and nothing ever unmarked it.
+ */
+export function buildAddOnObligations(addOns: readonly PayableAddOn[]): PaymentObligation[] {
+  return addOns.map(addOn => {
+    const lines = [{
+      jobId: null,
+      addOnServiceId: addOn.id,
+      amount: round(addOn.subcontractorRate),
+    }]
+    return {
+      key: addOnKey(addOn.id),
+      kind: "ADDON" as const,
+      amount: totalOf(lines),
+      jobIds: [],
+      addOnServiceIds: [addOn.id],
+      lines,
+      period: periodOf(addOn.date),
+      scheduleId: null,
+    }
+  })
+}
+
 /** What the payment is worth in total. */
 export function obligationsTotal(obligations: readonly PaymentObligation[]): number {
   return round(obligations.reduce((sum, o) => sum + o.amount, 0))
@@ -160,6 +215,11 @@ export function obligationsTotal(obligations: readonly PaymentObligation[]): num
 /** Every job the payment covers, so all of them are marked together. */
 export function coveredJobIds(obligations: readonly PaymentObligation[]): string[] {
   return [...new Set(obligations.flatMap(o => o.jobIds))]
+}
+
+/** Every performed add-on the payment covers. */
+export function coveredAddOnIds(obligations: readonly PaymentObligation[]): string[] {
+  return [...new Set(obligations.flatMap(o => o.addOnServiceIds))]
 }
 
 /** One line item per covered clean, across every obligation in the payment. */
@@ -178,22 +238,53 @@ export function obligationKeysForJobs(jobs: readonly PayableJob[]): string[] {
   return [...new Set(buildObligations(jobs).map(o => o.key))]
 }
 
+/** The obligation keys a set of performed add-ons belongs to. */
+export function obligationKeysForAddOns(addOnServiceIds: readonly string[]): string[] {
+  return [...new Set(addOnServiceIds.map(addOnKey))]
+}
+
+/**
+ * A payment line item, as undo needs to read it.
+ *
+ * The date and schedule are the line's OWN snapshot rather than the job's, so
+ * this keeps working after the clean has been deleted · which is the whole
+ * point of the snapshot. The route falls back to the job for rows written
+ * before the snapshot existed.
+ */
+export interface CoverageLine {
+  jobId: string | null
+  addOnServiceId: string | null
+  serviceDate: Date | string | null
+  scheduleId: string | null
+}
+
 /**
  * Whether a payment line item belongs to an obligation being reversed.
  *
- * Undo names obligations, but the jobs to unmark live on the payment's line
- * items. A flat month claims every line item of that payment on that schedule
- * in that month; a per-clean obligation claims exactly its own clean.
+ * Undo names obligations, but the cleans to unmark live on the payment's line
+ * items. A flat month claims every line of that payment on that schedule in
+ * that month; a per-clean obligation claims exactly its own clean.
  */
 export function lineBelongsToObligation(
   obligation: { kind: string; obligationKey: string; scheduleId: string | null; period: string },
-  line: { jobId: string; job: { date: Date | string; scheduleId: string | null } | null },
+  line: CoverageLine,
 ): boolean {
-  if (obligation.kind === "JOB") return obligation.obligationKey === jobKey(line.jobId)
-  if (!line.job) return false
+  if (obligation.kind === "ADDON") {
+    return (
+      line.addOnServiceId !== null &&
+      obligation.obligationKey === addOnKey(line.addOnServiceId)
+    )
+  }
+  if (obligation.kind === "JOB") {
+    return line.jobId !== null && obligation.obligationKey === jobKey(line.jobId)
+  }
+  // A flat month claims the cleans of its schedule, never a performed add-on:
+  // that add-on is its own obligation and settles separately.
+  if (line.addOnServiceId !== null) return false
+  if (line.serviceDate === null) return false
   return (
-    line.job.scheduleId !== null &&
-    line.job.scheduleId === obligation.scheduleId &&
-    periodOf(line.job.date) === obligation.period
+    line.scheduleId !== null &&
+    line.scheduleId === obligation.scheduleId &&
+    periodOf(line.serviceDate) === obligation.period
   )
 }

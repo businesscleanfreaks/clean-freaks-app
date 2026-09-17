@@ -405,8 +405,20 @@ export function PaymentDetail({
           (payable.type === "vendor" && gate?.code === "NO_MATCHING_VENDOR_INVOICE")
         ) {
           const label = payable.type === "cleaner" ? "cleaner" : "vendor"
-          const periods = Array.isArray(gate.periods) ? gate.periods.join(", ") : ""
-          if (!window.confirm(`No matching ${label} invoice on file${periods ? ` for ${periods}` : ""}. Pay anyway?`)) {
+          // Name the accounts when the server sends them. The gate checks work
+          // per account now, so "for 2026-09" would hide which account is
+          // actually missing an invoice.
+          const gaps: string[] = Array.isArray(gate.gaps)
+            ? gate.gaps.map((g: { locationName?: string; period?: string }) =>
+                [g.locationName, g.period].filter(Boolean).join(" · "),
+              )
+            : []
+          const missing = gaps.length > 0
+            ? gaps.join(", ")
+            : Array.isArray(gate.periods)
+              ? gate.periods.join(", ")
+              : ""
+          if (!window.confirm(`No matching ${label} invoice on file${missing ? ` for ${missing}` : ""}. Pay anyway?`)) {
             return
           }
           res = await fetch(url, {

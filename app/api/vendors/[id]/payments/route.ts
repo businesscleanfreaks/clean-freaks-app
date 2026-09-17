@@ -5,6 +5,8 @@ import { z } from "zod"
 import { format } from "date-fns"
 import { logger } from "@/lib/logger"
 import { handleApiError } from "@/lib/api-error-handler"
+import { paymentLineDescription } from '@/lib/payment-line'
+import { checkInvoiceGate, describeGaps, type PayableUnit } from '@/lib/cleaner-invoice-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,31 +31,91 @@ const updatePaymentStateSchema = z.object({
   path: ['addOnServiceIds'],
 })
 
+/** A vendor's work as the pay-gate needs to see it. */
+type VendorWork = {
+  createdAt: Date
+  job?: { date: Date; locationId: string; location: { client: { name: string } } } | null
+  schedule?: { locationId: string; location: { client: { name: string } } } | null
+}
+
+/**
+ * The work a vendor payment covers, one unit each.
+ *
+ * A one-off clean is its own unit and belongs to its own account; an add-on
+ * belongs to the account of the clean or schedule it sits on.
+ */
+function vendorPayableUnits(
+  addOns: ReadonlyArray<VendorWork & { id: string }>,
+  jobs: ReadonlyArray<{ id: string; date: Date; locationId: string; location: { client: { name: string } } }>,
+): PayableUnit[] {
+  return [
+    ...jobs.map((job) => ({
+      kind: 'JOB' as const,
+      id: job.id,
+      locationId: job.locationId,
+      locationName: job.location.client.name,
+      period: format(new Date(job.date), 'yyyy-MM'),
+    })),
+    ...addOns.map((addOn) => ({
+      kind: 'ADDON' as const,
+      id: addOn.id,
+      locationId: addOn.job?.locationId ?? addOn.schedule?.locationId ?? '',
+      locationName:
+        addOn.job?.location.client.name ?? addOn.schedule?.location.client.name ?? 'an account',
+      period: format(new Date(addOn.job?.date || addOn.createdAt), 'yyyy-MM'),
+    })),
+  ]
+}
+
+/**
+ * Don't pay a vendor for work they haven't billed us for.
+ *
+ * Two shapes of evidence count, and this only ever read the first:
+ *
+ *  - a MATCHED or RESOLVED VendorInvoice, which is one invoice per vendor per
+ *    month and so covers that whole month;
+ *  - a receipt recorded on the Cleaners page, which is per ACCOUNT and
+ *    optionally per clean or add-on. The receipt endpoint takes `?payee=vendor`
+ *    and the page both records and displays these · but this gate ignored them,
+ *    so ticking a vendor's invoice changed nothing and the payment was still
+ *    refused with "no matching vendor invoice on file".
+ *
+ * Scoped to the work, not the month, for the same reason the cleaner gate is:
+ * one account's invoice must not release payment for another account.
+ */
 async function requireMatchingVendorInvoice(
   vendorId: string,
-  periodsBeingPaid: string[],
+  units: PayableUnit[],
   confirmNoInvoice: boolean,
 ) {
-  const periods = Array.from(new Set(periodsBeingPaid)).filter(Boolean)
-  if (periods.length === 0 || confirmNoInvoice) return null
+  if (units.length === 0 || confirmNoInvoice) return null
+  const periods = Array.from(new Set(units.map((u) => u.period))).filter(Boolean)
+  if (periods.length === 0) return null
 
-  const matching = await prisma.vendorInvoice.findMany({
-    where: {
-      vendorId,
-      period: { in: periods },
-      status: { in: ['MATCHED', 'RESOLVED'] },
-    },
-    select: { period: true },
-  })
-  const covered = new Set(matching.map((m) => m.period))
-  const uncovered = periods.filter((period) => !covered.has(period))
-  if (uncovered.length === 0) return null
+  const [matching, receipts] = await Promise.all([
+    prisma.vendorInvoice.findMany({
+      where: {
+        vendorId,
+        period: { in: periods },
+        status: { in: ['MATCHED', 'RESOLVED'] },
+      },
+      select: { period: true },
+    }),
+    prisma.cleanerInvoiceReceipt.findMany({
+      where: { vendorId, period: { in: periods } },
+      select: { locationId: true, period: true, jobId: true, addOnServiceId: true },
+    }),
+  ])
+
+  const gate = checkInvoiceGate(units, receipts, new Set(matching.map((m) => m.period)))
+  if (gate.satisfied) return null
 
   return NextResponse.json(
     {
       code: 'NO_MATCHING_VENDOR_INVOICE',
-      error: `No matching vendor invoice on file for ${uncovered.join(', ')}. Record or resolve it first, or pay anyway.`,
-      periods: uncovered,
+      error: `No vendor invoice on file for ${describeGaps(gate.gaps)}. Record or resolve it first, or pay anyway.`,
+      periods: gate.periods,
+      gaps: gate.gaps,
     },
     { status: 409 },
   )
@@ -87,7 +149,21 @@ export async function POST(
           vendorId,
           vendorPaid: false,
         },
-        include: { job: { select: { date: true } } },
+        include: {
+          job: {
+            select: {
+              date: true,
+              locationId: true,
+              location: { select: { client: { select: { name: true } } } },
+            },
+          },
+          schedule: {
+            select: {
+              locationId: true,
+              location: { select: { client: { select: { name: true } } } },
+            },
+          },
+        },
       }),
       prisma.job.findMany({
         where: {
@@ -96,6 +172,7 @@ export async function POST(
           vendorPaid: false,
           scheduleId: null,
         },
+          include: { location: { select: { client: { select: { name: true } } } } },
       }),
     ])
 
@@ -126,10 +203,7 @@ export async function POST(
 
     const gate = await requireMatchingVendorInvoice(
       vendorId,
-      [
-        ...addOns.map((addOn) => format(new Date(addOn.job?.date || addOn.createdAt), 'yyyy-MM')),
-        ...jobs.map((job) => format(new Date(job.date), 'yyyy-MM')),
-      ],
+      vendorPayableUnits(addOns, jobs),
       confirmNoInvoice,
     )
     if (gate) return gate
@@ -147,13 +221,25 @@ export async function POST(
           notes: notes || null,
           lineItems: {
             create: [
+              // Each line describes itself, so deleting the clean or the add-on
+              // no longer takes the record of the payment with it.
               ...addOns.map(a => ({
                 addOnServiceId: a.id,
                 amount: a.subcontractorRate,
+                description: paymentLineDescription({
+                  name: a.description,
+                  date: a.job?.date ?? a.createdAt,
+                }),
+                serviceDate: a.job?.date ?? a.createdAt,
               })),
               ...jobs.map(job => ({
                 jobId: job.id,
                 amount: job.subcontractorRate,
+                description: paymentLineDescription({
+                  name: job.location.client.name,
+                  date: job.date,
+                }),
+                serviceDate: job.date,
               })),
             ],
           },
@@ -223,7 +309,21 @@ export async function PATCH(
             vendorId,
             vendorPaid: false,
           },
-          include: { job: { select: { date: true } } },
+          include: {
+          job: {
+            select: {
+              date: true,
+              locationId: true,
+              location: { select: { client: { select: { name: true } } } },
+            },
+          },
+          schedule: {
+            select: {
+              locationId: true,
+              location: { select: { client: { select: { name: true } } } },
+            },
+          },
+        },
         }),
         prisma.job.findMany({
           where: {
@@ -232,6 +332,7 @@ export async function PATCH(
             vendorPaid: false,
             scheduleId: null,
           },
+              include: { location: { select: { client: { select: { name: true } } } } },
         }),
       ])
 
@@ -244,10 +345,7 @@ export async function PATCH(
 
       const gate = await requireMatchingVendorInvoice(
         vendorId,
-        [
-          ...addOns.map((addOn) => format(new Date(addOn.job?.date || addOn.createdAt), 'yyyy-MM')),
-          ...jobs.map((job) => format(new Date(job.date), 'yyyy-MM')),
-        ],
+        vendorPayableUnits(addOns, jobs),
         confirmNoInvoice,
       )
       if (gate) return gate
@@ -265,13 +363,25 @@ export async function PATCH(
             notes: null,
             lineItems: {
               create: [
+                // Each line describes itself, so deleting the clean or the add-on
+                // no longer takes the record of the payment with it.
                 ...addOns.map(addon => ({
                   addOnServiceId: addon.id,
                   amount: addon.subcontractorRate,
+                  description: paymentLineDescription({
+                    name: addon.description,
+                    date: addon.job?.date ?? addon.createdAt,
+                  }),
+                  serviceDate: addon.job?.date ?? addon.createdAt,
                 })),
                 ...jobs.map(job => ({
                   jobId: job.id,
                   amount: job.subcontractorRate,
+                  description: paymentLineDescription({
+                    name: job.location.client.name,
+                    date: job.date,
+                  }),
+                  serviceDate: job.date,
                 })),
               ],
             },

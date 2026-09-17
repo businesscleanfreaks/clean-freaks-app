@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest"
 import {
+  addOnKey,
+  buildAddOnObligations,
   buildObligations,
+  coveredAddOnIds,
   coveredJobIds,
   jobKey,
   obligationKeysForJobs,
@@ -9,6 +12,7 @@ import {
   obligationsTotal,
   periodOf,
   scheduleMonthKey,
+  type PayableAddOn,
   type PayableJob,
 } from "@/lib/payment-obligations"
 
@@ -16,7 +20,6 @@ const job = (over: Partial<PayableJob> & { id: string }): PayableJob => ({
   date: "2026-08-03T12:00:00.000Z",
   scheduleId: "sched-1",
   subcontractorRate: 1000,
-  clientId: "client-1",
   subcontractorPayType: "FLAT_RATE",
   addOnTotal: 0,
   ...over,
@@ -177,9 +180,9 @@ describe("line items, one per covered clean", () => {
   it("puts the monthly rate on the first clean and add-ons on their own", () => {
     const [obligation] = buildObligations(flatMonth)
     expect(obligation.lines).toEqual([
-      { jobId: "a", amount: 1000 },
-      { jobId: "b", amount: 0 },
-      { jobId: "c", amount: 40 },
+      { jobId: "a", addOnServiceId: null, amount: 1000 },
+      { jobId: "b", addOnServiceId: null, amount: 0 },
+      { jobId: "c", addOnServiceId: null, amount: 40 },
     ])
   })
 
@@ -216,9 +219,11 @@ describe("matching line items back to the obligation being reversed", () => {
     scheduleId: "sched-1",
     period: "2026-08",
   }
-  const line = (jobId: string, date: string, scheduleId: string | null) => ({
+  const line = (jobId: string | null, date: string | null, scheduleId: string | null) => ({
     jobId,
-    job: { date, scheduleId },
+    addOnServiceId: null,
+    serviceDate: date,
+    scheduleId,
   })
 
   it("claims every clean of that schedule in that month", () => {
@@ -245,7 +250,103 @@ describe("matching line items back to the obligation being reversed", () => {
     expect(lineBelongsToObligation(perClean, line("y", "2026-08-05T12:00:00.000Z", null))).toBe(false)
   })
 
-  it("survives a line item whose job record is gone", () => {
-    expect(lineBelongsToObligation(monthObligation, { jobId: "a", job: null })).toBe(false)
+  it("still claims a clean that has since been deleted", () => {
+    // The point of the snapshot: the line item outlives the job, and undo has
+    // to keep recognising it. Before, a deleted clean left the line unmatched
+    // and the month could not be reversed at all.
+    expect(lineBelongsToObligation(monthObligation, line(null, "2026-08-05T12:00:00.000Z", "sched-1"))).toBe(true)
+  })
+
+  it("claims nothing when the line has no snapshot and no job", () => {
+    expect(lineBelongsToObligation(monthObligation, line(null, null, null))).toBe(false)
+  })
+})
+
+describe("an add-on performed on someone else's schedule", () => {
+  const addOn = (over: Partial<PayableAddOn> & { id: string }): PayableAddOn => ({
+    description: "Carpet shampoo",
+    subcontractorRate: 120,
+    date: "2026-08-12T12:00:00.000Z",
+    ...over,
+  })
+
+  it("is owed on its own, not folded into a clean", () => {
+    // It used to be added straight to the payment total with no line and no
+    // obligation, so nothing recorded that it had been paid for.
+    const [obligation] = buildAddOnObligations([addOn({ id: "ao-1" })])
+    expect(obligation.kind).toBe("ADDON")
+    expect(obligation.amount).toBe(120)
+    expect(obligation.key).toBe(addOnKey("ao-1"))
+  })
+
+  it("gets a line of its own", () => {
+    const [obligation] = buildAddOnObligations([addOn({ id: "ao-1" })])
+    expect(obligation.lines).toEqual([{ jobId: null, addOnServiceId: "ao-1", amount: 120 }])
+  })
+
+  it("covers no clean, so paying it marks no clean paid", () => {
+    const obligations = buildAddOnObligations([addOn({ id: "ao-1" })])
+    expect(coveredJobIds(obligations)).toEqual([])
+    expect(coveredAddOnIds(obligations)).toEqual(["ao-1"])
+  })
+
+  it("keys each add-on separately", () => {
+    const obligations = buildAddOnObligations([addOn({ id: "ao-1" }), addOn({ id: "ao-2" })])
+    expect(new Set(obligations.map(o => o.key)).size).toBe(2)
+  })
+
+  it("reads its month from the clean it was performed on", () => {
+    const [obligation] = buildAddOnObligations([addOn({ id: "ao-1", date: "2026-08-31T12:00:00.000Z" })])
+    expect(obligation.period).toBe("2026-08")
+  })
+
+  it("adds to the payment total alongside cleans", () => {
+    const obligations = [
+      ...buildObligations([job({ id: "a", subcontractorRate: 4500 })]),
+      ...buildAddOnObligations([addOn({ id: "ao-1" })]),
+    ]
+    expect(obligationsTotal(obligations)).toBe(4620)
+    expect(obligationLines(obligations)).toHaveLength(2)
+  })
+})
+
+describe("reversing an add-on", () => {
+  const addOnObligation = {
+    kind: "ADDON",
+    obligationKey: addOnKey("ao-1"),
+    scheduleId: null,
+    period: "2026-08",
+  }
+  const monthObligation = {
+    kind: "SCHEDULE_MONTH",
+    obligationKey: scheduleMonthKey("sched-1", "2026-08"),
+    scheduleId: "sched-1",
+    period: "2026-08",
+  }
+  const addOnLine = (id: string) => ({
+    jobId: null,
+    addOnServiceId: id,
+    serviceDate: "2026-08-12T12:00:00.000Z",
+    scheduleId: "sched-1",
+  })
+
+  it("claims its own add-on line", () => {
+    expect(lineBelongsToObligation(addOnObligation, addOnLine("ao-1"))).toBe(true)
+  })
+
+  it("does not claim another add-on", () => {
+    expect(lineBelongsToObligation(addOnObligation, addOnLine("ao-2"))).toBe(false)
+  })
+
+  it("does not let a flat month swallow an add-on line", () => {
+    // The add-on settles separately, so undoing the month must leave it paid ·
+    // otherwise its money would vanish with the month it was merely near.
+    expect(lineBelongsToObligation(monthObligation, addOnLine("ao-1"))).toBe(false)
+  })
+
+  it("does not let an add-on claim a clean", () => {
+    expect(lineBelongsToObligation(addOnObligation, {
+      jobId: "a", addOnServiceId: null, serviceDate: "2026-08-12T12:00:00.000Z", scheduleId: "sched-1",
+    })).toBe(false)
   })
 })

@@ -255,9 +255,18 @@ export const createPaymentSchema = z.object({
   jobIds: z.array(z.string().uuid('Invalid job ID')).optional().default([]),
   // Add-ons performed by this cleaner on someone else's schedule/job (Payout-B).
   addOnIds: z.array(z.string().uuid('Invalid add-on ID')).optional().default([]),
+  // The Cleaners page names the same field addOnServiceIds, because that is
+  // what the vendor route calls it, and both pages pay through one bar. This
+  // route only read addOnIds, so a cleaner's performed add-ons were dropped
+  // from a batch payment without a word · the recorded payment came out lower
+  // than the amount the page had just shown. Accept either spelling.
+  addOnServiceIds: z.array(z.string().uuid('Invalid add-on ID')).optional().default([]),
   datePaid: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
   notes: z.string().max(2000, 'Notes too long').optional().nullable(),
-}).refine((d) => d.jobIds.length + d.addOnIds.length > 0, {
+}).transform((d) => ({
+  ...d,
+  addOnIds: Array.from(new Set([...d.addOnIds, ...d.addOnServiceIds])),
+})).refine((d) => d.jobIds.length + d.addOnIds.length > 0, {
   message: 'At least one job or add-on is required',
   path: ['jobIds'],
 })

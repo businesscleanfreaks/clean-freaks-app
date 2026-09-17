@@ -160,9 +160,9 @@ model Subcontractor {
   /// Tax details. Only the LAST FOUR digits of the tax ID are ever stored —
   /// the full number is not needed to issue a 1099 from this app, and holding
   /// it would make this table a target for no operational benefit.
-  legalName    String?
-  taxIdType    String? // SSN | EIN
-  taxIdLast4   String?
+  legalName  String?
+  taxIdType  String? // SSN | EIN
+  taxIdLast4 String?
 
   /// Free-text notes shown on the profile.
   profileNotes String?
@@ -323,10 +323,9 @@ model Job {
   vendorPaymentLineItems VendorPaymentLineItem[]
   addOnServices          AddOnService[]
   invoiceReceipts        CleanerInvoiceReceipt[]
+  consumables            Consumable[]
 
   @@unique([scheduleId, date], name: "unique_schedule_date")
-  consumables Consumable[]
-
   @@index([date])
   @@index([status])
   @@index([subcontractorId])
@@ -544,17 +543,40 @@ model SubcontractorPaymentCoverage {
   @@map("subcontractor_payment_coverage")
 }
 
+/// One clean of a cleaner payment.
+///
+/// Deleting a clean used to CASCADE this row away: the payment kept the money
+/// and lost all record of what it bought. One payment in production is $1,200
+/// with no line items at all for exactly that reason.
+///
+/// The invoice line item already solved this · it carries its own description
+/// and date, so losing the job link costs nothing. These rows now do the same,
+/// and the job link is SetNull rather than Cascade. A deleted clean leaves the
+/// payment intact and still readable.
 model SubcontractorPaymentLineItem {
-  id        String @id @default(uuid())
-  paymentId String
-  jobId     String
-  amount    Float
+  id             String    @id @default(uuid())
+  paymentId      String
+  jobId          String?
+  /// An add-on this cleaner performed on someone else's schedule. It is owed to
+  /// them on its own, so it gets a line of its own · it used to be added to the
+  /// payment total with nothing recording it.
+  addOnServiceId String?
+  amount         Float
+  /// Snapshot, written when the payment is recorded. Outlives the clean.
+  description    String    @default("")
+  serviceDate    DateTime?
+  /// Which schedule the clean belonged to, so undo can still tell a flat month
+  /// apart from another account after the clean itself is gone.
+  scheduleId     String?
 
-  payment SubcontractorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  job     Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  payment      SubcontractorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  job          Job?                 @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  addOnService AddOnService?        @relation(fields: [addOnServiceId], references: [id], onDelete: SetNull)
 
   @@unique([paymentId, jobId])
+  @@unique([paymentId, addOnServiceId])
   @@index([jobId])
+  @@index([addOnServiceId])
   @@map("subcontractor_payment_line_items")
 }
 
@@ -576,14 +598,15 @@ model AddOnService {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  job                    Job?                    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  schedule               Schedule?               @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  vendor                 Vendor?                 @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  subcontractor          Subcontractor?          @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
+  job                    Job?                           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  schedule               Schedule?                      @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  vendor                 Vendor?                        @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  subcontractor          Subcontractor?                 @relation(fields: [subcontractorId], references: [id], onDelete: SetNull)
   invoiceLineItems       InvoiceLineItem[]
   vendorPaymentLineItems VendorPaymentLineItem[]
+  paymentLineItems       SubcontractorPaymentLineItem[]
 
-  invoiceReceipts        CleanerInvoiceReceipt[]
+  invoiceReceipts CleanerInvoiceReceipt[]
 
   @@index([jobId])
   @@index([scheduleId])
@@ -660,16 +683,22 @@ model VendorPayment {
   @@map("vendor_payments")
 }
 
+/// One piece of work on a vendor payment. Same defect, same fix as the cleaner
+/// line item above: deleting the clean or the add-on cascaded the money record
+/// away. The snapshot keeps the payment readable and the links are SetNull.
 model VendorPaymentLineItem {
-  id             String  @id @default(uuid())
+  id             String    @id @default(uuid())
   paymentId      String
   addOnServiceId String?
   jobId          String?
   amount         Float
+  /// Snapshot, written when the payment is recorded. Outlives the work.
+  description    String    @default("")
+  serviceDate    DateTime?
 
   payment      VendorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  addOnService AddOnService? @relation(fields: [addOnServiceId], references: [id], onDelete: Cascade)
-  job          Job?          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  addOnService AddOnService? @relation(fields: [addOnServiceId], references: [id], onDelete: SetNull)
+  job          Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
 
   @@unique([paymentId, addOnServiceId])
   @@unique([paymentId, jobId])

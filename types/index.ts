@@ -158,10 +158,17 @@ export interface SubcontractorPayment {
 export interface SubcontractorPaymentLineItem {
   id: string
   paymentId: string
-  jobId: string
+  /** Null once the clean has been deleted. The line and its money remain. */
+  jobId: string | null
+  /** Set instead of jobId when the line pays a performed add-on. */
+  addOnServiceId: string | null
   amount: number
+  /** Written when the payment is recorded, so the line outlives the clean. */
+  description: string
+  serviceDate: Date | null
+  scheduleId: string | null
   payment?: SubcontractorPayment
-  job?: Job
+  job?: Job | null
 }
 
 export interface AddOnService {
@@ -217,6 +224,9 @@ export interface VendorPaymentLineItem {
   addOnServiceId: string | null
   jobId: string | null
   amount: number
+  /** Written when the payment is recorded, so the line outlives the work. */
+  description: string
+  serviceDate: Date | null
   payment?: VendorPayment
   addOnService?: AddOnService | null
   job?: Job | null
