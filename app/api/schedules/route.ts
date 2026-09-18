@@ -10,13 +10,14 @@ import { parseDateOnlyForStorage } from '@/lib/date-only'
 import { requireAuth } from '@/lib/auth'
 import { cadenceOverrideForClientPaymentRule } from '@/lib/client-payment-rules'
 import { getPayoutSettings } from '@/lib/payout-settings'
+import { BUSINESS_TIME_ZONE } from '@/lib/business-time'
 
 // Type for transaction client
 type TransactionClient = Prisma.TransactionClient
 
 // Cleans run on the business's local wall-clock time. Single-location business,
 // so this is hardcoded; lift to config if you ever operate across time zones.
-const BUSINESS_TZ = 'America/Los_Angeles'
+const BUSINESS_TZ = BUSINESS_TIME_ZONE
 
 // Generate jobs for a schedule - can run inside or outside a transaction
 async function generateJobsForSchedule(scheduleId: string, tx?: TransactionClient) {

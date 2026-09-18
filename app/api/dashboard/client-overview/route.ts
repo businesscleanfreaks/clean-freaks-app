@@ -9,6 +9,7 @@ import { projectSingleScheduleForMonth, type ProjectableSchedule } from "@/lib/s
 import { getAverageScheduleOccurrencesPerMonth } from "@/lib/schedule-averages"
 import { getPrimaryScheduleForDisplay, getScheduleLifecycle, sortSchedulesForDisplay } from "@/lib/schedule-timing"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
+import { periodTotalsByClient, totalsFor, periodBasis, type PeriodJob } from '@/lib/dashboard-period'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,10 +36,10 @@ export async function GET(request: NextRequest) {
     logger.debug(`[client-overview] Fetching clients for ${year}-${month+1}...`)
 
     // Get all clients with their schedules, locations, and add-ons
+    // A past month is history. An account that has since been deactivated still
+    // did the work, so its figures must not disappear from the month it worked.
     const clients = await prisma.client.findMany({
-      where: {
-        isActive: true,
-      },
+      where: isPastMonth ? {} : { isActive: true },
       include: {
         locations: {
           include: {
@@ -69,11 +70,6 @@ export async function GET(request: NextRequest) {
           where: {
             date: { gte: periodStart, lte: periodEnd },
             status: { in: ['COMPLETED'] },
-            location: {
-              client: {
-                isActive: true,
-              },
-            },
           },
           include: pastJobInclude,
         })
@@ -94,17 +90,38 @@ export async function GET(request: NextRequest) {
       logger.debug(`[client-overview] Past month: found ${pastJobs.length} completed jobs`)
     }
 
+    // The month's figures, from the month's work. Grouped by the schedule each
+    // job was actually on · taken from the job, so a schedule that has since
+    // ended still counts the month it worked.
+    const periodTotalsByClient_result = periodTotalsByClient(
+      pastJobs.map((job): PeriodJob => ({
+        id: job.id,
+        clientId: job.location.clientId,
+        scheduleId: job.scheduleId,
+        clientRate: job.clientRate,
+        subcontractorRate: job.subcontractorRate,
+        clientPayType: job.schedule?.clientPayType ?? null,
+        subcontractorPayType: job.schedule?.subcontractorPayType ?? null,
+        recurringAddOns: job.schedule?.recurringAddOnServices ?? [],
+        jobAddOns: job.addOnServices,
+      }))
+    )
+
     // Calculate AVG and Period data for each client
     const clientData = clients.map(client => {
       // Flatten all schedules for this client
       const schedules = client.locations.flatMap(loc => loc.schedules)
 
-      if (schedules.length === 0) {
-        return null // Skip clients with no active schedules
+      // A client with no active recurring schedule was dropped here, before
+      // their one-off work was ever looked at · so one-off-only accounts, and
+      // accounts whose schedule has since ended, vanished from past months.
+      const periodWork = totalsFor(periodTotalsByClient_result, client.id)
+      if (schedules.length === 0 && !(isPastMonth && periodWork.jobCount > 0)) {
+        return null // Skip clients with no active schedules and no work that month
       }
 
       const sortedSchedules = sortSchedulesForDisplay(schedules)
-      const primarySchedule = getPrimaryScheduleForDisplay(sortedSchedules) || schedules[0]
+      const primarySchedule = getPrimaryScheduleForDisplay(sortedSchedules) || schedules[0] || null
       const displaySchedules = sortedSchedules.filter(schedule => getScheduleLifecycle(schedule) !== 'ended')
       const displayFrequencySchedules = displaySchedules.length > 0 ? displaySchedules : sortedSchedules
 
@@ -179,47 +196,12 @@ export async function GET(request: NextRequest) {
           addOns.push(`${addon.description}: $${addon.clientRate} ${freqDisplay}${addon.subcontractorRate > 0 ? `, Cleaner $${addon.subcontractorRate}` : ''}`)
         })
 
-        // ── Period calculations ──
-        if (isPastMonth) {
-          // Past months: use actual job records
-          const scheduleKey = `${client.id}-${schedule.id}`
-          const scheduleJobs = jobsByClientSchedule.get(scheduleKey) || []
-
-          periodJobCount += scheduleJobs.length
-
-          if (clientPayType === 'FLAT_RATE') {
-            if (scheduleJobs.length > 0) {
-              periodRevenue += scheduleJobs[0].clientRate
-            }
-          } else {
-            periodRevenue += scheduleJobs.reduce((sum, job) => sum + job.clientRate, 0)
-          }
-
-          if (subPayType === 'FLAT_RATE') {
-            if (scheduleJobs.length > 0) {
-              periodCleanerCost += scheduleJobs[0].subcontractorRate
-            }
-          } else {
-            periodCleanerCost += scheduleJobs.reduce((sum, job) => sum + job.subcontractorRate, 0)
-          }
-
-          // Add recurring add-ons for past months (was missing before)
-          if (scheduleJobs.length > 0 && schedule.recurringAddOnServices) {
-            schedule.recurringAddOnServices.forEach(addon => {
-              periodRevenue += addon.clientRate
-              periodCleanerCost += addon.subcontractorRate
-            })
-          }
-
-          // Add job-level add-ons for past months
-          scheduleJobs.forEach(job => {
-            job.addOnServices.forEach(addon => {
-              periodRevenue += addon.clientRate
-              periodCleanerCost += addon.subcontractorRate
-            })
-          })
-        } else {
-          // Current + future months: project from schedule date math
+        // ── Period projection ──
+        // Only for months that have not happened. A PAST month is computed
+        // once, below, from the jobs themselves: doing it here meant it was
+        // computed inside a loop over the schedules current TODAY, so work on
+        // a schedule that has since ended was fetched and never counted.
+        if (!isPastMonth) {
           const projection = projectSingleScheduleForMonth(
             projectableSchedule,
             year,
@@ -231,17 +213,16 @@ export async function GET(request: NextRequest) {
         }
       })
 
-      // One-off jobs (only relevant for past months with actual job data)
+      // A past month, from the work that actually happened · every schedule it
+      // was done on, ended or not, plus one-off work, at the rates on record.
       if (isPastMonth) {
-        const oneOffKey = `${client.id}-one-off`
-        const oneOffJobs = jobsByClientSchedule.get(oneOffKey) || []
-
-        if (oneOffJobs.length > 0) {
-          periodJobCount += oneOffJobs.length
-          periodRevenue += oneOffJobs.reduce((sum, job) => sum + job.clientRate, 0)
-          periodCleanerCost += oneOffJobs.reduce((sum, job) => sum + job.subcontractorRate, 0)
-        }
+        const actual = totalsFor(periodTotalsByClient_result, client.id)
+        periodRevenue = actual.revenue
+        periodCleanerCost = actual.cleanerCost
+        periodJobCount = actual.jobCount
       }
+
+      // One-off work is included in the figures above, by the same pass.
 
       // Combine frequencies for display
       const frequencies = displayFrequencySchedules.map(s => formatFrequency(s.frequency, s.daysOfWeek || undefined, s.monthlyPattern || undefined))
@@ -253,8 +234,10 @@ export async function GET(request: NextRequest) {
         propertyType: client.propertyType ?? null,
         cleanerAssigned: subcontractorName,
         frequency: uniqueFreqs.join('; '),
-        clientPayType: formatPayType(primarySchedule.clientPayType || 'PER_CLEAN'),
-        cleanerPayType: formatPayType(primarySchedule.subcontractorPayType || 'PER_CLEAN'),
+        // A one-off-only account has no schedule to read these from, and the
+        // client's own billing type is the right answer for it.
+        clientPayType: formatPayType(primarySchedule?.clientPayType || client.billingType || 'PER_CLEAN'),
+        cleanerPayType: formatPayType(primarySchedule?.subcontractorPayType || client.cleanerPayType || 'PER_CLEAN'),
         addOns: addOns.length > 0 ? addOns.join('; ') : '-',
 
         // AVG calculations
@@ -300,6 +283,9 @@ export async function GET(request: NextRequest) {
           month,
           label: format(periodStart, 'MMMM yyyy'),
           isFuture: !isPastMonth && periodStart > now,
+          // Recorded work, or a projection from the schedule calendar. The
+          // screen called every month "actuals" and showed Net Profit under it.
+          basis: periodBasis(isPastMonth),
         },
       },
       {

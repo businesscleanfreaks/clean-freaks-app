@@ -1,4 +1,4 @@
-import { format } from "date-fns"
+import { formatDateOnly } from "./date-only"
 
 /**
  * How a payment line says what it paid for.
@@ -24,9 +24,10 @@ export function paymentLineDescription(work: {
   const name = work.name.trim()
   if (!work.date) return name
 
-  const date = work.date instanceof Date ? work.date : new Date(work.date)
-  if (Number.isNaN(date.getTime())) return name
-
-  const when = format(date, "MMM d, yyyy")
+  // The day the work happened, read as a day. date-fns `format` renders in the
+  // server's zone, which turns a noon-UTC service day into the NEXT day
+  // anywhere far enough ahead of UTC. See lib/date-only.ts.
+  const when = formatDateOnly(work.date, "MMM d, yyyy")
+  if (!when) return name
   return name ? `${name} \u00b7 ${when}` : when
 }

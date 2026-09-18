@@ -20,6 +20,20 @@ interface BulkJobActionsProps {
   subcontractors: Array<{ id: string; name: string }>
 }
 
+/**
+ * What actually happened, in the server's words when it differs from ours.
+ *
+ * The bar used to report the number of jobs the operator had ticked, whatever
+ * the server did with them. Now that a bulk change can leave protected work
+ * alone · a clean the cleaner has already been paid for · saying "12 assigned"
+ * when eleven were would hide exactly the thing worth seeing.
+ */
+async function bulkOutcome(response: Response, fallback: string): Promise<string> {
+  const body = await response.json().catch(() => null)
+  const blocked = Array.isArray(body?.blocked) ? body.blocked.length : 0
+  return blocked > 0 && typeof body?.message === "string" ? body.message : fallback
+}
+
 export function BulkJobActions({
   selectedJobIds,
   onClearSelection,
@@ -64,7 +78,9 @@ export function BulkJobActions({
         return
       }
 
-      showSuccess(`${selectedCount} job${selectedCount !== 1 ? 's' : ''} marked as complete`)
+      showSuccess(
+        await bulkOutcome(response, `${selectedCount} job${selectedCount !== 1 ? 's' : ''} marked as complete`),
+      )
       onClearSelection()
       onJobsUpdated()
     } catch (error) {
@@ -108,7 +124,9 @@ export function BulkJobActions({
         return
       }
 
-      showSuccess(`${selectedCount} job${selectedCount !== 1 ? 's' : ''} assigned`)
+      showSuccess(
+        await bulkOutcome(response, `${selectedCount} job${selectedCount !== 1 ? 's' : ''} assigned`),
+      )
       onClearSelection()
       setSelectedSubcontractorId("")
       onJobsUpdated()
@@ -148,7 +166,9 @@ export function BulkJobActions({
         return
       }
 
-      showSuccess(`${selectedCount} job${selectedCount !== 1 ? 's' : ''} cancelled`)
+      showSuccess(
+        await bulkOutcome(response, `${selectedCount} job${selectedCount !== 1 ? 's' : ''} cancelled`),
+      )
       onClearSelection()
       onJobsUpdated()
     } catch (error) {

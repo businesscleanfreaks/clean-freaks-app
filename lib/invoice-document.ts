@@ -25,6 +25,7 @@
  */
 
 import { groupInvoiceLineItems, type RawInvoiceLineItem } from "./invoice-grouping"
+import { formatDateOnly } from "./date-only"
 
 export interface DocumentRow {
   description: string
@@ -85,10 +86,9 @@ const text = (value: unknown): string => String(value ?? "").replace(/\s+/g, " "
 
 /** "Jun 25, 2026", or null when there is no date to show. */
 export function documentDate(value: Date | string | null | undefined): string | null {
-  if (!value) return null
-  const d = value instanceof Date ? value : new Date(value)
-  if (isNaN(d.getTime())) return null
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  // An invoice date is a day, not a moment: rendering it in the server's zone
+  // printed the day before on the client's copy anywhere ahead of UTC.
+  return formatDateOnly(value, "MMM d, yyyy")
 }
 
 /**

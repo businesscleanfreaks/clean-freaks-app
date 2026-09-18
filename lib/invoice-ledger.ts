@@ -1,3 +1,4 @@
+import { formatBusinessDate } from "./business-time"
 /**
  * Invoice ledger — the status vocabulary and grouping the Invoices page uses.
  *
@@ -105,8 +106,17 @@ function daysBetween(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / DAY_MS)
 }
 
+/**
+ * A real moment, shown as a day in the business's timezone.
+ *
+ * These are timestamps the app recorded (when it was scheduled to send, when it
+ * was marked billed externally, when clearing is expected), not service days.
+ * With no timezone this rendered in whatever zone the code happened to run in ·
+ * UTC on the server and the viewer's own zone in the browser · so the same
+ * record could show two different days depending on where it was drawn.
+ */
 const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  formatBusinessDate(iso, { month: "short", day: "numeric" }) ?? ""
 
 export function deriveLedgerStatus(inv: LedgerSource, now: Date): LedgerStatus {
   if (inv.status === "PAID") return "Sent: Paid"

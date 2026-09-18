@@ -5,7 +5,8 @@
  * based on the cleaner's payment cadence rules.
  */
 
-import { addDays, endOfMonth, addMonths, setDate } from 'date-fns'
+import { addDays } from 'date-fns'
+import { parseDateOnly } from './date-only'
 
 // ── Cadence types ──────────────────────────────────────────────
 
@@ -125,11 +126,12 @@ function isFastPayReady(
  */
 export const COMMERCIAL_PAYOUT_DAY = 5
 
-function commercialPayoutDate(jobDate: Date): Date {
-  const nextMonth = addMonths(jobDate, 1)
-  const day = setDate(new Date(nextMonth), COMMERCIAL_PAYOUT_DAY)
-  day.setHours(0, 0, 0, 0)
-  return day
+function commercialPayoutDate(jobDay: Date): Date {
+  // The 5th of the following month, on the noon-UTC convention this codebase
+  // stores service days in · so "the 5th" is the same day wherever this runs.
+  // Built from local parts and local midnight, it landed on the 4th or the 6th
+  // depending on the server's zone.
+  return new Date(Date.UTC(jobDay.getFullYear(), jobDay.getMonth() + 1, COMMERCIAL_PAYOUT_DAY, 12, 0, 0))
 }
 
 /**
@@ -150,7 +152,16 @@ export function isJobPayable(
   if (isClientExcluded(job.location.client.id, subcontractor)) return false
 
   // Job must be in the past (or today)
+  // Two different questions get asked below and they need different values.
+  //
+  //   - "has enough TIME passed since the work" (7 days, 72 hours) is elapsed
+  //     time, and wants the real moment;
+  //   - "is it past the 20th / the 5th / the end of the month" is a calendar
+  //     question about the service DAY, and must not move with the server's
+  //     zone · read as an instant and asked locally, a clean on the 20th is the
+  //     19th or the 21st depending on where this runs.
   const jobDate = new Date(job.date)
+  const jobDay = parseDateOnly(job.date) ?? jobDate
   if (jobDate > now) return false
 
   const cadence = getEffectiveCadence(subcontractor, schedule)
@@ -165,24 +176,23 @@ export function isJobPayable(
 
     case 'END_OF_MONTH': {
       // Payable after the calendar month of the job ends
-      const monthEnd = endOfMonth(jobDate)
+      const monthEnd = new Date(Date.UTC(jobDay.getFullYear(), jobDay.getMonth() + 1, 0, 23, 59, 59, 999))
       return now > monthEnd
     }
 
     case 'SEMI_MONTHLY': {
       // 1st-15th → payable after the 20th of the same month
       // 16th-end → payable after the 5th of the next month
-      const dayOfMonth = jobDate.getDate()
+      const dayOfMonth = jobDay.getDate()
+      const y = jobDay.getFullYear()
+      const m = jobDay.getMonth()
 
       if (dayOfMonth <= 15) {
         // First half: payable after the 20th of the same month
-        const payableAfter = setDate(new Date(jobDate), 20)
-        return now > payableAfter
+        return now > new Date(Date.UTC(y, m, 20, 12, 0, 0))
       } else {
         // Second half: payable after the 5th of the next month
-        const nextMonth = addMonths(jobDate, 1)
-        const payableAfter = setDate(new Date(nextMonth), 5)
-        return now > payableAfter
+        return now > new Date(Date.UTC(y, m + 1, 5, 12, 0, 0))
       }
     }
 
@@ -190,7 +200,7 @@ export function isJobPayable(
       return isFastPayReady(jobDate, subcontractor, now) || now >= addDays(jobDate, 7)
 
     case 'COMMERCIAL_CLIENT_PAID_OR_7TH':
-      return isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= commercialPayoutDate(jobDate)
+      return isFastPayReady(jobDate, subcontractor, now) || hasPaidClientInvoice(job) || now >= commercialPayoutDate(jobDay)
 
     case 'ON_CLEANER_INVOICE':
       // Never auto-payable — requires manual release
@@ -244,7 +254,10 @@ export function getPayableStatusText(
     }
 
     case 'END_OF_MONTH': {
-      const monthEnd = endOfMonth(new Date(job.date))
+      // The service DAY's month end, on the same convention as the rule above ·
+      // the label and the rule disagreeing is worse than either being wrong.
+      const day = parseDateOnly(job.date) ?? new Date(job.date)
+      const monthEnd = new Date(Date.UTC(day.getFullYear(), day.getMonth() + 1, 0, 23, 59, 59, 999))
       if (new Date() > monthEnd) return 'Ready to pay'
       return `Payable after month-end`
     }

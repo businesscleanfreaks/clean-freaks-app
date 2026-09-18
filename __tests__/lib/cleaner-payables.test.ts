@@ -166,7 +166,11 @@ describe("jobPayState", () => {
 
   it("is ready once the invoice is in and it is unlocked", () => {
     const a = acct({ invoicedJobIds: ["j1"] })
-    expect(jobPayState({ ...base, account: a, now: new Date("2026-08-03") })).toBe("ready")
+    // An explicit local instant, as every other readiness test here uses. The
+    // bare "2026-08-03" is UTC midnight, which is still the 2nd in Pacific ·
+    // the day before the pay-by day, so the assertion was testing the opposite
+    // of what it says wherever the clock runs behind UTC.
+    expect(jobPayState({ ...base, account: a, now: new Date("2026-08-03T09:00:00") })).toBe("ready")
   })
 
   it("never waits on an invoice from a team that does not send them", () => {

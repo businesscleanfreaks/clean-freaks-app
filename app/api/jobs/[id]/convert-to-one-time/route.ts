@@ -7,6 +7,7 @@ import { hasFinalInvoice } from '@/lib/invoice-status'
 import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
+import { draftLineUpdates } from '@/lib/draft-invoice-lines'
 
 /**
  * POST /api/jobs/[id]/convert-to-one-time
@@ -70,6 +71,11 @@ export async function POST(
         throw new Error('The cleaner has already been paid for this clean. Unmark the payment before converting.')
       }
 
+      // Every draft invoice this conversion disturbs, so each is retotalled once
+      // at the end. Removing lines without retotalling left invoices still
+      // charging for work that had just been taken off them.
+      const draftInvoicesToRetotal = new Set<string>()
+
       const jobDate = startOfDay(job.date)
       const dayBefore = subDays(jobDate, 1)
       const scheduleId = job.scheduleId
@@ -85,6 +91,35 @@ export async function POST(
           scheduleId: null,
         },
       })
+
+      // 1b. The conversion sets a new client rate, so the draft line billing for
+      //     this clean has to follow it · it used to keep the old amount and the
+      //     invoice kept the old total. Add-on lines are left alone, the same
+      //     rule the job route uses.
+      if (clientRate !== job.clientRate) {
+        const ownDraftLines = await tx.invoiceLineItem.findMany({
+          where: { jobId: job.id, invoice: { status: 'DRAFT' } },
+          select: {
+            id: true,
+            addOnServiceId: true,
+            amount: true,
+            description: true,
+            invoiceId: true,
+          },
+        })
+        const updates = draftLineUpdates(
+          ownDraftLines,
+          { clientRate, date: job.date, clientName: '' },
+          { rate: true, date: false },
+        )
+        for (const update of updates) {
+          const { id, ...data } = update
+          await tx.invoiceLineItem.update({ where: { id }, data })
+        }
+        for (const invoiceId of new Set(ownDraftLines.map(l => l.invoiceId))) {
+          draftInvoicesToRetotal.add(invoiceId)
+        }
+      }
 
       // 2. Cancel future uninvoiced SCHEDULED jobs on this schedule that are not yet paid.
       //    We delete cleanly when possible; otherwise leave them alone (rare case where the
@@ -114,7 +149,10 @@ export async function POST(
 
         // Collect any draft invoices this job was on, so we can clean them up after.
         for (const li of fj.invoiceLineItems) {
-          if (li.invoice?.status === 'DRAFT') draftInvoiceIds.add(li.invoiceId)
+          if (li.invoice?.status === 'DRAFT') {
+            draftInvoiceIds.add(li.invoiceId)
+            draftInvoicesToRetotal.add(li.invoiceId)
+          }
         }
 
         // Remove draft line items + addon services + the job itself
@@ -129,7 +167,22 @@ export async function POST(
         const remaining = await tx.invoiceLineItem.count({ where: { invoiceId } })
         if (remaining === 0) {
           await tx.invoice.delete({ where: { id: invoiceId } })
+          draftInvoicesToRetotal.delete(invoiceId)
         }
+      }
+
+      // An invoice that still has lines keeps its old total unless we rebuild it.
+      // Only empty ones were handled before, so a multi-line draft went on
+      // charging for the cleans this conversion had just removed.
+      for (const invoiceId of draftInvoicesToRetotal) {
+        const remaining = await tx.invoiceLineItem.findMany({
+          where: { invoiceId },
+          select: { amount: true },
+        })
+        await tx.invoice.update({
+          where: { id: invoiceId },
+          data: { totalAmount: remaining.reduce((sum, item) => sum + item.amount, 0) },
+        })
       }
 
       // 3. End the schedule the day before this job's date and deactivate it.

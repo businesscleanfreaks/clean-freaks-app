@@ -7,6 +7,7 @@ import { CircleCheck, Loader2, RotateCcw } from "lucide-react"
 import { showError, showSuccess } from "@/lib/toast"
 import { buildCorrectionRows, correctionToast, type CorrectionTarget } from "@/lib/invoice-correction"
 import { cadenceLabel, cellStyle, scheduleSummaryLabel, type CellMark } from "@/lib/schedule-check"
+import { parseDateOnly } from "@/lib/date-only"
 
 /**
  * Schedule check — "did the month go as planned?" for a per-clean invoice.
@@ -63,8 +64,12 @@ export function buildDayMap(
   const [y, m] = month.split("-").map(Number)
   const byDay = new Map<number, { mark: CleanMark; jobId?: string }>()
   for (const c of cleans) {
-    const d = c.date instanceof Date ? c.date : new Date(c.date)
-    if (isNaN(d.getTime()) || d.getFullYear() !== y || d.getMonth() !== m - 1) continue
+    // A service day, not an instant. `new Date("2026-06-10")` is UTC midnight,
+    // and reading it back with local getters is the 9th anywhere behind UTC ·
+    // so a Pacific reviewer saw every clean a day early on this grid, and the
+    // ones on the 1st vanished from the month. See lib/date-only.ts.
+    const d = parseDateOnly(c.date)
+    if (!d || d.getFullYear() !== y || d.getMonth() !== m - 1) continue
     const day = d.getDate()
     const mark = markFor(c)
     const prev = byDay.get(day)

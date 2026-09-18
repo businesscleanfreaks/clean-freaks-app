@@ -177,10 +177,13 @@ describe("billed externally (Josh 2026-08-25)", () => {
     clearingSince: null,
     trackOnly: false,
   }
+  // Noon Pacific on the 19th · the kind of moment the app actually records
+  // when someone marks an invoice billed. Midnight UTC was 5pm Pacific on the
+  // 18th, so "Aug 19" was only ever right when read in UTC.
   const NOW = new Date("2026-08-25T12:00:00Z")
 
   it("leaves the to-send queue once marked", () => {
-    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T00:00:00Z" }, NOW)
+    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T19:00:00Z" }, NOW)
     expect(row.ledgerStatus).toBe("Billed externally")
   })
 
@@ -189,26 +192,26 @@ describe("billed externally (Josh 2026-08-25)", () => {
   })
 
   it("is not called paid · being invoiced is not being paid", () => {
-    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T00:00:00Z" }, NOW)
+    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T19:00:00Z" }, NOW)
     expect(row.ledgerStatus).not.toBe("Sent: Paid")
   })
 
   it("lets a real payment win over the mark", () => {
     const row = toLedgerRow(
-      { ...base, status: "PAID", externallyBilledAt: "2026-08-19T00:00:00Z" },
+      { ...base, status: "PAID", externallyBilledAt: "2026-08-19T19:00:00Z" },
       NOW,
     )
     expect(row.ledgerStatus).toBe("Sent: Paid")
   })
 
   it("says when it was billed, so it can be checked later", () => {
-    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T00:00:00Z" }, NOW)
+    const row = toLedgerRow({ ...base, externallyBilledAt: "2026-08-19T19:00:00Z" }, NOW)
     expect(row.subtext).toBe("Billed outside the app on Aug 19")
   })
 
   it("carries the note when one was left", () => {
     const row = toLedgerRow(
-      { ...base, externallyBilledAt: "2026-08-19T00:00:00Z", externallyBilledNote: "QuickBooks #4471" },
+      { ...base, externallyBilledAt: "2026-08-19T19:00:00Z", externallyBilledNote: "QuickBooks #4471" },
       NOW,
     )
     expect(row.subtext).toBe("Billed outside the app on Aug 19 · QuickBooks #4471")
@@ -216,7 +219,7 @@ describe("billed externally (Josh 2026-08-25)", () => {
 
   it("never reads as overdue · nothing is owed through the app", () => {
     const row = toLedgerRow(
-      { ...base, dateDue: "2026-07-01", externallyBilledAt: "2026-08-19T00:00:00Z" },
+      { ...base, dateDue: "2026-07-01", externallyBilledAt: "2026-08-19T19:00:00Z" },
       NOW,
     )
     expect(row.ledgerStatus).toBe("Billed externally")

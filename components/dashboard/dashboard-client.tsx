@@ -21,6 +21,7 @@ import {
 } from "@/components/dashboard/dashboard-operations"
 import { SkeletonPulse } from "@/components/ui/skeleton-pulse"
 import { showError, showSuccess } from "@/lib/toast"
+import { periodHeading, type PeriodBasis } from "@/lib/dashboard-period"
 
 interface ClientOverviewRow {
   id: string
@@ -48,7 +49,7 @@ interface ClientOverviewData {
     periodProfit: number
     periodJobCount: number
   }
-  period: { year: number; month: number; label: string }
+  period: { year: number; month: number; label: string; basis?: PeriodBasis }
 }
 
 interface ProjectedExpenseResponse {
@@ -155,6 +156,10 @@ export function DashboardClient() {
   })
 
   const rows = useMemo(() => overview.data?.clients || [], [overview.data?.clients])
+  // Recorded work, or a projection. Defaults to "projected" while loading and
+  // for an older API response, which is the honest direction to be wrong in.
+  const periodBasisValue: PeriodBasis =
+    overview.data?.period?.basis === "actual" ? "actual" : "projected"
   const totals = overview.data?.totals || {
     avgRevenue: 0,
     avgCleanerCost: 0,
@@ -278,8 +283,13 @@ export function DashboardClient() {
                 </div>
               )}
 
+              {/* Whether these figures are recorded work or a projection from the
+                  schedule calendar. The heading said "actuals" for every month,
+                  including months that had not happened, with Net Profit under it. */}
               <div className="mb-2 mt-4 flex items-center justify-between gap-4">
-                <h2 className="text-[11px] font-extrabold uppercase text-stone-500">{format(currentMonth, "MMMM yyyy")} actuals</h2>
+                <h2 className="text-[11px] font-extrabold uppercase text-stone-500">
+                  {periodHeading(format(currentMonth, "MMMM yyyy"), periodBasisValue)}
+                </h2>
                 <button type="button" onClick={() => setExpensesOpen(true)} className="inline-flex items-center gap-1.5 text-[12px] font-bold text-stone-500 hover:text-stone-900">
                   <Pencil size={13} /> Manage expenses
                 </button>

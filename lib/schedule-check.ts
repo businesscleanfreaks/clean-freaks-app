@@ -1,3 +1,4 @@
+import { parseDateOnly } from './date-only'
 /**
  * The schedule check card in the invoice review: what the month was supposed to
  * look like, and whether it went that way.
@@ -159,8 +160,12 @@ export function countCleans(month: string, cleans: CountableClean[]): CleanCount
   const byDay = new Map<number, string>()
 
   for (const clean of cleans) {
-    const d = clean.date instanceof Date ? clean.date : new Date(clean.date)
-    if (isNaN(d.getTime()) || d.getFullYear() !== year || d.getMonth() !== month1 - 1) continue
+    // A service day, not an instant. `new Date("2026-06-10")` is UTC midnight,
+    // and reading it back with local getters is the 9th anywhere behind UTC ·
+    // so a Pacific browser saw every clean a day early, and cleans on the 1st
+    // fell out of the month entirely. parseDateOnly reads the day as written.
+    const d = parseDateOnly(clean.date)
+    if (!d || d.getFullYear() !== year || d.getMonth() !== month1 - 1) continue
 
     const mark =
       clean.status === "CANCELLED" || clean.status === "SKIPPED"

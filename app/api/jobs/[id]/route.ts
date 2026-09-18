@@ -6,6 +6,9 @@ import { handleApiError, createErrorResponse } from '@/lib/api-error-handler'
 import { logger } from '@/lib/logger'
 import { cascadeJobUpdate } from '@/lib/cascading-updates'
 import { hasFinalInvoice } from '@/lib/invoice-status'
+import { draftLineUpdates } from '@/lib/draft-invoice-lines'
+import { jobChangeBlockedReason } from '@/lib/job-mutation-guard'
+import { removeJobsFromDraftInvoices } from '@/lib/job-cancellation'
 import { requireAuth } from '@/lib/auth'
 
 async function recalculateDraftInvoiceTotal(invoiceId: string, tx: any) {
@@ -100,49 +103,31 @@ export async function PUT(
         return { error: 'Job not found' as const, status: 404 as const }
       }
 
-      // Validate rescheduling: prevent changing date, rates, or location for invoiced/paid jobs
-      if (date !== undefined || clientRate !== undefined || subcontractorRate !== undefined || locationId !== undefined) {
-        if (hasFinalInvoice(currentJob.invoiceLineItems)) {
-          return {
-            error: 'Cannot reschedule or modify a job that is on a sent or paid invoice. Void or reset the invoice first.' as const,
-            status: 400 as const,
-          }
-        }
-
-        if (currentJob.subcontractorPaid) {
-          return {
-            error: 'Cannot reschedule or modify a job that has been paid. Please void the payment first.' as const,
-            status: 400 as const,
-          }
-        }
-
-        if (currentJob.vendorPaid) {
-          return {
-            error: 'Cannot reschedule or modify a job that has been paid to a vendor. Please void the vendor payment first.' as const,
-            status: 400 as const,
-          }
-        }
-
-        if (currentJob.status === 'CANCELLED') {
-          return {
-            error: 'Cannot reschedule or modify a cancelled job. Please change status to SCHEDULED first.' as const,
-            status: 400 as const,
-          }
-        }
-      }
-
-      if ((vendorId !== undefined || subcontractorId !== undefined) && (currentJob.subcontractorPaid || currentJob.vendorPaid)) {
-        return {
-          error: 'Cannot change who performed a job after it has been paid. Please void the payment first.' as const,
-          status: 400 as const,
-        }
-      }
-
-      if (vendorId && currentJob.scheduleId) {
-        return {
-          error: 'Vendor-performed jobs must be standalone one-off jobs.' as const,
-          status: 400 as const,
-        }
+      // These rules now live in lib/job-mutation-guard.ts, so the bulk route
+      // asks exactly the same question. It used to ask none of it: a change
+      // refused here was accepted through a batch, which is how work moved
+      // away from a cleaner who had already been paid for it.
+      const blockedReason = jobChangeBlockedReason(
+        {
+          id: resolvedParams.id,
+          status: currentJob.status,
+          scheduleId: currentJob.scheduleId,
+          subcontractorPaid: currentJob.subcontractorPaid,
+          vendorPaid: currentJob.vendorPaid,
+          invoiceLineItems: currentJob.invoiceLineItems,
+        },
+        {
+          reschedulesOrReprices:
+            date !== undefined ||
+            clientRate !== undefined ||
+            subcontractorRate !== undefined ||
+            locationId !== undefined,
+          changesWorker: vendorId !== undefined || subcontractorId !== undefined,
+          assignsVendor: Boolean(vendorId),
+        },
+      )
+      if (blockedReason) {
+        return { error: blockedReason, status: 400 as const }
       }
 
       // Handle excluded dates and conflict detection for recurring jobs being rescheduled
@@ -334,58 +319,10 @@ export async function PUT(
         }
       }
 
-      // Handle cancelled job cleanup
+      // Handle cancelled job cleanup · the same code the bulk route runs, which
+      // is the point: cancelling in a batch used to skip all of this.
       if (isBeingCancelled) {
-        // Find all invoices that include this job
-        const invoices = await tx.invoice.findMany({
-          where: {
-            lineItems: {
-              some: {
-                jobId: resolvedParams.id,
-              },
-            },
-          },
-          select: {
-            id: true,
-            status: true,
-          },
-        })
-
-        // For DRAFT invoices, remove the job and recalculate
-        for (const invoice of invoices) {
-          if (invoice.status === 'DRAFT') {
-            // Delete line items for this job
-            await tx.invoiceLineItem.deleteMany({
-              where: {
-                invoiceId: invoice.id,
-                jobId: resolvedParams.id,
-              },
-            })
-
-            // Recalculate invoice total
-            const remainingLineItems = await tx.invoiceLineItem.findMany({
-              where: { invoiceId: invoice.id },
-              select: { amount: true },
-            })
-            const newTotal = remainingLineItems.reduce((sum, item) => sum + item.amount, 0)
-            await tx.invoice.update({
-              where: { id: invoice.id },
-              data: { totalAmount: newTotal },
-            })
-
-            logger.info(`[PUT] Removed cancelled job from DRAFT invoice ${invoice.id} and recalculated total`)
-          }
-          // For SENT/PAID invoices, keep the job in the invoice (historical record)
-        }
-
-        // Unmark job as invoiced if it was in a DRAFT invoice
-        const draftInvoices = invoices.filter(inv => inv.status === 'DRAFT')
-        if (draftInvoices.length > 0) {
-          await tx.job.update({
-            where: { id: resolvedParams.id },
-            data: { invoiced: false },
-          })
-        }
+        await removeJobsFromDraftInvoices(tx, [resolvedParams.id])
       }
       
       // Update the job
@@ -403,30 +340,54 @@ export async function PUT(
         },
       })
 
-      if (clientRate !== undefined || date !== undefined || startTime !== undefined || startWindowBegin !== undefined || startWindowEnd !== undefined) {
+      // Only the facts a draft line actually bills on. This used to fire on
+      // startTime and either end of the arrival window too, and then rewrote
+      // EVERY draft line for this job to the job's client rate · so moving a
+      // clean from 9am to 10am repriced its add-on line and changed the
+      // invoice total. The rule lives in lib/draft-invoice-lines.ts.
+      const rateChanged =
+        clientRate !== undefined && clientRate !== currentJob.clientRate
+      // Compared exactly as the route WRITES it (line above: `date + 'T12:00:00'`),
+      // so a re-submitted identical day does not read as a change.
+      const dateChanged =
+        date !== undefined &&
+        new Date(date + 'T12:00:00').getTime() !== currentJob.date.getTime()
+
+      if (rateChanged || dateChanged) {
         const draftLineItems = await tx.invoiceLineItem.findMany({
           where: {
             jobId: resolvedParams.id,
             invoice: { status: 'DRAFT' },
           },
-          include: {
-            invoice: {
-              select: { id: true },
-            },
+          select: {
+            id: true,
+            addOnServiceId: true,
+            amount: true,
+            description: true,
+            invoice: { select: { id: true } },
           },
         })
 
-        const invoiceIds = Array.from(new Set(draftLineItems.map(item => item.invoice.id)))
-        for (const item of draftLineItems) {
-          await tx.invoiceLineItem.update({
-            where: { id: item.id },
-            data: {
-              amount: updatedJob.clientRate ?? item.amount,
-              description: `Cleaning - ${updatedJob.location.client.name} - ${updatedJob.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-            },
-          })
+        const updates = draftLineUpdates(
+          draftLineItems,
+          {
+            clientRate: updatedJob.clientRate,
+            date: updatedJob.date,
+            clientName: updatedJob.location.client.name,
+          },
+          { rate: rateChanged, date: dateChanged },
+        )
+
+        for (const update of updates) {
+          const { id, ...data } = update
+          await tx.invoiceLineItem.update({ where: { id }, data })
         }
 
+        // Only the invoices we actually touched need their total rebuilt.
+        const touched = new Set(updates.map(u => u.id))
+        const invoiceIds = Array.from(new Set(
+          draftLineItems.filter(item => touched.has(item.id)).map(item => item.invoice.id)
+        ))
         for (const invoiceId of invoiceIds) {
           await recalculateDraftInvoiceTotal(invoiceId, tx)
         }
@@ -443,8 +404,13 @@ export async function PUT(
       return createErrorResponse(result.error, result.status || 400, 'CONSTRAINT_ERROR')
     }
 
-    // At this point, we know result contains job and isBeingCancelled
-    const { job, isBeingCancelled } = result as { job: typeof result extends { job: infer J } ? J : never; isBeingCancelled: boolean }
+    const { job, isBeingCancelled } = result
+    if (!job) {
+      // Unreachable: every branch above either returns a job or an error. Said
+      // out loud rather than cast away · this was a conditional-type assertion
+      // that silently became `never` the moment the union changed shape.
+      return createErrorResponse('Failed to update job', 500, 'INTERNAL_ERROR')
+    }
 
     // Revalidate all job-related pages
     revalidateJobPages(job.location.client.id)

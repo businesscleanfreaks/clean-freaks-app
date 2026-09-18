@@ -1,3 +1,4 @@
+import { parseDateOnly } from './date-only'
 /**
  * Invoice-time correction of a cancelled clean.
  *
@@ -64,8 +65,11 @@ export function buildCorrectionRows(
 
   for (const clean of cleans) {
     if (!clean.jobId) continue
-    const d = clean.date instanceof Date ? clean.date : new Date(clean.date)
-    if (isNaN(d.getTime()) || d.getFullYear() !== y || d.getMonth() !== m - 1) continue
+    // A service day, read as written · see lib/date-only.ts. Parsing it as an
+    // instant put every row a day early in any zone behind UTC, which also
+    // reordered the rows and dropped the ones on the 1st.
+    const d = parseDateOnly(clean.date)
+    if (!d || d.getFullYear() !== y || d.getMonth() !== m - 1) continue
 
     const isCancelled = clean.status === "CANCELLED" || clean.status === "SKIPPED"
     const wasCorrected = corrected.has(clean.jobId)
