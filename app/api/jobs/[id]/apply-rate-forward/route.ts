@@ -7,6 +7,7 @@ import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { hasFinalInvoice } from '@/lib/invoice-status'
 import { revalidateInvoicePages, revalidateSchedulePages } from '@/lib/revalidate'
+import { rateForwardRefusal } from '@/lib/rate-forward'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,6 +66,7 @@ export async function POST(
             defaultClientRate: true,
             defaultSubcontractorRate: true,
             subcontractorId: true,
+            clientPayType: true,
           },
         },
       },
@@ -78,6 +80,17 @@ export async function POST(
         { error: 'This clean is locked by an invoice, payment, or cancellation.' },
         { status: 409 },
       )
+    }
+
+    // A flat monthly amount is read from the schedule for EVERY month, so
+    // "apply forward" cannot be forward-only for it: it would re-price months
+    // that have not been sent yet. See lib/rate-forward.ts.
+    const refusal = rateForwardRefusal({
+      billsMonthly: job.schedule.clientPayType === 'FLAT_RATE',
+      changesClientRate: updates.clientRate !== undefined,
+    })
+    if (refusal) {
+      return NextResponse.json({ code: refusal.code, error: refusal.message }, { status: 409 })
     }
 
     const previous = {

@@ -82,6 +82,7 @@ export async function PUT(
             select: {
               defaultClientRate: true,
               defaultSubcontractorRate: true,
+              clientPayType: true,
             },
           },
           location: {
@@ -374,6 +375,10 @@ export async function PUT(
             clientRate: updatedJob.clientRate,
             date: updatedJob.date,
             clientName: updatedJob.location.client.name,
+            // A flat-rate month carries one line for the whole month, attached
+            // to the first clean · so it looks exactly like a per-clean line.
+            billsMonthly:
+              (currentJob.schedule?.clientPayType ?? currentJob.location.client.billingType) === 'FLAT_RATE',
           },
           { rate: rateChanged, date: dateChanged },
         )

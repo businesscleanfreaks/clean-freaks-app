@@ -109,7 +109,8 @@ export async function POST(
         })
         const updates = draftLineUpdates(
           ownDraftLines,
-          { clientRate, date: job.date, clientName: '' },
+          // The conversion makes this a one-off, which is billed per clean.
+          { clientRate, date: job.date, clientName: '', billsMonthly: false },
           { rate: true, date: false },
         )
         for (const update of updates) {

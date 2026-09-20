@@ -10,6 +10,7 @@ const job: EditedJob = {
   clientRate: 100,
   date: new Date(Date.UTC(2026, 8, 2, 12, 0, 0)),
   clientName: "Bigco Offices",
+  billsMonthly: false,
 }
 
 const cleaningLine: DraftLine = {
@@ -134,5 +135,44 @@ describe("edge cases", () => {
     const second = { ...cleaningLine, id: "li-clean-2" }
     const updates = draftLineUpdates([cleaningLine, second], { ...job, clientRate: 140 }, { rate: true, date: false })
     expect(updates.map(u => u.id)).toEqual(["li-clean", "li-clean-2"])
+  })
+})
+
+describe("a flat-rate client's monthly line", () => {
+  // The draft carries ONE "Monthly Cleaning - <location> - <month>" line for
+  // the month, attached to the first clean of it. That gives it a jobId and no
+  // addOnServiceId · indistinguishable from a per-clean cleaning line by shape
+  // alone, which is why filtering add-ons was not enough on its own.
+  const monthlyLine: DraftLine = {
+    id: "li-monthly",
+    addOnServiceId: null,
+    amount: 4000,
+    description: "Monthly Cleaning - Bigco HQ - September 2026",
+  }
+  const flatRateJob: EditedJob = { ...job, billsMonthly: true }
+
+  it("is not repriced when one clean's rate changes", () => {
+    // The month's price comes from the schedule, not from this clean. Rewriting
+    // it put one clean's rate on the whole month.
+    const updates = draftLineUpdates([monthlyLine], { ...flatRateJob, clientRate: 140 }, { rate: true, date: false })
+    expect(updates).toEqual([])
+  })
+
+  it("keeps its wording when one clean moves day", () => {
+    // "Monthly Cleaning - Bigco HQ - September 2026" became
+    // "Cleaning - Bigco Offices - Sep 9, 2026": a month's line describing a day.
+    const moved = { ...flatRateJob, date: new Date(Date.UTC(2026, 8, 9, 12, 0, 0)) }
+    expect(draftLineUpdates([monthlyLine], moved, { rate: false, date: true })).toEqual([])
+  })
+
+  it("is left alone even alongside an add-on line", () => {
+    const addOn: DraftLine = { id: "li-addon", addOnServiceId: "ao-1", amount: 25, description: "Carpet shampoo" }
+    expect(draftLineUpdates([monthlyLine, addOn], flatRateJob, { rate: true, date: true })).toEqual([])
+  })
+
+  it("still moves a per-clean line for a per-clean client", () => {
+    // The guard must not spread: per-clean billing still follows the clean.
+    const updates = draftLineUpdates([cleaningLine], { ...job, clientRate: 140 }, { rate: true, date: false })
+    expect(updates).toEqual([{ id: "li-clean", amount: 140 }])
   })
 })

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
+import { finalizeTargets } from '@/lib/invoice-finalize'
 
 // Finalize a preview invoice by marking its jobs as invoiced
 export async function POST(
@@ -24,6 +25,7 @@ export async function POST(
                 id: true,
                 scheduleId: true,
                 date: true,
+                schedule: { select: { clientPayType: true } },
               },
             },
           },
@@ -36,28 +38,29 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    const directJobIds = invoice.lineItems
-      .map(item => item.jobId)
-      .filter((jobId): jobId is string => jobId !== null)
-    const scheduleMonthKeys = new Map<string, { scheduleId: string; monthStart: Date; monthEnd: Date }>()
+    // What this invoice actually bills for. The schedule-month sweep below
+    // exists for flat-rate months, where one line covers every clean · it used
+    // to run for per-clean schedules too, stamping the cleans the reviewer had
+    // taken OFF the invoice as billed. See lib/invoice-finalize.ts.
+    const targets = finalizeTargets(
+      invoice.lineItems.map((item) => ({
+        jobId: item.jobId,
+        job: item.job
+          ? {
+              id: item.job.id,
+              scheduleId: item.job.scheduleId,
+              date: item.job.date,
+              billsMonthly: item.job.schedule?.clientPayType === 'FLAT_RATE',
+            }
+          : null,
+      }))
+    )
 
-    invoice.lineItems.forEach((item) => {
-      if (!item.job?.scheduleId) return
-      const date = new Date(item.job.date)
-      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1)
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
-      scheduleMonthKeys.set(`${item.job.scheduleId}:${monthStart.toISOString()}`, {
-        scheduleId: item.job.scheduleId,
-        monthStart,
-        monthEnd,
-      })
-    })
-
-    const relatedRecurringJobs = scheduleMonthKeys.size > 0
+    const relatedRecurringJobs = targets.scheduleMonths.length > 0
       ? await prisma.job.findMany({
           where: {
             status: { not: 'CANCELLED' },
-            OR: Array.from(scheduleMonthKeys.values()).map((entry) => ({
+            OR: targets.scheduleMonths.map((entry) => ({
               scheduleId: entry.scheduleId,
               date: { gte: entry.monthStart, lte: entry.monthEnd },
             })),
@@ -66,7 +69,7 @@ export async function POST(
         })
       : []
 
-    const jobIds = [...new Set([...directJobIds, ...relatedRecurringJobs.map(job => job.id)])]
+    const jobIds = [...new Set([...targets.jobIds, ...relatedRecurringJobs.map(job => job.id)])]
 
     if (jobIds.length > 0) {
       // Mark jobs as invoiced

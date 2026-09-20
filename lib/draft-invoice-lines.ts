@@ -44,6 +44,18 @@ export interface EditedJob {
   clientRate: number | null
   date: Date
   clientName: string
+  /**
+   * The client is billed a flat monthly amount for this schedule.
+   *
+   * Then the draft carries ONE "Monthly Cleaning · <location> · <month>" line
+   * for the whole month, priced from the schedule's monthly rate, and it is
+   * attached to the first clean of the month · so it has a jobId and no
+   * addOnServiceId, exactly like a per-clean line. Nothing about one clean
+   * should move it: not its rate, which is not what the client is charged, and
+   * not its day, which is not what the line is for. Rewriting it replaced the
+   * month's line with a single clean's.
+   */
+  billsMonthly: boolean
 }
 
 /** Which of the job's billable facts actually changed. */
@@ -83,6 +95,9 @@ export function draftLineUpdates(
   edit: JobEdit,
 ): DraftLineUpdate[] {
   if (!edit.rate && !edit.date) return []
+
+  // A flat-rate month's line belongs to the month, not to any one clean in it.
+  if (job.billsMonthly) return []
 
   const updates: DraftLineUpdate[] = []
 

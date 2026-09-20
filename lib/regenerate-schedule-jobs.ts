@@ -374,6 +374,11 @@ export interface ReconciliationJob {
   date: Date
   startTime?: string | null
   startWindowBegin?: string | null
+  /** SCHEDULED | COMPLETED | CANCELLED. A cancelled clean is a record, not a plan. */
+  status?: string | null
+  /** The cleaner has been paid for this clean. */
+  subcontractorPaid?: boolean | null
+  vendorPaid?: boolean | null
 }
 
 export interface JobReconciliationPlan {
@@ -390,13 +395,12 @@ export interface JobReconciliationPlan {
   }>
   toRepair: Array<{
     ids: string[]
+    /** Times only. Rates and the assigned cleaner are never repaired: see the
+     *  filter in planScheduleJobReconciliation for why. */
     data: {
       startTime: string | null
       startWindowBegin: string | null
       startWindowEnd: string | null
-      subcontractorId: string | null
-      clientRate: number
-      subcontractorRate: number
     }
   }>
   skippedCount: number
@@ -451,19 +455,32 @@ export function planScheduleJobReconciliation(
     const timeFields = getScheduleJobTimeFields(schedule)
 
     if (hasScheduleTime(schedule)) {
+      // Repair the TIME and nothing else.
+      //
+      // This also reset subcontractorId, clientRate and subcontractorRate to
+      // the schedule's defaults · on a job selected only for having no time.
+      // The two have nothing to do with each other, and because reconciliation
+      // runs on ordinary READS (calendar, invoices, dashboard, payables),
+      // simply opening a page rewrote the cleaner and both rates on any job
+      // that happened to be missing a start time. A rate agreed for one clean,
+      // or a cleaner swapped for one visit, was silently undone by looking at
+      // the calendar.
+      //
+      // Excluded as well: work already paid for, and cancelled cleans. Those
+      // are records of what happened, and the routes that change them refuse
+      // to when money is attached · a read path must not do what the write
+      // path forbids.
       const repairableIds = scheduleJobs
-        .filter((job) => !hasJobTime(job) && !finalInvoicedJobIds.has(job.id))
+        .filter((job) =>
+          !hasJobTime(job) &&
+          !finalInvoicedJobIds.has(job.id) &&
+          !job.subcontractorPaid &&
+          !job.vendorPaid &&
+          job.status !== 'CANCELLED',
+        )
         .map((job) => job.id)
       if (repairableIds.length > 0) {
-        toRepair.push({
-          ids: repairableIds,
-          data: {
-            ...timeFields,
-            subcontractorId: schedule.subcontractorId,
-            clientRate: schedule.defaultClientRate,
-            subcontractorRate: schedule.defaultSubcontractorRate,
-          },
-        })
+        toRepair.push({ ids: repairableIds, data: { ...timeFields } })
       }
     }
 
@@ -542,6 +559,9 @@ export async function ensureJobsForDateRange({
         startTime: true,
         startWindowBegin: true,
         startWindowEnd: true,
+        status: true,
+        subcontractorPaid: true,
+        vendorPaid: true,
       },
     }),
     // Which of those jobs are already on a sent or paid invoice. Fetched as a
