@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { showError, showSuccess } from "@/lib/toast"
 import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react"
+import { safeRedirectPath } from '@/lib/safe-redirect'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -30,8 +31,10 @@ export default function LoginPage() {
       })
       .then(data => {
         if (data && data.authenticated) {
-          const redirect = searchParams?.get('redirect') || '/'
-          router.push(redirect)
+          // Only a path inside this app. The raw param went straight to
+          // router.push, so a crafted login link landed the user on another
+          // site at the moment they signed in. See lib/safe-redirect.ts.
+          router.push(safeRedirectPath(searchParams?.get('redirect')))
         }
       })
       .catch((error) => {
@@ -67,8 +70,7 @@ export default function LoginPage() {
       }
 
       showSuccess('Logged in successfully')
-      const redirect = searchParams?.get('redirect') || '/'
-      router.push(redirect)
+      router.push(safeRedirectPath(searchParams?.get('redirect')))
       router.refresh()
     } catch (error) {
       showError('Failed to login. Please try again.')

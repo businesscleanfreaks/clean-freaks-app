@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getPrimaryScheduleForDisplay } from "@/lib/schedule-timing"
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,6 +53,12 @@ function deriveAreaFromAddress(address: string | null): string {
 // Clients data API for instant page loads
 export async function GET() {
   try {
+    // Defence in depth. These read routes were protected by middleware alone,
+    // so any change to the matcher · or any path that reaches the handler
+    // another way · exposed client and financial data with nothing else in the
+    // way. The session check belongs with the data, not only in front of it.
+    await requireAuth()
+
     const clients = await prisma.client.findMany({
       include: {
         locations: {

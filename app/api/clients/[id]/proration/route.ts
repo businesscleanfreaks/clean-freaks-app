@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { startOfMonth, endOfMonth } from 'date-fns'
 import { computeClientProration } from '@/lib/proration'
 import { logger } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,12 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> | { id: string } }) {
   try {
+    // Defence in depth. These read routes were protected by middleware alone,
+    // so any change to the matcher · or any path that reaches the handler
+    // another way · exposed client and financial data with nothing else in the
+    // way. The session check belongs with the data, not only in front of it.
+    await requireAuth()
+
     const { id } = await Promise.resolve(params)
     const monthParam = new URL(request.url).searchParams.get('month')
 

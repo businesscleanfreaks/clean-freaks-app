@@ -16,6 +16,8 @@
  * Pure: no Prisma, no clock.
  */
 
+import { formatDateOnly } from "./date-only"
+
 export const TERM_DAYS: Record<string, number> = {
   NET_7: 7,
   NET_15: 15,
@@ -83,4 +85,25 @@ export function resolveDueDate(
   const derived = dueDateForTerm(issuedDate, recorded)
   if (derived) return derived
   return existingDueDate ?? issuedDate
+}
+
+/**
+ * The due date to put in an invoice email, in the client's own words.
+ *
+ * The batch send computed one date for the whole run as "the 10th of the month
+ * being billed" · `new Date(y, m - 1, 10)`. Two things were wrong with that.
+ * Billing in arrears means August is invoiced in September, so the email told
+ * the client payment was due on a day that had already passed. And it was the
+ * same date for everyone, ignoring the terms each client is actually on, which
+ * the invoice has already resolved and stored.
+ *
+ * So this reads the invoice's OWN due date. A day value, formatted as a day ·
+ * see lib/date-only.ts for why that is not the same as formatting an instant.
+ *
+ * Null when the invoice carries no due date. The caller should leave the date
+ * out rather than invent one: a wrong due date on a client's invoice is worse
+ * than no sentence about it.
+ */
+export function dueDateLabel(dateDue: Date | string | null | undefined): string | null {
+  return formatDateOnly(dateDue, "MMMM d, yyyy")
 }

@@ -1,6 +1,7 @@
 import { formatCurrency } from "@/lib/utils"
 import { showApiError, showError } from "@/lib/toast"
 import { resolveTemplate, DEFAULT_SUBJECT, DEFAULT_MESSAGE } from "@/lib/invoice-template"
+import { dueDateLabel } from "@/lib/payment-terms"
 import { formatMonthLabel, type WorkspaceInvoice } from "./use-workspace"
 
 /** Create the invoice from a candidate if it doesn't exist yet (preview → finalize). */
@@ -107,8 +108,6 @@ export async function runBatchSend(
   const subjectTpl: string = tpl?.subject || DEFAULT_SUBJECT
   const messageTpl: string = tpl?.message || DEFAULT_MESSAGE
 
-  const [y, m] = month.split("-").map(Number)
-  const dueDate = new Date(y, m - 1, 10).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
   const monthLabel = formatMonthLabel(month)
 
   const result: BatchResult = { sent: 0, skipped: 0, failed: 0, needsReview: 0 }
@@ -121,15 +120,27 @@ export async function runBatchSend(
       const to = [client?.invoicingEmail || client?.communicationEmail].filter(Boolean) as string[]
       if (to.length === 0) { result.skipped++; continue }
 
+      const invoiceId = await ensureInvoiceId(inv, month)
+      if (!invoiceId) { result.failed++; continue }
+
+      // Each invoice's OWN due date, from the terms that client is on. This
+      // used to be one date for the whole batch, computed as the 10th of the
+      // month being BILLED · so an August invoice sent in September told the
+      // client payment was due on a day three weeks past, and told every
+      // client the same thing whatever terms they were on.
+      const saved = await fetch(`/api/invoices/${invoiceId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+
       const vars = {
         client: inv.clientName,
         month: monthLabel,
         monthShort: monthLabel,
         total: formatCurrency(inv.total),
-        dueDate,
+        // Empty rather than invented: a wrong due date on a client's invoice
+        // is worse than a sentence that does not name one.
+        dueDate: dueDateLabel(saved?.dateDue) ?? "",
       }
-      const invoiceId = await ensureInvoiceId(inv, month)
-      if (!invoiceId) { result.failed++; continue }
 
       const r = await sendInvoiceEmail(invoiceId, {
         to,

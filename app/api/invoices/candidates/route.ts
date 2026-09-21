@@ -8,6 +8,7 @@ import { calculateScheduleDates } from "@/lib/regenerate-schedule-jobs"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
 import { computePauseInvoiceAdjustment } from "@/lib/pause-billing"
 import { consumableLinesFor, type ConsumableKind } from '@/lib/consumables'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +63,12 @@ function compactLocationName(clientName: string, locationName: string) {
  */
 export async function GET(request: Request) {
   try {
+    // Defence in depth. These read routes were protected by middleware alone,
+    // so any change to the matcher · or any path that reaches the handler
+    // another way · exposed client and financial data with nothing else in the
+    // way. The session check belongs with the data, not only in front of it.
+    await requireAuth()
+
     const { searchParams } = new URL(request.url)
     const startParam = searchParams.get('start')
     const endParam = searchParams.get('end')

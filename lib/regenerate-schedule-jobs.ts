@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { hasFinalInvoice } from '@/lib/invoice-status'
+import { normaliseMonthlyPattern } from './monthly-pattern'
 
 export interface RegenerationSummary {
   deletedCount: number
@@ -169,9 +170,13 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
       currentDate = addUtcDays(currentDate, 1)
     }
   } else if (params.frequency === 'MONTHLY' && params.monthlyPattern) {
-    // MONTHLY with NTH_WEEKDAY pattern (e.g., "1st Tuesday" or "1st & 3rd Tuesday")
-    const pattern = JSON.parse(params.monthlyPattern)
-    if (pattern.type === 'FIXED_DATES' && Array.isArray(pattern.dates) && pattern.dates.length > 0) {
+    // MONTHLY with NTH_WEEKDAY pattern (e.g., "1st Tuesday" or "1st & 3rd Tuesday").
+    // Read by SHAPE as well as by label: a pattern carrying a weekday and a
+    // list of weeks but no `type` used to fall through to day-of-month, and a
+    // "first Tuesday" schedule that started on the 10th generated the 10th of
+    // every month instead. See lib/monthly-pattern.ts.
+    const pattern = normaliseMonthlyPattern(params.monthlyPattern)
+    if (pattern?.type === 'FIXED_DATES') {
       const dayOfMonth = pattern.dates[0] as number
       let currentMonth = startOfUtcMonth(startDate)
       while (currentMonth <= endDate) {
@@ -179,9 +184,9 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
         if (jobDate >= startDate && jobDate <= endDate) dates.push(jobDate)
         currentMonth = addUtcMonths(currentMonth, 1)
       }
-    } else if (pattern.type === 'NTH_WEEKDAY') {
-      const weekday = pattern.weekday as number
-      const ordinals = pattern.weeks as (number | 'last')[]
+    } else if (pattern?.type === 'NTH_WEEKDAY') {
+      const weekday = pattern.weekday
+      const ordinals = pattern.weeks
       let currentMonth = startOfUtcMonth(startDate)
       while (currentMonth <= endDate) {
         for (const ordinal of ordinals) {
@@ -193,7 +198,8 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
         currentMonth = addUtcMonths(currentMonth, 1)
       }
     } else {
-      // MONTHLY without NTH_WEEKDAY — fixed day of month (original behavior)
+      // The pattern says nothing usable · day of month is then a decision, not
+      // a guess about a pattern that was really something else.
       const dayOfMonth = startDate.getUTCDate()
       let currentMonth = startOfUtcMonth(startDate)
       while (currentMonth <= endDate) {
@@ -211,9 +217,10 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
       currentMonth = addUtcMonths(currentMonth, 1)
     }
   } else if (params.frequency === '2X_MONTHLY' && params.monthlyPattern) {
-    const pattern = JSON.parse(params.monthlyPattern)
-    if (pattern.type === 'FIXED_DATES') {
-      const fixedDates = pattern.dates as number[]
+    // Read by shape as well as by label, as above.
+    const pattern = normaliseMonthlyPattern(params.monthlyPattern)
+    if (pattern?.type === 'FIXED_DATES') {
+      const fixedDates = pattern.dates
       let currentMonth = startOfUtcMonth(startDate)
       while (currentMonth <= endDate) {
         for (const dayOfMonth of fixedDates) {
@@ -225,9 +232,9 @@ export function calculateScheduleDates(params: ScheduleDateParams, rangeEnd?: Da
         }
         currentMonth = addUtcMonths(currentMonth, 1)
       }
-    } else if (pattern.type === 'NTH_WEEKDAY') {
-      const weekday = pattern.weekday as number
-      const ordinals = pattern.weeks as (number | 'last')[]
+    } else if (pattern?.type === 'NTH_WEEKDAY') {
+      const weekday = pattern.weekday
+      const ordinals = pattern.weeks
       let currentMonth = startOfUtcMonth(startDate)
       while (currentMonth <= endDate) {
         for (const ordinal of ordinals) {

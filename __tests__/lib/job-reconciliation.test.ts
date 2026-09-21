@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  calculateScheduleDates,
   planScheduleJobReconciliation,
   type ReconciliationSchedule,
   type ReconciliationJob,
@@ -153,5 +154,42 @@ describe('repairing a clean that has no time on it', () => {
   it('still repairs a completed clean that nobody has been paid for', () => {
     const done = makeJob(utc(2026, 5, 4), { startTime: null, status: 'COMPLETED' })
     expect(planFor(done).toRepair.flatMap(r => r.ids)).toContain(done.id)
+  })
+})
+
+describe('a monthly pattern with no type field', () => {
+  // The reported defect, reproduced from the review: MONTHLY with
+  // {"weekday":2,"weeks":[1]} and no `type`, starting 2026-09-10, produced
+  // 09-10 and 10-10 · the day of the month it happened to start on, not the
+  // first Tuesday it actually meant.
+  const monthly = (pattern: string, startDate: Date) =>
+    calculateScheduleDates({
+      frequency: 'MONTHLY',
+      cadenceAnchor: null,
+      startDate,
+      daysOfWeek: JSON.stringify([]),
+      monthlyPattern: pattern,
+      customDates: null,
+      excludedDates: null,
+      endDate: null,
+    }, utc(2026, 11, 30))
+
+  it('generates the nth weekday, not the day it started on', () => {
+    const dates = monthly('{"weekday":2,"weeks":[1]}', utc(2026, 9, 10))
+    // First Tuesdays: Oct 6, Nov 3, Dec 1. Never the 10th.
+    expect(dates.map(iso)).not.toContain('2026-10-10')
+    expect(dates.map(iso)).toContain('2026-10-06')
+  })
+
+  it('matches what the same pattern with a type produces', () => {
+    const withoutType = monthly('{"weekday":2,"weeks":[1]}', utc(2026, 9, 10)).map(iso)
+    const withType = monthly('{"type":"NTH_WEEKDAY","weekday":2,"weeks":[1]}', utc(2026, 9, 10)).map(iso)
+    expect(withoutType).toEqual(withType)
+  })
+
+  it('still falls back to day of month when the pattern says nothing', () => {
+    // An empty pattern genuinely carries no shape, so the old default is right.
+    const dates = monthly('{}', utc(2026, 9, 10)).map(iso)
+    expect(dates).toContain('2026-10-10')
   })
 })

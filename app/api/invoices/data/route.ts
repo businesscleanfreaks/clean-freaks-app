@@ -4,6 +4,7 @@ import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, subWeeks, format } fr
 import { logger } from "@/lib/logger"
 import { getBillingStartDate } from "@/lib/billing-settings"
 import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliation"
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,12 @@ type InvoiceFrequency = 'AFTER_EACH_CLEAN' | 'BI_WEEKLY' | 'END_OF_MONTH' | 'CUS
 // Supports pagination: ?limit=50&cursor=<invoiceId>
 export async function GET(request: Request) {
   try {
+    // Defence in depth. These read routes were protected by middleware alone,
+    // so any change to the matcher · or any path that reaches the handler
+    // another way · exposed client and financial data with nothing else in the
+    // way. The session check belongs with the data, not only in front of it.
+    await requireAuth()
+
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
     const cursor = searchParams.get('cursor')

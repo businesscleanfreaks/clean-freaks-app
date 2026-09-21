@@ -4,6 +4,7 @@ import {
   daysBetween,
   dueDateForTerm,
   resolveDueDate,
+  dueDateLabel,
   selectedTerm,
 } from "@/lib/payment-terms"
 
@@ -70,5 +71,31 @@ describe("resolveDueDate", () => {
 
   it("falls back to the issue date when there is nothing else", () => {
     expect(iso(resolveDueDate(null, d(2026, 9, 1), null))).toBe("2026-09-01")
+  })
+})
+
+describe("the due date an invoice email names", () => {
+  it("reads the invoice's own due date", () => {
+    // The batch send computed one date for the whole run as the 10th of the
+    // month being BILLED. Billing in arrears means August goes out in
+    // September, so clients were told payment was due on a day already past ·
+    // and every client got the same date whatever terms they were on.
+    expect(dueDateLabel(new Date(Date.UTC(2026, 8, 30, 12, 0, 0)))).toBe("September 30, 2026")
+  })
+
+  it("reads it as a day, not an instant", () => {
+    // Stored at noon UTC. Formatted in the server's zone it would slide.
+    expect(dueDateLabel("2026-09-01")).toBe("September 1, 2026")
+  })
+
+  it("gives nothing when the invoice has no due date", () => {
+    // The caller leaves the sentence out rather than inventing a date · a
+    // wrong due date on a client's invoice is worse than not naming one.
+    expect(dueDateLabel(null)).toBeNull()
+    expect(dueDateLabel(undefined)).toBeNull()
+  })
+
+  it("gives nothing rather than 'Invalid Date'", () => {
+    expect(dueDateLabel("not-a-date")).toBeNull()
   })
 })

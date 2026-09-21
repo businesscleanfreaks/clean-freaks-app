@@ -1,5 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+// The candidates route now checks the session itself rather than trusting
+// middleware, so this test has to be a signed-in caller like the others.
+vi.mock('@/lib/auth', () => ({
+  requireAuth: async () => ({ id: 'test-user', email: 'test@example.com', name: 'Test' }),
+}))
+
 vi.mock('@/lib/billing-settings', () => ({
   getBillingStartDate: async () => new Date(Date.UTC(2026, 4, 1, 12, 0, 0)),
 }))
