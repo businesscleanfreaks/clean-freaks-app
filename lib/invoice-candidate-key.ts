@@ -26,13 +26,49 @@ export function invoiceCandidateKey(period: string, locationIds: string[]): stri
   return `${period}|${unique.join(",")}`
 }
 
-/** Start and end instants of a `YYYY-MM` period, or null when it isn't one. */
+/**
+ * The first and last day of a `YYYY-MM` period, or null when it isn't one.
+ *
+ * At NOON UTC, the convention this codebase stores day values in. These become
+ * `billingPeriodStart` / `billingPeriodEnd`, which are read back with UTC
+ * accessors (see lib/invoice-month.ts) to decide which month an invoice belongs
+ * to. Built at local midnight, the 1st of the month read back in UTC is the
+ * last day of the month BEFORE, so an invoice would file itself one month early
+ * for everyone ahead of UTC · the same defect in a smaller costume.
+ *
+ * Noon also keeps overlap comparisons safe against period bounds computed in
+ * some other zone: it is twelve hours from either edge of the day.
+ */
 export function periodRange(period: string): { start: Date; end: Date } | null {
   if (!/^\d{4}-\d{2}$/.test(period)) return null
   const [y, m] = period.split("-").map(Number)
   if (m < 1 || m > 12) return null
   return {
-    start: new Date(y, m - 1, 1, 0, 0, 0, 0),
-    end: new Date(y, m, 0, 23, 59, 59, 999),
+    start: new Date(Date.UTC(y, m - 1, 1, 12, 0, 0, 0)),
+    // Day 0 of the next month is the last day of this one.
+    end: new Date(Date.UTC(y, m, 0, 12, 0, 0, 0)),
   }
+}
+
+/**
+ * The period an invoice bills for, inferred from the work on it.
+ *
+ * For invoices written before the period was recorded. The dates are the
+ * service days of the lines · if they all fall in one month, that is the month
+ * the invoice is for, whatever day it happened to be written on.
+ *
+ * Null when the lines span months or carry no dates: then it is a judgement,
+ * not an inference, and nothing should be written.
+ */
+export function periodFromWorkDates(
+  dates: readonly (Date | string | null | undefined)[],
+): string | null {
+  const months = new Set<string>()
+  for (const value of dates) {
+    if (!value) continue
+    const d = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(d.getTime())) continue
+    months.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`)
+  }
+  return months.size === 1 ? [...months][0] : null
 }

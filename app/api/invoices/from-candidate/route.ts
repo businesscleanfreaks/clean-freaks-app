@@ -5,6 +5,7 @@ import { revalidateInvoicePages } from '@/lib/revalidate'
 import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
+import { parseDateOnlyForStorage } from '@/lib/date-only'
 
 /**
  * POST /api/invoices/from-candidate
@@ -122,8 +123,12 @@ export async function POST(request: Request) {
           clientId,
           totalAmount,
           status: 'DRAFT',
-          billingPeriodStart: periodStart,
-          billingPeriodEnd: periodEnd,
+          // Stored as DAY values at noon UTC, because they are read back with
+          // UTC accessors to decide which month the invoice belongs to. Local
+          // midnight on the 1st is the last day of the previous month in UTC
+          // for anyone ahead of it, which files the invoice a month early.
+          billingPeriodStart: parseDateOnlyForStorage(start),
+          billingPeriodEnd: parseDateOnlyForStorage(end),
           showPaymentOptions: true,
           lineItems: {
             create: lineItems.map((item: {

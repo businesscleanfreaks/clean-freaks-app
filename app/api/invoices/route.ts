@@ -8,7 +8,7 @@ import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 import { getInvoiceDefaults, resolveDueDate } from '@/lib/invoice-defaults'
 import { sendBlockedReason } from '@/lib/invoice-adjustments'
-import { invoiceCandidateKey } from '@/lib/invoice-candidate-key'
+import { invoiceCandidateKey, periodRange } from '@/lib/invoice-candidate-key'
 import { isValidPeriod as isValidAdjPeriod } from '@/lib/invoice-overview'
 
 export const dynamic = 'force-dynamic'
@@ -399,6 +399,14 @@ export async function POST(request: Request) {
         }
       }
 
+      // Which month this invoice BILLS FOR, which is not the month it was
+      // written in. Billing in arrears means August's work is invoiced in
+      // early September · and this was never recorded, so every consumer fell
+      // back to `dateCreated` and filed the invoice under September. It then
+      // vanished from the August review (where its client looked unbilled and
+      // could be invoiced again) and appeared in September's.
+      const billingPeriod = adjustmentPeriod ? periodRange(adjustmentPeriod) : null
+
       // Create invoice with line items
       const newInvoice = await tx.invoice.create({
         data: {
@@ -407,6 +415,8 @@ export async function POST(request: Request) {
           totalAmount,
           status: previewOnly ? 'VOID' : 'DRAFT',
           candidateKey,
+          billingPeriodStart: billingPeriod?.start ?? null,
+          billingPeriodEnd: billingPeriod?.end ?? null,
           dateDue: resolvedDateDue,
           notes,
           showPaymentOptions: showPaymentOptions !== undefined ? showPaymentOptions : true,

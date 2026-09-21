@@ -26,12 +26,11 @@
  * Pure: no Prisma, no clock, no mail.
  */
 
-/** Statuses a scheduled send may act on. Everything else is stale. */
-export const SENDABLE_STATUSES = ["DRAFT", "OVERDUE"] as const
-
-export function isSendableStatus(status: string | null | undefined): boolean {
-  return (SENDABLE_STATUSES as readonly string[]).includes(String(status ?? ""))
-}
+// Which statuses may be sent is one question, asked by the clock here and by a
+// person in the manual send route. It lives in lib/invoice-sendable.ts so the
+// two cannot drift · they already had, which is how a VOID invoice could go out.
+import { isSendableStatus } from "./invoice-sendable"
+export { SENDABLE_STATUSES, isSendableStatus } from "./invoice-sendable"
 
 export type ScheduledSendAction =
   /** Send it now. */

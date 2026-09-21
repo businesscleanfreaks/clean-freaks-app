@@ -19,6 +19,7 @@ import { getBaseUrl } from '@/lib/url'
 import { evaluateInvoiceForSend } from '@/lib/invoice-guard'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
+import { invoiceSendRefusal } from '@/lib/invoice-sendable'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -95,6 +96,23 @@ export async function POST(
       return NextResponse.json(
         { error: 'Invoice not found' },
         { status: 404 }
+      )
+    }
+
+    // An invoice must be in a state that can be sent. This was not checked at
+    // all: the workspace creates a VOID preview, finalizes it to DRAFT, then
+    // sends · and the finalize response was never checked, so a failed
+    // finalize meant a VOID invoice was emailed to the client and stamped
+    // SENT while its cleans stayed billable. Nothing stopped a second send of
+    // an already-sent invoice either. See lib/invoice-sendable.ts.
+    const sendRefusal = invoiceSendRefusal({
+      status: invoice.status,
+      confirmResend: body?.confirmResend === true,
+    })
+    if (sendRefusal) {
+      return NextResponse.json(
+        { code: sendRefusal.code, error: sendRefusal.message, confirmable: sendRefusal.confirmable },
+        { status: 409 },
       )
     }
 

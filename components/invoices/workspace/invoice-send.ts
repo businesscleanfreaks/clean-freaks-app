@@ -41,7 +41,17 @@ export async function ensureInvoiceId(inv: WorkspaceInvoice, period?: string): P
   }
   if (!res.ok) { await showApiError(res, `Failed to create invoice for ${inv.clientName}`); return null }
   const created = await res.json()
-  await fetch(`/api/invoices/${created.id}/finalize`, { method: "POST" })
+
+  // The invoice was created with previewOnly, so it is VOID until this
+  // finalize turns it into a DRAFT. The response used to be discarded · on a
+  // failure the id was handed back anyway and the caller went on to email a
+  // void invoice. The server now refuses that too, but the honest place to
+  // stop is here, where we still know what went wrong.
+  const finalized = await fetch(`/api/invoices/${created.id}/finalize`, { method: "POST" })
+  if (!finalized.ok) {
+    await showApiError(finalized, `Failed to finalize the invoice for ${inv.clientName}`)
+    return null
+  }
   return created.id as string
 }
 
