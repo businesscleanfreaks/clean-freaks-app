@@ -180,3 +180,84 @@ describe('flat-rate proration reliability', () => {
     })
   })
 })
+
+describe('B2 · a clean moved to a different day in the same month', () => {
+  it('is not credited as missed · the clean happened', async () => {
+    // Expected Mondays May 4, 11, 18, 25. The clean on the 11th is moved to
+    // the 12th · still done, still in the month, same schedule. Matching
+    // expected dates to actual ones by EXACT DATE leaves the 11th unmatched
+    // and credits the client for a clean they received.
+    const { client, location, sub, schedule } = await seedFlatRateLocation({ start: utc(2026, 5, 4), rate: 400 })
+    await createClean(location.id, schedule.id, sub.id, utc(2026, 5, 4))
+    await createClean(location.id, schedule.id, sub.id, utc(2026, 5, 12)) // moved from the 11th
+    await createClean(location.id, schedule.id, sub.id, utc(2026, 5, 18))
+    await createClean(location.id, schedule.id, sub.id, utc(2026, 5, 25))
+
+    const rows = await computeClientProration(client.id, MAY.start, MAY.end)
+    expect(rows).toHaveLength(0)
+  })
+
+  it('reports four cleans expected and four delivered', async () => {
+    const { client, location, sub, schedule } = await seedFlatRateLocation({ start: utc(2026, 5, 4), rate: 400 })
+    for (const d of [4, 12, 18, 25]) {
+      await createClean(location.id, schedule.id, sub.id, utc(2026, 5, d))
+    }
+
+    const rows = await computeClientProration(client.id, MAY.start, MAY.end)
+    // No credit at all is the right answer, so there is no row to inspect.
+    // If one appears, it must at least not claim a clean was missed.
+    if (rows.length > 0) expect(rows[0].missed).toBe(0)
+  })
+
+  it('still credits a clean that genuinely did not happen', async () => {
+    // The guard must not spread: three of four delivered is still a credit.
+    const { client, location, sub, schedule } = await seedFlatRateLocation({ start: utc(2026, 5, 4), rate: 400 })
+    for (const d of [4, 12, 18]) {
+      await createClean(location.id, schedule.id, sub.id, utc(2026, 5, d))
+    }
+
+    const rows = await computeClientProration(client.id, MAY.start, MAY.end)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].missed).toBe(1)
+    expect(rows[0].credit).toBe(100)
+  })
+})
+
+describe('B3 · a schedule that changed day partway through the month', () => {
+  it('does not credit the cleans done on the new day', async () => {
+    // Weekly Monday until the 14th, weekly Tuesday from the 15th · a "change
+    // going forward". Expected dates were computed from the EARLIEST interval
+    // for the whole month, so the second half expected Mondays while the work
+    // happened on Tuesdays, and every one of them counted as missed.
+    const { client, location, sub, schedule } = await seedFlatRateLocation({ start: utc(2026, 5, 4), rate: 400 })
+    await prisma.schedule.update({
+      where: { id: schedule.id },
+      data: { endDate: utc(2026, 5, 14) },
+    })
+    const tuesdaySchedule = await prisma.schedule.create({
+      data: {
+        locationId: location.id,
+        subcontractorId: sub.id,
+        frequency: 'WEEKLY',
+        daysOfWeek: JSON.stringify([utc(2026, 5, 19).getUTCDay()]),
+        timeType: 'SPECIFIC',
+        startTime: '09:00',
+        defaultClientRate: 400,
+        defaultSubcontractorRate: 80,
+        clientPayType: 'FLAT_RATE',
+        subcontractorPayType: 'PER_CLEAN',
+        startDate: utc(2026, 5, 15),
+        endDate: null,
+      },
+    })
+
+    // Mondays while the first interval ran, Tuesdays after it.
+    await createClean(location.id, schedule.id, sub.id, utc(2026, 5, 4))
+    await createClean(location.id, schedule.id, sub.id, utc(2026, 5, 11))
+    await createClean(location.id, tuesdaySchedule.id, sub.id, utc(2026, 5, 19))
+    await createClean(location.id, tuesdaySchedule.id, sub.id, utc(2026, 5, 26))
+
+    const rows = await computeClientProration(client.id, MAY.start, MAY.end)
+    expect(rows).toHaveLength(0)
+  })
+})

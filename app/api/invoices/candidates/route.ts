@@ -549,6 +549,18 @@ export async function GET(request: Request) {
             })
             if (!overlapsBillingPeriod) return
 
+            // A month already on an invoice is not billable again. The monthly
+            // line is built from the SCHEDULES rather than from uninvoiced
+            // work, so it came back whatever had already been billed · the row
+            // then had "remaining work", which outranks "already sent", and a
+            // flat-rate client stayed READY after their month had gone out.
+            // Sending again re-emailed the same invoice.
+            const periodMonthKey = format(periodStart, 'yyyy-MM')
+            const alreadyInvoiced = groupSchedules.some((schedule) =>
+              reservedScheduleMonths.has(`${schedule.id}:${periodMonthKey}`)
+            )
+            if (alreadyInvoiced) return
+
             const representative = [...groupSchedules]
               .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0]
             const firstIntervalStart = groupSchedules
