@@ -32,6 +32,17 @@ export function parseDateOnlyForStorage(value?: Date | string | null): Date | nu
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12, 0, 0))
 }
 
+/**
+ * A calendar day held as LOCAL midnight (what parseDateOnly and date-fns'
+ * startOfDay produce, for comparisons) turned into the stored form: the same
+ * day at noon UTC. Storing local midnight directly records the day before on
+ * any server east of UTC · a split schedule then ended a day early and lost
+ * its last clean.
+ */
+export function localDayForStorage(date: Date): Date {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0))
+}
+
 export function dateInputValue(value?: Date | string | null): string {
   const date = parseDateOnly(value)
   if (!date) return ''

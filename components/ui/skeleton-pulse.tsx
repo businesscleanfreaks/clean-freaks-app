@@ -4,10 +4,11 @@ import { cn } from "@/lib/utils"
 
 interface SkeletonPulseProps {
   className?: string
+  style?: React.CSSProperties
   rounded?: "sm" | "md" | "lg" | "xl" | "full"
 }
 
-export function SkeletonPulse({ className, rounded = "lg" }: SkeletonPulseProps) {
+export function SkeletonPulse({ className, style, rounded = "lg" }: SkeletonPulseProps) {
   const roundedClass = {
     sm: "rounded-sm",
     md: "rounded-md",
@@ -19,6 +20,7 @@ export function SkeletonPulse({ className, rounded = "lg" }: SkeletonPulseProps)
   return (
     <div
       className={cn("skeleton-pulse relative overflow-hidden bg-[var(--cf-skeleton-base)]", roundedClass, className)}
+      style={style}
     >
       <div
         className="absolute inset-0 skeleton-shimmer"

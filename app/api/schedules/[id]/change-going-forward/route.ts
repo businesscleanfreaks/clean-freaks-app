@@ -7,7 +7,7 @@ import { revalidateSchedulePages } from '@/lib/revalidate'
 import { triggerSystemRefresh } from '@/lib/cascading-updates'
 import { regenerateJobsForSchedule } from '@/lib/regenerate-schedule-jobs'
 import { changeScheduleGoingForwardSchema } from '@/lib/validations'
-import { parseDateOnly, parseDateOnlyForStorage } from '@/lib/date-only'
+import { localDayForStorage, parseDateOnly, parseDateOnlyForStorage } from '@/lib/date-only'
 import { requireAuth } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error-handler'
 
@@ -178,7 +178,9 @@ export async function POST(
       const updatedOldSchedule = await tx.schedule.update({
         where: { id: existingSchedule.id },
         data: {
-          endDate: oldScheduleEndDate,
+          // A local calendar day; stored as that day at noon UTC like every
+          // other date-only value, or it lands a day early east of UTC.
+          endDate: localDayForStorage(oldScheduleEndDate),
         },
       })
 
@@ -270,7 +272,7 @@ export async function POST(
 
     return NextResponse.json({
       oldScheduleId: existingSchedule.id,
-      oldScheduleEndDate: oldScheduleEndDate.toISOString(),
+      oldScheduleEndDate: localDayForStorage(oldScheduleEndDate).toISOString(),
       newSchedule: result.newSchedule,
       carriedForwardRecurringAddOns: result.carriedForwardRecurringAddOns,
       futureProtectedJobsCount,

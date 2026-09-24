@@ -9,6 +9,7 @@ import { ensureOperationalDataForDateRange } from "@/lib/operational-reconciliat
 import { computePauseInvoiceAdjustment } from "@/lib/pause-billing"
 import { consumableLinesFor, type ConsumableKind } from '@/lib/consumables'
 import { requireAuth } from '@/lib/auth'
+import { flatBillingGroups, groupOverlapsPeriod, intervalForPeriod, midMonthPriceChange } from '@/lib/flat-rate-groups'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,6 +93,14 @@ export async function GET(request: Request) {
 
     const billingStartDate = await getBillingStartDate()
     const effectivePeriodStart = billingStartDate && billingStartDate > periodStart ? billingStartDate : periodStart
+    // The same period as calendar days at noon UTC, the way schedule dates are
+    // stored, so flat-rate interval checks do not depend on the server's zone.
+    const noonUtc = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0))
+    const periodLastDay = new Date(`${endParam}T12:00:00.000Z`)
+    const periodFirstDayRaw = new Date(`${startParam}T12:00:00.000Z`)
+    const periodFirstDay = billingStartDate && noonUtc(billingStartDate) > periodFirstDayRaw
+      ? noonUtc(billingStartDate)
+      : periodFirstDayRaw
     const currentMonthStart = startOfMonth(new Date())
     const olderWorkCutoff = periodStart < currentMonthStart ? periodStart : currentMonthStart
 
@@ -183,6 +192,7 @@ export async function GET(request: Request) {
                   customDates: true,
                   startDate: true,
                   endDate: true,
+                  cadenceAnchor: true,
                   clientPayType: true,
                   defaultClientRate: true,
                   pauseFrom: true,
@@ -468,6 +478,32 @@ export async function GET(request: Request) {
         }
       })
 
+      // A flat monthly price that changed partway through this month bills the
+      // whole month at the new price (Josh, 2026-09-24). It is rare and not
+      // always right, so the month is flagged for a look before it goes out.
+      if (billingType === 'FLAT_RATE') {
+        for (const location of clientWithSchedules?.locations ?? []) {
+          const flatSchedules = location.schedules.filter((schedule) => schedule.clientPayType === 'FLAT_RATE')
+          const groupOf = flatBillingGroups(flatSchedules)
+          const groups = new Map<string, typeof flatSchedules>()
+          flatSchedules.forEach((schedule) => {
+            const id = groupOf.get(schedule.id) ?? schedule.id
+            groups.set(id, [...(groups.get(id) ?? []), schedule])
+          })
+          groups.forEach((groupSchedules) => {
+            const change = midMonthPriceChange(groupSchedules, periodFirstDay, periodLastDay)
+            if (!change) return
+            const money = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+            exceptions.push({
+              type: 'PRICE_CHANGE',
+              message: `Monthly price changed on ${formatUtcCalendarDate(change.effective)}, ${money(change.from)} to ${money(change.to)}. The whole month is billed at the new price; edit the draft if this month should be different.`,
+              scheduleId: intervalForPeriod(groupSchedules, periodFirstDay, periodLastDay).id,
+              locationId: location.id,
+            })
+          })
+        }
+      }
+
       // Missing email
       if (!hasEmail) {
         exceptions.push({
@@ -490,9 +526,10 @@ export async function GET(request: Request) {
       let total = 0
 
       if (billingType === 'FLAT_RATE') {
-        // A pause splits one logical service into ended/resumed schedule
-        // intervals. Link only those matching adjacent intervals; grouping all
-        // schedules at a location would under-bill legitimate parallel services.
+        // A pause, or a change made going forward, splits one logical service
+        // into several schedule intervals. Link only those continuations;
+        // grouping all schedules at a location would under-bill legitimate
+        // parallel services.
         const scheduleRates = new Map<string, {
           scheduleId: string
           billingGroupId: string
@@ -509,25 +546,10 @@ export async function GET(request: Request) {
             .filter((schedule) => schedule.clientPayType === 'FLAT_RATE')
             .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
 
-          flatSchedules.forEach((schedule, index) => {
-            const predecessor = flatSchedules
-              .slice(0, index)
-              .reverse()
-              .find((candidate) => {
-                if (!candidate.pauseTo) return false
-                const resumeDate = new Date(candidate.pauseTo)
-                resumeDate.setUTCDate(resumeDate.getUTCDate() + 1)
-                return utcDateKey(resumeDate) === utcDateKey(schedule.startDate)
-                  && candidate.frequency === schedule.frequency
-                  && candidate.daysOfWeek === schedule.daysOfWeek
-                  && candidate.monthlyPattern === schedule.monthlyPattern
-                  && candidate.customDates === schedule.customDates
-                  && candidate.defaultClientRate === schedule.defaultClientRate
-              })
-            const billingGroupId = predecessor
-              ? flatBillingGroupByScheduleId.get(predecessor.id) ?? predecessor.id
-              : schedule.id
-            flatBillingGroupByScheduleId.set(schedule.id, billingGroupId)
+          // Pause/resume and change-going-forward intervals are one service,
+          // billed once a month. See lib/flat-rate-groups.ts.
+          flatBillingGroups(flatSchedules).forEach((billingGroupId, scheduleId) => {
+            flatBillingGroupByScheduleId.set(scheduleId, billingGroupId)
           })
 
           const schedulesByBillingGroup = new Map<string, typeof flatSchedules>()
@@ -539,15 +561,7 @@ export async function GET(request: Request) {
           })
 
           schedulesByBillingGroup.forEach((groupSchedules, billingGroupId) => {
-            const overlapsBillingPeriod = groupSchedules.some((schedule) => {
-              const serviceOverlaps = schedule.startDate <= periodEnd
-                && (!schedule.endDate || schedule.endDate >= effectivePeriodStart)
-              const pauseOverlaps = !!schedule.pauseFrom
-                && schedule.pauseFrom <= periodEnd
-                && (!schedule.pauseTo || schedule.pauseTo >= effectivePeriodStart)
-              return serviceOverlaps || pauseOverlaps
-            })
-            if (!overlapsBillingPeriod) return
+            if (!groupOverlapsPeriod(groupSchedules, periodFirstDay, periodLastDay)) return
 
             // A month already on an invoice is not billable again. The monthly
             // line is built from the SCHEDULES rather than from uninvoiced
@@ -561,8 +575,9 @@ export async function GET(request: Request) {
             )
             if (alreadyInvoiced) return
 
-            const representative = [...groupSchedules]
-              .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0]
+            // The terms in force this month: after a mid-month price change,
+            // the new price for the whole month; before it, the old price.
+            const representative = intervalForPeriod(groupSchedules, periodFirstDay, periodLastDay)
             const firstIntervalStart = groupSchedules
               .map((schedule) => schedule.startDate)
               .reduce((earliest, current) => current < earliest ? current : earliest)

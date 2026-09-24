@@ -352,6 +352,7 @@ export async function GET() {
         const cleansPerMonth = getAverageScheduleOccurrencesPerMonth({
           frequency: schedule.frequency,
           startDate: schedule.startDate,
+          cadenceAnchor: schedule.cadenceAnchor,
           endDate: schedule.endDate,
           daysOfWeek: schedule.daysOfWeek,
           monthlyPattern: schedule.monthlyPattern,
@@ -393,6 +394,7 @@ export async function GET() {
         const cleansPerMonth = getAverageScheduleOccurrencesPerMonth({
           frequency: schedule.frequency,
           startDate: schedule.startDate,
+          cadenceAnchor: schedule.cadenceAnchor,
           endDate: schedule.endDate,
           daysOfWeek: schedule.daysOfWeek,
           monthlyPattern: schedule.monthlyPattern,

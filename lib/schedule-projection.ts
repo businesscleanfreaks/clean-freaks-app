@@ -9,6 +9,8 @@ export interface ProjectableSchedule {
   id: string
   frequency: string
   startDate: Date | string
+  /** First clean of the original series; keeps every-N-weeks rhythm across a split. */
+  cadenceAnchor?: Date | string | null
   endDate?: Date | string | null
   daysOfWeek: string | null
   monthlyPattern: string | null
@@ -105,6 +107,7 @@ export function projectSchedulesForMonth(
     const dateParams: ScheduleDateParams = {
       frequency: schedule.frequency,
       startDate: parseUtcDateOnly(schedule.startDate),
+      cadenceAnchor: schedule.cadenceAnchor ?? null,
       endDate: schedule.endDate ?? null,
       daysOfWeek: schedule.daysOfWeek,
       monthlyPattern: schedule.monthlyPattern,

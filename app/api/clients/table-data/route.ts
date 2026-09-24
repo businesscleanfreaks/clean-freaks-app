@@ -78,6 +78,7 @@ export async function GET() {
                   defaultSubcontractorRate: true,
                   frequency: true,
                   startDate: true,
+                  cadenceAnchor: true,
                   endDate: true,
                   daysOfWeek: true,
                   monthlyPattern: true,
@@ -128,6 +129,7 @@ export async function GET() {
           recurringVal = getAverageScheduleOccurrencesPerMonth({
             frequency: primarySchedule.frequency,
             startDate: primarySchedule.startDate,
+            cadenceAnchor: primarySchedule.cadenceAnchor,
             endDate: primarySchedule.endDate,
             daysOfWeek: primarySchedule.daysOfWeek,
             monthlyPattern: primarySchedule.monthlyPattern,
@@ -158,6 +160,7 @@ export async function GET() {
           const cleansPerMonth = getAverageScheduleOccurrencesPerMonth({
             frequency: schedule.frequency,
             startDate: schedule.startDate,
+            cadenceAnchor: schedule.cadenceAnchor,
             endDate: schedule.endDate,
             daysOfWeek: schedule.daysOfWeek,
             monthlyPattern: schedule.monthlyPattern,

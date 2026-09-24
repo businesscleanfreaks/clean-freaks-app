@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   dateInputValue,
+  localDayForStorage,
   formatDateOnly,
   parseDateOnly,
   parseDateOnlyForStorage,
@@ -122,5 +123,13 @@ describe("a recorded moment", () => {
     expect(formatBusinessDate("nope")).toBeNull()
     expect(formatBusinessDate(null)).toBeNull()
     expect(businessDayKey("nope")).toBeNull()
+  })
+})
+
+describe("storing a local calendar day", () => {
+  it("keeps the day, at noon UTC, whatever the server's zone", () => {
+    // Local midnight on Nov 14, as startOfDay / parseDateOnly give it.
+    const localDay = new Date(2026, 10, 14)
+    expect(localDayForStorage(localDay).toISOString()).toBe("2026-11-14T12:00:00.000Z")
   })
 })

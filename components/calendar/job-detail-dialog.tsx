@@ -2472,7 +2472,7 @@ function JobDetailDialogInner({ job, open, onOpenChange, subcontractors }: JobDe
             {(() => {
               const raw = job.location.client.notes
               if (!raw) return null
-              // Strip the TRIAL CLIENT marker that AddClientWizard stamps in (it's metadata, not a real note)
+              // Strip the TRIAL CLIENT marker the old Add Client wizard stamped in (it's metadata, not a real note)
               const cleaned = raw
                 .replace(/^TRIAL CLIENT[^\n]*\n*/i, '')
                 .replace(/^\s*$/m, '')

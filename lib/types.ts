@@ -32,6 +32,9 @@ export type ClientWithDetails = Prisma.ClientGetPayload<{
             vendorPaid: true
             clientRate: true
             subcontractorRate: true
+            notes: true
+            isTrial: true
+            addOnServices: { select: { description: true } }
             subcontractor: { select: { id: true; name: true } }
             vendor: { select: { id: true; name: true } }
             schedule: { select: { id: true; frequency: true } }
@@ -48,6 +51,7 @@ export type ClientWithDetails = Prisma.ClientGetPayload<{
         dateCreated: true
         dateSent: true
         datePaid: true
+        billingPeriodStart: true
       }
     }
     _count: { select: { locations: true } }

@@ -668,7 +668,7 @@ function ScheduleFormInner({
     ? 'Change Going Forward'
     : schedule
       ? `Editing: ${FREQUENCY_LABELS[formData.frequency]} Schedule`
-      : 'Edit Schedule'
+      : 'New Schedule'
 
   const submitLabel = isFutureChange
     ? 'Create Future Change'

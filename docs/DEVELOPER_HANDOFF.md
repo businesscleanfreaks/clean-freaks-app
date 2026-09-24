@@ -434,7 +434,7 @@ app/clients/page.tsx
 app/clients/[id]/page.tsx
 components/clients/clients-client.tsx
 components/clients/clients-page-wrapper.tsx
-components/clients/add-client-wizard.tsx
+components/clients/add-client-modal.tsx
 components/clients/client-detail-client.tsx
 components/clients/client-detail-view.tsx
 components/clients/use-client-detail.ts
@@ -1026,7 +1026,7 @@ Manual smoke tests after important changes:
 5. Call schedule generation for the relevant range or schedule.
 6. Verify calendar, client profile, invoice candidates, and cleaner payables.
 
-Prefer going through `AddClientWizard` and API routes rather than direct database writes.
+Prefer going through the Add Client modal (`POST /api/clients/create`, one transaction) and the schedule API rather than direct database writes.
 
 ### Add A New Frequency Type
 

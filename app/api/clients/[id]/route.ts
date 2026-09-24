@@ -12,6 +12,8 @@ import {
   propertyTypeForClientPaymentRule,
 } from '@/lib/client-payment-rules'
 import { getPayoutSettings } from '@/lib/payout-settings'
+import { businessDayKey } from '@/lib/business-time'
+import { buildClientListFacts } from '@/lib/client-listing-facts'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +60,10 @@ async function getClientWithDetails(id: string) {
               vendorPaid: true,
               clientRate: true,
               subcontractorRate: true,
+              notes: true,
+              isTrial: true,
+              // Names a one-time service on the profile ("Carpet shampoo").
+              addOnServices: { select: { description: true } },
               subcontractor: {
                 select: {
                   id: true,
@@ -101,11 +107,13 @@ async function getClientWithDetails(id: string) {
           dateCreated: true,
           dateSent: true,
           datePaid: true,
+          billingPeriodStart: true,
         },
         orderBy: {
           dateCreated: 'desc',
         },
-        take: 10,
+        // The Billing tab lists every invoice; a monthly client has twelve a year.
+        take: 240,
       },
       clientNotes: {
         orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
@@ -119,10 +127,46 @@ async function getClientWithDetails(id: string) {
   })
 }
 
+/**
+ * The status facts the Clients list shows for this client, worked out the same
+ * way (lib/client-listing-facts.ts), so the list and the profile never
+ * disagree about whether a client is recurring, paused or inactive.
+ */
+async function listingFor(client: NonNullable<Awaited<ReturnType<typeof getClientWithDetails>>>) {
+  const todayKey = businessDayKey(new Date()) as string
+  const today = new Date(`${todayKey}T12:00:00.000Z`)
+  const dayStart = new Date(`${todayKey}T00:00:00.000Z`)
+  const locationIds = client.locations.map(l => l.id)
+  const live = { locationId: { in: locationIds }, status: { not: 'CANCELLED' } }
+  const [last, next, nearby] = await Promise.all([
+    prisma.job.aggregate({ where: { ...live, date: { lt: dayStart } }, _max: { date: true } }),
+    prisma.job.aggregate({ where: { ...live, date: { gte: dayStart } }, _min: { date: true } }),
+    prisma.job.findMany({
+      where: { ...live, date: { gte: new Date(dayStart.getTime() - 90 * 86400000), lt: new Date(dayStart.getTime() + 180 * 86400000) } },
+      select: { date: true, clientRate: true, subcontractor: { select: { name: true } } },
+      orderBy: { date: 'asc' },
+    }),
+  ])
+  return buildClientListFacts(
+    {
+      isActive: client.isActive,
+      notes: client.notes,
+      billingType: client.billingType,
+      schedules: client.locations.flatMap(loc => loc.schedules.map(s => ({ ...s, cleanerName: s.subcontractor?.name ?? null }))),
+      lastVisit: last._max.date,
+      nextVisit: next._min.date,
+      nearbyVisits: nearby.map(v => ({ date: v.date, clientRate: v.clientRate, cleanerName: v.subcontractor?.name ?? null })),
+    },
+    today,
+  )
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // Client, contact and money details: behind the session like every other read.
+  try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
     const client = await getClientWithDetails(params.id)
 
@@ -133,7 +177,7 @@ export async function GET(
       )
     }
 
-    return NextResponse.json(client, {
+    return NextResponse.json({ ...client, listing: await listingFor(client) }, {
       headers: {
         'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
       },

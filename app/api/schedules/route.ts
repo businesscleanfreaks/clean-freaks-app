@@ -11,6 +11,7 @@ import { requireAuth } from '@/lib/auth'
 import { cadenceOverrideForClientPaymentRule } from '@/lib/client-payment-rules'
 import { getPayoutSettings } from '@/lib/payout-settings'
 import { BUSINESS_TIME_ZONE } from '@/lib/business-time'
+import { payTypesFromFirstSchedule } from '@/lib/first-schedule-pay-types'
 
 // Type for transaction client
 type TransactionClient = Prisma.TransactionClient
@@ -148,6 +149,17 @@ export async function POST(request: Request) {
           },
         },
       })
+
+      // A new client's first schedule decides whether it is billed flat rate
+      // or per clean · the Add Client modal no longer asks.
+      const client = newSchedule.location.client
+      const otherSchedules = await tx.schedule.count({
+        where: { location: { clientId: client.id }, id: { not: newSchedule.id } },
+      })
+      const payTypes = payTypesFromFirstSchedule(otherSchedules, newSchedule, client)
+      if (payTypes) {
+        await tx.client.update({ where: { id: client.id }, data: payTypes })
+      }
 
       // Generate jobs within the same transaction
       await generateJobsForSchedule(newSchedule.id, tx)

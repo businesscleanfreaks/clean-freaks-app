@@ -35,6 +35,7 @@ export function getAverageMonthlyScheduleOccurrences(schedule: ClientSchedule) {
   return getAverageScheduleOccurrencesPerMonth({
     frequency: schedule.frequency,
     startDate: schedule.startDate,
+    cadenceAnchor: schedule.cadenceAnchor ?? null,
     endDate: schedule.endDate ?? null,
     daysOfWeek: schedule.daysOfWeek || null,
     monthlyPattern: schedule.monthlyPattern || null,

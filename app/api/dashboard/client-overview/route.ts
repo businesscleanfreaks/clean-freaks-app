@@ -155,6 +155,7 @@ export async function GET(request: NextRequest) {
         const avgOccurrences = getAverageScheduleOccurrencesPerMonth({
           frequency: projectableSchedule.frequency,
           startDate: projectableSchedule.startDate,
+          cadenceAnchor: projectableSchedule.cadenceAnchor,
           endDate: projectableSchedule.endDate ?? null,
           daysOfWeek: projectableSchedule.daysOfWeek,
           monthlyPattern: projectableSchedule.monthlyPattern,
