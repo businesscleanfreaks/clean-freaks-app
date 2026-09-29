@@ -47,6 +47,8 @@ interface ProfileData {
     since: string
     payByDay: number
     hasPhoto: boolean
+    /** Versioned by the photo's updatedAt, so a new photo is a new URL. */
+    photoUrl: string | null
     notes: string | null
   }
   accounts: ProfileAccount[]
@@ -163,10 +165,10 @@ export function CleanerProfile({ cleanerId }: { cleanerId: string }) {
           style={{ background: color.bg, color: color.fg }}
           title="Upload a photo"
         >
-          {cleaner.hasPhoto ? (
+          {cleaner.photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={`/api/cleaners/${cleanerId}/files?kind=photo&v=${cleaner.since}`}
+              src={cleaner.photoUrl}
               alt={cleaner.name}
               className="h-full w-full object-cover"
             />

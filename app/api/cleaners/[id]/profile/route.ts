@@ -6,6 +6,7 @@ import { handleApiError } from '@/lib/api-error-handler'
 import { THRESHOLD_1099 } from '@/lib/payouts-1099'
 import { accountOwedOverMonths } from '@/lib/cleaner-payables'
 import { rangeBounds, type RangeKind } from '@/lib/profile-range'
+import { cleanerFileUrl } from '@/lib/cleaner-files'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,13 +51,17 @@ export async function GET(
       select: {
         id: true, name: true, email: true, phone: true, notes: true,
         isActive: true, createdAt: true, invoicesUs: true, payByDay: true,
-        photoMimeType: true,
-        w9OnFile: true, w9FileName: true, w9UploadedAt: true,
+        w9OnFile: true,
         legalName: true, taxIdType: true, taxIdLast4: true, profileNotes: true,
         contacts: { orderBy: { sortOrder: 'asc' } },
+        // Which files there are and when each was uploaded; the bytes are
+        // served by /api/cleaners/[id]/files.
+        files: { select: { kind: true, fileName: true, updatedAt: true } },
       },
     })
     if (!cleaner) return NextResponse.json({ error: 'Cleaner not found' }, { status: 404 })
+    const photo = cleaner.files.find(f => f.kind === 'photo')
+    const w9 = cleaner.files.find(f => f.kind === 'w9')
 
     const [jobs, payments, paidThisYear] = await Promise.all([
       prisma.job.findMany({
@@ -196,7 +201,9 @@ export async function GET(
           since: cleaner.createdAt.toISOString(),
           invoicesUs: cleaner.invoicesUs,
           payByDay: cleaner.payByDay,
-          hasPhoto: !!cleaner.photoMimeType,
+          hasPhoto: !!photo,
+          // Carries the photo's updatedAt, so a new photo is a new URL.
+          photoUrl: cleanerFileUrl(cleaner.id, 'photo', photo?.updatedAt),
           notes: cleaner.profileNotes ?? cleaner.notes,
         },
         range: { kind, start: bounds.start, end: bounds.end },
@@ -212,8 +219,8 @@ export async function GET(
         contacts: cleaner.contacts,
         tax: {
           w9OnFile: cleaner.w9OnFile,
-          w9FileName: cleaner.w9FileName,
-          w9UploadedAt: cleaner.w9UploadedAt?.toISOString() ?? null,
+          w9FileName: w9?.fileName ?? null,
+          w9UploadedAt: w9?.updatedAt.toISOString() ?? null,
           legalName: cleaner.legalName,
           taxIdType: cleaner.taxIdType,
           taxIdLast4: cleaner.taxIdLast4,

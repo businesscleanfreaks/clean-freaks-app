@@ -150,16 +150,10 @@ model Subcontractor {
   // Day of the month we pay this cleaner by, no matter what. Default the 3rd.
   payByDay            Int     @default(3)
 
-  /// Profile photo, stored inline like the invoice attachments.
-  photoData     Bytes?
-  photoMimeType String?
-
-  /// W-9 on file. The document itself is kept so a 1099 can be issued later.
-  w9OnFile     Boolean   @default(false)
-  w9FileName   String?
-  w9MimeType   String?
-  w9Data       Bytes?
-  w9UploadedAt DateTime?
+  /// W-9 on file. Can be ticked by hand; uploading the document ticks it too.
+  /// The document itself is a SubcontractorFile (kind "w9"), kept so a 1099
+  /// can be issued later.
+  w9OnFile Boolean @default(false)
 
   /// Tax details. Only the LAST FOUR digits of the tax ID are ever stored —
   /// the full number is not needed to issue a 1099 from this app, and holding
@@ -182,8 +176,33 @@ model Subcontractor {
 
   consumables Consumable[]
 
+  /// Profile photo and W-9 document.
+  files SubcontractorFile[]
+
   @@index([isActive])
   @@map("subcontractors")
+}
+
+/// A cleaner's profile photo or W-9, at most one of each. Its own table rather
+/// than columns on subcontractors: cleaners are read whole all over the app
+/// (`include: { subcontractor: true }`, findMany without a select), and the
+/// bytes would ride along with every one of those reads. Served by
+/// app/api/cleaners/[id]/files; `updatedAt` is when the file was uploaded and
+/// versions its URL.
+model SubcontractorFile {
+  id              String   @id @default(uuid())
+  subcontractorId String
+  kind            String // photo | w9
+  data            Bytes
+  mimeType        String
+  fileName        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@unique([subcontractorId, kind])
+  @@map("subcontractor_files")
 }
 
 // A cleaner's own invoice (what THEY bill us) for a period, recorded so we can
