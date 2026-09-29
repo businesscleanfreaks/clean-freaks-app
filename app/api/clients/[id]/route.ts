@@ -29,8 +29,11 @@ async function getClientWithDetails(id: string) {
   return prisma.client.findUnique({
     where: { id },
     include: {
+      // When each photo last changed; the bytes are served by /api/photos.
+      photo: { select: { updatedAt: true } },
       locations: {
         include: {
+          photo: { select: { updatedAt: true } },
           schedules: {
             include: {
               subcontractor: true,
@@ -179,7 +182,9 @@ export async function GET(
 
     return NextResponse.json({ ...client, listing: await listingFor(client) }, {
       headers: {
-        'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        // Not cached: this is data people edit, and a reload right after an
+        // edit was being answered from the browser cache with the old copy.
+        'Cache-Control': 'private, no-store',
       },
     })
   } catch (error) {

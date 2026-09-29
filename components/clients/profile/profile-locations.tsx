@@ -8,6 +8,7 @@ import type { ClientDetailState } from "../use-client-detail"
 import type { BillingType, ClientLocation, ClientSchedule } from "../client-detail-types"
 import { getScheduleLifecycle } from "@/lib/schedule-timing"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
+import { photoUrl } from "@/lib/photos"
 import {
   accessSavePayload,
   arrivalInfo,
@@ -40,12 +41,15 @@ export function LocationsCard({
   today,
   onAddBreak,
   autoBook,
+  onEditPhoto,
 }: {
   state: ClientDetailState
   today: Date
   onAddBreak: (scheduleId: string) => void
   /** "Book first clean" from the Add Client modal: open the first schedule editor. */
   autoBook: boolean
+  /** The location's photo tile opens the photo picker. */
+  onEditPhoto: (location: { id: string; name: string }) => void
 }) {
   const { client } = state
   const [locationEditor, setLocationEditor] = useState<{ id: string | null; name: string; address: string } | null>(null)
@@ -87,6 +91,7 @@ export function LocationsCard({
           onEditAccess={() => setAccessEditor(location)}
           onEditSchedule={schedule => setScheduleEditor({ locationId: location.id, schedule })}
           onAddBreak={onAddBreak}
+          onEditPhoto={() => onEditPhoto(location)}
         />
       ))}
 
@@ -130,6 +135,7 @@ function LocationSection({
   onEditAccess,
   onEditSchedule,
   onAddBreak,
+  onEditPhoto,
 }: {
   location: ClientLocation
   today: Date
@@ -137,7 +143,9 @@ function LocationSection({
   onEditAccess: () => void
   onEditSchedule: (schedule: ClientSchedule | null) => void
   onAddBreak: (scheduleId: string) => void
+  onEditPhoto: () => void
 }) {
+  const photo = photoUrl("location", location.id, location.photo?.updatedAt)
   const running = runningSchedules(location, today)
   const cleaner = running.map(s => s.subcontractor?.name).find(Boolean) ?? "Unassigned"
   const access = readAccess(location)
@@ -171,9 +179,22 @@ function LocationSection({
         title="Edit location name & address"
         style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 20px", borderBottom: `1px solid ${C.border}`, background: "#fff" }}
       >
-        <span style={{ width: 40, height: 40, borderRadius: 10, background: "#14352b", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>
-        </span>
+        {/* The photo tile has its own click: the rest of the bar edits the name and address. */}
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onEditPhoto() }}
+          title={photo ? "Change the location photo" : "Add a location photo"}
+          aria-label={photo ? "Change the location photo" : "Add a location photo"}
+          style={{
+            width: 40, height: 40, borderRadius: 10, padding: 0, border: "none", cursor: "pointer",
+            background: "#14352b", backgroundImage: photo ? `url("${photo}")` : "none", backgroundSize: "cover", backgroundPosition: "center",
+            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "none",
+          }}
+        >
+          {!photo && (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>
+          )}
+        </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.01em", lineHeight: 1.2 }}>{location.name}</div>
           <div style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{location.address}</div>

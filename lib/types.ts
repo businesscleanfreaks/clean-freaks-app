@@ -12,8 +12,10 @@ import type { Prisma } from '@prisma/client'
 /** Full client detail — returned by GET /api/clients/[id] */
 export type ClientWithDetails = Prisma.ClientGetPayload<{
   include: {
+    photo: { select: { updatedAt: true } }
     locations: {
       include: {
+        photo: { select: { updatedAt: true } }
         schedules: {
           include: {
             subcontractor: true

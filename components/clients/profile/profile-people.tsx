@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import useSWR from "swr"
 import { CONTACT_ROLES } from "@/lib/new-client"
 import { showApiError, showError, showSuccess } from "@/lib/toast"
 import { AddButton, C, Card, Field, Modal, initialsOf } from "./ui"
+import { pickedImage, removePhoto, uploadPhoto } from "./photo-picker"
 
 /**
  * Contacts and Notes (Client Profile Main.dc.html): the answer-card contacts
@@ -21,6 +22,8 @@ export interface ProfileContact {
   role: string
   billingRole: string | null
   isPrimary: boolean
+  /** Their headshot, or null (lib/photos.ts). */
+  photoUrl: string | null
 }
 
 interface RecipientsResponse {
@@ -64,9 +67,7 @@ export function ContactsCard({
               title="Edit contact"
               style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 4px", margin: "0 -4px", borderTop: `1px solid ${i === 0 ? "transparent" : C.hair}`, minWidth: 0 }}
             >
-              <span style={{ width: 26, height: 26, borderRadius: "50%", background: c.isPrimary ? C.primary : "#64748b", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
-                {initialsOf(c.name)}
-              </span>
+              <ContactAvatar name={c.name} photoUrl={c.photoUrl} size={26} background={c.isPrimary ? C.primary : "#64748b"} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.2, whiteSpace: "nowrap" }}>{c.name}</span>
@@ -104,6 +105,23 @@ export function ContactsCard({
   )
 }
 
+/** A contact's headshot when there is one, their initials otherwise. */
+export function ContactAvatar({ name, photoUrl, size, background }: { name: string; photoUrl: string | null; size: number; background: string }) {
+  return (
+    <span
+      style={{
+        width: size, height: size, borderRadius: "50%", flex: "none",
+        background, backgroundImage: photoUrl ? `url("${photoUrl}")` : "none", backgroundSize: "cover", backgroundPosition: "center",
+        color: "#fff", fontSize: Math.round(size * 0.38), fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      {photoUrl ? null : initialsOf(name)}
+    </span>
+  )
+}
+
+type HeadshotDraft = { kind: "keep" } | { kind: "remove" } | { kind: "file"; file: File; preview: string }
+
 const OTHER = "__other"
 
 export function ContactEditor({
@@ -128,7 +146,17 @@ export function ContactEditor({
   const [email, setEmail] = useState(contact?.email ?? "")
   const [phone, setPhone] = useState(contact?.phone ?? "")
   const [isPrimary, setIsPrimary] = useState(contact ? contact.isPrimary : isFirst)
+  const [headshot, setHeadshot] = useState<HeadshotDraft>({ kind: "keep" })
   const [saving, setSaving] = useState(false)
+  const headshotUrl = headshot.kind === "file" ? headshot.preview : headshot.kind === "remove" ? null : contact?.photoUrl ?? null
+
+  // The preview of a picked headshot is freed when replaced and on close.
+  useEffect(() => () => { if (headshot.kind === "file") URL.revokeObjectURL(headshot.preview) }, [headshot])
+
+  const pickHeadshot = (files: FileList | null) => {
+    const file = pickedImage(files)
+    if (file) setHeadshot({ kind: "file", file, preview: URL.createObjectURL(file) })
+  }
   const emailBad = !!email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
   const canSave = !!name.trim() && !emailBad && !saving
 
@@ -148,6 +176,17 @@ export function ContactEditor({
         return
       }
       const body = await res.json()
+      // The headshot needs the contact to exist, so it goes after the save.
+      // A failed upload does not undo the contact: say so and keep going.
+      const savedId: string | undefined = body.contact?.id ?? contact?.id
+      if (savedId && headshot.kind !== "keep") {
+        try {
+          if (headshot.kind === "file") await uploadPhoto("contact", savedId, headshot.file)
+          else await removePhoto("contact", savedId)
+        } catch (err) {
+          showError(`Contact saved, but the headshot wasn't: ${err instanceof Error ? err.message : "try again"}`)
+        }
+      }
       showSuccess(contact ? "Contact saved" : "Contact added")
       onSaved(body.contact)
       onClose()
@@ -183,6 +222,30 @@ export function ContactEditor({
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <label
+            title="Upload headshot"
+            style={{
+              position: "relative", width: 56, height: 56, borderRadius: "50%", flex: "none", cursor: "pointer",
+              background: "#64748b", backgroundImage: headshotUrl ? `url("${headshotUrl}")` : "none", backgroundSize: "cover", backgroundPosition: "center",
+              color: "#fff", fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+              border: `2px dashed ${headshotUrl ? "transparent" : "rgba(255,255,255,.55)"}`,
+            }}
+          >
+            {headshotUrl ? null : initialsOf(name || "?")}
+            <input type="file" accept="image/*" onChange={e => { pickHeadshot(e.target.files); e.target.value = "" }} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }} />
+          </label>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700 }}>{headshotUrl ? "Headshot" : "Add a headshot"}</div>
+            <div style={{ display: "flex", gap: 10, marginTop: 3, fontSize: 12, fontWeight: 700, color: C.teal }}>
+              <label style={{ cursor: "pointer", position: "relative" }}>
+                Upload
+                <input type="file" accept="image/*" onChange={e => { pickHeadshot(e.target.files); e.target.value = "" }} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }} />
+              </label>
+              {headshotUrl && <span onClick={() => setHeadshot({ kind: "remove" })} style={{ cursor: "pointer", color: C.muted }}>Remove</span>}
+            </div>
+          </div>
+        </div>
         <Field label="Name">
           <input autoFocus className="cfp-input" value={name} onChange={e => setName(e.target.value)} placeholder="Full name" />
         </Field>

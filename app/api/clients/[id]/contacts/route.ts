@@ -3,6 +3,7 @@ import { getErrorMessage } from '@/lib/logger'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { revalidateClientPages } from '@/lib/revalidate'
+import { photoUrl } from '@/lib/photos'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,15 +11,23 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   // Names, emails and phone numbers: behind the session like every other read.
   try { await requireAuth() } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   try {
-    const contacts = await prisma.clientContact.findMany({
+    const rows = await prisma.clientContact.findMany({
       where: { clientId: params.id },
       orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+      include: { photo: { select: { updatedAt: true } } },
     })
+    // The headshot as a URL; the bytes are served by /api/photos.
+    const contacts = rows.map(({ photo, ...contact }) => ({
+      ...contact,
+      photoUrl: photoUrl('contact', contact.id, photo?.updatedAt),
+    }))
     return NextResponse.json(
       { contacts },
       {
         headers: {
-          'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+          // Not cached: this is data people edit, and a reload right after an
+          // edit was being answered from the browser cache with the old copy.
+          'Cache-Control': 'private, no-store',
         },
       }
     )

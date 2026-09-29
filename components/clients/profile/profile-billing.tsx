@@ -7,8 +7,8 @@ import { ProrationCard } from "../cockpit/proration-card"
 import type { ClientDetailState } from "../use-client-detail"
 import { money, shortDay, type ProfileInvoice } from "@/lib/client-profile"
 import { showApiError, showError, showSuccess } from "@/lib/toast"
-import { C, initialsOf } from "./ui"
-import { ContactEditor, useContacts } from "./profile-people"
+import { C } from "./ui"
+import { ContactAvatar, ContactEditor, useContacts } from "./profile-people"
 
 /**
  * Billing (Client Profile Main.dc.html · BILLING): every invoice on the left,
@@ -122,7 +122,8 @@ function BillingSettings({ state }: { state: ClientDetailState }) {
     fetcher,
     { revalidateOnFocus: false },
   )
-  const { reload: reloadContacts } = useContacts(client.id)
+  const { contacts, reload: reloadContacts } = useContacts(client.id)
+  const headshotOf = new Map(contacts.map(c => [c.id, c.photoUrl]))
   const [newContact, setNewContact] = useState(false)
   const [busy, setBusy] = useState(false)
   const cadence = client.invoiceFrequency || "END_OF_MONTH"
@@ -229,9 +230,12 @@ function BillingSettings({ state }: { state: ClientDetailState }) {
           <SettingLabel>Invoices go to</SettingLabel>
           {(recips?.recipients ?? []).map((r, i) => (
             <div key={r.email} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i === 0 ? "none" : `1px solid ${C.hair}` }}>
-              <span style={{ width: 28, height: 28, borderRadius: "50%", flex: "none", background: r.tag === "TO" ? C.primary : "#94a3b8", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {initialsOf(r.name || r.email)}
-              </span>
+              <ContactAvatar
+                name={r.name || r.email}
+                photoUrl={r.contactId ? headshotOf.get(r.contactId) ?? null : null}
+                size={28}
+                background={r.tag === "TO" ? C.primary : "#94a3b8"}
+              />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name || r.email}</span>

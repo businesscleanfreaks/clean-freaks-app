@@ -75,6 +75,8 @@ model Client {
 
   consumables Consumable[]
 
+  photo Photo?
+
   @@index([isActive])
   @@index([billingType])
   @@index([propertyType])
@@ -114,6 +116,8 @@ model Location {
   jobs      Job[]
 
   invoiceReceipts CleanerInvoiceReceipt[]
+
+  photo Photo?
 
   @@index([clientId])
   @@map("locations")
@@ -997,10 +1001,33 @@ model ClientContact {
   updatedAt          DateTime @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  photo  Photo?
 
   @@index([clientId])
   @@index([email])
   @@map("client_contacts")
+}
+
+/// A photo of a client, one of its locations, or one of its contacts: exactly
+/// one of the three owner ids is set. Its own table rather than columns on
+/// those rows, because they are read whole all over the app and the image
+/// bytes would ride along with every one of those reads. Served by
+/// app/api/photos/[owner]/[id]; `updatedAt` versions the URL.
+model Photo {
+  id         String   @id @default(uuid())
+  clientId   String?  @unique
+  locationId String?  @unique
+  contactId  String?  @unique
+  data       Bytes
+  mimeType   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  client   Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  location Location?      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  contact  ClientContact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@map("photos")
 }
 
 // Connected Gmail accounts

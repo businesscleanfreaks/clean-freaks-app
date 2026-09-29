@@ -27,6 +27,8 @@ import { LocationsCard, cleanerHex } from "./profile-locations"
 import { ContactsCard, NotesCard } from "./profile-people"
 import { BillingTab } from "./profile-billing"
 import { HistoryTab } from "./profile-history"
+import { PhotoPicker, type PhotoTarget } from "./photo-picker"
+import { photoUrl } from "@/lib/photos"
 
 /**
  * The client profile (Client Profile Main.dc.html): Overview · Billing ·
@@ -100,6 +102,7 @@ export function ProfileView({ client: initialClient, onDataChange }: { client: C
   const [breakFor, setBreakFor] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [photoFor, setPhotoFor] = useState<PhotoTarget | null>(null)
 
   // Deep links: ?tab=billing, and ?book=1 from the Add Client modal's "Book first clean".
   useEffect(() => {
@@ -129,6 +132,14 @@ export function ProfileView({ client: initialClient, onDataChange }: { client: C
     .filter(j => j.status !== "CANCELLED" && dayOf(j.date) >= startOfToday)
     .sort((a, b) => dayOf(a.date).getTime() - dayOf(b.date).getTime())
   const next = upcoming[0]
+
+  const clientPhoto = photoUrl("client", client.id, client.photo?.updatedAt)
+  const locationPhotos = client.locations.flatMap(loc => {
+    const url = photoUrl("location", loc.id, loc.photo?.updatedAt)
+    return url ? [{ id: loc.id, name: loc.name, url }] : []
+  })
+  const editLocationPhoto = (loc: { id: string; name: string }) =>
+    setPhotoFor({ owner: "location", id: loc.id, name: loc.name, url: locationPhotos.find(p => p.id === loc.id)?.url ?? null })
 
   const pausable = client.locations.flatMap(loc =>
     (loc.schedules || []).filter(s => s.isActive).map(s => ({ id: s.id, locationName: loc.name, cadence: scheduleHeadline(s) })),
@@ -163,6 +174,15 @@ export function ProfileView({ client: initialClient, onDataChange }: { client: C
         />
       )}
       {renaming && <RenameModal state={state} onClose={() => setRenaming(false)} />}
+      {photoFor && (
+        <PhotoPicker
+          clientId={client.id}
+          target={photoFor}
+          locationPhotos={photoFor.owner === "client" ? locationPhotos : []}
+          onClose={() => setPhotoFor(null)}
+          onSaved={() => state.onDataChange?.()}
+        />
+      )}
 
       <div className="cfp cfp-page" style={{ width: "100%", maxWidth: 1560, margin: "0 auto", padding: "18px 38px 48px" }}>
         <style>{PROFILE_STYLES}</style>
@@ -177,9 +197,21 @@ export function ProfileView({ client: initialClient, onDataChange }: { client: C
         {/* HEADER */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
           <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 14 }}>
-            <div aria-hidden style={{ width: 58, height: 58, borderRadius: 14, flex: "none", background: C.mint, border: `1px solid ${C.mintBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: "#0b7a4e" }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="12" cy="12" r="3.2" /><path d="M8 5l1-2h6l1 2" /></svg>
-            </div>
+            <button
+              type="button"
+              onClick={() => setPhotoFor({ owner: "client", id: client.id, name: client.name, url: clientPhoto })}
+              title={clientPhoto ? "Change the client photo" : "Add a client photo"}
+              aria-label={clientPhoto ? "Change the client photo" : "Add a client photo"}
+              style={{
+                width: 58, height: 58, borderRadius: 14, flex: "none", padding: 0, cursor: "pointer",
+                background: C.mint, backgroundImage: clientPhoto ? `url("${clientPhoto}")` : "none", backgroundSize: "cover", backgroundPosition: "center",
+                border: `1px solid ${C.mintBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: "#0b7a4e",
+              }}
+            >
+              {!clientPhoto && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="12" cy="12" r="3.2" /><path d="M8 5l1-2h6l1 2" /></svg>
+              )}
+            </button>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.05 }}>{client.name}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 9, flexWrap: "wrap", fontSize: 12.5, color: C.muted }}>
@@ -297,7 +329,7 @@ export function ProfileView({ client: initialClient, onDataChange }: { client: C
                 <ContactsCard clientId={client.id} onChanged={() => state.onDataChange?.()} />
               </div>
 
-              <LocationsCard state={state} today={today} onAddBreak={setBreakFor} autoBook={autoBook} />
+              <LocationsCard state={state} today={today} onAddBreak={setBreakFor} autoBook={autoBook} onEditPhoto={editLocationPhoto} />
 
               <OneTimeServices jobs={jobs} today={today} onOpen={job => state.router.push(calendarHref(job))} onSchedule={() => state.setShowOneTimeServiceDialog(true)} onHistory={() => setTab("history")} />
             </div>

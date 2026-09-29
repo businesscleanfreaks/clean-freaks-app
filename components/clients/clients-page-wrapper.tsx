@@ -51,6 +51,8 @@ interface ClientData {
     cleaner: string
     contactName: string | null
     contactRole: string | null
+    photoUrl: string | null
+    contactPhotoUrl: string | null
   }
 }
 
@@ -102,6 +104,8 @@ interface ListRow {
   monthly: number
   contactName: string
   contactRole: string
+  photoUrl: string | null
+  contactPhotoUrl: string | null
   area: string
   locations: ClientLocation[]
   haystack: string
@@ -111,7 +115,7 @@ const cleanerHex = (name: string) =>
   getCleanerColorInfo(name && name !== "Unassigned" && name !== "Mixed" ? name : null).hex
 
 function toRow(client: ClientData, today: Date): ListRow {
-  const { facts, cleaner, contactName, contactRole } = client.listing
+  const { facts, cleaner, contactName, contactRole, photoUrl, contactPhotoUrl } = client.listing
   const display = clientListDisplay(facts, today)
   const locationCount = client.locations.length
   const area = client.primaryArea || ""
@@ -134,6 +138,8 @@ function toRow(client: ClientData, today: Date): ListRow {
     monthly: display.status === "recurring" ? facts.monthlyRecurring : 0,
     contactName: contactName || "–",
     contactRole: contactRole || "",
+    photoUrl: photoUrl ?? null,
+    contactPhotoUrl: contactPhotoUrl ?? null,
     area,
     locations: client.locations,
     haystack: [
@@ -310,10 +316,23 @@ function CardsView({ rows, onOpen }: { rows: ListRow[]; onOpen: (id: string) => 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 14, paddingTop: 4 }}>
       {rows.map(row => (
         <div key={row.id} className="cfcl-client-card" onClick={() => onOpen(row.id)}>
-          {/* Photo band. Photos are not stored yet, so this is the design's own
-              empty state: a tinted band with the initials tile. */}
-          <div style={{ height: 96, background: row.inactive ? "#f0eee8" : "#e9f6f1", borderBottom: "1px solid #ece7dd", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-            <Avatar row={row} size={44} />
+          {/* Photo band: the client photo, or the tinted band with the
+              initials tile when there is none. Set on the client's profile. */}
+          <div
+            style={{
+              height: 96,
+              background: row.inactive ? "#f0eee8" : "#e9f6f1",
+              backgroundImage: row.photoUrl ? `url("${row.photoUrl}")` : "none",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              borderBottom: "1px solid #ece7dd",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              position: "relative",
+            }}
+          >
+            {!row.photoUrl && <Avatar row={row} size={44} />}
             <StatusChip row={row} floating />
           </div>
           <div style={{ padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
@@ -322,8 +341,16 @@ function CardsView({ rows, onOpen }: { rows: ListRow[]; onOpen: (id: string) => 
               <div className="cfcl-ellipsis" style={{ fontSize: 11.5, color: "#8a857a", marginTop: 2 }}>{row.subLine}</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, borderTop: "1px solid #f4efe6", paddingTop: 12 }}>
-              <span style={{ width: 52, height: 52, borderRadius: "50%", flex: "none", background: "#64748b", color: "#fff", fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 2px #fff, 0 0 0 3px #ece7dd" }}>
-                {row.contactName === "–" ? "?" : listInitials(row.contactName)}
+              <span
+                style={{
+                  width: 52, height: 52, borderRadius: "50%", flex: "none", background: "#64748b",
+                  backgroundImage: row.contactPhotoUrl ? `url("${row.contactPhotoUrl}")` : "none",
+                  backgroundSize: "cover", backgroundPosition: "center",
+                  color: "#fff", fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "0 0 0 2px #fff, 0 0 0 3px #ece7dd",
+                }}
+              >
+                {row.contactPhotoUrl ? null : row.contactName === "–" ? "?" : listInitials(row.contactName)}
               </span>
               <div style={{ minWidth: 0 }}>
                 <div className="cfcl-ellipsis" style={{ fontSize: 13.5, fontWeight: 700 }}>{row.contactName}</div>

@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth'
 import { businessDayKey } from "@/lib/business-time"
 import { buildClientListFacts, type FactSchedule } from "@/lib/client-listing-facts"
 import { areaFromAddress, firstArea } from "@/lib/address-area"
+import { photoUrl } from "@/lib/photos"
 
 export const dynamic = 'force-dynamic'
 
@@ -50,8 +51,10 @@ export async function GET() {
           isActive: true,
           createdAt: true,
           startDate: true,
+          // Only when each photo last changed: the bytes are served separately.
+          photo: { select: { updatedAt: true } },
           contacts: {
-            select: { name: true, billingRole: true, isPrimary: true },
+            select: { id: true, name: true, billingRole: true, isPrimary: true, photo: { select: { updatedAt: true } } },
             orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
             take: 1,
           },
@@ -196,13 +199,17 @@ export async function GET() {
           cleaner,
           contactName: primaryContact?.name ?? client.communicationContactName ?? null,
           contactRole: primaryContact?.billingRole ?? null,
+          photoUrl: photoUrl('client', client.id, client.photo?.updatedAt),
+          contactPhotoUrl: primaryContact ? photoUrl('contact', primaryContact.id, primaryContact.photo?.updatedAt) : null,
         },
       }
     })
 
     return NextResponse.json(serializedClients, {
       headers: {
-        'Cache-Control': 'private, max-age=10, stale-while-revalidate=59',
+        // Not cached: this is data people edit, and a reload right after an
+        // edit was being answered from the browser cache with the old copy.
+        'Cache-Control': 'private, no-store',
       },
     })
   } catch (error) {
