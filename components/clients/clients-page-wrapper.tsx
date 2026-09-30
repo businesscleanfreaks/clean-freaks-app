@@ -4,7 +4,10 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { mutate } from "swr"
 import { useRouter } from "next/navigation"
 import { AddClientModal, type AddClientPrefill } from "./add-client-modal"
+import dynamic from "next/dynamic"
 import { MapPin } from "lucide-react"
+import { placeOnMap } from "@/lib/client-map"
+import type { ClientMapPin } from "./clients-map"
 import { getCleanerColorInfo } from "@/lib/calendar-design-tokens"
 import { businessDayKey } from "@/lib/business-time"
 import {
@@ -26,6 +29,12 @@ import {
  * API works out (see lib/client-listing-facts.ts) · this component only lays
  * them out. Nothing here decides what a client is.
  */
+
+// Leaflet only loads when the Map view is opened.
+const ClientsMap = dynamic(() => import("./clients-map"), {
+  ssr: false,
+  loading: () => <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8a857a" }}>Loading map…</div>,
+})
 
 interface ClientLocation {
   id: string
@@ -376,23 +385,19 @@ function CardsView({ rows, onOpen }: { rows: ListRow[]; onOpen: (id: string) => 
 }
 
 function MapView({ rows, onOpen }: { rows: ListRow[]; onOpen: (id: string) => void }) {
-  const [hovered, setHovered] = useState<ListRow | null>(null)
-  const [pinned, setPinned] = useState<ListRow | null>(null)
-  const W = 900, H = 500
-  // LA region bounds
-  const cLat = 34.05, cLng = -118.33, latR = 0.38, lngR = 0.40
-  const proj = (lat: number, lng: number) => ({
-    x: ((lng - (cLng - lngR / 2)) / lngR) * (W - 40) + 20,
-    y: (((cLat + latR / 2) - lat) / latR) * (H - 40) + 20,
-  })
-  const active = pinned || hovered
-
-  const pinnable = rows
-    .map(row => {
-      const loc = row.locations.find(l => l.latitude != null && l.longitude != null)
-      return loc ? { row, lat: loc.latitude as number, lng: loc.longitude as number } : null
-    })
-    .filter((x): x is { row: ListRow; lat: number; lng: number } => x !== null)
+  const { pins, unplaced } = useMemo(() => placeOnMap(rows), [rows])
+  const mapPins: ClientMapPin[] = useMemo(() => pins.map(p => ({
+    key: p.location.id,
+    clientId: p.client.id,
+    lat: p.lat,
+    lng: p.lng,
+    color: p.client.cleanerColor,
+    label: p.label,
+    area: p.location.area || p.client.area,
+    cleaner: p.client.cleaner,
+    money: p.client.money,
+    schedule: p.client.schedule,
+  })), [pins])
 
   const areas = useMemo(() => {
     const counts = new Map<string, number>()
@@ -403,72 +408,19 @@ function MapView({ rows, onOpen }: { rows: ListRow[]; onOpen: (id: string) => vo
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
   }, [rows])
 
-  const activeLoc = active?.locations.find(l => l.latitude != null && l.longitude != null)
-
   return (
     <div className="cfcl-card cfcl-map" style={{ display: "flex", minHeight: 560 }}>
-      <div style={{ flex: 1, position: "relative", background: "#eef1f0", minWidth: 0 }}>
-        <div style={{ position: "absolute", left: 18, top: 16, zIndex: 3, fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "#7f8ea3", background: "#fff", padding: "5px 10px", borderRadius: 7, boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
-          Greater Los Angeles{pinnable.length < rows.length ? ` · ${rows.length - pinnable.length} not on map` : ""}
+      <div className="cfcl-map-canvas" style={{ flex: 1, position: "relative", background: "#eef1f0", minWidth: 0, isolation: "isolate" }}>
+        <ClientsMap pins={mapPins} onOpen={onOpen} />
+        <div style={{ position: "absolute", left: 56, top: 12, zIndex: 2, fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "#7f8ea3", background: "#fff", padding: "5px 10px", borderRadius: 7, boxShadow: "0 1px 2px rgba(0,0,0,.08)", pointerEvents: "none" }}>
+          Greater Los Angeles{unplaced.length > 0 ? ` · ${unplaced.length} not on map` : ""}
         </div>
-        {pinnable.length === 0 ? (
-          <div style={{ padding: "90px 20px", textAlign: "center", color: "#8a857a" }}>
-            <MapPin style={{ width: 32, height: 32, margin: "0 auto 10px", opacity: 0.4 }} />
-            <div style={{ fontSize: 13, fontWeight: 700 }}>No clients have map coordinates yet</div>
-            <div style={{ fontSize: 11.5, marginTop: 4 }}>Coordinates are added when locations are geocoded.</div>
+        {pins.length === 0 && (
+          <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 2, background: "#fff", borderRadius: 12, padding: "18px 22px", textAlign: "center", color: "#8a857a", boxShadow: "0 6px 18px rgba(40,30,10,0.12)", maxWidth: 300, pointerEvents: "none" }}>
+            <MapPin style={{ width: 28, height: 28, margin: "0 auto 8px", opacity: 0.5 }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#5c574e" }}>No locations on the map yet</div>
+            <div style={{ fontSize: 11.5, marginTop: 4 }}>A location is placed from its address when it is saved. Addresses need a city or ZIP.</div>
           </div>
-        ) : (
-          <>
-            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
-              <rect width={W} height={H} fill="#eef1f0" />
-              {Array.from({ length: 18 }, (_, i) => (
-                <line key={`v${i}`} x1={i * 50} y1={0} x2={i * 50} y2={H} stroke="#e3e7e6" strokeWidth="1" />
-              ))}
-              {Array.from({ length: 10 }, (_, i) => (
-                <line key={`h${i}`} x1={0} y1={i * 50} x2={W} y2={i * 50} stroke="#e3e7e6" strokeWidth="1" />
-              ))}
-              {pinnable.map(({ row, lat, lng }) => {
-                const { x, y } = proj(lat, lng)
-                const isActive = active?.id === row.id
-                return (
-                  <g key={row.id} style={{ cursor: "pointer" }}
-                    onMouseEnter={() => setHovered(row)}
-                    onMouseLeave={() => setHovered(null)}
-                    onClick={() => setPinned(pinned?.id === row.id ? null : row)}>
-                    <circle cx={x} cy={y + 1} r={isActive ? 8 : 5} fill="rgba(0,0,0,0.12)" />
-                    <circle cx={x} cy={y} r={isActive ? 7 : 5} fill={row.cleanerColor} stroke="#fff" strokeWidth={isActive ? 2.5 : 1.5} />
-                  </g>
-                )
-              })}
-            </svg>
-            {active && activeLoc && (() => {
-              const { x, y } = proj(activeLoc.latitude as number, activeLoc.longitude as number)
-              return (
-                <div style={{
-                  position: "absolute", left: `${(x / W) * 100}%`, top: `${(y / H) * 100}%`,
-                  transform: "translate(12px, -100%)", background: "#fff", borderRadius: 10, padding: "10px 14px",
-                  boxShadow: "0 6px 18px rgba(40,30,10,0.12)", border: "1px solid #ece7dd",
-                  zIndex: 30, width: 210, pointerEvents: pinned ? "auto" : "none",
-                }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1a1a", marginBottom: 2 }}>{active.name}</div>
-                  {active.area && <div style={{ fontSize: 11, color: "#8a857a", marginBottom: 4 }}>{active.area}</div>}
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: active.cleanerColor }} />
-                    <span style={{ fontSize: 11.5, color: "#5c574e" }}>{active.cleaner}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, fontSize: 11.5 }}>
-                    <span style={{ fontWeight: 800, color: "#1a1a1a" }}>{active.money}</span>
-                    <span style={{ color: "#8a857a" }}>{active.schedule}</span>
-                  </div>
-                  {pinned?.id === active.id && (
-                    <button onClick={() => onOpen(active.id)} style={{ marginTop: 8, width: "100%", padding: "6px 0", fontSize: 11.5, fontWeight: 700, background: "#0d9488", color: "#fff", border: "none", borderRadius: 7, cursor: "pointer" }}>
-                      View Profile
-                    </button>
-                  )}
-                </div>
-              )
-            })()}
-          </>
         )}
       </div>
       <div className="cfcl-map-areas" style={{ width: 240, flex: "none", borderLeft: "1px solid #efe9dd", padding: 16, overflowY: "auto" }}>
@@ -479,6 +431,23 @@ function MapView({ rows, onOpen }: { rows: ListRow[]; onOpen: (id: string) => vo
             <span style={{ fontSize: 12, color: "#8a857a", fontWeight: 700 }}>{count}</span>
           </div>
         ))}
+        {unplaced.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "#8a857a", margin: "20px 0 4px" }}>Not on the map · {unplaced.length}</div>
+            <div style={{ fontSize: 11.5, color: "#8a857a", marginBottom: 8 }}>Add a city or ZIP to the address to place it.</div>
+            {unplaced.map(({ client, location }) => (
+              <div
+                key={location.id}
+                onClick={() => onOpen(client.id)}
+                title="Open the client to fix the address"
+                style={{ padding: "7px 0", borderTop: "1px solid #f4efe6", cursor: "pointer", minWidth: 0 }}
+              >
+                <div className="cfcl-ellipsis" style={{ fontSize: 12.5, fontWeight: 700, color: "#1a1a1a" }}>{client.name}</div>
+                <div className="cfcl-ellipsis" style={{ fontSize: 11.5, color: "#8a857a" }}>{location.address || location.name}</div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )
@@ -572,6 +541,7 @@ export function ClientsPageWrapper({ clients, prefillProspect }: ClientsPageWrap
           .cfcl-group-meta { flex-basis: 100%; padding-left: 43px; }
           .cfcl-map { flex-direction: column; min-height: 0 !important; }
           .cfcl-map-areas { width: auto !important; border-left: none !important; border-top: 1px solid #efe9dd; }
+          .cfcl-map-canvas { min-height: 380px; }
         }
       `}</style>
 

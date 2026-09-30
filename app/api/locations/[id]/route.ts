@@ -4,6 +4,7 @@ import { updateLocationSchema } from '@/lib/validations'
 import { revalidateLocationPages, revalidateSchedulePages } from '@/lib/revalidate'
 import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
+import { geocodeAddress } from '@/lib/geocode'
 
 export async function PUT(
   request: Request,
@@ -21,9 +22,28 @@ export async function PUT(
       )
     }
 
+    const data = validationResult.data
+
+    // A changed address gets its map position looked up again, and so does an
+    // address saved without one. If it can't be found the old position is
+    // cleared, so the Clients map never pins the old place.
+    let position: { latitude: number | null; longitude: number | null } | undefined
+    if (data.address !== undefined) {
+      const current = await prisma.location.findUnique({
+        where: { id: params.id },
+        select: { address: true, latitude: true, longitude: true },
+      })
+      const moved = current && current.address.trim() !== data.address.trim()
+      const unplaced = current && (current.latitude == null || current.longitude == null)
+      if (moved || unplaced) {
+        const found = await geocodeAddress(data.address)
+        position = found ? { latitude: found.lat, longitude: found.lng } : moved ? { latitude: null, longitude: null } : undefined
+      }
+    }
+
     const location = await prisma.location.update({
       where: { id: params.id },
-      data: validationResult.data,
+      data: { ...data, ...position },
       include: { client: true },
     })
 
