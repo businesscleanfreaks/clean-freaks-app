@@ -60,38 +60,44 @@ export const SHADOWS = {
 // (hues 30/75/155/200/235/255/295/345, lb ≈ 0.64 + a boost near hue 95);
 // the hex values below are the exact sRGB conversions of those formulas.
 // NOTE: kept under the JOB_GRADIENTS name for API compatibility — the values
-// are now solid colors (the mockup has NO gradients on cards).
-// Deepened from the mockup's washed-out mid-tones: more saturated and a touch
-// darker so white text has real contrast and adjacent cards separate in dense
-// weeks (Josh: cards felt "dull and washed out" vs Google Calendar). Hues are
-// preserved; lightness varies a little across hues for tonal separation.
+// are solid colors (the mockup has NO gradients on cards).
+// These are the design's own fills again (Calendar Main.dc.html, card style
+// "Solid", saturation 0.85). In July they were deepened and the gold card got
+// dark text; Josh compared the calendar with the design in October and asked
+// for the design's look back, white text included.
 export const JOB_GRADIENTS = {
-  teal: '#008e94',      // hue 200
-  purple: '#7856c9',    // hue 295 — Ana Lina
-  amber: '#d75440',     // hue 30 — Amy's Angels
-  orange: '#d68e1f',    // hue 75 — Juan (gold)
-  rose: '#b64a89',      // hue 345 — Maggie
-  red: '#b64a89',       // hue 345
-  blue: '#0684bd',      // hue 235 — vendors
-  emerald: '#34985d',   // hue 155 — Celeste Cleaning Co.
-  indigo: '#3574cb',    // hue 255 — Marcia
-  slate: '#6a6f75',     // unassigned (near-gray)
-  default: '#6a6f75',
+  teal: '#00a2a9',      // hue 200 — Ricardo (MCS Cleaning)
+  purple: '#937ad5',    // hue 295 — Juan
+  amber: '#e47261',     // hue 30 — Maggie Quevedo (coral)
+  orange: '#ecad4b',    // hue 75 — Ana Lina (amber)
+  rose: '#c569a0',      // hue 345 — Amy's Angels
+  red: '#c569a0',       // hue 345
+  blue: '#0698d2',      // hue 235 — vendors
+  emerald: '#53b279',   // hue 155 — Celeste Cleaning Co.
+  indigo: '#4f8edc',    // hue 255 — Marcia
+  slate: '#82878c',     // unassigned (near-gray)
+  default: '#82878c',
 } as const
 
 // Map cleaner names → color keys (case-insensitive, partial-match aware).
-// Hue assignments follow the mockup's roster.
+// The design's roster sets the hue for each cleaner (Maggie Quevedo 30, Ana
+// Lina 75, Celeste 155, Ricardo 200, Marcia 255, Bubbly Clean 295, Ricardo
+// (Jessika Team) 345). Juan and Amy's Angels are not in it; they take hues
+// nobody live uses, so no two cleaners share a colour. 'jessika' comes before
+// 'ricardo' so "Ricardo (Jessika Team)" is not caught by the plain Ricardo.
 export const CLEANER_COLORS: Record<string, keyof typeof JOB_GRADIENTS> = {
-  'maggie': 'rose',
+  'maggie': 'amber',
+  'ana lina': 'orange',
+  'ana': 'orange',
   'celeste': 'emerald',
-  'ana lina': 'purple',
-  'ana': 'purple',
-  'juan': 'orange',
-  'ricardo': 'blue',
-  'mcs': 'blue',
-  'amy': 'amber',
-  'rosa': 'red',
+  'jessika': 'rose',
+  'ricardo': 'teal',
+  'mcs': 'teal',
   'marcia': 'indigo',
+  'bubbly': 'purple',
+  'juan': 'purple',
+  'amy': 'rose',
+  'rosa': 'red',
 }
 
 // Solid dot/avatar colors (mockup: oklch(0.60, ch, hue)) for filter pills,
@@ -161,38 +167,12 @@ export const JOB_TINT_COLORS: Record<keyof typeof JOB_GRADIENTS, string> = {
   default: '#f2f3f5',
 }
 
-// Pick accessible card text (ink) for a given fill. Most fills are dark enough
-// for white text; genuinely light fills (gold/orange) get dark ink instead so
-// contrast stays legible (Google-Calendar-style dark-on-light / white-on-dark).
-export function readableTextOnFill(hex: string): { color: string; shadow: string } {
-  let n = hex.replace('#', '').trim()
+// Card text on the solid fills: always white, as the design draws it (client
+// name white, time slightly softer). The gold card used to switch to dark ink.
+export const JOB_CARD_TEXT = { client: '#ffffff', time: 'rgba(255,255,255,0.88)' } as const
 
-  // Expand short hex formats (e.g. "FFF" -> "FFFFFF")
-  if (n.length === 3) {
-    n = n.split('').map((c) => c + c).join('')
-  }
-
-  const r = parseInt(n.slice(0, 2), 16)
-  const g = parseInt(n.slice(2, 4), 16)
-  const b = parseInt(n.slice(4, 6), 16)
-
-  // Fallback to white text if the hex is invalid
-  if (isNaN(r) || isNaN(g) || isNaN(b)) {
-    return { color: '#ffffff', shadow: '0 1px 1.5px rgba(0,0,0,0.30)' }
-  }
-
-  const toLin = (v: number) => {
-    const c = v / 255
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-  }
-
-  const L = 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b)
-  const whiteContrast = 1.05 / (L + 0.05)
-
-  return whiteContrast < 3.2
-    ? { color: '#1f2a37', shadow: '0 1px 0 rgba(255,255,255,0.35)' }
-    : { color: '#ffffff', shadow: '0 1px 1.5px rgba(0,0,0,0.30)' }
-}
+// The design's card edge: 1px white, which separates cards that touch.
+export const JOB_CARD_BORDER = '#ffffff'
 
 
 // Get color for a cleaner name (returns color key and hex)
