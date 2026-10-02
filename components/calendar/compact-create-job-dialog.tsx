@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
 import { Check, ChevronDown, ChevronUp, Clock, CornerDownLeft, DollarSign, FileText, MapPin, Plus, Repeat, Search, Sparkles, X } from "lucide-react"
 import { refreshCalendarData } from "./calendar-client"
@@ -14,6 +14,10 @@ import { showError, showSuccess } from "@/lib/toast"
 import useSWR from "swr"
 import { fetcher } from "@/lib/fetcher"
 import type { ClientListItem, SubcontractorSummary } from "@/lib/types"
+import {
+  DEFAULT_TRIAL_LENGTH, canStepTrial, stepTrialLength, switchTrialUnit,
+  trialLengthLabel, trialRunsLabel, trialScheduleEnd, type TrialLength,
+} from "@/lib/trial-length"
 
 interface CompactCreateJobDialogProps {
   open: boolean
@@ -36,16 +40,16 @@ type ClientSchedule = ClientLocation["schedules"][number]
 const jobTypes: Array<{ value: JobType; label: string }> = [
   { value: "regular", label: "Standard" },
   { value: "deep_clean", label: "Deep" },
-  { value: "post_construction", label: "Post-construction" },
   { value: "move_in_out", label: "Move-out" },
+  { value: "post_construction", label: "Post-construction" },
   { value: "event", label: "Event" },
 ]
 
 const jobTypeDescriptions: Record<JobType, string> = {
   regular: "Regular upkeep clean",
   deep_clean: "Top-to-bottom detail clean",
-  post_construction: "Debris and dust after a build",
-  move_in_out: "Empty home, inside cabinets and appliances",
+  post_construction: "Debris & dust after a build",
+  move_in_out: "Empty home, inside cabinets & appliances",
   event: "Event setup or cleanup",
 }
 
@@ -58,8 +62,6 @@ const addOnServiceOptions = [
 
 const customAddOnServiceValue = "custom"
 
-// Trials are short recurring runs, so only weekly-based cadences make sense here.
-type TrialDuration = "1wk" | "2wk" | "3wk" | "1mo"
 // Cadences offered in this quick dialog. 2X_MONTHLY and CUSTOM are deliberately
 // NOT here: both need a monthlyPattern / customDates payload, and without one
 // the schedule generates zero cleans. Use the full schedule editor for those.
@@ -85,23 +87,8 @@ const ordinalOf = (n: number) => {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th"
   return `${n}${suffix}`
 }
-const trialDurations: Array<{ value: TrialDuration; label: string }> = [
-  { value: "1wk", label: "1 week" },
-  { value: "2wk", label: "2 weeks" },
-  { value: "3wk", label: "3 weeks" },
-  { value: "1mo", label: "1 month" },
-]
 // getUTCDay() order: 0 = Sunday … 6 = Saturday (matches calculateScheduleDates)
 const dayLetters = ["S", "M", "T", "W", "T", "F", "S"]
-
-function addTrialDuration(start: Date, duration: TrialDuration): Date {
-  const end = new Date(start)
-  if (duration === "1wk") end.setDate(end.getDate() + 7)
-  else if (duration === "2wk") end.setDate(end.getDate() + 14)
-  else if (duration === "3wk") end.setDate(end.getDate() + 21)
-  else end.setMonth(end.getMonth() + 1)
-  return end
-}
 
 function initialLocationIds(client?: ClientListItem) {
   return client?.locations?.length === 1 ? [client.locations[0].id] : []
@@ -156,12 +143,53 @@ export function CompactCreateJobDialog({
   const [trialNotes, setTrialNotes] = useState("")
   const [trialFrequency, setTrialFrequency] = useState("WEEKLY")
   const [trialDaysOfWeek, setTrialDaysOfWeek] = useState<number[]>([])
-  const [trialDuration, setTrialDuration] = useState<TrialDuration>("2wk")
+  const [trialLength, setTrialLength] = useState<TrialLength>(DEFAULT_TRIAL_LENGTH)
   const [loading, setLoading] = useState(false)
   // Dropdown stays hidden until the user clicks/types in the search input — matches the JSX
   // mockup so the form doesn't feel cluttered when no client is selected yet.
   const [dropOpen, setDropOpen] = useState(false)
   const clientPickerRef = useRef<HTMLDivElement | null>(null)
+
+  // Beside the clicked slot, the window takes the height its content needs and
+  // moves up only as far as it must to fit on screen. It used to start at the
+  // click and get whatever height was left below it, so a click low on the
+  // calendar opened a sliver that had to be scrolled through.
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const contentObserver = useRef<ResizeObserver | null>(null)
+  const [fit, setFit] = useState<{ top: number; maxHeight: number } | null>(null)
+  const refit = useCallback(() => {
+    const scroller = scrollerRef.current
+    const box = scroller?.parentElement
+    const content = scroller?.firstElementChild as HTMLElement | null | undefined
+    if (!anchor || !scroller || !box || !content) return
+    const edge = 12
+    const viewport = window.innerHeight
+    // Header + footer, plus the sections in the middle. Measured from the
+    // sections rather than scrollHeight, which also counts the client list
+    // that drops open over them.
+    const { paddingTop, paddingBottom } = window.getComputedStyle(scroller)
+    const middle = content.offsetHeight + parseFloat(paddingTop) + parseFloat(paddingBottom)
+    const natural = box.offsetHeight - scroller.clientHeight + middle
+    const height = Math.min(natural, viewport - edge * 2)
+    const top = Math.round(Math.max(edge, Math.min(anchor.top, viewport - height - edge)))
+    const maxHeight = Math.round(viewport - top - edge)
+    setFit(current => (current && current.top === top && current.maxHeight === maxHeight ? current : { top, maxHeight }))
+  }, [anchor])
+  // Re-fit whenever the content grows or shrinks (Recurring and Trial add rows).
+  const setScroller = useCallback((el: HTMLDivElement | null) => {
+    contentObserver.current?.disconnect()
+    scrollerRef.current = el
+    if (!el) return
+    contentObserver.current = new ResizeObserver(() => refit())
+    if (el.firstElementChild) contentObserver.current.observe(el.firstElementChild)
+    refit()
+  }, [refit])
+  useLayoutEffect(() => { refit() }, [refit])
+  useEffect(() => {
+    if (!open || !anchor) return
+    window.addEventListener("resize", refit)
+    return () => window.removeEventListener("resize", refit)
+  }, [open, anchor, refit])
 
   // Add-ons attached to this job on creation (e.g. a vendor-performed window clean)
   const [addOns, setAddOns] = useState<Array<{ description: string; vendorId: string; clientRate: string; subcontractorRate: string }>>([])
@@ -205,6 +233,18 @@ export function CompactCreateJobDialog({
   const dateTimeSummary = isRecurring
     ? timeRangeSummary
     : `${jobDate ? format(jobDate, "EEE, MMM d") : "Pick a date"} · ${timeRangeSummary}`
+  // One-time | Recurring | Trial. Trial is recurring with an end, so it sets both flags.
+  type When = "once" | "recurring" | "trial"
+  const when: When = isTrial ? "trial" : isRecurring ? "recurring" : "once"
+  const whenOptions: Array<{ value: When; label: string }> = [
+    { value: "once", label: "One-time" },
+    { value: "recurring", label: "Recurring" },
+    ...(serviceType === "cleaning" ? [{ value: "trial" as const, label: "Trial" }] : []),
+  ]
+  const pickWhen = (value: When) => {
+    setIsRecurring(value !== "once")
+    setIsTrial(value === "trial")
+  }
   const typedClientName = search.trim()
   const exactClientMatch = useMemo(
     () => clients.some(client => client.name.toLowerCase() === typedClientName.toLowerCase()),
@@ -273,7 +313,7 @@ export function CompactCreateJobDialog({
     setTrialNotes("")
     setTrialFrequency("WEEKLY")
     setTrialDaysOfWeek([])
-    setTrialDuration("2wk")
+    setTrialLength(DEFAULT_TRIAL_LENGTH)
     setAddOns([])
     setAddingAddOn(false)
     setAddOnDraft({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' })
@@ -396,7 +436,7 @@ export function CompactCreateJobDialog({
 
       if (clientMode === "one-time") {
         const cleanLabel = jobTypes.find(type => type.value === jobType)?.label || "clean"
-        const trialLabel = trialDurations.find(option => option.value === trialDuration)?.label || trialDuration
+        const trialLabel = trialLengthLabel(trialLength)
         // Mark trial clients in notes so the clients list classifies them into the Trial bucket.
         const oneTimeNotes = isTrial
           ? `TRIAL CLIENT — ${trialLabel} trial${trialNotes.trim() ? `\n${trialNotes.trim()}` : ""}`
@@ -451,7 +491,9 @@ export function CompactCreateJobDialog({
       if (isTrial) {
         // A trial is a short recurring schedule with a hard endDate so jobs don't project past
         // the trial window (the bug Modern Animal hit). The schedule POST auto-generates its jobs.
-        const endDate = format(addTrialDuration(jobDate, trialDuration), "yyyy-MM-dd")
+        // The trial's end is exclusive and a schedule's endDate inclusive, so it ends the day
+        // before (lib/trial-length.ts).
+        const endDate = trialScheduleEnd(jobDate, trialLength)
         await Promise.all(locationIds.map(async locationId => {
           const response = await fetch("/api/schedules", {
             method: "POST",
@@ -579,11 +621,11 @@ export function CompactCreateJobDialog({
         data-calendar-create-editor
         hideClose
         overlayClassName={anchor ? "bg-transparent" : undefined}
-        className={`flex max-h-[94vh] w-[min(94vw,372px)] max-w-[372px] flex-col overflow-hidden rounded-2xl border border-[#e8ebef] p-0 shadow-[0_1px_1px_rgba(16,24,40,0.04),0_28px_64px_-12px_rgba(16,24,40,0.28)] ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
+        className={`flex max-h-[94vh] w-[min(94vw,372px)] max-w-[372px] flex-col gap-0 overflow-hidden rounded-2xl border border-[#e8ebef] p-0 shadow-[0_1px_1px_rgba(16,24,40,0.04),0_28px_64px_-12px_rgba(16,24,40,0.28)] sm:gap-0 sm:p-0 ${anchor ? "sm:translate-x-0 sm:translate-y-0 [animation:none]" : ""}`}
         style={anchor ? {
           left: anchor.left,
-          top: anchor.top,
-          maxHeight: `calc(100vh - ${anchor.top + 12}px)`,
+          top: fit?.top ?? anchor.top,
+          maxHeight: fit?.maxHeight ?? `calc(100vh - ${anchor.top + 12}px)`,
           transform: "none",
           animation: "none",
         } : undefined}
@@ -596,7 +638,8 @@ export function CompactCreateJobDialog({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
+        <div ref={setScroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <div className="space-y-2">
           <section className="space-y-2">
             {clientMode === "existing" ? (
               <>
@@ -752,7 +795,7 @@ export function CompactCreateJobDialog({
                   {jobTypes.filter(type => type.value !== 'event').map(type => (
                     <button key={type.value} type="button" onClick={() => setJobType(type.value)} className={`rounded-lg border px-2.5 py-1.5 text-left transition-colors ${jobType === type.value ? 'border-[#0b8557] bg-[#eaf5f0]' : 'border-[#d9e1ea] bg-white hover:border-[#a9cfc6]'}`}>
                       <span className="block text-[12px] font-extrabold text-[#263246]">{type.label}</span>
-                      <span className="mt-0.5 block truncate text-[10px] leading-tight text-[#718096]">{jobTypeDescriptions[type.value]}</span>
+                      <span className="mt-0.5 block text-[10px] leading-[1.3] text-[#718096]">{jobTypeDescriptions[type.value]}</span>
                     </button>
                   ))}
                 </div>
@@ -794,9 +837,20 @@ export function CompactCreateJobDialog({
 
             <div>
               <Label className="mb-1 block text-[11px] font-bold text-[#7f8ea3]">When</Label>
-              <div className="flex h-9 w-[200px] rounded-lg bg-[#e9edf2] p-1 text-[12px] font-bold">
-                <button type="button" onClick={() => { setIsRecurring(false); setIsTrial(false) }} className={`flex-1 rounded-md ${!isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>One-time</button>
-                <button type="button" onClick={() => setIsRecurring(true)} className={`flex-1 rounded-md ${isRecurring ? 'bg-white text-[#172033] shadow-sm' : 'text-[#66758b]'}`}>Recurring</button>
+              {/* Trial is a kind of schedule, so it sits beside One-time and
+                  Recurring (trials handoff). It turns recurrence on; it is not
+                  offered for add-ons. */}
+              <div className="inline-flex gap-0.5 rounded-[9px] bg-[#eceef1] p-[3px] shadow-[inset_0_1px_2px_rgba(16,24,40,0.05)]">
+                {whenOptions.map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => pickWhen(option.value)}
+                    className={`rounded-[7px] px-[15px] py-1.5 text-[12px] font-semibold tracking-[-0.01em] ${when === option.value ? "bg-white text-[#172033] shadow-sm" : "text-[#66758b]"}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -804,10 +858,10 @@ export function CompactCreateJobDialog({
                 click to expand the full date + arrival editor. Cuts the whitespace of
                 three stacked rows down to one line. */}
             <div>
-              <button type="button" onClick={() => setDateTimeOpen(open => !open)} className="flex w-full items-center gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-left hover:border-[#cbd5e1]">
-                <Clock className="h-4 w-4 shrink-0 text-[#64748b]" />
-                <span className="flex-1 truncate text-[13px] font-semibold text-[#172033]">{dateTimeSummary}</span>
-                <ChevronDown className={`h-4 w-4 shrink-0 text-[#94a3b8] transition-transform ${dateTimeOpen ? "rotate-180" : ""}`} />
+              <button type="button" onClick={() => setDateTimeOpen(open => !open)} className="-mx-[7px] flex w-[calc(100%+14px)] items-center gap-[11px] rounded-[9px] px-[7px] py-2 text-left hover:bg-[#f4f6f8]">
+                <Clock className="h-[17px] w-[17px] shrink-0 text-[#64748b]" />
+                <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-[#1e293b]">{dateTimeSummary}</span>
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-[#7f8ea3] transition-transform ${dateTimeOpen ? "rotate-180" : ""}`} />
               </button>
               {dateTimeOpen && (
                 <div className="mt-2 space-y-2">
@@ -913,11 +967,52 @@ export function CompactCreateJobDialog({
               </div>
             )}
 
-            {serviceType === 'cleaning' && (
-              <button type="button" onClick={() => { const next = !isTrial; setIsTrial(next); if (next) setIsRecurring(true) }} className="flex w-full items-center gap-2 border-t border-[#edf0f3] pt-3 text-left">
-                <span className={`relative h-6 w-10 rounded-full transition-colors ${isTrial ? 'bg-[#0d9488]' : 'bg-[#cbd5e1]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isTrial ? 'translate-x-5' : 'translate-x-1'}`} /></span>
-                <span><span className="block text-[13px] font-bold text-[#263246]">Trial</span><span className="block text-[10px] text-[#7f8ea3]">Probationary period at a trial rate</span></span>
-              </button>
+            {/* Trial length: a stepper in weeks or months, as the design sets it. */}
+            {isTrial && (
+              <div>
+                <Label className="mb-1.5 block text-[11px] font-bold text-[#7f8ea3]">Trial length</Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center overflow-hidden rounded-[9px] border border-[#d2d8e0] bg-white">
+                    <button
+                      type="button"
+                      aria-label="Shorter trial"
+                      disabled={!canStepTrial(trialLength, -1)}
+                      onClick={() => setTrialLength(current => stepTrialLength(current, -1))}
+                      className="h-[34px] w-[34px] bg-[#f6f7f9] text-[16px] font-bold text-[#0f766e] disabled:text-[#c3cad3]"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[34px] px-1 text-center text-[14px] font-extrabold text-[#0f172a]">{trialLength.n}</span>
+                    <button
+                      type="button"
+                      aria-label="Longer trial"
+                      disabled={!canStepTrial(trialLength, 1)}
+                      onClick={() => setTrialLength(current => stepTrialLength(current, 1))}
+                      className="h-[34px] w-[34px] bg-[#f6f7f9] text-[16px] font-bold text-[#0f766e] disabled:text-[#c3cad3]"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="inline-flex gap-0.5 rounded-[9px] bg-[#eceef1] p-[3px]">
+                    {(["weeks", "months"] as const).map(unit => (
+                      <button
+                        key={unit}
+                        type="button"
+                        onClick={() => { if (trialLength.unit !== unit) setTrialLength(switchTrialUnit(unit)) }}
+                        className={`rounded-[7px] px-3 py-1.5 text-[12px] font-semibold capitalize ${trialLength.unit === unit ? "bg-white text-[#172033] shadow-sm" : "text-[#66758b]"}`}
+                      >
+                        {unit}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {jobDate && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-[7px] bg-[#f3faf8] px-[9px] py-1.5 text-[11px] font-semibold text-[#0f766e]">
+                    <span className="rounded-[3px] bg-[#fbe0b8] px-[5px] py-px text-[9px] font-extrabold uppercase tracking-[0.04em] text-[#9a5a08]">Trial</span>
+                    {trialRunsLabel(jobDate, trialLength)}
+                  </div>
+                )}
+              </div>
             )}
           </section>
 
@@ -935,7 +1030,7 @@ export function CompactCreateJobDialog({
                     : <span className="h-7 w-7 shrink-0 rounded-full border-2 border-dashed border-[#cbd5e1]" aria-hidden="true" />
                 })()}
                 <Select value={subcontractorId} onValueChange={setSubcontractorId}>
-                  <SelectTrigger className={`h-[34px] flex-1 text-sm ${subcontractorId === "unassigned" ? "text-amber-700" : ""}`}><SelectValue /></SelectTrigger>
+                  <SelectTrigger className={`h-[34px] flex-1 border-0 bg-transparent px-[7px] text-[13.5px] font-semibold shadow-none hover:bg-[#f4f6f8] ${subcontractorId === "unassigned" ? "text-amber-700" : "text-[#1e293b]"}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassigned"><span className="text-amber-700">Assign cleaner</span></SelectItem>
                     {activeCleaners.map(cleaner => <SelectItem key={cleaner.id} value={cleaner.id}>{cleaner.name}</SelectItem>)}
@@ -949,6 +1044,9 @@ export function CompactCreateJobDialog({
                 </Select>
               </div>
             </div>
+            {isTrial && (
+              <div className="text-[10px] font-bold uppercase tracking-[0.05em] text-[#0f766e]">Trial rate</div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="mb-1 block text-[11px] text-slate-500">Client charged</Label>
@@ -969,7 +1067,9 @@ export function CompactCreateJobDialog({
 
           {!isTrial && serviceType === 'cleaning' && (
             <section className="space-y-2">
-              <Label className="block text-[11px] font-bold uppercase tracking-[0.06em] text-[#9aa6b2]">Add-on services</Label>
+              {addOns.length > 0 && (
+                <Label className="block text-[11px] font-bold uppercase tracking-[0.06em] text-[#9aa6b2]">Add-on services</Label>
+              )}
               {addOns.map((ao, i) => {
                 const m = (parseFloat(ao.clientRate) || 0) - (parseFloat(ao.subcontractorRate) || 0)
                 const perf = ao.vendorId ? (addOnVendors.find(v => v.id === ao.vendorId)?.name || 'Vendor') : 'Cleaner (same as job)'
@@ -1035,7 +1135,7 @@ export function CompactCreateJobDialog({
                 <button
                   type="button"
                   onClick={() => { setAddOnDraft({ description: '', vendorId: '', clientRate: '', subcontractorRate: '' }); setAddOnDraftCustom(false); setAddingAddOn(true) }}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#b9d8cd] bg-[#f1f8f5] px-3 py-2.5 text-[13px] font-bold text-[#0b7a4e] hover:bg-[#e7f4ee]"
+                  className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-dashed border-[#b9d8cd] bg-[#f1f8f5] px-3 py-2 text-[12.5px] font-bold text-[#0b7a4e] hover:bg-[#e7f4ee]"
                 >
                   <Plus className="h-4 w-4" /> Add-on service
                 </button>
@@ -1045,31 +1145,6 @@ export function CompactCreateJobDialog({
 
           {isTrial && (
             <section className="space-y-3 rounded-lg border border-[#cce4db] bg-[#f1f8f5] p-3">
-              {isTrial && <div>
-                <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial length</Label>
-                <div className="flex gap-1.5">
-                  {trialDurations.map(option => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setTrialDuration(option.value)}
-                      className={`flex-1 rounded-md border px-1 py-1.5 text-[12px] font-semibold transition-colors ${
-                        trialDuration === option.value
-                          ? "border-amber-500 bg-amber-100 text-amber-900"
-                          : "border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-                {jobDate && (
-                  <p className="mt-1 text-[10.5px] font-medium text-amber-700">
-                    Runs {format(jobDate, "MMM d")} → {format(addTrialDuration(jobDate, trialDuration), "MMM d")}
-                  </p>
-                )}
-              </div>}
-
               {isTrial && <div>
                 <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-800">Trial notes</Label>
                 <textarea
@@ -1088,7 +1163,7 @@ export function CompactCreateJobDialog({
               type="button"
               aria-expanded={showNotes}
               onClick={() => setShowNotes(current => !current)}
-              className="flex min-h-11 w-full items-center gap-3 py-2 text-left text-[#738299] transition-colors hover:text-[#0b8557]"
+              className="flex min-h-10 w-full items-center gap-3 py-1.5 text-left text-[#738299] transition-colors hover:text-[#0b8557]"
             >
               <FileText className="h-4 w-4 shrink-0" />
               <span className="flex-1 text-[14px] font-bold">Add note</span>
@@ -1112,6 +1187,7 @@ export function CompactCreateJobDialog({
               {selectedLocationIds.length === 1 ? "1 selected location" : `${selectedLocationIds.length} selected locations`}
             </div>
           )}
+          </div>
         </div>
 
         <div className="flex flex-shrink-0 justify-end border-t border-slate-100 bg-white px-4 pb-4 pt-3 shadow-[0_-5px_14px_rgba(16,24,40,0.05)]">
